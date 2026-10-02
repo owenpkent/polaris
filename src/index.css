@@ -1,0 +1,1047 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens. There are two themes: the dark one below on :root (also the
+   fallback when no theme has been chosen) and the light one in the
+   :root[data-theme='light'] block after it. Nothing outside these two blocks
+   names a color, so a rule only has to be written once. src/theme.js owns the
+   System/Light/Dark choice and writes data-theme onto <html>.
+
+   Contrast targets (WCAG 2.2): text tokens reach at least 4.5:1
+   on every surface (bg-inset, bg, bg2, bg3, bg-hover), t1 and t2 reach 7:1 on
+   bg, and --bd-strong reaches 3:1 on every surface so control edges stay
+   visible. --bd is for decorative dividers only; never use it as the sole edge
+   of a control. Measured ratios are noted next to the text tokens (on bg / bg3).
+
+   Depth model: recessed things (inputs, board lanes) are darker than the page,
+   raised things (sheets, cards, buttons, top bar) are lighter and carry a crisp
+   shadow plus a 1px top highlight, and floating things (menus, panels,
+   dialogs) use --shadow-pop. */
+:root {
+  color-scheme: dark;
+
+  /* Each layer is a clear step lighter than the one below it (about 1.2:1),
+     so surfaces never blend into each other. The light theme cannot repeat
+     those steps -- white is the ceiling, so its layers are 1.03-1.08:1 apart
+     and it leans on the ring in --shadow-* for separation instead. */
+  --bg-inset: #101216;
+  --bg: #17191e;
+  --bg2: #282c34;
+  --bg3: #333842;
+  --bg-hover: #3e4450;
+  --bg-zebra: #353a44; /* alternate list rows on bg2 */
+  --bg-selected: color-mix(in srgb, var(--blue) 16%, var(--bg2));
+  --bd: #434955;
+  --bd-surface: #4a505b;
+  --bd-strong: #8c94a2;
+
+  --t1: #f3f5f8; /* 16.1 / 10.8 */
+  --t2: #c2c9d3; /* 10.5 / 7.1 */
+  --t3: #aab2bd; /* 8.2 / 5.5, placeholders and counts */
+
+  --blue: #80bcff;
+  --blue-hover: #a3cfff;
+  --green: #6ade78;
+  --green-hover: #8ee89a;
+  --yellow: #ecc050;
+  --purple: #c9adff;
+  --red: #ff9189;
+  --orange: #f9b070;
+
+  /* Text that sits on a solid accent fill (primary and success buttons). */
+  --on-accent: #0b1220;
+
+  /* Top of an accent button's gradient. Here the fill is pale and --on-accent
+     is dark, so the lit edge goes toward white: 10.8:1 blue, 12.2:1 green. */
+  --blue-top: color-mix(in srgb, var(--blue) 80%, white);
+  --green-top: color-mix(in srgb, var(--green) 80%, white);
+
+  /* Soft tints for chips, selected rows, and banners. */
+  --blue-soft: color-mix(in srgb, var(--blue) 14%, transparent);
+  --green-soft: color-mix(in srgb, var(--green) 14%, transparent);
+  --yellow-soft: color-mix(in srgb, var(--yellow) 14%, transparent);
+  --purple-soft: color-mix(in srgb, var(--purple) 14%, transparent);
+  --red-soft: color-mix(in srgb, var(--red) 14%, transparent);
+  --orange-soft: color-mix(in srgb, var(--orange) 14%, transparent);
+  --neutral-soft: color-mix(in srgb, var(--t2) 14%, transparent);
+
+  --focus: #a3cfff;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* Shadows are crisp, not blurry: a lit top edge, a 1px dark ring that
+     separates the surface from whatever is behind it, then a short, dense
+     drop shadow. */
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.4);
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4), 0 8px 18px rgba(0, 0, 0, 0.3);
+  --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.45), 0 14px 28px rgba(0, 0, 0, 0.35);
+  --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 12px rgba(0, 0, 0, 0.45), 0 18px 40px rgba(0, 0, 0, 0.5);
+  --shadow-inset: inset 0 2px 3px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  --shadow-accent: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.4);
+  --shadow-bar: 0 1px 0 rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.35); /* top bar */
+  --lane-edge: rgba(0, 0, 0, 0.55); /* Board lane border */
+  --shadow-lane: var(--shadow-inset), 0 1px 0 rgba(255, 255, 255, 0.06);
+  --raised: linear-gradient(180deg, var(--bg-hover), var(--bg3));
+  --raised-hover: linear-gradient(180deg, #48505c, var(--bg-hover));
+  --overlay: rgba(6, 7, 10, 0.66);
+  --target: 44px;
+}
+
+/* Light theme, applied when the pre-paint script in index.html (mirrored by
+   src/theme.js) sets data-theme="light" on <html>. Same depth model, flipped:
+   recessed things are a step darker than the page, raised things go toward
+   white, and hover darkens rather than lightens, so --raised is defined here
+   rather than derived from --bg-hover. The layers are much closer together
+   than in the dark theme (see the note there); what separates a card from the
+   page here is the 1px ink ring in --shadow-*, not luminance. Every text and accent color is
+   re-picked rather than lightened, since a pale accent that reads well on
+   #17191e has no contrast left on white. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-inset: #e8ebf0;
+  --bg: #f1f3f7;
+  --bg2: #fbfcfe;
+  --bg3: #ffffff;
+  --bg-hover: #d8dfea; /* 1.12 on bg-inset, 1.34 on bg3: visible on every surface */
+  --bg-zebra: #f2f4f8; /* alternate list rows on bg2 */
+  --bd: #d9dee6;
+  --bd-surface: #d2d8e2;
+  --bd-strong: #6f7887; /* 4.0 / 4.5, and 3.7 on bg-inset */
+
+  --t1: #12151b; /* 16.5 / 18.3 */
+  --t2: #474e5b; /* 7.5 / 8.4 */
+  --t3: #5c6473; /* 5.4 / 6.0, placeholders and counts */
+
+  --blue: #1560c8; /* 5.3 / 5.9 */
+  --blue-hover: #0e4ba3; /* darker, not lighter: hover deepens in this theme */
+  --green: #157044;
+  --green-hover: #0f5a37; /* deepens on hover, like --blue-hover */
+  --yellow: #8a5d00;
+  --purple: #6b3fd4;
+  --red: #bd2b26;
+  --orange: #9a4f0d;
+
+  /* Text on a solid accent fill (primary and success buttons). */
+  --on-accent: #ffffff;
+
+  /* Here the fill is deep and --on-accent is white, so the lit edge can only
+     lift a little before the white label drops under 4.5:1. At 92% the top of
+     the gradient still measures 5.1:1 blue and 5.2:1 green; at the 80% the
+     dark theme uses it would be 4.0:1. */
+  --blue-top: color-mix(in srgb, var(--blue) 92%, white);
+  --green-top: color-mix(in srgb, var(--green) 92%, white);
+
+  /* Opaque here, translucent in the dark theme: a transparent tint takes its
+     luminance from whatever sits behind it, and over a recessed surface that
+     drops the accent text on top of it under 4.5:1. Mixing into --bg2 instead
+     makes every chip, banner, and danger hover the same measured color. */
+  --blue-soft: color-mix(in srgb, var(--blue) 12%, var(--bg2));
+  --green-soft: color-mix(in srgb, var(--green) 12%, var(--bg2));
+  --yellow-soft: color-mix(in srgb, var(--yellow) 12%, var(--bg2));
+  --purple-soft: color-mix(in srgb, var(--purple) 12%, var(--bg2));
+  --red-soft: color-mix(in srgb, var(--red) 12%, var(--bg2));
+  --orange-soft: color-mix(in srgb, var(--orange) 12%, var(--bg2));
+  --neutral-soft: color-mix(in srgb, var(--t2) 12%, var(--bg2));
+
+  --focus: #1560c8;
+
+  /* Shadows stay crisp but lose the heavy black ring, which reads as grime on
+     a white surface: a thin ink-tinted ring plus a short, soft drop. */
+  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.1), 0 1px 2px rgba(16, 20, 28, 0.1);
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.07), 0 1px 2px rgba(16, 20, 28, 0.06), 0 6px 14px rgba(16, 20, 28, 0.06);
+  --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.09), 0 3px 6px rgba(16, 20, 28, 0.08), 0 10px 22px rgba(16, 20, 28, 0.08);
+  --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.11), 0 4px 10px rgba(16, 20, 28, 0.1), 0 14px 32px rgba(16, 20, 28, 0.12);
+  --shadow-inset: inset 0 1px 2px rgba(16, 20, 28, 0.1), inset 0 0 0 1px rgba(16, 20, 28, 0.06);
+  --shadow-accent: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 0 0 1px rgba(16, 20, 28, 0.14), 0 1px 2px rgba(16, 20, 28, 0.12);
+  --shadow-bar: 0 1px 0 rgba(16, 20, 28, 0.06), 0 2px 8px rgba(16, 20, 28, 0.06);
+  --lane-edge: var(--bd);
+  --shadow-lane: var(--shadow-inset);
+  --raised: linear-gradient(180deg, #ffffff, #eef1f6);
+  --raised-hover: linear-gradient(180deg, #f8fafc, #e4e9f1);
+  --overlay: rgba(23, 26, 33, 0.38);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection { background: color-mix(in srgb, var(--blue) 35%, transparent); color: var(--t1); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  line-height: 1.45;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Scrollbars are wide enough to grab with a mouse. */
+html { scrollbar-color: var(--bd-strong) var(--bg); }
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--bd-strong);
+  border: 3px solid var(--bg);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--t3); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+textarea, input, select {
+  font-family: inherit;
+  color: var(--t1);
+  background: var(--bg-inset);
+  border: 1px solid var(--bd-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-inset);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+input[type='checkbox'], input[type='radio'] { box-shadow: none; }
+textarea:hover, input:hover, select:hover { border-color: var(--t3); }
+textarea:focus, input:focus, select:focus { border-color: var(--blue); }
+textarea:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+::placeholder { color: var(--t3); opacity: 1; }
+
+input[type='checkbox'], input[type='radio'] {
+  accent-color: var(--blue);
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+button { cursor: pointer; font-family: inherit; }
+button:disabled, .btn:disabled, [aria-disabled='true'] { cursor: not-allowed; }
+
+a { color: var(--blue); text-underline-offset: 3px; }
+a:hover { color: var(--blue-hover); }
+
+kbd { color: var(--t1); }
+
+/* A raised surface: lighter than the page, crisp shadow, top highlight. */
+.surface,
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.card { padding: 1.25rem; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-software { background: var(--blue-soft); color: var(--blue); }
+.badge-media { background: var(--purple-soft); color: var(--purple); }
+.badge-hardware { background: var(--orange-soft); color: var(--orange); }
+.badge-business { background: var(--green-soft); color: var(--green); }
+.badge-planning { background: var(--neutral-soft); color: var(--t2); }
+
+.progress-bar {
+  height: 6px;
+  background: var(--bg-inset);
+  box-shadow: var(--shadow-inset);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--purple));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* Buttons. Every variant keeps a 44px minimum target. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: var(--target);
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  border: 1px solid var(--bd-strong);
+  background: var(--raised);
+  box-shadow: var(--shadow-btn);
+  color: var(--t1);
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.btn:hover:not(:disabled) { background: var(--raised-hover); border-color: var(--t3); }
+.btn:active:not(:disabled) { box-shadow: var(--shadow-inset); }
+.btn:disabled { opacity: 0.55; box-shadow: none; }
+.btn-primary {
+  background: linear-gradient(180deg, var(--blue-top), var(--blue));
+  border-color: var(--blue);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-accent);
+}
+.btn-primary:hover:not(:disabled) { background: var(--blue-hover); border-color: var(--blue-hover); }
+.btn-success {
+  background: linear-gradient(180deg, var(--green-top), var(--green));
+  border-color: var(--green);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-accent);
+}
+.btn-success:hover:not(:disabled) { background: var(--green-hover); border-color: var(--green-hover); }
+.btn-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 70%, var(--bg)); }
+.btn-danger:hover:not(:disabled) { background: var(--red-soft); border-color: var(--red); }
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: var(--target);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--t2);
+  font-size: 0.875rem;
+  padding: 0.45rem 0.75rem;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-ghost:hover:not(:disabled) { color: var(--t1); background: var(--bg-hover); }
+
+/* Hover and pressed feedback for menu items and toolbar buttons whose layout
+   and resting background come from inline styles. !important is needed to
+   win over the inline background. */
+.hover-surface { transition: background 0.15s; }
+.hover-surface:hover:not(:disabled) { background: var(--bg-hover) !important; }
+.hover-surface:active:not(:disabled) { background: color-mix(in srgb, var(--bg-hover) 70%, var(--t3)) !important; }
+
+/* Square 44px button for a single icon. Always pair with aria-label. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--target);
+  height: var(--target);
+  min-width: var(--target);
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--t2);
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--t1); }
+.icon-btn.is-danger:hover:not(:disabled) { background: var(--red-soft); color: var(--red); }
+.icon-btn:disabled { opacity: 0.55; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  box-shadow: var(--shadow-pop);
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+.field label, .field .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
+.field input, .field textarea, .field select {
+  width: 100%;
+  min-height: var(--target);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+}
+.field input[type='checkbox'], .field input[type='radio'] { width: 18px; min-height: 0; }
+.field textarea { resize: vertical; min-height: 80px; }
+
+.section-header {
+  font-size: 0.75rem;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-active { background: var(--green); }
+.dot-development { background: var(--yellow); }
+.dot-planning { background: var(--blue); }
+.dot-stable { background: var(--purple); }
+
+/* Full-width tab shell: every tab uses the whole viewport width. */
+.app-main-full {
+  padding: 24px 32px 48px;
+}
+
+@media (max-width: 640px) {
+  .app-main-full {
+    padding: 16px 16px 32px;
+  }
+}
+
+/* My Tasks: grid-based task list. Column count and widths are computed at
+   runtime (see columnsState.js, which also owns the responsive hiding this
+   used to do via media queries) and applied as an inline gridTemplateColumns
+   style on both the header row and every TaskRow/InlineTaskInput, so an
+   inline style can never fall out of sync with a separate CSS rule. */
+.mytasks-grid {
+  display: grid;
+}
+
+/* Toolbar above the grid (TaskListToolbar): Add task, then Filter/Sort/Group/
+   Columns in their own wrapper so the two groups can be told apart. Padding
+   replaces a fixed height so a wrapped row is never clipped. On phone, Add
+   task becomes its own full-width row, the rest wrap to the row below, and
+   Columns is hidden since the column set there is fixed. */
+.mytasks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  flex-wrap: wrap;
+}
+.mytasks-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .mytasks-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mytasks-toolbar-add {
+    width: 100%;
+  }
+  .mytasks-toolbar-columns {
+    display: none;
+  }
+}
+
+/* Alternating list rows. Hover is declared after so it wins on striped rows. */
+.is-striped { background: var(--bg-zebra); }
+.mytasks-row { transition: background 0.12s; }
+.mytasks-row:hover { background: var(--bg-hover); }
+
+/* Panels that clip their rows (overflow: hidden) would also clip an outward
+   focus ring, so rows draw theirs inside. */
+.mytasks-row:focus-visible,
+.surface [role='row']:focus-visible,
+.surface [role='row'] :focus-visible { outline-offset: -2px; }
+
+/* Drop the divider under the last row so it does not double up with the
+   panel's own border. */
+.flush-last > :last-child { border-bottom-color: transparent !important; }
+
+/* Column header resize handle: a 12px hit area on the right edge of each
+   header cell, drawn as a thin centered line. The line shows on hover of the
+   cell and turns blue on hover, focus, or while dragging. */
+.mytasks-th { position: relative; }
+.col-resize-handle { background: linear-gradient(transparent, transparent) center / 2px 100% no-repeat; }
+.mytasks-th:hover .col-resize-handle { background-image: linear-gradient(var(--bd-strong), var(--bd-strong)); }
+.col-resize-handle:hover,
+.col-resize-handle:focus-visible,
+.col-resize-handle.is-active {
+  background-image: linear-gradient(var(--blue), var(--blue)) !important;
+}
+
+/* Inbox accept/reject forms: fields sit in a row on desktop and stack on
+   phone (InboxTab.jsx renders the same markup at both tiers, so this is a
+   plain CSS override, no JS branch needed). inbox-reject-fields carries its
+   own padding since the reject form has no separate outer wrapper. */
+.inbox-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 16px 20px;
+}
+.inbox-form-fields {
+  display: grid;
+  grid-template-columns: 240px 180px 160px minmax(0, 1fr);
+  gap: 16px;
+  align-items: end;
+}
+.inbox-reject-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 16px;
+  align-items: end;
+  padding: 4px 16px 20px;
+}
+
+/* Inbox at phone width: each item becomes a stacked card (title, then a
+   Project/Source meta line, then full-width Accept/Reject) instead of a grid
+   row, and InboxTab.jsx switches the surrounding roles from table/row to
+   list/listitem to match -- see the `phone` branch in InboxRow. */
+@media (max-width: 640px) {
+  .inbox-form-fields,
+  .inbox-reject-fields {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inbox-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--bd);
+  }
+  .inbox-card:first-child { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+  .inbox-card:last-child { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
+  .inbox-card-title {
+    display: block;
+    font-size: 0.9375rem;
+    color: var(--t1);
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .inbox-card-meta {
+    font-size: 0.8125rem;
+    color: var(--t2);
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+  }
+  .inbox-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .inbox-card-actions .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+/* Board: lanes scroll horizontally in a row (BoardTab.jsx). Width and gap
+   live here, not inline, so the phone tier below can resize a lane without
+   fighting an inline style; these values match the inline ones they replace,
+   so desktop is unchanged. */
+.board-lanes {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.board-lane {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+/* Board at phone width: a lane is sized to the viewport minus the page's two
+   16px gutters (app-main-full's phone padding), the strip's own gap, and a
+   fixed 32px sliver, so a bit of the next lane always peeks into view and it
+   is obvious the board scrolls sideways -- the sliver stays 32px regardless
+   of viewport width since every other term is subtracted from 100vw. Scroll
+   snapping settles a swipe or flick on one lane instead of between two; only
+   this strip scrolls (overflow-x: auto, set above, is unchanged), the page
+   itself never does. */
+/* Task panel header at phone width: the two action buttons need the full
+   row and wrap onto their own lines, which pushed Close down below them.
+   Pin Close to the top right instead and reserve its width, so the way out
+   of the panel is always the first thing in reach. DOM order is unchanged,
+   so Close still comes last in the tab cycle. */
+@media (max-width: 640px) {
+  .task-panel-header {
+    position: relative;
+    padding-right: 52px;
+  }
+  .task-panel-close {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .board-lanes {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .board-lane {
+    width: calc(100vw - 16px - 16px - 20px - 32px);
+    scroll-snap-align: start;
+  }
+  /* break-word rather than anywhere: both wrap a long unbroken title, but
+     anywhere also drops the element's min-content width to one character,
+     which can collapse it inside any content-sized ancestor added later. */
+  .board-lane-title,
+  .board-card-title {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+}
+
+/* Goals view. Sub-goals indent by --goal-indent per level, which shrinks on a
+   phone so three levels still leave room for a title. */
+.goals-page {
+  --goal-indent: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 980px;
+}
+.goals-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.goals-summary { color: var(--t2); font-size: 14px; margin-left: 4px; }
+.btn[aria-pressed='true'] {
+  background: var(--bg-selected);
+  border-color: var(--blue);
+  color: var(--t1);
+  box-shadow: var(--shadow-inset);
+}
+.goal-vision { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px; }
+.goal-vision-text { color: var(--t1); font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
+.goal-import { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-color: var(--blue); }
+.goal-import p { color: var(--t1); font-size: 14px; line-height: 1.5; }
+.goal-card { padding: 8px 16px 14px 8px; display: flex; flex-direction: column; gap: 10px; }
+.goal-header { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.goal-title-block { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.goal-title { font-size: 16px; font-weight: 600; color: var(--t1); overflow-wrap: break-word; min-width: 0; }
+.goal-period { font-size: 13px; color: var(--t2); white-space: nowrap; }
+.goal-status-btn { font-weight: 600; white-space: nowrap; }
+.goal-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-left: 52px; }
+.goal-progress-text { font-size: 13px; color: var(--t2); white-space: nowrap; }
+.goal-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-left: 52px; }
+.goal-flag { background: var(--yellow-soft); color: var(--yellow); }
+.goal-note { font-size: 14px; color: var(--t2); overflow-wrap: break-word; min-width: 0; }
+.goal-details {
+  margin: 4px 0 0 52px;
+  padding-top: 14px;
+  border-top: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.goal-subhead { font-size: 13px; font-weight: 600; color: var(--t2); margin: 0 0 6px; text-transform: none; }
+.goal-muted { color: var(--t2); font-size: 14px; }
+.goal-inline { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.goal-choice-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.goal-manual-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 200px)); gap: 12px; }
+.goal-form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.goal-linked-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  font-size: 14px;
+  color: var(--t1);
+  border-bottom: 1px solid var(--bd);
+  overflow-wrap: break-word;
+}
+.goal-list { overflow: hidden; }
+.goal-list-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--target);
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--bd);
+  color: var(--t1);
+  font-size: 14px;
+  text-align: left;
+}
+.goal-list-row:focus-visible { outline-offset: -2px; }
+.goal-open-tasks { margin: 0; padding-left: 18px; color: var(--t1); font-size: 14px; line-height: 1.7; }
+
+@media (max-width: 640px) {
+  .goals-page { --goal-indent: 12px; }
+  .goal-vision { flex-direction: column; }
+  .goal-header { grid-template-columns: 44px minmax(0, 1fr); }
+  .goal-header > :last-child { grid-column: 1 / -1; padding-left: 52px; }
+  .goal-progress { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .goal-progress-text { white-space: normal; }
+  .goal-details { margin-left: 0; }
+  .goal-manual-fields { grid-template-columns: minmax(0, 1fr); }
+  .goals-toolbar .btn { flex: 1 1 100%; }
+}
+
+/* Projects view: a compact list (name, type, status, GitHub repo, open task count, Edit) with an
+   inline create/edit form that appears at the top (New project) or right under the row it edits. */
+.projects-page { display: flex; flex-direction: column; gap: 12px; max-width: 980px; }
+.projects-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.projects-summary { color: var(--t2); font-size: 14px; margin-left: 4px; }
+.project-list { overflow: hidden; }
+.project-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+.project-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--t1);
+  font-size: 14px;
+  overflow-wrap: break-word;
+}
+.project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
+  flex: 2 1 320px;
+  min-width: 0;
+  color: var(--t2);
+  font-size: 13px;
+}
+.project-cell { overflow-wrap: break-word; min-width: 0; }
+.project-form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.project-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.project-hint { margin: 0; font-size: 12px; color: var(--t2); }
+
+@media (max-width: 640px) {
+  .projects-toolbar .btn { flex: 1 1 100%; }
+}
+
+/* Chat side panel (Phase 3 mockup). Docked to the right below the top bar
+   with no backdrop, so the task list stays visible and clickable beside it.
+   Above 640px the main content narrows by the panel width (.chat-docked) so
+   nothing is covered; under 640px the panel covers the full width. */
+.chat-panel {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 100vw;
+  background: var(--bg2);
+  border-left: 1px solid var(--bd);
+  box-shadow: var(--shadow-pop);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+}
+.chat-panel-header {
+  min-height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--bd);
+}
+.chat-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--t1);
+}
+.chat-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-empty { color: var(--t2); font-size: 14px; line-height: 1.5; margin: 0; }
+.chat-question {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  background: var(--blue-soft);
+  color: var(--t1);
+  font-size: 14px;
+  overflow-wrap: break-word;
+}
+.chat-reply { display: flex; flex-direction: column; gap: 8px; }
+.chat-reply-summary { color: var(--t1); font-size: 14px; font-weight: 600; }
+.chat-rows { overflow: hidden; }
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--bd);
+  color: var(--t1);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-row:focus-visible { outline-offset: -2px; }
+.chat-row-title { min-width: 0; overflow-wrap: break-word; }
+.chat-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chat-badge-source { background: var(--yellow-soft); color: var(--yellow); }
+.chat-due { font-size: 13px; color: var(--t2); }
+.chat-due-overdue { color: var(--red); }
+.chat-proposal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.chat-proposal-actions .btn { min-height: var(--target); }
+.chat-proposal-result { color: var(--t2); font-size: 13px; }
+.chat-panel-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--bd);
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-suggestions { display: flex; flex-direction: column; gap: 6px; }
+.chat-suggestion {
+  min-height: var(--target);
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+.chat-input-row { display: flex; align-items: flex-end; gap: 4px; }
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--target);
+  resize: none;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius);
+  color: var(--t1);
+  font: inherit;
+  font-size: 14px;
+}
+.chat-input::placeholder { color: var(--t3); }
+.chat-send:not(:disabled) { color: var(--blue); }
+
+@media (min-width: 641px) {
+  main.chat-docked { margin-right: 420px !important; }
+}
+@media (max-width: 640px) {
+  .chat-panel { width: 100vw; border-left: none; }
+}
+
+/* Phone tab bar (src/BottomNav.jsx): My tasks, Inbox, Board, More. Desktop keeps the drawer.
+   Under 640px it is fixed to the bottom edge, the page gets padding for it, the toolbar's own
+   Add task row gives way to the floating button, and due dates become chips. */
+.bottom-nav { display: none; }
+.fab { display: none; }
+
+@media (max-width: 640px) {
+  .bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: flex;
+    align-items: stretch;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg2);
+    border-top: 1px solid var(--bd-surface);
+  }
+  .bottom-nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: var(--t2);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .bottom-nav-item.is-active { color: var(--blue); font-weight: 600; }
+  .bottom-nav-item:focus-visible { outline-offset: -3px; }
+  .bottom-nav-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 28px;
+    border-radius: 14px;
+  }
+  .bottom-nav-item.is-active .bottom-nav-icon { background: var(--blue-soft); }
+  .bottom-nav-count {
+    position: absolute;
+    top: -6px;
+    right: 2px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--blue);
+    color: var(--on-accent);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+  }
+  .app-main-full { padding-bottom: calc(32px + 64px + env(safe-area-inset-bottom)); }
+
+  .mytasks-toolbar-add { display: none; }
+  .fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    z-index: 41;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    border: 1px solid var(--blue);
+    background: var(--blue);
+    color: var(--on-accent);
+    box-shadow: var(--shadow-2);
+    cursor: pointer;
+  }
+  .fab:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+}
+
+/* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
+   the chip only adds its soft background. */
+.due-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* New task sheet (NewTaskSheet.jsx): a dialog that rises from the bottom edge under 640px and
+   sits centred like a modal above it. Same layer as the navigation drawer. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--overlay);
+}
+.sheet {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 301;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  background: var(--bg2);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sheet-title { margin: 0; font-size: 1.125rem; font-weight: 600; color: var(--t1); }
+.sheet-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet-chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid var(--bd-strong);
+  background: var(--raised);
+  box-shadow: var(--shadow-btn);
+  color: var(--t1);
+  font-size: 14px;
+  cursor: pointer;
+}
+.sheet-chip[aria-pressed='true'] {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.sheet-actions { display: flex; gap: 10px; margin-top: 4px; }
+.sheet-actions .btn { flex: 1 1 0; justify-content: center; }
+.sheet-error { margin: 0 0 12px; font-size: 0.875rem; color: var(--red); }
+
+@media (max-width: 640px) {
+  .sheet {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    transform: none;
+    width: auto;
+    max-height: calc(100vh - 56px);
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

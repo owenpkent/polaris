@@ -1,0 +1,14 @@
+[
+  {
+    "rule": "nested-interactive",
+    "selector": ".mytasks-row",
+    "states": [
+      "mytasks at rest",
+      "navigation drawer open",
+      "task details panel open",
+      "sort menu open",
+      "theme menu open"
+    ],
+    "reason": "SUSPECTED BUG, found 2026-09-26 by the first axe run: a My tasks row is a button (Open <title>) that contains a checkbox and the inline cell menus, so interactive controls are nested. The fix is structural (the row as a row, the title as the button) and is the owner's call; see initiatives/ui-ux-testing.md."
+  }
+]

@@ -1,0 +1,93 @@
+# The whole browser matrix once a week, plus the things that are worth looking at but not worth
+# failing a pull request over (initiatives/ui-ux-testing.md, phase 8): the screenshot gallery
+# compared with last week's baseline, the axe advisory findings, and the report-only timings.
+#
+# The screenshot baseline lives in the Actions cache under a rolling key: each run restores the
+# newest one, compares against it, accepts its own shots as the baseline once the whole run has
+# succeeded, and saves that as next week's. Nothing here is a pull request check, by the
+# decision recorded in #29: a changed shot is looked at, not argued with in CI. The gallery
+# (.shots/index.html) and every diff are kept as an artifact for 30 days.
+name: Weekly UI matrix
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Every UI project, shots, and timings in Edge
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+
+      # Every project test:ui names, one worker, no shards: this run is allowed to be slow.
+      - name: UI tests, every project
+        run: npm run test:ui
+      # Report-only timings on a 500 task seed (e2e/perf.spec.js). The numbers are attached to
+      # the run and printed; nothing here fails until they have been watched for a while.
+      # Playwright empties the output folder of the projects it runs when it starts, so this run
+      # writes to its own folder: the traces and screenshots of a UI test that just failed are
+      # what the artifact below is for, and they stay in .playwright.
+      - name: Timings on the 500 task seed
+        if: always()
+        run: npx playwright test --project perf --output .playwright-perf
+        env:
+          CC_UI_PERF: '1'
+      - name: Keep traces and screenshots from failed UI tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-playwright-output
+          path: |
+            .playwright/
+            .playwright-perf/
+          retention-days: 14
+
+      # Screenshots against last week's baseline. The restore falls back to the newest saved
+      # baseline. The shots run only reports a changed shot (scripts/shots.mjs), so the changed
+      # ones are accepted here, the way the owner does after reading them, before the save writes the
+      # baseline under a fresh key for next week. A run that did not finish every shot leaves the
+      # baseline as it was, so a broken week never becomes the reference.
+      - name: Restore last week's screenshot baseline
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: .shots/baseline
+          key: shots-baseline-${{ github.run_id }}
+          restore-keys: |
+            shots-baseline-
+      - name: Screenshots of every view and state
+        id: shots
+        if: always()
+        run: npm run shots
+      - name: Keep the gallery and the diffs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-shots
+          path: .shots/
+          retention-days: 30
+      - name: Accept this run's shots as next week's baseline
+        if: always() && steps.shots.outcome == 'success'
+        run: npm run shots -- --accept
+      - name: Save the baseline for next week
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .shots/baseline
+          key: shots-baseline-${{ github.run_id }}

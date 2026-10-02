@@ -1,0 +1,72 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Constellation",
+  "version": "0.1.0",
+  "identifier": "com.okstudio.constellation",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "Constellation",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 390,
+        "minHeight": 600,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "createUpdaterArtifacts": true,
+    "publisher": "OK Studio Inc.",
+    "copyright": "OK Studio Inc.",
+    "category": "Productivity",
+    "shortDescription": "Constellation Command Center",
+    "longDescription": "A single-user task command center: the Command Center daemon, its dashboard, and its MCP endpoint in one desktop app.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "resources": [
+      "resources/**/*"
+    ],
+    "windows": {
+      "certificateThumbprint": "fc22b5221318f3f3f6b3eb2d969d7f99091557bf",
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "tsp": true,
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RDNFQTgyOUE3MUJDRDgKUldUWXZIR2FndXJUaUI5cTIwQm5tRG5FNVgvT2JIVCtuWDJIMWcxS1grQkZwZ05LWlF6WGl4K0gK",
+      "endpoints": [
+        "https://github.com/owenpkent/constellation-releases/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

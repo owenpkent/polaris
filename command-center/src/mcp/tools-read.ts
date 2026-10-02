@@ -1,0 +1,145 @@
+// Read-only tools: registered whether or not the server is in --readonly mode.
+import { z } from 'zod';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { App } from '../app.ts';
+import { runView } from '../automation/index.ts';
+import { ACTIVE_STATUSES, ValidationError, type TaskFilter } from '../core/index.ts';
+import { TOOL_CATALOG } from './catalog.ts';
+import { blockedBlock, inboxLine, taskBlock, taskDetailText } from './format.ts';
+import {
+  DEFAULT_SEARCH_STATUSES, ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES,
+  guard, ok, resolveProject, resolveSectionRead,
+} from './shared.ts';
+
+const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
+
+export function registerReadTools(server: McpServer, app: App): void {
+  server.registerTool('search_tasks', {
+    description: desc('search_tasks'),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      text: z.string().optional().describe('Substring match against title or notes.'),
+      status: z.array(z.enum(TASK_STATUS_VALUES)).optional().describe('Defaults to every status except done and dropped.'),
+      project: z.string().optional().describe('Project id, slug, or name.'),
+      section: z.string().optional().describe('Section id or name, within the given project.'),
+      parent_id: z.string().nullable().optional().describe('Filter to subtasks of this task, or null for top-level tasks only.'),
+      priority: z.array(z.enum(PRIORITY_VALUES)).optional(),
+      due_before: z.string().optional().describe('ISO date/datetime, exclusive.'),
+      due_after: z.string().optional().describe('ISO date/datetime, inclusive.'),
+      has_due: z.boolean().optional(),
+      source_type: z.array(z.enum(SOURCE_TYPE_VALUES)).optional(),
+      is_milestone: z.boolean().optional(),
+      blocked: z.boolean().optional().describe('True for tasks with at least one incomplete blocker.'),
+      assignee: z.string().optional().describe('Exact assignee name.'),
+      unassigned: z.boolean().optional().describe('True for tasks nobody has claimed (no assignee); false for tasks with one.'),
+      custom_field_key: z.string().optional(),
+      custom_field_value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional().describe('Used with custom_field_key.'),
+      order_by: z.enum(ORDER_BY_VALUES).optional(),
+      limit: z.number().int().positive().max(1000).optional().describe('Default 25.'),
+      offset: z.number().int().nonnegative().optional(),
+    },
+  }, (args) => guard(() => {
+    const filter: TaskFilter = { status: args.status ?? [...DEFAULT_SEARCH_STATUSES] };
+    if (args.text) filter.text = args.text;
+    if (args.project) filter.projectId = resolveProject(app.store, args.project).id;
+    if (args.section) {
+      if (!filter.projectId) throw new ValidationError('section filter requires project');
+      filter.sectionId = resolveSectionRead(app.store, filter.projectId, args.section).id;
+    }
+    if (args.parent_id !== undefined) filter.parentId = args.parent_id;
+    if (args.priority) filter.priority = args.priority;
+    if (args.due_before) filter.dueBefore = args.due_before;
+    if (args.due_after) filter.dueAfter = args.due_after;
+    if (args.has_due !== undefined) filter.hasDue = args.has_due;
+    if (args.source_type) filter.sourceType = args.source_type;
+    if (args.is_milestone !== undefined) filter.isMilestone = args.is_milestone;
+    if (args.blocked !== undefined) filter.blocked = args.blocked;
+    if (args.assignee) filter.assignee = args.assignee;
+    if (args.unassigned !== undefined) filter.unassigned = args.unassigned;
+    if (args.custom_field_key) filter.customField = { key: args.custom_field_key, value: args.custom_field_value ?? null };
+    if (args.order_by) filter.orderBy = args.order_by;
+    filter.limit = args.limit ?? 25;
+    if (args.offset) filter.offset = args.offset;
+    const tasks = app.store.searchTasks(filter);
+    const total = app.store.countTasks(filter);
+    const text = `${total} matching task(s)${total > tasks.length ? `, showing ${tasks.length}` : ''}:\n${taskBlock(tasks, 'No matching tasks.')}`;
+    return ok(text, { tasks, total });
+  }));
+
+  server.registerTool('get_task', {
+    description: desc('get_task'),
+    annotations: { readOnlyHint: true },
+    inputSchema: { task_id: z.string() },
+  }, (args) => guard(() => {
+    const task = app.store.requireTask(args.task_id);
+    const subtasks = app.store.subtasks(task.id);
+    const blockers = app.store.blockersOf(task.id);
+    const blocking = app.store.blocking(task.id);
+    const comments = app.store.listComments(task.id);
+    const links = app.store.listLinks(task.id);
+    const history = app.store.taskHistory(task.id).slice(-10);
+    const text = taskDetailText(task, { subtasks, blockers, blocking, comments, links, history });
+    return ok(text, { task, subtasks, blockers, blocking, comments, links, history });
+  }));
+
+  server.registerTool('list_projects', {
+    description: desc('list_projects'),
+    annotations: { readOnlyHint: true },
+    inputSchema: { include_archived: z.boolean().optional() },
+  }, (args) => guard(() => {
+    const today = app.today();
+    const projects = app.store.listProjects({ includeArchived: args.include_archived ?? false });
+    const rows = projects.map((p) => ({
+      ...p,
+      openCount: app.store.countTasks({ projectId: p.id, status: [...ACTIVE_STATUSES] }),
+      inboxCount: app.store.countTasks({ projectId: p.id, status: ['inbox'] }),
+      overdueCount: app.store.countTasks({ projectId: p.id, status: [...ACTIVE_STATUSES], dueBefore: today }),
+    }));
+    const text = rows.length
+      ? rows.map((r) => `- ${r.name} (${r.slug}): open ${r.openCount}, inbox ${r.inboxCount}, overdue ${r.overdueCount}`).join('\n')
+      : 'No projects.';
+    return ok(text, { projects: rows });
+  }));
+
+  server.registerTool('list_sections', {
+    description: desc('list_sections'),
+    annotations: { readOnlyHint: true },
+    inputSchema: { project: z.string().describe('Project id, slug, or name.') },
+  }, (args) => guard(() => {
+    const project = resolveProject(app.store, args.project);
+    const rows = app.store.listSections(project.id).map((s) => ({
+      ...s,
+      openCount: app.store.countTasks({ projectId: project.id, sectionId: s.id, status: [...ACTIVE_STATUSES] }),
+    }));
+    const text = rows.length ? rows.map((r) => `- ${r.name} {${r.id}}: ${r.openCount} open`).join('\n') : 'No sections.';
+    return ok(text, { project: { id: project.id, slug: project.slug, name: project.name }, sections: rows });
+  }));
+
+  server.registerTool('get_view', {
+    description: desc('get_view'),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      name: z.string().describe('Built-in view name (today, upcoming, later, overdue, waiting, ready, blocked, inbox, milestones, recently-completed) or a saved view name/id. ready is what could be started now; blocked lists each task with the blockers holding it.'),
+    },
+  }, (args) => guard(() => {
+    const { view, tasks, blockers } = runView(app.store, args.name, app.today());
+    const body = blockers ? blockedBlock(tasks, blockers, 'No tasks in this view.') : taskBlock(tasks, 'No tasks in this view.');
+    const text = `${view.name}: ${view.description}\n${body}`;
+    return ok(text, blockers ? { view, tasks, blockers } : { view, tasks });
+  }));
+
+  server.registerTool('list_inbox', {
+    description: desc('list_inbox'),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      limit: z.number().int().positive().max(1000).optional().describe('Default 25.'),
+      source_type: z.array(z.enum(SOURCE_TYPE_VALUES)).optional(),
+    },
+  }, (args) => guard(() => {
+    const filter: TaskFilter = { status: ['inbox'], orderBy: 'created', limit: args.limit ?? 25 };
+    if (args.source_type) filter.sourceType = args.source_type;
+    const tasks = app.store.searchTasks(filter);
+    const text = tasks.length ? tasks.map(inboxLine).join('\n') : 'Inbox is empty.';
+    return ok(text, { tasks });
+  }));
+}

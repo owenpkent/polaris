@@ -1,0 +1,125 @@
+// Compact, human-readable text renderers. Every tool/resource pairs this text with a
+// structuredContent JSON payload; the text is for a human or a model skimming the
+// conversation, the JSON is for a model that wants to act on the data.
+import { EXTERNAL_SOURCE_TYPES, type CcEvent, type Comment, type Link, type Project, type Task } from '../core/index.ts';
+
+/** Sources whose text was written by third parties. Their titles and notes are untrusted data. */
+export const EXTERNAL_SOURCES: ReadonlySet<string> = new Set(EXTERNAL_SOURCE_TYPES);
+// The task carries the answer. Deriving it from sourceType here would miss a follow-up or a
+// recurrence, which repeat third-party wording but have no source of their own.
+const untrusted = (t: Task): string => (t.untrustedText ? ' UNTRUSTED-TEXT' : '');
+
+export function taskLine(t: Task): string {
+  const due = t.dueAt ? ` due:${t.dueAt}` : '';
+  const who = t.assignee ? ` assignee:${JSON.stringify(t.assignee)}` : '';
+  const marker = t.isMilestone ? '◆' : '-';
+  const src = t.sourceType ? ` src:${t.sourceType}` : '';
+  // The marker is last, where the quoted title cannot reach it, and does not hang off `src`:
+  // a follow-up or a recurrence repeats third-party wording while carrying no source at all.
+  return `${marker} [${t.status}/${t.priority}] ${JSON.stringify(t.title)} {${t.id}}${due}${who}${src}${untrusted(t)}`;
+}
+
+export function taskBlock(tasks: Task[], emptyText = 'None.'): string {
+  return tasks.length ? tasks.map(taskLine).join('\n') : emptyText;
+}
+
+/**
+ * The blocked view: each task's line, then its incomplete blockers indented under it, so the
+ * reader sees why the task is stuck without a get_task per row. Blocker titles go through
+ * taskLine too, so a third-party title stays quoted and keeps its marker.
+ */
+export function blockedBlock(tasks: Task[], blockers: Record<string, Task[]>, emptyText = 'None.'): string {
+  if (!tasks.length) return emptyText;
+  return tasks.map((t) => {
+    const held = blockers[t.id] ?? [];
+    if (!held.length) return taskLine(t);
+    return [taskLine(t), '    blocked by:', ...held.map((b) => `    ${taskLine(b)}`)].join('\n');
+  }).join('\n');
+}
+
+/**
+ * How a mutation acknowledges the task it touched: `id "title" UNTRUSTED-TEXT`. Every text answer
+ * that repeats a title goes through here or taskLine, so a third-party title is always quoted on
+ * its own line with its marker, whatever the tool.
+ */
+export function taskRef(t: Task): string {
+  return `${t.id} ${JSON.stringify(t.title)}${untrusted(t)}`;
+}
+
+/** Third-party fields other than the title (source ids, urls) stay on the line they were put on. */
+const oneLine = (s: string): string => s.replace(/[\r\n\u2028\u2029]+/g, ' ');
+
+/** One inbox suggestion: the quoted title, then where it came from, then the marker last. */
+export function inboxLine(t: Task): string {
+  const src = t.sourceType ? `${t.sourceType}:${oneLine(t.sourceId ?? '')}` : 'manual';
+  const url = t.sourceUrl ? ` <${oneLine(t.sourceUrl)}>` : '';
+  const conf = t.confidence != null ? ` confidence:${t.confidence}` : '';
+  return `- ${JSON.stringify(t.title)} {${t.id}} source:${src}${url}${conf}${untrusted(t)}`;
+}
+
+export function taskDetailText(
+  task: Task,
+  extra: { subtasks: Task[]; blockers: Task[]; blocking: Task[]; comments: Comment[]; links: Link[]; history: CcEvent[] },
+): string {
+  const lines: string[] = [
+    `${JSON.stringify(task.title)} {${task.id}}${untrusted(task)}`,
+    `status:${task.status} priority:${task.priority}${task.dueAt ? ` due:${task.dueAt}` : ''}${task.assignee ? ` assignee:${JSON.stringify(task.assignee)}` : ' unassigned'}${task.isMilestone ? ' milestone' : ''}`,
+    task.notes ? `notes: ${task.notes}` : '',
+    task.sourceType ? `source: ${task.sourceType}:${oneLine(task.sourceId ?? '')}${task.sourceUrl ? ` <${oneLine(task.sourceUrl)}>` : ''}${task.confidence != null ? ` confidence:${task.confidence}` : ''}` : '',
+    '',
+    `Subtasks (${extra.subtasks.length}):`,
+    taskBlock(extra.subtasks),
+    '',
+    `Blocked by (${extra.blockers.length}):`,
+    taskBlock(extra.blockers),
+    '',
+    `Blocking (${extra.blocking.length}):`,
+    taskBlock(extra.blocking),
+    '',
+    `Comments (${extra.comments.length}):`,
+    extra.comments.length ? extra.comments.map((c) => `- [${c.author} ${c.createdAt}] ${c.body}`).join('\n') : 'None.',
+    '',
+    `Links (${extra.links.length}):`,
+    extra.links.length ? extra.links.map((l) => `- ${l.title ?? l.url} <${l.url}>`).join('\n') : 'None.',
+    '',
+    `Recent history (${extra.history.length}):`,
+    extra.history.length ? extra.history.map((h) => `- [${h.at}] ${h.kind} (${h.actor})`).join('\n') : 'None.',
+  ];
+  return lines.filter((l) => l !== '').join('\n');
+}
+
+export function projectSummaryMarkdown(
+  project: Project,
+  sections: { section: { id: string; name: string }; tasks: Task[] }[],
+  unsectioned: Task[],
+  recentlyCompleted: Task[],
+): string {
+  const lines: string[] = [
+    `# ${project.name} (${project.slug})`,
+    '',
+    `Status: ${project.status ?? 'n/a'} | Category: ${project.category ?? 'n/a'} | GitHub: ${project.github ?? 'n/a'}`,
+  ];
+  if (project.description) lines.push('', project.description);
+  lines.push('', '## Sections');
+  for (const { section, tasks } of sections) {
+    lines.push('', `### ${section.name}`, taskBlock(tasks, 'No open tasks.'));
+  }
+  lines.push('', '### No section', taskBlock(unsectioned, 'No open tasks.'));
+  lines.push('', '## Recently completed', taskBlock(recentlyCompleted, 'None recently.'));
+  return lines.join('\n');
+}
+
+export function agendaMarkdown(today: string, dueToday: Task[], overdue: Task[], inboxCount: number): string {
+  return [
+    `# Agenda for ${today}`,
+    '',
+    `## Due today (${dueToday.length})`,
+    taskBlock(dueToday, 'Nothing due today.'),
+    '',
+    `## Overdue (${overdue.length})`,
+    taskBlock(overdue, 'Nothing overdue.'),
+    '',
+    `## Inbox`,
+    `${inboxCount} item(s) awaiting triage. Use list_inbox to review them.`,
+  ].join('\n');
+}

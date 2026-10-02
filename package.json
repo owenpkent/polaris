@@ -1,0 +1,44 @@
+{
+  "name": "polaris",
+  "version": "2.0.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/owenpkent/polaris.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cc": "node command-center/src/cli.ts",
+    "mockup": "node scripts/mockup.mjs",
+    "test": "vitest run",
+    "test:fast": "npm --prefix command-center test && npm --prefix command-center run typecheck && vitest run",
+    "test:ui": "vite build && playwright test --project desktop --project phone --project desktop-light --project phone-light --project desktop-hc --project phone-landscape --project phone-320",
+    "test:all": "npm run test:fast && npm run test:ui",
+    "desktop": "node scripts/desktop.mjs",
+    "test:desktop": "node scripts/desktop.mjs test",
+    "shots": "node scripts/shots.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.462.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@tauri-apps/cli": "^2.11.5",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "vite": "^6.0.5",
+    "vitest": "^5.0.1"
+  }
+}

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Polaris</title>
+    <!-- Installable on Android: the manifest, its icons, and the status bar colour per theme
+         (the values are --bg from the two token blocks in src/index.css). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="theme-color" content="#17191e" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f1f3f7" media="(prefers-color-scheme: light)" />
+    <script>
+      // Resolve the theme before first paint, so a reload never flashes the
+      // wrong one. Same rule as resolveTheme in src/theme.js (dark is the
+      // fallback, and its THEME_STORAGE_KEY is the key read here); React
+      // takes over from useTheme once it mounts.
+      (function () {
+        // Each read is guarded on its own. Storage being unreadable means no
+        // choice has been made, which is 'system' -- it must not also throw
+        // away the OS preference, or a light-OS machine with site data blocked
+        // would get the dark flash this script exists to prevent.
+        var saved = null
+        try {
+          saved = localStorage.getItem('cc-theme-v1')
+        } catch (e) { /* private browsing, blocked storage: treat as no choice */ }
+        var dark
+        try {
+          dark = saved === 'dark'
+            || (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        } catch (e) {
+          dark = saved !== 'light' // matches systemPrefersDark's fallback in src/theme.js
+        }
+        try {
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) { /* nothing to paint */ }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

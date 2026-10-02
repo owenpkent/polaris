@@ -1,0 +1,12 @@
+# Store text files with LF and check them out with LF on every platform, so Windows
+# checkouts match what the exporter writes and Git stops warning about CRLF conversion.
+* text=auto eol=lf
+
+# Windows batch files need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.db binary

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Constellation</title>
+    <!--
+      The desktop app's start page. It is shown while the shell (desktop/src-tauri/src/main.rs)
+      starts the Command Center, and is replaced by the dashboard itself as soon as the API
+      answers. The shell calls setStatus and showError; nothing here talks to the app.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f6f8;
+        --fg: #1c1c21;
+        --muted: #62626b;
+        --error: #a8261d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #121216;
+          --fg: #e9e9ee;
+          --muted: #9b9ba6;
+          --error: #f0a9a3;
+        }
+      }
+      html, body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.5 system-ui, "Segoe UI", sans-serif;
+      }
+      main {
+        min-height: 100%;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 16px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+      }
+      #status {
+        color: var(--muted);
+      }
+      #error {
+        display: none;
+        max-width: 640px;
+        color: var(--error);
+        white-space: pre-wrap;
+        text-align: left;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid var(--muted);
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="spinner" id="spinner" aria-hidden="true"></div>
+      <h1>Constellation</h1>
+      <p id="status" role="status">Starting...</p>
+      <p id="error" role="alert"></p>
+    </main>
+    <script>
+      window.setStatus = function (text) {
+        document.getElementById('status').textContent = text
+      }
+      window.showError = function (text) {
+        var error = document.getElementById('error')
+        error.textContent = text
+        error.style.display = 'block'
+        document.getElementById('spinner').style.display = 'none'
+        window.setStatus('Could not start')
+      }
+    </script>
+  </body>
+</html>

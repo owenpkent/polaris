@@ -1,0 +1,101 @@
+# Automated tests. See initiatives/automated-testing.md, Phase 3 (option A, chosen 2026-09-18):
+# the fast layers run on every push, and the browser UI tests run only on pull requests into
+# main, because they are the slow part.
+#
+# Both jobs run on Windows: the UI tests need Edge, and the fast job keeps to the machine the
+# daemon runs on. Since 2026-09-26 the server suite also passes on Ubuntu (#31), so a Linux leg of
+# the fast job is possible; it is the owner's call. The whole browser matrix, the screenshot gallery,
+# and the report-only timings run weekly in weekly.yml.
+name: Tests
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: Server tests, typecheck, dashboard unit tests, build
+    # A push to a branch with an open pull request fires both events. The push run already
+    # reports on the same commit, so the pull request run skips this job.
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+      - run: npm run test:fast
+      - run: npm run build
+
+  ui:
+    name: UI tests in Edge, part ${{ matrix.shard }} of 4
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      # One part failing must not cancel the other: its result is still worth having.
+      fail-fast: false
+      matrix:
+        # Playwright splits the suite across the parts; each part runs one worker on its own
+        # server and scratch database (e2e/fixtures.js), so nothing is shared. Two parts were
+        # chosen on 2026-09-21 to keep the cost near what one job was (Windows minutes bill
+        # double); four on 2026-09-26 when one worker a part took ten minutes. On 2026-09-27
+        # workers inside a part were measured on this four-core runner: four workers contended
+        # until tests timed out, and two workers took 14 minutes a part against 9 with one, so a
+        # part stays at one worker and the parallelism is the parts. To change it, change this
+        # list, the "of 4" above, and the --shard below together.
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+      # windows-latest ships Microsoft Edge, which playwright.config.js drives through
+      # channel 'msedge', so no browser download is needed.
+      - run: npm run test:ui -- --shard=${{ matrix.shard }}/4
+      - name: Keep traces and screenshots from failed UI tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-output-${{ matrix.shard }}
+          path: .playwright/
+          retention-days: 7
+
+  # One check that speaks for every part, under the name the single job used to have. A part
+  # that was cancelled or skipped is not a failure to GitHub, so without this a pull request
+  # could look green with half the UI tests never run. Linux, because it only reads results.
+  ui-passed:
+    name: UI tests in Edge at desktop and phone widths
+    needs: ui
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check that every part passed
+        run: |
+          echo "UI test parts: ${{ needs.ui.result }}"
+          [ "${{ needs.ui.result }}" = "success" ] || exit 1
