@@ -117,6 +117,16 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'new')
   })
 
+  // The sheet opened by a share (shareIntake.js): title and notes prefilled from the shared text,
+  // and the link line under them. Opens at both widths, since a share always opens the sheet.
+  test('mytasks: new from share', async ({ page }, testInfo) => {
+    await openView(page, 'mytasks', 'share-text=Book%20the%20van%20service%20https%3A%2F%2Fexample.com%2Fgarage%2Fbook')
+    const sheet = page.getByRole('dialog', { name: 'New task' })
+    await expect(sheet.getByRole('textbox', { name: 'New task name' })).toHaveValue('Book the van service')
+    await expect(sheet.getByText('Link: example.com/garage/book')).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'new-from-share')
+  })
+
   test('mytasks: due menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Reply to accessibility audit feedback' }).click()

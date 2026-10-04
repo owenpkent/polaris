@@ -62,6 +62,19 @@ describe('offline task edits', () => {
     expect((await client.getTask(task.id)).task.title).toBe('Made on the train')
   })
 
+  test('a link shared into an offline create is kept on the task and in the queued op', async () => {
+    const client = createApiClient('http://x', 'tok')
+    await seed(client)
+    global.fetch.mockImplementation(down)
+
+    const { task } = await client.createTask({ title: 'Read later', sourceUrl: 'https://example.com/a' })
+    expect(task.sourceUrl).toBe('https://example.com/a')
+    expect(task.sourceType).toBeNull()
+    expect((await client.getTask(task.id)).task.sourceUrl).toBe('https://example.com/a')
+    const plain = await client.createTask({ title: 'No link' })
+    expect(plain.task.sourceUrl).toBeNull()
+  })
+
   test('an assignee set or cleared offline is kept in the copy and in the queued edit, and travels with an offline create', async () => {
     const client = createApiClient('http://x', 'tok')
     await seed(client)

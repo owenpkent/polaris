@@ -25,7 +25,7 @@ const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 // (http/server.ts). The byte budget leaves room for the envelope around the ops.
 const MAX_BATCH_OPS = 500
 const MAX_BATCH_BYTES = 900 * 1024
-const CREATE_FIELDS = ['title', 'notes', 'projectId', 'sectionId', 'parentId', 'priority', 'dueAt', 'startAt', 'recurrence', 'assignee']
+const CREATE_FIELDS = ['title', 'notes', 'projectId', 'sectionId', 'parentId', 'priority', 'dueAt', 'startAt', 'recurrence', 'assignee', 'sourceUrl']
 
 /** The stamp on edits made before this device was ever connected. Never a fetchable address. */
 export const LOCAL_ORIGIN = 'local:'
@@ -165,7 +165,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     const task = {
       notes: '', priority: 'none', dueAt: null, startAt: null, projectId: null, sectionId: null, parentId: null,
       recurrence: null, assignee: null, ...opBody,
-      id: taskId, status: 'open', sourceType: null, sourceUrl: null, untrustedText: false, customFields: {},
+      id: taskId, status: 'open', sourceType: null, sourceUrl: opBody.sourceUrl ?? null, untrustedText: false, customFields: {},
       createdAt: at, updatedAt: at, completedAt: null, offlineCreated: true,
     }
     await addCreatedTask(baseUrl, myTasksUrl, task)

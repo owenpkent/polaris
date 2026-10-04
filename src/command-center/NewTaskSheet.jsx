@@ -10,6 +10,17 @@ function nextMondayIso(now = new Date()) {
   return localIso(addDays(now, days))
 }
 
+// A link shown as host and path; the full address is in the line's title.
+function linkLabel(url) {
+  try {
+    const u = new URL(url)
+    const path = u.pathname === '/' ? '' : u.pathname
+    return u.hostname + path
+  } catch {
+    return url
+  }
+}
+
 // The phone's "new task" dialog, opened by the floating Add task button on My tasks. Title, a due
 // date picked from chips or the date field, project, and notes; Enter in the title creates the
 // task like the desktop's inline row does. Esc closes it, Tab stays inside, and focus goes back
@@ -17,11 +28,17 @@ function nextMondayIso(now = new Date()) {
 // resolves the sheet closes itself through `onClose`. Each opening is numbered, and a create that
 // finishes after the sheet was closed and opened again leaves the new draft alone: it neither
 // closes it nor puts the old request's error or busy state on it.
-export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef }) {
+//
+// `initial` ({ title, notes, sourceUrl } or null) starts the draft from a share (shareIntake.js).
+// Its link is kept with the draft, shown as one read-only line, and sent as `sourceUrl`.
+export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef, initial = null }) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState(null)
   const [projectId, setProjectId] = useState('')
   const [notes, setNotes] = useState('')
+  const [sourceUrl, setSourceUrl] = useState(null)
+  const initialRef = useRef(initial)
+  initialRef.current = initial
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const containerRef = useRef(null)
@@ -33,10 +50,11 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   useEffect(() => {
     if (!open) return
     openingRef.current += 1
-    setTitle('')
+    setTitle(initialRef.current?.title || '')
     setDueAt(null)
     setProjectId('')
-    setNotes('')
+    setNotes(initialRef.current?.notes || '')
+    setSourceUrl(initialRef.current?.sourceUrl || null)
     setBusy(false)
     setError(null)
     titleRef.current?.focus()
@@ -95,6 +113,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     const payload = { title: trimmed, dueAt }
     if (projectId) payload.projectId = projectId
     if (notes.trim()) payload.notes = notes.trim()
+    if (sourceUrl) payload.sourceUrl = sourceUrl
     const opening = openingRef.current
     try {
       await onCreate(payload)
@@ -177,6 +196,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
           <label htmlFor="new-task-notes">Notes</label>
           <textarea id="new-task-notes" value={notes} disabled={busy} rows={3} onChange={(e) => setNotes(e.target.value)} />
         </div>
+
+        {sourceUrl && (
+          <p className="field-label" title={sourceUrl}>Link: {linkLabel(sourceUrl)}</p>
+        )}
 
         {error && <p className="sheet-error" role="alert">{error}</p>}
 

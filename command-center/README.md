@@ -67,6 +67,7 @@ My tasks:
 - **Columns.** Drag the edge of a column header to resize it, or use the header menu (Wider, Narrower, Reset width) so resizing never needs a drag. Double-click an edge to reset. The header menu also sorts by that column and hides it; Columns in the toolbar shows hidden columns again. Widths and hidden columns are saved in the browser.
 - **Toolbar.** Filter by readiness (Ready: what could be started now; Blocked: held by an unfinished task), project, goal, priority, source, and assignee (Unassigned, or any name the list holds); sort by due date, priority, project, or name; group by due date, project, priority, or none. Choices are saved in the browser.
 - **Inline edits.** Click a row's Due date, Project, or Priority to change it from a dropdown without opening the task panel. Changing the project clears the task's section.
+- **Quick add from a share.** Opening the dashboard with `share-title`, `share-text`, or `share-url` in the query (the web app manifest's `share_target`, or a share to the Android app) opens the new-task sheet prefilled, with a link kept as `sourceUrl`, for you to confirm or edit. The parameters are removed from the address bar at once so a reload does not repeat it. A share is your own action, like pasting, so the task is your own trusted text and never an inbox item.
 
 Projects:
 

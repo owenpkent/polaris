@@ -38,6 +38,29 @@ describe('NewTaskSheet', () => {
     })
   })
 
+  test('a share seeds the fields, shows the link, and sends it as sourceUrl', async () => {
+    const { onCreate } = renderSheet({
+      initial: { title: 'Great read', notes: 'worth a look', sourceUrl: 'https://example.com/post/1?x=2' },
+    })
+    expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+    expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('worth a look')
+    const line = screen.getByText('Link: example.com/post/1')
+    expect(line.getAttribute('title')).toBe('https://example.com/post/1?x=2')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({
+      title: 'Great read', dueAt: null, notes: 'worth a look', sourceUrl: 'https://example.com/post/1?x=2',
+    }))
+  })
+
+  test('without a share there is no link line and no sourceUrl key', async () => {
+    const { onCreate } = renderSheet()
+    expect(screen.queryByText(/^Link:/)).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Plain' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    expect('sourceUrl' in onCreate.mock.calls[0][0]).toBe(false)
+  })
+
   test('Enter in the title submits, and No date is the default', async () => {
     const { onCreate } = renderSheet()
     const title = screen.getByRole('textbox', { name: 'New task name' })

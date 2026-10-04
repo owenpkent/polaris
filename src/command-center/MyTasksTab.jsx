@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import { MY_TASKS_QUERY } from './api'
+import { shareToTaskFields } from './shareIntake'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
@@ -62,7 +63,9 @@ function groupIdFor(task, mode, dueBounds) {
   return null
 }
 
-export default function MyTasksTab() {
+// `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
+// new-task sheet prefilled, and `onShareConsumed` tells App to drop it once the sheet is done.
+export default function MyTasksTab({ share = null, onShareConsumed }) {
   const { connected, local, api } = useConnection()
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
@@ -82,7 +85,20 @@ export default function MyTasksTab() {
   // The phone tier creates tasks through a sheet opened by the floating Add task button; the
   // toolbar's inline row is desktop only (index.css hides it under 640px).
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetInitial, setSheetInitial] = useState(null)
   const fabRef = useRef(null)
+
+  useEffect(() => {
+    if (!share) return
+    setSheetInitial(shareToTaskFields(share))
+    setSheetOpen(true)
+  }, [share])
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false)
+    setSheetInitial(null)
+    onShareConsumed?.()
+  }, [onShareConsumed])
 
   const columns = useColumnsState()
   const { narrow900, narrow600, phone } = useNarrowBreakpoints()
@@ -528,8 +544,9 @@ export default function MyTasksTab() {
           the 640px breakpoint while it is open. index.css centres it like a modal above 640px. */}
       <NewTaskSheet
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={closeSheet}
         onCreate={submitSheet}
+        initial={sheetInitial}
         projects={projectOptions}
         openButtonRef={fabRef}
       />

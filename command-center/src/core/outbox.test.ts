@@ -222,3 +222,16 @@ test('a task created offline keeps the assignee the device gave it', () => {
   assert.equal(r.status, 'applied');
   assert.equal(store.requireTask('t_assign0001').assignee, 'scribe');
 });
+
+test('a task created offline from a share keeps its link and stays the owner\'s own text', () => {
+  const { store } = storeAt('2026-09-21T12:00:00.000Z');
+  const body = { title: 'Read this later', sourceUrl: 'https://example.com/post', sourceType: 'github' };
+  const [r] = applyOutbox(store, [op({ kind: 'create_task', taskId: 't_share00001', body })]);
+  assert.equal(r.status, 'applied');
+  const task = store.requireTask('t_share00001');
+  assert.equal(task.sourceUrl, 'https://example.com/post');
+  // sourceType is not an offline field: the link alone never makes a task external or untrusted.
+  assert.equal(task.sourceType, null);
+  assert.equal(task.untrustedText, false);
+  assert.notEqual(task.status, 'inbox');
+});

@@ -18,6 +18,8 @@ import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
 import { useTheme } from './theme'
+import { parseShareParams, stripShareParams } from './command-center/shareIntake'
+import { subscribeNativeShares } from './command-center/nativeApp'
 
 const PRIMARY_ITEMS = [
   { id: 'mytasks', label: 'My tasks' },
@@ -66,7 +68,19 @@ function readChatMockup() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState(readInitialTab)
+  // A share that arrived in the URL is read at startup and its parameters removed on mount, so a
+  // reload does not open the sheet again. The read is in the initialiser and the strip in an
+  // effect because StrictMode runs initialisers twice, both before any effect.
+  const [pendingShare, setPendingShare] = useState(() => parseShareParams(window.location.search))
+  useEffect(() => { stripShareParams() }, [])
+  // A share at startup always lands on My tasks, whatever ?view= says.
+  const [tab, setTab] = useState(() => (pendingShare ? DEFAULT_TAB : readInitialTab()))
+
+  // The Android shell delivers shares as a native event instead of a URL load.
+  useEffect(() => subscribeNativeShares((share) => {
+    setPendingShare(share)
+    setTab(DEFAULT_TAB)
+  }), [])
   const [drawerOpen, setDrawerOpen] = useState(false)
   const menuButtonRef = useRef(null)
   // Whichever control opened the drawer (the top bar's menu button, or More in the phone's tab
@@ -137,7 +151,7 @@ export default function App() {
           {tab === 'goals' && <GoalsTab />}
           {tab === 'projects' && <ProjectsTab />}
           {tab === 'inbox' && <InboxTab />}
-          {tab === 'mytasks' && <MyTasksTab />}
+          {tab === 'mytasks' && <MyTasksTab share={pendingShare} onShareConsumed={() => setPendingShare(null)} />}
           {tab === 'board' && <BoardTab />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}

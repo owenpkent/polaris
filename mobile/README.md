@@ -44,6 +44,12 @@ Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, whi
 - The default server URL is empty instead of the page's own origin, since the page's origin is the app itself.
 - No service worker is registered: the app shell is inside the app, and the offline copy and the outbox live in the dashboard's own code and work as they do in a browser.
 
+## Share sheet
+
+Sharing text or a link from another app to Polaris opens the new-task sheet prefilled, for the owner to confirm or edit before it is saved. A share is the owner's own action, like pasting, so the task is created as the owner's trusted text: nothing goes to the inbox, and only `sourceUrl` carries the link.
+
+How it travels: `AndroidManifest.xml` accepts `SEND` intents for `text/*`. `MainActivity.rewriteShare` turns one into an `ACTION_VIEW` intent for `polaris://share?share-title=...&share-text=...`, which the Capacitor App plugin raises to the page as `appUrlOpen` (kept until the page listens, so a cold start works). `subscribeNativeShares` in src/command-center/nativeApp.js reads the same `share-*` parameters that the web app manifest's `share_target` uses, so the installed web app and the Android app share one intake (src/command-center/shareIntake.js).
+
 ## Icons
 
 `assets/` holds the sources, copied from public/icons (`icon-only.png` for older launchers, `icon-foreground.png` for adaptive ones). The adaptive background is the colour in `android/app/src/main/res/values/ic_launcher_background.xml`, the dashboard's dark background. To regenerate after changing them:

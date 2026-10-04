@@ -57,6 +57,34 @@ async function openSheetWithDraft(title) {
   fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: title } })
 }
 
+describe('MyTasksTab share', () => {
+  const SHARE = { title: '', text: 'Great read https://example.com/p', url: '' }
+
+  test('a share opens the sheet prefilled and creating sends the link', async () => {
+    stubMatchMedia(390)
+    const onShareConsumed = vi.fn()
+    render(<MyTasksTab share={SHARE} onShareConsumed={onShareConsumed} />)
+    expect(screen.getByRole('dialog', { name: 'New task' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+    expect(screen.getByText('Link: example.com/p')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({
+      title: 'Great read', dueAt: null, notes: SHARE.text, sourceUrl: 'https://example.com/p',
+    }))
+    await waitFor(() => expect(onShareConsumed).toHaveBeenCalled())
+    expect(screen.queryByRole('dialog', { name: 'New task' })).toBeNull()
+  })
+
+  test('closing the sheet reports the share as consumed', () => {
+    stubMatchMedia(390)
+    const onShareConsumed = vi.fn()
+    render(<MyTasksTab share={SHARE} onShareConsumed={onShareConsumed} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+    expect(onShareConsumed).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: 'New task' })).toBeNull()
+  })
+})
+
 describe('MyTasksTab new task sheet', () => {
   test('an open sheet keeps its draft when the viewport crosses the 640px breakpoint', async () => {
     const media = stubMatchMedia(390)
