@@ -40,6 +40,18 @@ describe('defaultBaseUrl', () => {
     }
   })
 
+  test('returns an empty string inside the Android app, where the origin is not a server', () => {
+    const original = import.meta.env.DEV
+    import.meta.env.DEV = false
+    window.Capacitor = { isNativePlatform: () => true }
+    try {
+      expect(defaultBaseUrl()).toBe('')
+    } finally {
+      import.meta.env.DEV = original
+      delete window.Capacitor
+    }
+  })
+
   test('falls back to the dev server address when window is undefined, even outside dev', () => {
     const original = import.meta.env.DEV
     import.meta.env.DEV = false

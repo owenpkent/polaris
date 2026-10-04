@@ -32,7 +32,7 @@ Run `npm run cc` with no arguments for the full command list, and `npm run cc --
 - **Claude Code in this repo:** the repo root `.mcp.json` registers the stdio server. Approve it when Claude Code asks.
 - **Claude Code elsewhere:** `claude mcp add polaris -- node <ABS_PATH_TO_REPO>\command-center\src\mcp\stdio.ts`
 - **Over HTTP** while the daemon or `serve` is running: `claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>"`, using the token in `command-center/data/mcp-token`. For read-only access use `/mcp/readonly` with `data/mcp-readonly-token`.
-- **Phone and laptop:** keep the server on loopback and reach it behind a reverse proxy on a private network you control, such as Tailscale (`tailscale serve`). Never expose it publicly: the MCP routes have no OAuth.
+- **Phone and laptop:** keep the server on loopback and reach it behind a reverse proxy on a private network you control, such as Tailscale (`tailscale serve`). Never expose it publicly: the MCP routes have no OAuth. On the phone, use the browser or the Android app in [../mobile/](../mobile/README.md), which needs `CC_CORS_ORIGINS=https://localhost` on the server.
 - **claude.ai:** not yet. It needs a public HTTPS endpoint with OAuth, deferred until you ask for it.
 
 Details: [src/mcp/README.md](src/mcp/README.md) and [src/http/README.md](src/http/README.md).

@@ -29,7 +29,7 @@ Polaris is a single-user task tracker that the owner fills by hand or through an
 - command-center/: TypeScript run directly by Node 24 (no build step), node:sqlite, MCP TypeScript SDK, zod. src/core: store, schema, types. src/ingest: github and the shared secrets.ts and pkce.ts. src/automation: rules, recurrence, views, digest, scheduler. src/mcp, src/http, src/daemon: entry points; src/daemon also holds backups and their encryption. src/tasks: CLI task commands. src/dev: demo and UI test seeders.
 - src/: React 18 + Vite + Tailwind dashboard. src/command-center holds the tabs backed by the API. Light and dark themes come from the two token blocks in src/index.css, chosen in src/theme.js.
 - public/: files Vite copies into the build as they are. sw.js is the service worker (app shell only, never `/api` or `/mcp`).
-- desktop/: the Tauri shell (src-tauri, Rust). e2e/: Playwright UI tests. scripts/: Node helper scripts (mockup.mjs, shots.mjs, desktop.mjs) and the daemon's scheduled-task installer.
+- desktop/: the Tauri shell (src-tauri, Rust). mobile/: the Android shell (Capacitor), which bundles dist/ and connects to a server the owner names; the dashboard detects it with `isNativeApp()` (src/command-center/nativeApp.js) and never imports Capacitor. e2e/: Playwright UI tests. scripts/: Node helper scripts (mockup.mjs, shots.mjs, desktop.mjs) and the daemon's scheduled-task installer.
 
 ## Build, run, test
 

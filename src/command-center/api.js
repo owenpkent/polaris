@@ -5,6 +5,7 @@
 import { cacheGet, cachePut } from './offlineCache'
 import { getOfflineState, markOffline, markOnline } from './offlineStatus'
 import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, queueOfflineWrite } from './outbox'
+import { isNativeApp } from './nativeApp'
 
 const DEV_SERVER_DEFAULT = 'http://127.0.0.1:8788'
 
@@ -31,9 +32,12 @@ export const MY_TASKS_QUERY = { status: 'open,in_progress,waiting', orderBy: 'du
 // A production build is served by the Command Center server itself, so the API is on the
 // page's own origin whatever host the page was opened from (127.0.0.1 on the PC, or the
 // tailnet name through tailscale serve). The Vite dev server is not the Command Center
-// server, so a dev build keeps the server's default address.
+// server, so a dev build keeps the server's default address. Inside the Android app the origin
+// is the app's own bundled files, not a server, so there is no default: the connect form starts
+// empty and the owner types the server's address.
 export function defaultBaseUrl() {
   if (import.meta.env.DEV || typeof window === 'undefined') return DEV_SERVER_DEFAULT
+  if (isNativeApp()) return ''
   return window.location.origin
 }
 

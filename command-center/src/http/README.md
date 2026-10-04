@@ -32,7 +32,7 @@ Environment variables:
 | `CC_API_TOKEN` | (generated) | Bearer token for `/api/*`. If unset, a 32-byte random base64url token is created at `<dirname(dbPath)>/api-token` on first run and reused after that. |
 | `CC_MCP_TOKEN` | (generated) | Bearer token for the full `/mcp` (read + write tools). Generated at `<dirname(dbPath)>/mcp-token` if unset. |
 | `CC_MCP_READONLY_TOKEN` | (generated) | Bearer token for `/mcp/readonly` only. Generated at `<dirname(dbPath)>/mcp-readonly-token` if unset. |
-| `CC_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins allowed to receive CORS headers (including preflight). |
+| `CC_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins allowed to receive CORS headers (including preflight). The Android app (mobile/) runs the dashboard at `https://localhost`, so a server it connects to needs that origin here. |
 | `CC_DASHBOARD_DIR` | `<repo root>/dist` | Built dashboard directory served at `/` (see [Dashboard](#dashboard)). |
 | `GITHUB_WEBHOOK_SECRET` | (unset) | Enables `POST /webhooks/github`. Without it the route is 404. |
 
