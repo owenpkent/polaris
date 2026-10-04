@@ -1,5 +1,8 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { subscribeNativeShares } from './nativeApp'
+import {
+  subscribeNativeShares, nativeCall, checkNotificationPermission, requestNotificationPermission,
+  scheduleNotifications, cancelAllNotifications, subscribeNotificationTaps, subscribeAppResume,
+} from './nativeApp'
 
 afterEach(() => {
   delete window.Capacitor
@@ -48,5 +51,79 @@ describe('subscribeNativeShares', () => {
     const cap = fakeCapacitor()
     subscribeNativeShares(() => {})()
     expect(cap.remove).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('native calls', () => {
+  function bridge(results = {}) {
+    const nativePromise = vi.fn(async (plugin, method) => results[method] ?? {})
+    const addListener = vi.fn(() => ({ remove: vi.fn() }))
+    window.Capacitor = { isNativePlatform: () => true, nativePromise, addListener }
+    return { nativePromise, addListener }
+  }
+
+  test('nativeCall rejects outside the app', async () => {
+    await expect(nativeCall('LocalNotifications', 'getPending')).rejects.toThrow()
+    window.Capacitor = { isNativePlatform: () => true }
+    await expect(nativeCall('LocalNotifications', 'getPending')).rejects.toThrow()
+  })
+
+  test('permission checks map display to a boolean', async () => {
+    const cap = bridge({ checkPermissions: { display: 'prompt' }, requestPermissions: { display: 'granted' } })
+    expect(await checkNotificationPermission()).toBe(false)
+    expect(await requestNotificationPermission()).toBe(true)
+    expect(cap.nativePromise).toHaveBeenCalledWith('LocalNotifications', 'requestPermissions', {})
+  })
+
+  test('scheduling cancels what is pending, then schedules with ISO times and the task id', async () => {
+    const cap = bridge({ getPending: { notifications: [{ id: 5 }, { id: 6 }] } })
+    const at = new Date(2026, 9, 6, 9, 0)
+    await scheduleNotifications([{ id: 7, taskId: 't_abc123def4', title: 'Pay rent', body: 'Due today', at }])
+    const calls = cap.nativePromise.mock.calls
+    expect(calls[1]).toEqual(['LocalNotifications', 'cancel', { notifications: [{ id: 5 }, { id: 6 }] }])
+    expect(calls[2]).toEqual(['LocalNotifications', 'schedule', { notifications: [{
+      id: 7, title: 'Pay rent', body: 'Due today',
+      schedule: { at: at.toISOString(), allowWhileIdle: true }, extra: { taskId: 't_abc123def4' },
+    }] }])
+  })
+
+  test('an empty plan only cancels', async () => {
+    const cap = bridge({ getPending: { notifications: [{ id: 5 }] } })
+    await scheduleNotifications([])
+    expect(cap.nativePromise.mock.calls.map((c) => c[1])).toEqual(['getPending', 'cancel'])
+  })
+
+  test('cancelAllNotifications skips cancel when nothing is pending', async () => {
+    const cap = bridge({ getPending: { notifications: [] } })
+    await cancelAllNotifications()
+    expect(cap.nativePromise.mock.calls.map((c) => c[1])).toEqual(['getPending'])
+  })
+})
+
+describe('subscribeNotificationTaps and subscribeAppResume', () => {
+  test('a tap hands over the task id, and unsubscribing removes the listener', () => {
+    const cap = fakeCapacitor()
+    const onTask = vi.fn()
+    const off = subscribeNotificationTaps(onTask)
+    expect(cap.addListener).toHaveBeenCalledWith('LocalNotifications', 'localNotificationActionPerformed', expect.any(Function))
+    const handler = cap.addListener.mock.calls[0][2]
+    handler({ notification: { extra: { taskId: 't_abc123def4' } } })
+    handler({ notification: {} })
+    expect(onTask).toHaveBeenCalledTimes(1)
+    expect(onTask).toHaveBeenCalledWith('t_abc123def4')
+    off()
+    expect(cap.remove).toHaveBeenCalledTimes(1)
+  })
+
+  test('resume calls back, and both are no-ops outside the app', () => {
+    const cap = fakeCapacitor()
+    const cb = vi.fn()
+    subscribeAppResume(cb)
+    cap.addListener.mock.calls[0][2]()
+    expect(cap.addListener.mock.calls[0].slice(0, 2)).toEqual(['App', 'resume'])
+    expect(cb).toHaveBeenCalledTimes(1)
+    delete window.Capacitor
+    expect(() => subscribeAppResume(cb)()).not.toThrow()
+    expect(() => subscribeNotificationTaps(cb)()).not.toThrow()
   })
 })

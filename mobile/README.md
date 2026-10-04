@@ -50,6 +50,12 @@ Sharing text or a link from another app to Polaris opens the new-task sheet pref
 
 How it travels: `AndroidManifest.xml` accepts `SEND` intents for `text/*`. `MainActivity.rewriteShare` turns one into an `ACTION_VIEW` intent for `polaris://share?share-title=...&share-text=...`, which the Capacitor App plugin raises to the page as `appUrlOpen` (kept until the page listens, so a cold start works). `subscribeNativeShares` in src/command-center/nativeApp.js reads the same `share-*` parameters that the web app manifest's `share_target` uses, so the installed web app and the Android app share one intake (src/command-center/shareIntake.js).
 
+## Reminders
+
+Off until the owner turns them on in the Reminders card on the Settings page, which only appears inside the app. The dashboard then schedules one local notification per task with a due date, at the chosen time of day on the due date (or at the task's own time when the due date carries one), from its task list: on launch, on resume, whenever the server reports a change, and whenever the setting changes. Pending notifications are replaced each time, so a task that was completed or moved loses its reminder. Tapping one opens that task.
+
+Everything happens on the phone through the Capacitor LocalNotifications plugin (`@capacitor/local-notifications`), called over the bridge by name from src/command-center/nativeApp.js. Nothing is sent to any push service, which is why the project rule about writes to external services does not apply. The plugin's own manifest declares `POST_NOTIFICATIONS` (asked for when the owner enables reminders) and `SCHEDULE_EXACT_ALARM`; reminders are scheduled inexact with `allowWhileIdle`, so they may arrive a few minutes late and never need the exact-alarm setting.
+
 ## Icons
 
 `assets/` holds the sources, copied from public/icons (`icon-only.png` for older launchers, `icon-foreground.png` for adaptive ones). The adaptive background is the colour in `android/app/src/main/res/values/ic_launcher_background.xml`, the dashboard's dark background. To regenerate after changing them:

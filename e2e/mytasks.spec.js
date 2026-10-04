@@ -96,6 +96,18 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(created.untrustedText).toBe(false)
   })
 
+  // A reminder tap in the Android app, and ?task=<id> in the URL, open that task's panel.
+  test('a task link in the URL opens that task and strips the parameter', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'task link')
+    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const id = (await res.json()).tasks.find((t) => t.title === title).id
+    await openView(page, 'mytasks', `task=${id}`)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(title)
+    expect(new URL(page.url()).searchParams.has('task')).toBe(false)
+  })
+
   test('on a phone, a task created with the default No date, or a date in Later, is shown', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     // Both groups start collapsed (DEFAULT_COLLAPSED in MyTasksTab.jsx): the new task's group

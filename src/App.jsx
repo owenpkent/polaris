@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsForm from './command-center/SettingsForm'
 import AgentSettings from './command-center/AgentSettings'
@@ -19,7 +19,10 @@ import JobWarningsBanner from './JobWarningsBanner'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
 import { useTheme } from './theme'
 import { parseShareParams, stripShareParams } from './command-center/shareIntake'
-import { subscribeNativeShares } from './command-center/nativeApp'
+import { subscribeNativeShares, subscribeNotificationTaps } from './command-center/nativeApp'
+import { parseTaskParam, stripTaskParam } from './command-center/reminders'
+import ReminderSettings from './command-center/ReminderSettings'
+import ReminderScheduler from './command-center/ReminderScheduler'
 
 const PRIMARY_ITEMS = [
   { id: 'mytasks', label: 'My tasks' },
@@ -74,11 +77,19 @@ export default function App() {
   const [pendingShare, setPendingShare] = useState(() => parseShareParams(window.location.search))
   useEffect(() => { stripShareParams() }, [])
   // A share at startup always lands on My tasks, whatever ?view= says.
-  const [tab, setTab] = useState(() => (pendingShare ? DEFAULT_TAB : readInitialTab()))
+  // A task link (?task=<id>, or a tapped reminder) opens that task's panel on My tasks, same pattern.
+  const [pendingTaskId, setPendingTaskId] = useState(() => parseTaskParam(window.location.search))
+  useEffect(() => { stripTaskParam() }, [])
+  const [tab, setTab] = useState(() => (pendingShare || pendingTaskId ? DEFAULT_TAB : readInitialTab()))
+  const consumeFocusTask = useCallback(() => setPendingTaskId(null), [])
 
   // The Android shell delivers shares as a native event instead of a URL load.
   useEffect(() => subscribeNativeShares((share) => {
     setPendingShare(share)
+    setTab(DEFAULT_TAB)
+  }), [])
+  useEffect(() => subscribeNotificationTaps((taskId) => {
+    setPendingTaskId(taskId)
     setTab(DEFAULT_TAB)
   }), [])
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -133,6 +144,7 @@ export default function App() {
           onThemeChange={setTheme}
         />
         <OfflineBanner onConnect={() => setTab('connection')} />
+        <ReminderScheduler />
         <JobWarningsBanner />
         <NavDrawer
           open={drawerOpen}
@@ -151,7 +163,14 @@ export default function App() {
           {tab === 'goals' && <GoalsTab />}
           {tab === 'projects' && <ProjectsTab />}
           {tab === 'inbox' && <InboxTab />}
-          {tab === 'mytasks' && <MyTasksTab share={pendingShare} onShareConsumed={() => setPendingShare(null)} />}
+          {tab === 'mytasks' && (
+            <MyTasksTab
+              share={pendingShare}
+              onShareConsumed={() => setPendingShare(null)}
+              focusTaskId={pendingTaskId}
+              onFocusTaskConsumed={consumeFocusTask}
+            />
+          )}
           {tab === 'board' && <BoardTab />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}
@@ -160,6 +179,7 @@ export default function App() {
             <div style={{ maxWidth: 480, margin: '2rem auto' }}>
               <SettingsForm />
               <AgentSettings />
+              <ReminderSettings />
               <BackupSettings />
             </div>
           )}

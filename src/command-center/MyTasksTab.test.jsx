@@ -85,6 +85,17 @@ describe('MyTasksTab share', () => {
   })
 })
 
+describe('MyTasksTab focusTaskId', () => {
+  test('opens the panel for that task and reports it consumed', async () => {
+    stubMatchMedia(1280)
+    api.getTask = vi.fn().mockResolvedValue({ task: { id: 't_abc123def4', title: 'Pay rent', status: 'open', priority: 'none', dueAt: null, notes: '' } })
+    const onFocusTaskConsumed = vi.fn()
+    render(<MyTasksTab focusTaskId="t_abc123def4" onFocusTaskConsumed={onFocusTaskConsumed} />)
+    await waitFor(() => expect(onFocusTaskConsumed).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('dialog', { name: 'Task details' })).toBeTruthy()
+  })
+})
+
 describe('MyTasksTab new task sheet', () => {
   test('an open sheet keeps its draft when the viewport crosses the 640px breakpoint', async () => {
     const media = stubMatchMedia(390)

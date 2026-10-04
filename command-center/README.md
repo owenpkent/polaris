@@ -68,6 +68,7 @@ My tasks:
 - **Toolbar.** Filter by readiness (Ready: what could be started now; Blocked: held by an unfinished task), project, goal, priority, source, and assignee (Unassigned, or any name the list holds); sort by due date, priority, project, or name; group by due date, project, priority, or none. Choices are saved in the browser.
 - **Inline edits.** Click a row's Due date, Project, or Priority to change it from a dropdown without opening the task panel. Changing the project clears the task's section.
 - **Quick add from a share.** Opening the dashboard with `share-title`, `share-text`, or `share-url` in the query (the web app manifest's `share_target`, or a share to the Android app) opens the new-task sheet prefilled, with a link kept as `sourceUrl`, for you to confirm or edit. The parameters are removed from the address bar at once so a reload does not repeat it. A share is your own action, like pasting, so the task is your own trusted text and never an inbox item.
+- **Reminders.** In the Android app only, and per device, off until switched on under Settings. The dashboard schedules one notification on the phone for each task with a due date, at the time of day you pick (a due with a time fires at that time), from its own task list; nothing is sent anywhere. Tapping a reminder opens that task. Opening the dashboard with `?task=<id>` opens a task's panel the same way.
 
 Projects:
 

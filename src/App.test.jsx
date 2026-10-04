@@ -66,6 +66,14 @@ describe('App share intake', () => {
     expect(window.location.hash).toBe('#h')
   })
 
+  test('a task link starts on My tasks despite ?view= and ?task= is stripped', () => {
+    setLocation('view=board&task=t_abc123def4&x=1', '#h')
+    const { container } = render(<App />)
+    expect(container.querySelector('[data-testid="tab-mytasks"]')).not.toBeNull()
+    expect(window.location.search).toBe('?x=1')
+    expect(window.location.hash).toBe('#h')
+  })
+
   test('without a share ?view= still applies', () => {
     setLocation('view=board')
     const { container } = render(<App />)

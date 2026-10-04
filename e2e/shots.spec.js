@@ -270,4 +270,30 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
     await shot(page, testInfo, 'connection', 'page', [values])
   })
+
+  // The Reminders card only exists inside the Android app, so a stand-in for its bridge is
+  // installed before the page loads.
+  test('connection: reminders', async ({ page }, testInfo) => {
+    await page.addInitScript(() => {
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        nativePromise: async () => ({ display: 'granted', notifications: [] }),
+        addListener: () => ({ remove() {} }),
+      }
+    })
+    await openView(page, 'connection')
+    const card = page.getByRole('region', { name: 'Reminders' })
+    await expect(card).toBeVisible()
+    // Turned on, so the time field is live too; the stand-in grants the permission at once.
+    await card.getByRole('checkbox', { name: 'Remind me on the day a task is due' }).check()
+    await expect(card.getByLabel('Time')).toBeEnabled()
+    // The card sits below the connection and agent cards, under the fold at both widths. The
+    // scroll leaves room for the sticky top bar, which would otherwise cover the card's heading.
+    await card.evaluate((el) => {
+      el.scrollIntoView({ block: 'start' })
+      window.scrollBy(0, -72)
+    })
+    const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
+    await shot(page, testInfo, 'connection', 'reminders', [values])
+  })
 })

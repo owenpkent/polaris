@@ -65,7 +65,9 @@ function groupIdFor(task, mode, dueBounds) {
 
 // `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
 // new-task sheet prefilled, and `onShareConsumed` tells App to drop it once the sheet is done.
-export default function MyTasksTab({ share = null, onShareConsumed }) {
+// `focusTaskId` is a task id handed in by App (a reminder tap, or ?task=): it opens that task's
+// panel, and `onFocusTaskConsumed` tells App to drop it.
+export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId = null, onFocusTaskConsumed }) {
   const { connected, local, api } = useConnection()
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
@@ -93,6 +95,12 @@ export default function MyTasksTab({ share = null, onShareConsumed }) {
     setSheetInitial(shareToTaskFields(share))
     setSheetOpen(true)
   }, [share])
+
+  useEffect(() => {
+    if (!focusTaskId) return
+    setDetailTaskId(focusTaskId)
+    onFocusTaskConsumed?.()
+  }, [focusTaskId, onFocusTaskConsumed])
 
   const closeSheet = useCallback(() => {
     setSheetOpen(false)
