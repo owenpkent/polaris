@@ -10,12 +10,9 @@ export function isNativeApp() {
   }
 }
 
-// Calls `onShare(share)` for each share the Android shell delivers. The shell turns a share intent
-// into an appUrlOpen event whose URL carries the share-title, share-text and share-url parameters
-// (shareIntake.js). The bridge's own window.Capacitor.addListener is used because the page does not
-// load Capacitor's JavaScript runtime, so there is no plugin object to ask. Returns an unsubscribe;
-// outside the app it does nothing and returns a no-op.
-// Calls a method of a Capacitor plugin through the bridge (the page has no plugin objects).
+// Calls a method of a Capacitor plugin through the bridge. The page never loads Capacitor's
+// JavaScript runtime, so there are no plugin objects to ask: the bridge's own nativePromise and
+// addListener are the whole interface.
 export function nativeCall(plugin, method, options = {}) {
   if (!isNativeApp() || typeof window.Capacitor?.nativePromise !== 'function') {
     return Promise.reject(new Error('Not running in the Android app.'))
@@ -86,6 +83,9 @@ export function subscribeAppResume(cb) {
   return subscribeBridge('App', 'resume', () => cb())
 }
 
+// Calls `onShare(share)` for each share the Android shell delivers. The shell turns a share intent
+// into an appUrlOpen event whose URL carries the share-title, share-text and share-url parameters
+// (shareIntake.js). Returns an unsubscribe; outside the app it does nothing and returns a no-op.
 export function subscribeNativeShares(onShare) {
   const noop = () => {}
   if (!isNativeApp()) return noop
