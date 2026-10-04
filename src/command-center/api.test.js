@@ -290,6 +290,8 @@ describe('createApiClient: every endpoint method', () => {
     ['getEvents (after and limit)', (c) => c.getEvents('evt5', 10), '/api/events?after=evt5&limit=10', 'GET', undefined],
     ['getSync', (c) => c.getSync(), '/api/sync', 'GET', undefined],
     ['runSync', (c) => c.runSync('job1'), '/api/sync/job1', 'POST', undefined],
+    ['getAgentSettings', (c) => c.getAgentSettings(), '/api/settings/agent', 'GET', undefined],
+    ['updateAgentSettings', (c) => c.updateAgentSettings({ defaultAgentName: 'scribe' }), '/api/settings/agent', 'PATCH', { defaultAgentName: 'scribe' }],
     ['githubStatus', (c) => c.githubStatus(), '/api/github/status', 'GET', undefined],
     ['githubAppManifest', (c) => c.githubAppManifest(), '/api/github/app/manifest', 'POST', {}],
     ['githubLogin', (c) => c.githubLogin(), '/api/github/login', 'POST', {}],
@@ -328,5 +330,28 @@ describe('createApiClient: every endpoint method', () => {
     expect(url).toBe('http://x/api/github/repos/reponame/')
     expect(opts.method).toBe('PATCH')
     expect(opts.body).toBe(JSON.stringify({ private: true }))
+  })
+})
+
+// Like the backup settings endpoints, updateAgentSettings carries no `offline` kind: a default
+// agent name typed with no server to tell is refused outright, never queued to replay later
+// against whichever server answers next.
+describe('createApiClient: updateAgentSettings is live-only', () => {
+  test('a PATCH sent while the server cannot be reached is refused, not queued', async () => {
+    global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const client = createApiClient('http://x', 'tok')
+    await expect(client.updateAgentSettings({ defaultAgentName: 'scribe' })).rejects.toMatchObject({
+      code: 'network_error',
+      message: expect.stringContaining('not saved'),
+    })
+  })
+
+  test('getAgentSettings is cached like other GETs, and answers from the copy when offline', async () => {
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { defaultAgentName: 'claude-code' }))
+    expect(await client.getAgentSettings()).toEqual({ defaultAgentName: 'claude-code' })
+
+    global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    expect(await client.getAgentSettings()).toEqual({ defaultAgentName: 'claude-code' })
   })
 })

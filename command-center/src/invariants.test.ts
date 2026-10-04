@@ -34,9 +34,9 @@ const OWNER_SOURCE_TYPES = SOURCE_TYPES.filter((s) => !EXTERNAL_SOURCE_TYPES.inc
 
 interface ToolResult { isError?: boolean; content: { type: string; text: string }[]; structuredContent?: Record<string, any> }
 
-async function mcpClient(base: string, path: '/mcp' | '/mcp/readonly', token: string): Promise<Client> {
+async function mcpClient(base: string, path: '/mcp' | '/mcp/readonly', token: string, extraHeaders: Record<string, string> = {}): Promise<Client> {
   const transport = new StreamableHTTPClientTransport(new URL(`${base}${path}`), {
-    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    requestInit: { headers: { Authorization: `Bearer ${token}`, ...extraHeaders } },
   });
   const client = new Client({ name: 'invariants-test-client', version: '0.0.0' }, { capabilities: {} });
   await client.connect(transport);
@@ -673,6 +673,27 @@ test('6. the four actors are the only ones, so every event can be traced to one 
   runRules(store, { today: TODAY, ruleId });
   const actors = new Set(store.eventsSince(0, 5000).map((e) => e.actor));
   assert.deepEqual([...actors].sort(), ['agent', 'human', 'rule', 'system']);
+});
+
+test('6. an agent\'s name is recorded beside the actor and never replaces it', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const client = await mcpClient(base, '/mcp', TEST_TOKENS.mcp, { 'X-Agent-Name': 'scribe' });
+    try {
+      const created = await call(client, 'create_task', { title: 'Named over MCP' });
+      assert.ok(!created.isError, created.content[0].text);
+      const taskId = (created.structuredContent!.task as { id: string }).id;
+      const event = app.store.taskHistory(taskId).find((e) => e.kind === 'task.created');
+      // The name rides beside the actor; it never becomes a fifth actor value.
+      assert.equal(event?.actor, 'agent', 'a named connection is still recorded as actor agent');
+      assert.equal(event?.actorName, 'scribe');
+    } finally {
+      await client.close();
+    }
+  });
+  const actors = new Set(app.store.eventsSince(0, 5000).map((e) => e.actor));
+  for (const actor of actors) assert.ok(['human', 'agent', 'system', 'rule'].includes(actor), `unexpected actor value: ${actor}`);
 });
 
 // Used only to keep the SourceType import honest if the lists above are ever narrowed.

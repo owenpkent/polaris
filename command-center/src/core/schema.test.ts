@@ -237,6 +237,8 @@ test('migration 3 backfills untrusted_text from source_type on a database that p
     db.exec('ALTER TABLE source_items DROP COLUMN gone_resolution');
     db.exec('DROP TABLE applied_ops');
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
+    db.exec('ALTER TABLE events DROP COLUMN actor_name');
+    db.exec('ALTER TABLE comments DROP COLUMN author_name');
     db.run('UPDATE schema_version SET version = ?', [2]);
     assert.ok(!new Set(columnNames(db, 'tasks')).has('untrusted_text'), 'set up a database without the column');
 
@@ -293,10 +295,66 @@ test('tasks.assignee is NULL when omitted, so a task starts unclaimed', () => {
   }
 });
 
+test('events.actor_name and comments.author_name are NULL when omitted', () => {
+  const db = openNodeDriver(':memory:');
+  try {
+    db.run('INSERT INTO events (at, kind, task_id, actor, payload) VALUES (?, ?, ?, ?, ?)',
+      ['2026-09-01T00:00:00.000Z', 'task.created', null, 'human', '{}']);
+    const event = db.get<{ actor_name: string | null }>('SELECT actor_name FROM events ORDER BY id DESC LIMIT 1');
+    assert.equal(event?.actor_name, null);
+
+    db.run(
+      'INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ['t1', 'x', 'open', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+    );
+    db.run('INSERT INTO comments (id, task_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['c1', 't1', 'human', 'hello', '2026-09-01T00:00:00.000Z']);
+    const comment = db.get<{ author_name: string | null }>('SELECT author_name FROM comments WHERE id = ?', ['c1']);
+    assert.equal(comment?.author_name, null);
+  } finally {
+    db.close();
+  }
+});
+
+test('migration 7 adds events.actor_name and comments.author_name to a database that predates them, leaving existing rows NULL', () => {
+  const db = openNodeDriver(':memory:');
+  try {
+    db.exec('ALTER TABLE events DROP COLUMN actor_name');
+    db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.run('UPDATE schema_version SET version = ?', [6]);
+    assert.ok(!new Set(columnNames(db, 'events')).has('actor_name'), 'set up a database without the column');
+    assert.ok(!new Set(columnNames(db, 'comments')).has('author_name'), 'set up a database without the column');
+
+    db.run(
+      'INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ['old', 'made before the column existed', 'open', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+    );
+    db.run('INSERT INTO events (at, kind, task_id, actor, payload) VALUES (?, ?, ?, ?, ?)',
+      ['2026-09-01T00:00:00.000Z', 'task.created', 'old', 'agent', '{}']);
+    db.run('INSERT INTO comments (id, task_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)',
+      ['c-old', 'old', 'agent', 'before the column existed', '2026-09-01T00:00:00.000Z']);
+
+    migrate(db);
+
+    assert.equal(db.get<{ version: number }>('SELECT version FROM schema_version')?.version, MIGRATIONS.length);
+    assert.ok(new Set(columnNames(db, 'events')).has('actor_name'));
+    assert.ok(new Set(columnNames(db, 'comments')).has('author_name'));
+    const event = db.get<{ actor_name: string | null; actor: string }>('SELECT actor_name, actor FROM events WHERE task_id = ?', ['old']);
+    assert.equal(event?.actor_name, null, 'a migrated row cannot know a name it was never given');
+    assert.equal(event?.actor, 'agent', 'the migration only appends a column, it never touches an existing one');
+    const comment = db.get<{ author_name: string | null }>('SELECT author_name FROM comments WHERE id = ?', ['c-old']);
+    assert.equal(comment?.author_name, null);
+  } finally {
+    db.close();
+  }
+});
+
 test('migration 6 adds tasks.assignee to a database that predates it and leaves existing rows unclaimed', () => {
   const db = openNodeDriver(':memory:');
   try {
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
+    db.exec('ALTER TABLE events DROP COLUMN actor_name');
+    db.exec('ALTER TABLE comments DROP COLUMN author_name');
     db.run('UPDATE schema_version SET version = ?', [5]);
     assert.ok(!new Set(columnNames(db, 'tasks')).has('assignee'), 'set up a database without the column');
     db.run(

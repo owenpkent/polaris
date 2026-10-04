@@ -209,4 +209,14 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE tasks ADD COLUMN assignee TEXT;
   `,
+  // 7: events.actor_name, comments.author_name. An MCP connection may declare a name for itself
+  // (--agent-name over stdio, X-Agent-Name over HTTP), which rides beside the actor it already
+  // recorded, so history can read "agent scribe" instead of just "agent". NULL when no name was
+  // declared, which is every row before this migration and most human/system/rule writes after
+  // it. The actor enum itself (human/agent/system/rule) does not change: the name is data on the
+  // row, self-declared by the connection, never an identity or a permission.
+  `
+  ALTER TABLE events ADD COLUMN actor_name TEXT;
+  ALTER TABLE comments ADD COLUMN author_name TEXT;
+  `,
 ];

@@ -86,6 +86,8 @@ export interface Comment {
   id: string;
   taskId: string;
   author: 'human' | 'agent' | 'system';
+  /** The name an MCP connection self-declared for itself, when `author` was that connection. See ActorInput. */
+  authorName: string | null;
   body: string;
   createdAt: string;
 }
@@ -144,6 +146,8 @@ export interface CcEvent {
   kind: EventKind;
   taskId: string | null;
   actor: 'human' | 'agent' | 'system' | 'rule';
+  /** The name an MCP connection self-declared for itself, when it was the actor. See ActorInput. */
+  actorName: string | null;
   payload: Record<string, Json>;
 }
 
@@ -379,3 +383,12 @@ export type UpsertResult =
   | { action: 'suppressed'; task: Task; sourceTickChanged: boolean };
 
 export type Actor = CcEvent['actor'];
+
+/**
+ * What a Store write method accepts for "who did this": a plain Actor, or an actor paired with a
+ * name the connection declared for itself (MCP's --agent-name / X-Agent-Name). The name is
+ * self-declared by the connection and is never an identity or a permission: it labels who to
+ * credit in an event's history line or a comment's byline, never who is allowed to act. The actor
+ * enum itself stays exactly human, agent, system, rule.
+ */
+export type ActorInput = Actor | { actor: Actor; name: string | null };

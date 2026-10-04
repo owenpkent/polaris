@@ -9,22 +9,26 @@ import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
 import { Menu } from './Menu'
 
-// History entries are CcEvent rows: { id, at, kind, taskId, actor, payload },
+// History entries are CcEvent rows: { id, at, kind, taskId, actor, actorName, payload },
 // plus `restore` from the server: what Put back would set, or null.
 // task.updated events carry payload.changes, an object keyed by the fields
 // that changed; show which fields for that kind, since the values themselves
 // are internal shapes not meant for display. A sync conflict names its field
 // and both values, so two conflicts from one replay can be told apart.
+// actorName is the self-declared name an agent carried on its connection
+// (docs/assign-to-ai-options.md, stage 5B): "agent" becomes "agent scribe".
+// It is a display label, not an authenticated identity.
 function historyLine(entry) {
+  const actor = entry.actorName ? `${entry.actor} ${entry.actorName}` : entry.actor
   if (entry.kind === 'task.sync_conflict' && entry.payload?.field) {
     const { field, kept, discarded } = entry.payload
-    return `${entry.actor} ${entry.kind} (${fieldLabel(field)}: kept ${shortValue(kept)}, discarded ${shortValue(discarded)})`
+    return `${actor} ${entry.kind} (${fieldLabel(field)}: kept ${shortValue(kept)}, discarded ${shortValue(discarded)})`
   }
   const changedFields = entry.kind === 'task.updated' && entry.payload?.changes
     ? Object.keys(entry.payload.changes)
     : []
   const suffix = changedFields.length > 0 ? ` (${changedFields.join(', ')})` : ''
-  return `${entry.actor} ${entry.kind}${suffix}`
+  return `${actor} ${entry.kind}${suffix}`
 }
 
 const FIELD_LABELS = {
@@ -225,6 +229,22 @@ function IconButton({ children, onClick, ariaLabel }) {
 
 const sectionHeading = { fontSize: 14, fontWeight: 600, color: 'var(--t1)' }
 
+// Matches the neighbouring header buttons (Mark complete, Hand off to Claude Code): a 44px
+// outlined control that sits inline with them.
+const headerBtnStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  height: 44,
+  padding: '0 16px',
+  border: '1px solid var(--bd-strong)',
+  borderRadius: 8,
+  background: 'transparent',
+  color: 'var(--t1)',
+  fontSize: 14,
+  whiteSpace: 'nowrap',
+}
+
 // Elements the Tab-trap cycles between (mirrors NavDrawer's focus trap).
 const FOCUSABLE_SELECTOR =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]'
@@ -246,6 +266,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
   const [restoring, setRestoring] = useState(null)
+  const [agentName, setAgentName] = useState('claude-code')
+  const [assignBusy, setAssignBusy] = useState(false)
   const offline = useOffline()
   const assigneeInputId = useId()
 
@@ -324,6 +346,18 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     })
     return () => { cancelled = true }
   }, [api, data?.task?.projectId])
+
+  // The name "Assign to <name>" offers, read once when the panel opens. A load that fails, or
+  // has not finished yet, leaves the 'claude-code' fallback the server itself falls back to.
+  useEffect(() => {
+    let cancelled = false
+    api.getAgentSettings().then((res) => {
+      if (!cancelled && res?.defaultAgentName) setAgentName(res.defaultAgentName)
+    }).catch(() => {
+      // Keep the fallback name.
+    })
+    return () => { cancelled = true }
+  }, [api])
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -409,6 +443,26 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       onChanged?.()
     } catch (err) {
       setSaveError(err.message || 'Could not update completion.')
+    }
+  }
+
+  // 1A of docs/assign-to-ai-options.md: the click is a plain assignee claim, nothing more. The
+  // agent itself picks the task up later, over MCP.
+  async function handleAssignToAgent() {
+    setAssignBusy(true)
+    try {
+      await patchTask({ assignee: agentName })
+    } finally {
+      setAssignBusy(false)
+    }
+  }
+
+  async function handleTakeBack() {
+    setAssignBusy(true)
+    try {
+      await patchTask({ assignee: null })
+    } finally {
+      setAssignBusy(false)
     }
   }
 
@@ -503,8 +557,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
       {!loading && data && form && (
         <>
-          <div className="task-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* The actions wrap onto as many rows as they need; Close stays on the first row at the
+              right, so it never drops below them (the phone rule in index.css pins it the same way). */}
+          <div className="task-panel-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
               <button
                 type="button"
                 onClick={handleCompleteToggle}
@@ -526,6 +582,32 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 <span>{done ? 'Completed' : 'Mark complete'}</span>
               </button>
               <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
+              {data.task.assignee ? (
+                <>
+                  <span className="badge" style={{ background: 'var(--blue-soft)', color: 'var(--blue)' }}>
+                    Assigned to {data.task.assignee}
+                  </span>
+                  <button
+                    type="button"
+                    className="hover-surface"
+                    onClick={handleTakeBack}
+                    disabled={offline || assignBusy}
+                    style={headerBtnStyle}
+                  >
+                    {assignBusy ? 'Taking back…' : 'Take back'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="hover-surface"
+                  onClick={handleAssignToAgent}
+                  disabled={offline || assignBusy}
+                  style={headerBtnStyle}
+                >
+                  {assignBusy ? 'Assigning…' : `Assign to ${agentName}`}
+                </button>
+              )}
             </div>
             <span className="task-panel-close">
               <IconButton ariaLabel="Close task details" onClick={onClose}>
@@ -958,7 +1040,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             {(data.comments || []).map((c) => (
               <div key={c.id} style={{ background: 'var(--bg-inset)', border: '1px solid var(--bd)', borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 4 }}>
-                  {c.author || 'You'} · {formatDate(c.createdAt)}
+                  {c.author || 'You'}{c.authorName ? ` ${c.authorName}` : ''} · {formatDate(c.createdAt)}
                 </div>
                 <div style={{ fontSize: 14, color: 'var(--t1)', whiteSpace: 'pre-wrap' }}>{c.body}</div>
               </div>

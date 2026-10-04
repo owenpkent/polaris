@@ -182,3 +182,6 @@ export const goalLinkBodySchema = z.object({
 export const restoreBodySchema = z.object({ eventId: z.number().int().positive() }).strict();
 
 export const goalVisionBodySchema = z.object({ text: z.string().max(4000) }).strict();
+
+// Shape only; normalizeAgentName (core/agentName.ts) is what actually accepts or rejects the value.
+export const agentSettingsBodySchema = z.object({ defaultAgentName: z.string() }).strict();

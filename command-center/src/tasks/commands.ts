@@ -84,8 +84,8 @@ export const commands: Command[] = [
         const blockers = s.blockersOf(t.id);
         if (blockers.length) out.push('', 'Blocked by:', ...blockers.map((x) => `  ${formatTask(s, x)}`));
         const comments = s.listComments(t.id);
-        if (comments.length) out.push('', 'Comments:', ...comments.map((c) => `  ${c.createdAt.slice(0, 16)} ${c.author}: ${c.body}`));
-        out.push('', 'History:', ...s.taskHistory(t.id).slice(-10).map((e) => `  ${e.at.slice(0, 16)} ${e.actor} ${e.kind}`));
+        if (comments.length) out.push('', 'Comments:', ...comments.map((c) => `  ${c.createdAt.slice(0, 16)} ${c.author}${c.authorName ? ` ${c.authorName}` : ''}: ${c.body}`));
+        out.push('', 'History:', ...s.taskHistory(t.id).slice(-10).map((e) => `  ${e.at.slice(0, 16)} ${e.actor}${e.actorName ? ` ${e.actorName}` : ''} ${e.kind}`));
         stdout(out.join('\n'));
         return 0;
       } finally { app.close(); }

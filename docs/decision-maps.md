@@ -48,7 +48,7 @@ The loop an agent runs:
 
 1. `get_view` with name `ready`, or `search_tasks` with `parent_id` set to the map and `blocked: false` to see one map's frontier only.
 2. Skip anything with an assignee. Pick the highest priority unclaimed ticket. Due dates break ties.
-3. Claim it: `update_task` setting `assignee` to the agent's name.
+3. Claim it: `update_task` setting `assignee` to the agent's name, the same name it connected with over MCP, so the claim and the task's history agree.
 4. Read it in full with `get_task`: notes, comments, blockers, what it blocks, history.
 5. Act according to its kind. Write what was done or found as a comment (`update_task` with `add_comment`), so the record is on the ticket and not in a chat log.
 6. Resolve it as its kind allows: `complete_task` for `research`, `prototype`, and `setup`; a comment, your name in `assignee`, and nothing else for `discuss`.
@@ -64,7 +64,7 @@ From the CLI, `npm run cc -- view ready` and `npm run cc -- view blocked` show t
 |---|---|
 | Propose the map, create the goal, the map task, and the tickets | Set or change a goal's status |
 | Add and remove blockers between tickets | Decide a `discuss` ticket |
-| Claim a ticket by setting `assignee`, and hand one to you the same way | Enable a rule the agent proposed |
+| Claim a ticket by setting `assignee` to the name it connected with, and hand one to you the same way | Enable a rule the agent proposed |
 | Complete `research`, `prototype`, and `setup` tickets it has done | Accept or reject an inbox item, unless you asked the agent to |
 | Set a ticket to `waiting` and say why | Rename, edit, or archive a project |
 | Comment on any ticket | Drop a branch of the map, or complete a `discuss` ticket |

@@ -1,0 +1,111 @@
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import AgentSettings from './AgentSettings'
+import { markOffline, resetOfflineStatus } from './offlineStatus'
+
+const api = {
+  getAgentSettings: vi.fn(),
+  updateAgentSettings: vi.fn(),
+}
+const connection = { connected: true, api }
+vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
+
+beforeEach(() => {
+  for (const fn of Object.values(api)) fn.mockReset()
+  connection.connected = true
+})
+
+afterEach(() => {
+  cleanup()
+  resetOfflineStatus()
+})
+
+describe('AgentSettings', () => {
+  test('shows nothing when not connected', () => {
+    connection.connected = false
+    const { container } = render(<AgentSettings />)
+    expect(container.textContent).toBe('')
+    expect(api.getAgentSettings).not.toHaveBeenCalled()
+  })
+
+  test('renders the current default agent name in a labelled text box', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    render(<AgentSettings />)
+    const card = await screen.findByRole('region', { name: 'Agents' })
+    const input = screen.getByLabelText('Default agent name')
+    expect(card.contains(input)).toBe(true)
+    expect(input.value).toBe('claude-code')
+  })
+
+  test('saves the new name on blur', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    api.updateAgentSettings.mockResolvedValue({ defaultAgentName: 'scribe' })
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    fireEvent.change(input, { target: { value: 'scribe' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => expect(api.updateAgentSettings).toHaveBeenCalledWith({ defaultAgentName: 'scribe' }))
+    await waitFor(() => expect(screen.getByLabelText('Default agent name').value).toBe('scribe'))
+  })
+
+  test('Enter saves like blur', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    api.updateAgentSettings.mockResolvedValue({ defaultAgentName: 'scribe' })
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    input.focus()
+    fireEvent.change(input, { target: { value: 'scribe' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(api.updateAgentSettings).toHaveBeenCalledWith({ defaultAgentName: 'scribe' }))
+  })
+
+  test('a name that did not change sends nothing on blur', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    fireEvent.blur(input)
+
+    expect(api.updateAgentSettings).not.toHaveBeenCalled()
+  })
+
+  test('Esc discards what was typed, without saving it', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    input.focus()
+    fireEvent.change(input, { target: { value: 'something else' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    expect(input.value).toBe('claude-code')
+    expect(api.updateAgentSettings).not.toHaveBeenCalled()
+  })
+
+  test('a rejected save (the server\'s 400) shows an inline message and keeps the typed value', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    api.updateAgentSettings.mockRejectedValue(new Error('Use 1 to 40 letters, digits, spaces, -, _, or .'))
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    fireEvent.change(input, { target: { value: '###' } })
+    fireEvent.blur(input)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('letters, digits')
+    expect(screen.getByLabelText('Default agent name').value).toBe('###')
+  })
+
+  test('offline, the input is disabled', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    markOffline()
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Default agent name')
+    expect(input.disabled).toBe(true)
+  })
+})

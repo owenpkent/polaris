@@ -4,6 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { App } from '../app.ts';
+import { normalizeAgentName } from '../core/agentName.ts';
 import { createMcpServer } from '../mcp/server.ts';
 import { sendError } from './errors.ts';
 
@@ -11,7 +12,9 @@ export type McpRequestHandler = (req: IncomingMessage, res: ServerResponse, pars
 
 export function createMcpHandler(app: App, opts: { readonly: boolean }): McpRequestHandler {
   return async (req, res, parsedBody) => {
-    const server = createMcpServer(app, { readonly: opts.readonly });
+    // An invalid header value is ignored, never a 400: the connection still works, just unnamed.
+    const agentName = normalizeAgentName(req.headers['x-agent-name']) ?? undefined;
+    const server = createMcpServer(app, { readonly: opts.readonly, agentName });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {
       void transport.close();

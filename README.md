@@ -73,14 +73,16 @@ Open http://127.0.0.1:8788/. The connect form has the server URL filled in; past
 Connect an agent over MCP. For Claude Code, from any folder:
 
 ```sh
-claude mcp add polaris -- node /absolute/path/to/polaris/command-center/src/mcp/stdio.ts
+claude mcp add polaris -- node /absolute/path/to/polaris/command-center/src/mcp/stdio.ts --agent-name scribe
 ```
 
 Or over HTTP while the daemon is running, with the token from `command-center/data/mcp-token`:
 
 ```sh
-claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>"
+claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>" --header "X-Agent-Name: scribe"
 ```
+
+`--agent-name` on stdio and the `X-Agent-Name` header on HTTP give the agent a self-declared name of 1 to 40 letters, digits, spaces, hyphens, underscores, and periods, recorded beside the actor on everything that agent writes.
 
 For a read-only connection use `/mcp/readonly` with `command-center/data/mcp-readonly-token`, or add `--readonly` to the stdio command. `npm run cc -- mcp tools` prints the tool list.
 
@@ -88,7 +90,9 @@ To try the dashboard on demo data without touching your database, run `npm run m
 
 ## The agent model
 
-An agent sees the same tasks you do and writes through the same store, and every change it makes is recorded with the actor `agent` in the task's history.
+An agent sees the same tasks you do and writes through the same store, and every change it makes is recorded with the actor `agent` in the task's history, alongside the name it connected with if it gave one (history reads "agent scribe").
+
+The task panel's header has an `Assign to <name>` button that sets the task's assignee to your default agent name in one click, and an assigned task shows an `Assigned to <name>` chip with a Take back button that clears it. Both write only the `assignee` field: nothing starts the agent, and nothing happens until an agent connected under that name picks the task up over MCP.
 
 What an agent can do:
 

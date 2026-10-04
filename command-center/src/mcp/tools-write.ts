@@ -6,16 +6,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runRules, validateRuleDefinition } from '../automation/index.ts';
 import { taskRef } from './format.ts';
-import { NotFoundError, ValidationError, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
+import { NotFoundError, ValidationError, type ActorInput, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { PRIORITY_VALUES, TASK_STATUS_VALUES, guard, ok, err, resolveProject, resolveProjectByGithubRepo, resolveSectionWrite } from './shared.ts';
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 const customFieldSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
-const ACTOR = 'agent' as const;
-
-export function registerWriteTools(server: McpServer, app: App): void {
+export function registerWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
+  // Every mutation this connection makes is still actor 'agent': the name rides beside it and is
+  // never an identity or a permission (see ActorInput).
+  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
   server.registerTool('create_task', {
     description: desc('create_task'),
     inputSchema: {
@@ -128,7 +129,7 @@ export function registerWriteTools(server: McpServer, app: App): void {
     if (args.custom_fields !== undefined) patch.customFields = args.custom_fields;
     const task = app.store.db.transaction(() => {
       app.store.updateTask(args.task_id, patch, ACTOR);
-      if (args.add_comment) app.store.addComment(args.task_id, args.add_comment, ACTOR);
+      if (args.add_comment) app.store.addComment(args.task_id, args.add_comment, 'agent', ACTOR);
       if (args.add_blocker) app.store.addDependency(args.add_blocker, args.task_id, ACTOR);
       if (args.remove_blocker) app.store.removeDependency(args.remove_blocker, args.task_id, ACTOR);
       return app.store.requireTask(args.task_id);

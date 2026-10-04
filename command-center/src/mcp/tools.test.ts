@@ -28,7 +28,7 @@ function fakeApp(): App {
   };
 }
 
-async function connected(app: App, opts: { readonly?: boolean } = {}): Promise<{ client: Client; app: App }> {
+async function connected(app: App, opts: { readonly?: boolean; agentName?: string } = {}): Promise<{ client: Client; app: App }> {
   const server = createMcpServer(app, opts);
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: {} });
@@ -49,6 +49,34 @@ test('tools list: readonly hides write tools', async (t) => {
   assert.ok(!roNames.includes('update_task'));
   assert.ok(roNames.includes('search_tasks'));
   t.after(() => { full.app.close(); ro.app.close(); });
+});
+
+test('agentName: create_task and a comment via update_task carry the name; without it, actorName is null', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+
+  const created = await named.client.callTool({ name: 'create_task', arguments: { title: 'Named agent task' } }) as unknown as TextResult;
+  assert.equal(created.isError, undefined);
+  const taskId = (created.structuredContent!.task as { id: string }).id;
+  const createdEvent = named.app.store.taskHistory(taskId).find((e) => e.kind === 'task.created');
+  assert.equal(createdEvent?.actor, 'agent');
+  assert.equal(createdEvent?.actorName, 'scribe');
+
+  const updated = await named.client.callTool({
+    name: 'update_task', arguments: { task_id: taskId, add_comment: 'noted by scribe' },
+  }) as unknown as TextResult;
+  assert.equal(updated.isError, undefined);
+  const comment = named.app.store.listComments(taskId).find((c) => c.body === 'noted by scribe');
+  assert.equal(comment?.author, 'agent');
+  assert.equal(comment?.authorName, 'scribe');
+
+  const plain = await connected(fakeApp());
+  t.after(() => plain.app.close());
+  const createdPlain = await plain.client.callTool({ name: 'create_task', arguments: { title: 'Unnamed agent task' } }) as unknown as TextResult;
+  const plainTaskId = (createdPlain.structuredContent!.task as { id: string }).id;
+  const plainEvent = plain.app.store.taskHistory(plainTaskId).find((e) => e.kind === 'task.created');
+  assert.equal(plainEvent?.actor, 'agent');
+  assert.equal(plainEvent?.actorName, null);
 });
 
 test('create -> search -> update -> complete flow', async (t) => {
