@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
 import {
-  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, normalizeAgentName, restoreFromHistory, restorePatch,
+  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
   type Json, type MoveTarget, type OutboxOp, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
 } from '../core/index.ts';
 import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
@@ -30,9 +30,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 /** kv key for the free-text vision statement shown above the goals. */
 const GOAL_VISION_KEY = 'goals.vision';
-/** kv key for the owner's default agent name, used by the dashboard's "Assign to AI" button. */
-const DEFAULT_AGENT_NAME_KEY = 'default_agent_name';
-const DEFAULT_AGENT_NAME_FALLBACK = 'claude-code';
 const VERSION = (JSON.parse(readFileSync(join(here, '..', '..', 'package.json'), 'utf8')) as { version: string }).version;
 
 const NON_DROPPED_STATUSES = TASK_STATUSES.filter((s) => s !== 'dropped');
@@ -173,14 +170,14 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
   // ---------------------------------------------------------------- settings
 
   router.add('GET', '/api/settings/agent', (ctx) => {
-    sendJson(ctx.res, 200, { defaultAgentName: store.getKv<string>(DEFAULT_AGENT_NAME_KEY) ?? DEFAULT_AGENT_NAME_FALLBACK });
+    sendJson(ctx.res, 200, { defaultAgentName: defaultAgentName(store) });
   });
 
   router.add('PATCH', '/api/settings/agent', (ctx) => {
     const body = parseBody(agentSettingsBodySchema, ctx.body);
     const normalized = normalizeAgentName(body.defaultAgentName);
     if (!normalized) {
-      throw new ValidationError('defaultAgentName must be 1 to 40 characters of letters, digits, spaces, "-", "_", or "."');
+      throw new ValidationError('defaultAgentName must be 1 to 40 characters, start with a letter or digit, and use only letters, digits, spaces, "-", "_", or "."');
     }
     store.setKv(DEFAULT_AGENT_NAME_KEY, normalized);
     sendJson(ctx.res, 200, { defaultAgentName: normalized });

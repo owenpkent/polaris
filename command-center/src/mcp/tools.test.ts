@@ -51,6 +51,30 @@ test('tools list: readonly hides write tools', async (t) => {
   t.after(() => { full.app.close(); ro.app.close(); });
 });
 
+test('instructions: name the connection, the owner default, and the claim rules', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  const anon = await connected(fakeApp());
+  const sameApp = fakeApp();
+  sameApp.store.setKv('default_agent_name', 'scribe');
+  const same = await connected(sameApp, { agentName: 'scribe' });
+  t.after(() => { named.app.close(); anon.app.close(); same.app.close(); });
+
+  const n = named.client.getInstructions() ?? '';
+  assert.ok(n.includes('Your name on this connection is "scribe"'));
+  assert.ok(n.includes('assigns tasks to "claude-code", which is not your name'));
+  assert.ok(n.includes('search_tasks with assignee "scribe"'));
+
+  const a = anon.client.getInstructions() ?? '';
+  assert.ok(a.includes('This connection declared no name'));
+  assert.ok(a.includes('search_tasks with assignee "claude-code"'));
+  assert.ok(!a.includes('which is not your name'));
+
+  const s = same.client.getInstructions() ?? '';
+  assert.ok(s.includes('assigns tasks to "scribe". Begin'));
+
+  for (const text of [n, a, s]) assert.ok(text.includes('Never claim an inbox item'));
+});
+
 test('agentName: create_task and a comment via update_task carry the name; without it, actorName is null', async (t) => {
   const named = await connected(fakeApp(), { agentName: 'scribe' });
   t.after(() => named.app.close());

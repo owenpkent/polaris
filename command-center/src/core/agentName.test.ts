@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAgentName } from './agentName.ts';
+import { agentNameFromArgv, defaultAgentName, normalizeAgentName } from './agentName.ts';
+import { openStore } from './index.ts';
 
 test('normalizeAgentName accepts letters, digits, spaces, hyphens, underscores, and dots', () => {
   assert.equal(normalizeAgentName('scribe'), 'scribe');
@@ -47,4 +48,38 @@ test('normalizeAgentName rejects anything that is not a string', () => {
   assert.equal(normalizeAgentName(42), null);
   assert.equal(normalizeAgentName(['scribe']), null);
   assert.equal(normalizeAgentName({ name: 'scribe' }), null);
+});
+
+test('normalizeAgentName rejects a name that starts with a hyphen or a dot', () => {
+  assert.equal(normalizeAgentName('-scribe'), null);
+  assert.equal(normalizeAgentName('--readonly'), null);
+  assert.equal(normalizeAgentName('.scribe'), null);
+  assert.equal(normalizeAgentName('a-b.c'), 'a-b.c');
+});
+
+test('agentNameFromArgv reads both the two-entry and the = forms', () => {
+  assert.equal(agentNameFromArgv(['--agent-name', 'scribe']), 'scribe');
+  assert.equal(agentNameFromArgv(['--readonly', '--agent-name=scribe']), 'scribe');
+  assert.equal(agentNameFromArgv(['--agent-name=Claude Code']), 'Claude Code');
+});
+
+test('agentNameFromArgv gives null for a missing, empty, flag-like, or invalid value', () => {
+  assert.equal(agentNameFromArgv(['--agent-name', '--readonly']), null);
+  assert.equal(agentNameFromArgv(['--agent-name']), null);
+  assert.equal(agentNameFromArgv([]), null);
+  assert.equal(agentNameFromArgv(['--agent-name=']), null);
+  assert.equal(agentNameFromArgv(['--agent-name', 'bad!name']), null);
+  assert.equal(agentNameFromArgv(['--agent-name=-x']), null);
+});
+
+test('agentNameFromArgv: the first occurrence wins', () => {
+  assert.equal(agentNameFromArgv(['--agent-name', 'one', '--agent-name', 'two']), 'one');
+  assert.equal(agentNameFromArgv(['--agent-name', '--readonly', '--agent-name=two']), null);
+});
+
+test('defaultAgentName is claude-code until the kv value is set', () => {
+  const store = openStore(':memory:');
+  assert.equal(defaultAgentName(store), 'claude-code');
+  store.setKv('default_agent_name', 'scribe');
+  assert.equal(defaultAgentName(store), 'scribe');
 });

@@ -313,8 +313,10 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await panel.getByRole('button', { name: 'Assign to claude-code' }).click()
     await expect(panel.getByText('Assigned to claude-code')).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Take back' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Take back' })).toBeFocused()
     await panel.getByRole('button', { name: 'Take back' }).click()
     await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeFocused()
   })
 })
 

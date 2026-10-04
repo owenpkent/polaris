@@ -90,7 +90,7 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 |---|---|---|
 | GET | `/api/health` | `{ ok, version, today, counts: { inbox, overdue, today } }` |
 | GET | `/api/settings/agent` | `{ defaultAgentName }`: the stored kv value, or `'claude-code'` if none is set yet. |
-| PATCH | `/api/settings/agent` | Body: `{ defaultAgentName }`, validated by `normalizeAgentName` (1 to 40 characters of letters, digits, spaces, `-`, `_`, `.`). `400` on an invalid name. `{ defaultAgentName }`. Used by the dashboard's "Assign to AI" button. |
+| PATCH | `/api/settings/agent` | Body: `{ defaultAgentName }`, validated by `normalizeAgentName` (1 to 40 characters of letters, digits, spaces, `-`, `_`, `.`, starting with a letter or digit). `400` on an invalid name. `{ defaultAgentName }`. Used by the dashboard's "Assign to AI" button. |
 | GET | `/api/identity` | No bearer token. Query `challenge` (32 to 128 lowercase hex characters). `{ proof }`: HMAC-SHA256 hex over `constellation-identity\n<port>\n<challenge>` keyed with the api token, `port` being the one the request arrived on. `400` for any other challenge. |
 | GET | `/api/projects` | `?includeArchived=1` also lists archived projects. `{ projects: (Project & counts)[] }` |
 | POST | `/api/projects` | Body: `{ name, type?, status?, description?, github?, category? }`. The slug comes from the name and must be new. `github` is `owner/repo` or a github.com URL and is stored as `https://github.com/owner/repo`; a project needs no repo. 201 with `{ project }`. |
@@ -158,7 +158,7 @@ registered at all); `/mcp` serves the full read/write set unless `opts.readonlyM
 which case it serves readonly too (still under the mcp token).
 
 An `X-Agent-Name` header lets the connection declare a name for itself (the stdio server has the
-equivalent `--agent-name <name>` flag), recorded beside actor `agent` on every write it makes --
+equivalent `--agent-name <name>` or `--agent-name=<name>` flag), recorded beside actor `agent` on every write it makes --
 `core/agentName.ts`'s `normalizeAgentName` accepts or rejects it, and an invalid value is just
 ignored (recorded as no name), never a `400`. The name is self-declared and is never an identity
 or a permission: it never changes which actor a write is recorded under.

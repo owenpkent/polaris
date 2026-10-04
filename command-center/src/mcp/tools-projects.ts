@@ -13,9 +13,7 @@ import { guard, ok } from './shared.ts';
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 
-export function registerProjectWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
-  // The declared name is recorded beside the actor, never an identity or a permission (see ActorInput).
-  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
+export function registerProjectWriteTools(server: McpServer, app: App, actor: ActorInput): void {
   server.registerTool('create_project', {
     description: desc('create_project'),
     inputSchema: {
@@ -27,7 +25,7 @@ export function registerProjectWriteTools(server: McpServer, app: App, opts: { a
       category: z.string().optional(),
     },
   }, (args) => guard(() => {
-    const project = app.store.createProject(parseBody(projectCreateBodySchema, args), ACTOR);
+    const project = app.store.createProject(parseBody(projectCreateBodySchema, args), actor);
     return ok(`Created project ${project.slug}: ${project.name}. Add tasks to it with create_task.`, { project });
   }));
 }

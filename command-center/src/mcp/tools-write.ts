@@ -13,10 +13,7 @@ import { PRIORITY_VALUES, TASK_STATUS_VALUES, guard, ok, err, resolveProject, re
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 const customFieldSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
-export function registerWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
-  // Every mutation this connection makes is still actor 'agent': the name rides beside it and is
-  // never an identity or a permission (see ActorInput).
-  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
+export function registerWriteTools(server: McpServer, app: App, actor: ActorInput): void {
   server.registerTool('create_task', {
     description: desc('create_task'),
     inputSchema: {
@@ -70,8 +67,8 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     if (args.is_milestone !== undefined) input.isMilestone = args.is_milestone;
     if (args.custom_fields !== undefined) input.customFields = args.custom_fields;
     const task = app.store.db.transaction(() => {
-      const created = app.store.createTask(input, ACTOR);
-      for (const blockerId of args.blocked_by ?? []) app.store.addDependency(blockerId, created.id, ACTOR);
+      const created = app.store.createTask(input, actor);
+      for (const blockerId of args.blocked_by ?? []) app.store.addDependency(blockerId, created.id, actor);
       return created;
     });
     return ok(`Created task ${taskRef(task)}`, { task });
@@ -128,10 +125,10 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     if (args.is_milestone !== undefined) patch.isMilestone = args.is_milestone;
     if (args.custom_fields !== undefined) patch.customFields = args.custom_fields;
     const task = app.store.db.transaction(() => {
-      app.store.updateTask(args.task_id, patch, ACTOR);
-      if (args.add_comment) app.store.addComment(args.task_id, args.add_comment, 'agent', ACTOR);
-      if (args.add_blocker) app.store.addDependency(args.add_blocker, args.task_id, ACTOR);
-      if (args.remove_blocker) app.store.removeDependency(args.remove_blocker, args.task_id, ACTOR);
+      app.store.updateTask(args.task_id, patch, actor);
+      if (args.add_comment) app.store.addComment(args.task_id, args.add_comment, 'agent', actor);
+      if (args.add_blocker) app.store.addDependency(args.add_blocker, args.task_id, actor);
+      if (args.remove_blocker) app.store.removeDependency(args.remove_blocker, args.task_id, actor);
       return app.store.requireTask(args.task_id);
     });
     return ok(`Updated task ${taskRef(task)}`, { task });
@@ -141,7 +138,7 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     description: desc('complete_task'),
     inputSchema: { task_id: z.string() },
   }, (args) => guard(() => {
-    const { task, next } = app.store.completeTask(args.task_id, ACTOR);
+    const { task, next } = app.store.completeTask(args.task_id, actor);
     const text = next
       ? `Completed ${taskRef(task)}. Next occurrence created: ${next.id} due ${next.dueAt ?? 'unscheduled'}.`
       : `Completed ${taskRef(task)}.`;
@@ -175,7 +172,7 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     }
     if (args.parent_id !== undefined) to.parentId = args.parent_id;
     if (args.position !== undefined) to.position = args.position;
-    const task = app.store.moveTask(args.task_id, to, ACTOR);
+    const task = app.store.moveTask(args.task_id, to, actor);
     return ok(`Moved task ${taskRef(task)}`, { task });
   }));
 
@@ -204,7 +201,7 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     if (args.due_at !== undefined) patch.dueAt = args.due_at;
     if (args.priority !== undefined) patch.priority = args.priority;
     if (args.title !== undefined) patch.title = args.title;
-    const task = app.store.acceptInboxItem(args.task_id, patch, ACTOR);
+    const task = app.store.acceptInboxItem(args.task_id, patch, actor);
     return ok(`Accepted ${taskRef(task)}`, { task });
   }));
 
@@ -212,7 +209,7 @@ export function registerWriteTools(server: McpServer, app: App, opts: { agentNam
     description: desc('reject_inbox_item'),
     inputSchema: { task_id: z.string(), reason: z.string().optional() },
   }, (args) => guard(() => {
-    const task = app.store.rejectInboxItem(args.task_id, args.reason ?? null, ACTOR);
+    const task = app.store.rejectInboxItem(args.task_id, args.reason ?? null, actor);
     return ok(`Rejected ${taskRef(task)}`, { task });
   }));
 

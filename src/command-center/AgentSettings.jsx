@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { useOffline } from './offlineStatus'
 import { ErrorBanner } from './shared'
+import { rememberDefaultAgentName } from './defaultAgentName'
 
-// The owner's default agent name (settings-routes.ts): what "Assign to AI" claims a task with,
+// The owner's default agent name (command-center/src/http/rest.ts): what "Assign to AI" claims a task with,
 // and the name history lines show next to "agent" (docs/assign-to-ai-options.md, stage 5B).
 // Shown on the Connection tab next to Backups. Saves on blur or Enter; the PATCH is live-only
 // (api.js has no `offline` kind for it), so it is off whenever the server cannot be reached.
@@ -56,6 +57,8 @@ export default function AgentSettings() {
       savedRef.current = res.defaultAgentName
       setSaved(res.defaultAgentName)
       setDraft(res.defaultAgentName)
+      // An open task panel offers "Assign to <name>": tell it, since no event announces this.
+      rememberDefaultAgentName(res.defaultAgentName)
     } catch (err) {
       setError(err.message || 'Could not save the agent name.')
     } finally {

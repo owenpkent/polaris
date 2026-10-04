@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import userEvent from '@testing-library/user-event'
 import TaskDetailPanel from './TaskDetailPanel'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { resetDefaultAgentNameCache } from './defaultAgentName'
 
 const api = {
   getTask: vi.fn(),
@@ -32,6 +33,7 @@ function detail(task, history, goals = []) {
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
+  resetDefaultAgentNameCache()
   api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
 })
 
@@ -369,7 +371,7 @@ describe('Assign to AI', () => {
     await act(async () => { fireEvent.click(assign) })
 
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'claude-code' })
-    await screen.findByText('Assigned to claude-code')
+    await screen.findByTitle('claude-code')
   })
 
   test('the label uses the name the server gives as the default agent', async () => {
@@ -395,7 +397,7 @@ describe('Assign to AI', () => {
 
     expect(api.updateTask).toHaveBeenCalledTimes(1)
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'scribe' })
-    await screen.findByText('Assigned to scribe')
+    await screen.findByTitle('scribe')
   })
 
   test('if the name cannot be loaded, a click assigns nothing and says so', async () => {
@@ -418,7 +420,7 @@ describe('Assign to AI', () => {
 
     const button = await screen.findByRole('button', { name: 'Assign to claude-code' })
     await act(async () => { fireEvent.click(button) })
-    await screen.findByText('Assigned to claude-code')
+    await screen.findByTitle('claude-code')
     const box = screen.getByLabelText('Assignee')
     expect(box.value).toBe('claude-code')
 
@@ -454,6 +456,58 @@ describe('Assign to AI', () => {
 
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: null })
     await screen.findByRole('button', { name: 'Assign to claude-code' })
+  })
+
+  test('an inbox task shows no Assign button', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, status: 'inbox' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    await screen.findByRole('textbox', { name: 'Assignee' })
+    expect(screen.queryByRole('button', { name: /^Assign to/ })).toBeNull()
+  })
+
+  test('a task with untrusted text shows no Assign button', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, untrustedText: true }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    await screen.findByRole('textbox', { name: 'Assignee' })
+    expect(screen.queryByRole('button', { name: /^Assign to/ })).toBeNull()
+  })
+
+  test('an assigned task with untrusted text still shows Take back', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, untrustedText: true, assignee: 'scribe' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    expect(await screen.findByText('Assigned to scribe')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Take back' })).toBeTruthy()
+  })
+
+  test('after Assign, focus moves to Take back and the change is announced', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: { ...TASK, assignee: 'claude-code' } })
+    api.getTask.mockResolvedValue(detail({ ...TASK, assignee: 'claude-code' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    const assign = await screen.findByRole('button', { name: 'Assign to claude-code' })
+    await act(async () => { fireEvent.click(assign) })
+
+    const takeBack = await screen.findByRole('button', { name: 'Take back' })
+    await waitFor(() => expect(document.activeElement).toBe(takeBack))
+    expect(screen.getByRole('status').textContent).toBe('Assigned to claude-code')
+  })
+
+  test('after Take back, focus moves to Assign and the change is announced', async () => {
+    api.getTask.mockResolvedValueOnce(detail({ ...TASK, assignee: 'scribe' }, []))
+    api.updateTask.mockResolvedValue({ task: { ...TASK, assignee: null } })
+    api.getTask.mockResolvedValue(detail({ ...TASK, assignee: null }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    const takeBack = await screen.findByRole('button', { name: 'Take back' })
+    await act(async () => { fireEvent.click(takeBack) })
+
+    const assign = await screen.findByRole('button', { name: 'Assign to claude-code' })
+    await waitFor(() => expect(document.activeElement).toBe(assign))
+    expect(screen.getByRole('status').textContent).toBe('Assignment cleared')
   })
 
   test('offline, Assign to AI is disabled', async () => {

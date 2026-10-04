@@ -80,9 +80,7 @@ export function registerGoalReadTools(server: McpServer, app: App): void {
   }));
 }
 
-export function registerGoalWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
-  // The declared name is recorded beside the actor, never an identity or a permission (see ActorInput).
-  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
+export function registerGoalWriteTools(server: McpServer, app: App, actor: ActorInput): void {
   const dateOnly = z.string().regex(DATE_ONLY, 'must be YYYY-MM-DD');
 
   server.registerTool('create_goal', {
@@ -104,7 +102,7 @@ export function registerGoalWriteTools(server: McpServer, app: App, opts: { agen
       title: args.title, notes: args.notes, parentId: args.parent_id, periodLabel: args.period_label,
       startsOn: args.starts_on, endsOn: args.ends_on, progressMode: args.progress_mode,
       currentValue: args.current_value, targetValue: args.target_value, unit: args.unit,
-    }, ACTOR);
+    }, actor);
     return ok(`Created goal ${goal.id}: ${goal.title}. Link projects or tasks to it with link_goal.`, { goal: app.store.goalDetail(goal.id) });
   }));
 
@@ -130,7 +128,7 @@ export function registerGoalWriteTools(server: McpServer, app: App, opts: { agen
       title: args.title, notes: args.notes, parentId: args.parent_id, periodLabel: args.period_label,
       startsOn: args.starts_on, endsOn: args.ends_on, status: args.status, statusNote: args.status_note,
       progressMode: args.progress_mode, currentValue: args.current_value, targetValue: args.target_value, unit: args.unit,
-    }, ACTOR);
+    }, actor);
     const goal = app.store.goalDetail(args.goal_id);
     return ok(`Updated goal ${goal.id}.\n${goalLine(goal)}`, { goal });
   }));
@@ -147,11 +145,11 @@ export function registerGoalWriteTools(server: McpServer, app: App, opts: { agen
     const projectId = args.project !== undefined ? resolveProject(app.store, args.project).id : undefined;
     const target = { projectId, taskId: args.task_id };
     if (args.remove) {
-      const removed = app.store.unlinkGoal(args.goal_id, target, ACTOR);
+      const removed = app.store.unlinkGoal(args.goal_id, target, actor);
       const goal = app.store.goalDetail(args.goal_id);
       return ok(removed ? `Removed the link from goal ${goal.id}.` : `Goal ${goal.id} had no such link.`, { goal });
     }
-    app.store.linkGoal(args.goal_id, target, ACTOR);
+    app.store.linkGoal(args.goal_id, target, actor);
     const goal = app.store.goalDetail(args.goal_id);
     return ok(`Linked. ${goalLine(goal)}`, { goal });
   }));

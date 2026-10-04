@@ -82,7 +82,7 @@ Or over HTTP while the daemon is running, with the token from `command-center/da
 claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>" --header "X-Agent-Name: scribe"
 ```
 
-`--agent-name` on stdio and the `X-Agent-Name` header on HTTP give the agent a self-declared name of 1 to 40 letters, digits, spaces, hyphens, underscores, and periods, recorded beside the actor on everything that agent writes.
+`--agent-name` on stdio and the `X-Agent-Name` header on HTTP give the agent a self-declared name of 1 to 40 letters, digits, spaces, hyphens, underscores, and periods that starts with a letter or digit, recorded beside the actor on everything that agent writes.
 
 For a read-only connection use `/mcp/readonly` with `command-center/data/mcp-readonly-token`, or add `--readonly` to the stdio command. `npm run cc -- mcp tools` prints the tool list.
 

@@ -2,6 +2,7 @@ import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import AgentSettings from './AgentSettings'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { useDefaultAgentName, resetDefaultAgentNameCache } from './defaultAgentName'
 
 const api = {
   getAgentSettings: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
+  resetDefaultAgentNameCache()
   connection.connected = true
 })
 
@@ -75,6 +77,22 @@ describe('AgentSettings', () => {
 
     await waitFor(() => expect(api.updateAgentSettings).toHaveBeenCalledWith({ defaultAgentName: 'scribe' }))
     await waitFor(() => expect(screen.getByLabelText('Default agent name').value).toBe('scribe'))
+  })
+
+  test('a saved name is visible to an open task panel through useDefaultAgentName', async () => {
+    api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+    api.updateAgentSettings.mockResolvedValue({ defaultAgentName: 'scribe' })
+    function Panel() {
+      return <output aria-label="Panel name">{useDefaultAgentName(api) ?? ''}</output>
+    }
+    render(<><Panel /><AgentSettings /></>)
+    await waitFor(() => expect(screen.getByLabelText('Panel name').textContent).toBe('claude-code'))
+
+    const input = await screen.findByLabelText('Default agent name')
+    fireEvent.change(input, { target: { value: 'scribe' } })
+    fireEvent.blur(input)
+
+    await waitFor(() => expect(screen.getByLabelText('Panel name').textContent).toBe('scribe'))
   })
 
   test('Enter saves like blur', async () => {

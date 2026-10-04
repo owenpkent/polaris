@@ -8,6 +8,7 @@ import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
 import { Menu } from './Menu'
+import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 
 // History entries are CcEvent rows: { id, at, kind, taskId, actor, actorName, payload },
 // plus `restore` from the server: what Put back would set, or null.
@@ -229,8 +230,8 @@ function IconButton({ children, onClick, ariaLabel }) {
 
 const sectionHeading = { fontSize: 14, fontWeight: 600, color: 'var(--t1)' }
 
-// Matches the neighbouring header buttons (Mark complete, Hand off to Claude Code): a 44px
-// outlined control that sits inline with them.
+// The outlined 44px control shared by the header buttons here (Mark complete, Assign to, Take
+// back). Hand off to Claude Code is deliberately a different, raised style (HandoffMenu.jsx).
 const headerBtnStyle = {
   display: 'flex',
   alignItems: 'center',
@@ -266,8 +267,14 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
   const [restoring, setRestoring] = useState(null)
-  const [agentName, setAgentName] = useState(null)
+  const agentName = useDefaultAgentName(api)
   const [assignBusy, setAssignBusy] = useState(false)
+  // What the hidden live region reads out after an assign or a take back.
+  const [assignNotice, setAssignNotice] = useState('')
+  // The two buttons swap places once the reload lands, so focus is moved by an effect then.
+  const assignBtnRef = useRef(null)
+  const takeBackBtnRef = useRef(null)
+  const pendingFocusRef = useRef(null)
   const offline = useOffline()
   const assigneeInputId = useId()
 
@@ -347,17 +354,21 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     return () => { cancelled = true }
   }, [api, data?.task?.projectId])
 
-  // The name "Assign to <name>" offers, read once when the panel opens. Until it arrives the
-  // name is unknown, not the server's fallback: a click then reads it first (handleAssignToAgent).
+  // Moves focus to the button that replaced the one just used. It waits for the reload (the
+  // buttons swap on `assignee`) and for the request to end (a busy button is disabled, and a
+  // disabled button cannot take focus).
+  const assignee = data?.task?.assignee || null
   useEffect(() => {
-    let cancelled = false
-    api.getAgentSettings().then((res) => {
-      if (!cancelled && res?.defaultAgentName) setAgentName(res.defaultAgentName)
-    }).catch(() => {
-      // Leave it unknown; a click tries again.
-    })
-    return () => { cancelled = true }
-  }, [api])
+    if (assignBusy) return
+    const target = pendingFocusRef.current
+    if (target === 'take-back' && assignee) {
+      pendingFocusRef.current = null
+      takeBackBtnRef.current?.focus()
+    } else if (target === 'assign' && !assignee) {
+      pendingFocusRef.current = null
+      assignBtnRef.current?.focus()
+    }
+  }, [assignee, assignBusy])
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -428,7 +439,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       onChanged?.()
     } catch (err) {
       setSaveError(err.message || 'Could not save changes.')
+      return false
     }
+    return true
   }
 
   async function handleCompleteToggle() {
@@ -452,6 +465,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   async function handleAssignToAgent() {
     const shown = form.assignee
     setAssignBusy(true)
+    setAssignNotice('')
     try {
       let name = agentName
       if (!name) {
@@ -464,9 +478,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
           setSaveError('Could not load the default agent name. Try again.')
           return
         }
-        setAgentName(name)
+        rememberDefaultAgentName(name)
       }
-      await patchTask({ assignee: name }, { assignee: shown })
+      pendingFocusRef.current = 'take-back'
+      if (await patchTask({ assignee: name }, { assignee: shown })) setAssignNotice(`Assigned to ${name}`)
+      else pendingFocusRef.current = null
     } finally {
       setAssignBusy(false)
     }
@@ -475,8 +491,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   async function handleTakeBack() {
     const shown = form.assignee
     setAssignBusy(true)
+    setAssignNotice('')
     try {
-      await patchTask({ assignee: null }, { assignee: shown })
+      pendingFocusRef.current = 'assign'
+      if (await patchTask({ assignee: null }, { assignee: shown })) setAssignNotice('Assignment cleared')
+      else pendingFocusRef.current = null
     } finally {
       setAssignBusy(false)
     }
@@ -568,6 +587,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         gap: 20,
       }}
     >
+      <div role="status" className="sr-only">{assignNotice}</div>
       {loading && <Loading label="Loading task…" />}
       <ErrorBanner message={error} onRetry={load} />
 
@@ -580,19 +600,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               <button
                 type="button"
                 onClick={handleCompleteToggle}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  height: 44,
-                  padding: '0 16px',
-                  border: '1px solid var(--bd-strong)',
-                  borderRadius: 8,
-                  background: 'transparent',
-                  color: done ? 'var(--green)' : 'var(--t1)',
-                  fontSize: 14,
-                  fontWeight: done ? 600 : 400,
-                }}
+                style={{ ...headerBtnStyle, color: done ? 'var(--green)' : 'var(--t1)', fontWeight: done ? 600 : 400 }}
               >
                 <Check size={16} strokeWidth={2.5} aria-hidden="true" />
                 <span>{done ? 'Completed' : 'Mark complete'}</span>
@@ -600,10 +608,15 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
               {data.task.assignee ? (
                 <>
-                  <span className="badge" style={{ background: 'var(--blue-soft)', color: 'var(--blue)' }}>
+                  <span
+                    className="badge badge-software"
+                    title={data.task.assignee}
+                    style={{ maxWidth: '100%', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  >
                     Assigned to {data.task.assignee}
                   </span>
                   <button
+                    ref={takeBackBtnRef}
                     type="button"
                     className="hover-surface"
                     onClick={handleTakeBack}
@@ -613,8 +626,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                     {assignBusy ? 'Taking back…' : 'Take back'}
                   </button>
                 </>
-              ) : (
+              ) : data.task.status === 'inbox' || data.task.untrustedText ? null : (
+                // Propose, do not act: the owner accepts an inbox item first, and text written by a
+                // third party (untrustedText) is never handed to an agent by one click. The Assignee
+                // box below still works for the owner.
                 <button
+                  ref={assignBtnRef}
                   type="button"
                   className="hover-surface"
                   onClick={handleAssignToAgent}
