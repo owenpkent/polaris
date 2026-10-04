@@ -311,12 +311,15 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await openTask(page, title)
     const panel = page.getByRole('dialog', { name: 'Task details' })
     await panel.getByRole('button', { name: 'Assign to claude-code' }).click()
-    await expect(panel.getByText('Assigned to claude-code')).toBeVisible()
+    // The chip (found by its title) and the live region both read "Assigned to claude-code".
+    await expect(panel.getByTitle('claude-code')).toBeVisible()
+    await expect(panel.getByRole('status')).toHaveText('Assigned to claude-code')
     await expect(panel.getByRole('button', { name: 'Take back' })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Take back' })).toBeFocused()
     await panel.getByRole('button', { name: 'Take back' }).click()
     await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeFocused()
+    await expect(panel.getByRole('status')).toHaveText('Assignment cleared')
   })
 })
 
