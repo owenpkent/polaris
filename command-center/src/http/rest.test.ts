@@ -18,6 +18,30 @@ test('GET /api/health reports counts for the seeded store', async (t) => {
   });
 });
 
+test('GET/PATCH /api/settings/agent: fallback, round trip, 400 on invalid', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const initial = await api(base, 'GET', '/api/settings/agent');
+    assert.equal(initial.status, 200);
+    assert.deepEqual(initial.json, { defaultAgentName: 'claude-code' });
+
+    const saved = await api(base, 'PATCH', '/api/settings/agent', { defaultAgentName: 'scribe' });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.json, { defaultAgentName: 'scribe' });
+
+    const reread = await api(base, 'GET', '/api/settings/agent');
+    assert.deepEqual(reread.json, { defaultAgentName: 'scribe' });
+
+    assert.equal((await api(base, 'PATCH', '/api/settings/agent', { defaultAgentName: '' })).status, 400);
+    assert.equal((await api(base, 'PATCH', '/api/settings/agent', { defaultAgentName: 'x'.repeat(41) })).status, 400);
+    assert.equal((await api(base, 'PATCH', '/api/settings/agent', { defaultAgentName: '<script>' })).status, 400);
+    assert.equal((await api(base, 'PATCH', '/api/settings/agent', { defaultAgentName: 42 })).status, 400);
+    // A rejected PATCH must not clobber the last good value.
+    assert.deepEqual((await api(base, 'GET', '/api/settings/agent')).json, { defaultAgentName: 'scribe' });
+  });
+});
+
 test('GET /api/projects returns counts per project', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());

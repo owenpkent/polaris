@@ -252,3 +252,47 @@ test('the next occurrence of a recurring task keeps its assignee', () => {
   assert.ok(next);
   assert.equal(next.assignee, 'scribe');
 });
+
+test('an event emitted with a named actor reads back with actorName; a plain actor reads back null', () => {
+  const s = fresh();
+  const named = s.createTask({ title: 'Named' }, { actor: 'agent', name: 'scribe' });
+  const plain = s.createTask({ title: 'Plain' }, 'human');
+
+  const namedEvent = s.taskHistory(named.id)[0];
+  assert.equal(namedEvent.actor, 'agent', 'the actor enum stays agent, whatever name rides beside it');
+  assert.equal(namedEvent.actorName, 'scribe');
+
+  const plainEvent = s.taskHistory(plain.id)[0];
+  assert.equal(plainEvent.actor, 'human');
+  assert.equal(plainEvent.actorName, null);
+
+  // eventsSince and eventsOfKind read the same column.
+  const since = s.eventsSince(0, 1000);
+  assert.equal(since.find((e) => e.taskId === named.id)?.actorName, 'scribe');
+  const ofKind = s.eventsOfKind('task.created', null);
+  assert.equal(ofKind.find((e) => e.taskId === named.id)?.actorName, 'scribe');
+});
+
+test('a null name on an actor input reads back the same as a plain actor', () => {
+  const s = fresh();
+  const t = s.createTask({ title: 'No name given' }, { actor: 'agent', name: null });
+  assert.equal(s.taskHistory(t.id)[0].actorName, null);
+});
+
+test('addComment carries authorName when the actor input names the same author; not when it names someone else', () => {
+  const s = fresh();
+  const t = s.createTask({ title: 'Has comments' });
+
+  const byName = s.addComment(t.id, 'from a named agent', 'agent', { actor: 'agent', name: 'scribe' });
+  assert.equal(byName.authorName, 'scribe');
+  assert.equal(s.listComments(t.id).find((c) => c.id === byName.id)?.authorName, 'scribe');
+
+  const plain = s.addComment(t.id, 'from a plain human', 'human');
+  assert.equal(plain.authorName, null);
+
+  // The system note markSourceGone/completeTask write is authored 'system' even when the actor
+  // that caused it carries a name: the name must not be attached to a message that entity did
+  // not literally write.
+  const mismatched = s.addComment(t.id, 'a system note caused by a named agent', 'system', { actor: 'agent', name: 'scribe' });
+  assert.equal(mismatched.authorName, null);
+});

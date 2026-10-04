@@ -5,7 +5,7 @@
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
   ACTIVE_STATUSES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, OPEN_GOAL_STATUSES, PRIORITIES, TASK_STATUSES,
-  type Actor, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
+  type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal,
   type NewProject, type NewTask, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
   type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type UpsertResult,
@@ -74,6 +74,16 @@ function normalizeAssignee(v: string | null | undefined): string | null {
   if (v == null) return null;
   const name = v.replace(/\s+/g, ' ').trim();
   return name ? name : null;
+}
+
+/**
+ * Every write method accepts an ActorInput: either a plain Actor, or an actor with a self-declared
+ * name riding beside it (an MCP connection started with --agent-name or X-Agent-Name). This is the
+ * one place that tells the two apart, so emit() and addComment() always have a real Actor to put in
+ * the actor column and a name (or null) to put beside it.
+ */
+function normalizeActorInput(who: ActorInput): { actor: Actor; name: string | null } {
+  return typeof who === 'string' ? { actor: who, name: null } : { actor: who.actor, name: who.name ?? null };
 }
 
 function rowToTask(r: Row): Task {
@@ -182,12 +192,13 @@ export class Store {
 
   // ---------------------------------------------------------------- events
 
-  private emit(kind: EventKind, taskId: string | null, actor: Actor, payload: Record<string, Json> = {}): void {
-    this.db.run('INSERT INTO events (at, kind, task_id, actor, payload) VALUES (?, ?, ?, ?, ?)',
-      [this.now(), kind, taskId, actor, JSON.stringify(payload)]);
+  private emit(kind: EventKind, taskId: string | null, who: ActorInput, payload: Record<string, Json> = {}): void {
+    const { actor, name } = normalizeActorInput(who);
+    this.db.run('INSERT INTO events (at, kind, task_id, actor, actor_name, payload) VALUES (?, ?, ?, ?, ?, ?)',
+      [this.now(), kind, taskId, actor, name, JSON.stringify(payload)]);
   }
 
-  recordEvent(kind: EventKind, taskId: string | null, actor: Actor, payload: Record<string, Json> = {}): void {
+  recordEvent(kind: EventKind, taskId: string | null, actor: ActorInput, payload: Record<string, Json> = {}): void {
     this.emit(kind, taskId, actor, payload);
   }
 
@@ -201,6 +212,7 @@ export class Store {
       kind: r.kind as EventKind,
       taskId: r.task_id as string | null,
       actor: r.actor as Actor,
+      actorName: (r.actor_name as string | null) ?? null,
       payload: parseJson(r.payload, {}),
     }));
   }
@@ -208,7 +220,7 @@ export class Store {
   taskHistory(taskId: string): CcEvent[] {
     return this.db.all<Row>('SELECT * FROM events WHERE task_id = ? ORDER BY id', [taskId]).map((r) => ({
       id: r.id as number, at: r.at as string, kind: r.kind as EventKind, taskId: r.task_id as string | null,
-      actor: r.actor as Actor, payload: parseJson(r.payload, {}),
+      actor: r.actor as Actor, actorName: (r.actor_name as string | null) ?? null, payload: parseJson(r.payload, {}),
     }));
   }
 
@@ -241,7 +253,7 @@ export class Store {
 
   // -------------------------------------------------------------- projects
 
-  upsertProject(p: NewProject, actor: Actor = 'system'): Project {
+  upsertProject(p: NewProject, actor: ActorInput = 'system'): Project {
     if (!p.slug || !p.name) throw new ValidationError('project slug and name are required');
     const now = this.now();
     return this.db.transaction(() => {
@@ -283,7 +295,7 @@ export class Store {
   }
 
   /** A project made by hand (dashboard or MCP), not by an importer. The slug comes from the name and must be new. */
-  createProject(input: ProjectInput, actor: Actor = 'human'): Project {
+  createProject(input: ProjectInput, actor: ActorInput = 'human'): Project {
     const name = input.name?.trim();
     if (!name) throw new ValidationError('project name is required');
     const slug = slugify(name);
@@ -293,7 +305,7 @@ export class Store {
   }
 
   /** Change a project's own fields. `null` clears a field; a field left out is untouched. The slug never changes. */
-  updateProject(idOrSlug: string, patch: ProjectPatch, actor: Actor = 'human'): Project {
+  updateProject(idOrSlug: string, patch: ProjectPatch, actor: ActorInput = 'human'): Project {
     const existing = this.getProject(idOrSlug);
     if (!existing) throw new NotFoundError(`project not found: ${idOrSlug}`);
     const name = patch.name !== undefined ? patch.name.trim() : existing.name;
@@ -387,7 +399,7 @@ export class Store {
   }
 
   /** `opts.id` is for a task a dashboard created offline, which already carries the id it minted. */
-  createTask(input: NewTask, actor: Actor = 'human', opts: { id?: string } = {}): Task {
+  createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string } = {}): Task {
     this.validate(input);
     if (opts.id !== undefined && !TASK_ID_PATTERN.test(opts.id)) throw new ValidationError(`not a task id: ${opts.id}`);
     const now = this.now();
@@ -424,7 +436,7 @@ export class Store {
     });
   }
 
-  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: Actor = 'human'): Task {
+  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: ActorInput = 'human'): Task {
     this.validate(patch);
     // Normalised up front so the history records what was stored: a blank from a form clears the
     // field and lands as null, the same as an explicit null.
@@ -527,7 +539,7 @@ export class Store {
   }
 
   /** Complete a task. If it recurs, the next instance is created and returned. */
-  completeTask(id: string, actor: Actor = 'human'): { task: Task; next: Task | null } {
+  completeTask(id: string, actor: ActorInput = 'human'): { task: Task; next: Task | null } {
     return this.db.transaction(() => {
       const before = this.requireTask(id);
       if (before.status === 'done') return { task: before, next: null };
@@ -563,7 +575,7 @@ export class Store {
     });
   }
 
-  reopenTask(id: string, actor: Actor = 'human'): Task {
+  reopenTask(id: string, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
       const before = this.requireTask(id);
       if (before.status !== 'done' && before.status !== 'dropped') return before;
@@ -573,7 +585,7 @@ export class Store {
     });
   }
 
-  moveTask(id: string, to: { projectId?: string | null; sectionId?: string | null; parentId?: string | null; position?: number }, actor: Actor = 'human'): Task {
+  moveTask(id: string, to: { projectId?: string | null; sectionId?: string | null; parentId?: string | null; position?: number }, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
       const before = this.requireTask(id);
       let projectId = to.projectId !== undefined ? to.projectId : before.projectId;
@@ -597,7 +609,7 @@ export class Store {
     });
   }
 
-  acceptInboxItem(id: string, patch: TaskPatch = {}, actor: Actor = 'human'): Task {
+  acceptInboxItem(id: string, patch: TaskPatch = {}, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
       const t = this.requireTask(id);
       if (t.status !== 'inbox') throw new ValidationError(`task ${id} is not in the inbox (status ${t.status})`);
@@ -607,7 +619,7 @@ export class Store {
     });
   }
 
-  rejectInboxItem(id: string, reason: string | null = null, actor: Actor = 'human'): Task {
+  rejectInboxItem(id: string, reason: string | null = null, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
       const t = this.requireTask(id);
       if (t.status !== 'inbox') throw new ValidationError(`task ${id} is not in the inbox (status ${t.status})`);
@@ -616,7 +628,8 @@ export class Store {
       if (t.sourceType && t.sourceId) {
         this.db.run(`UPDATE source_items SET state = 'rejected' WHERE source_type = ? AND source_id = ?`, [t.sourceType, t.sourceId]);
       }
-      if (reason) this.addComment(id, `Rejected: ${reason}`, actor === 'agent' ? 'agent' : 'human');
+      const { actor: who } = normalizeActorInput(actor);
+      if (reason) this.addComment(id, `Rejected: ${reason}`, who === 'agent' ? 'agent' : 'human', actor);
       this.emit('task.rejected', id, actor, { reason });
       return this.requireTask(id);
     });
@@ -708,7 +721,7 @@ export class Store {
 
   // ---------------------------------------------------------- dependencies
 
-  addDependency(blockerId: string, blockedId: string, actor: Actor = 'human'): void {
+  addDependency(blockerId: string, blockedId: string, actor: ActorInput = 'human'): void {
     this.requireTask(blockerId);
     this.requireTask(blockedId);
     if (blockerId === blockedId) throw new ValidationError('a task cannot block itself');
@@ -726,7 +739,7 @@ export class Store {
     this.emit('task.updated', blockedId, actor, { changes: { blockedBy: [null, blockerId] } });
   }
 
-  removeDependency(blockerId: string, blockedId: string, actor: Actor = 'human'): void {
+  removeDependency(blockerId: string, blockedId: string, actor: ActorInput = 'human'): void {
     const { changes } = this.db.run('DELETE FROM dependencies WHERE blocker_id = ? AND blocked_id = ?', [blockerId, blockedId]);
     if (changes) this.emit('task.updated', blockedId, actor, { changes: { blockedBy: [blockerId, null] } });
   }
@@ -741,12 +754,21 @@ export class Store {
 
   // ------------------------------------------------------ comments & links
 
-  /** `actor` is who caused the event (defaults to author). Rules pass author 'system' and actor 'rule' so the loop guard sees them. */
-  addComment(taskId: string, body: string, author: Comment['author'] = 'human', actor: Actor = author): Comment {
+  /**
+   * `actor` is who caused the event (defaults to author). Rules pass author 'system' and actor
+   * 'rule' so the loop guard sees them. The self-declared name on `actor` is stored as the
+   * comment's author_name only when it actually names this comment's author (author === the
+   * normalized actor): a name riding on an actor used only to log a system-generated comment
+   * (markSourceGone, the recurrence note) must not be attached to that system message.
+   */
+  addComment(taskId: string, body: string, author: Comment['author'] = 'human', actor: ActorInput = author): Comment {
     this.requireTask(taskId);
     if (!body.trim()) throw new ValidationError('comment body must not be empty');
-    const c: Comment = { id: newId('c'), taskId, author, body, createdAt: this.now() };
-    this.db.run('INSERT INTO comments (id, task_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)', [c.id, taskId, author, body, c.createdAt]);
+    const { actor: who, name } = normalizeActorInput(actor);
+    const authorName = who === author ? name : null;
+    const c: Comment = { id: newId('c'), taskId, author, authorName, body, createdAt: this.now() };
+    this.db.run('INSERT INTO comments (id, task_id, author, author_name, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [c.id, taskId, author, authorName, body, c.createdAt]);
     this.emit('comment.added', taskId, actor, { commentId: c.id });
     return c;
   }
@@ -760,13 +782,14 @@ export class Store {
       [kind, afterAt, afterAt, clampLimit(limit, 10_000)]);
     return rows.reverse().map((r) => ({
       id: r.id as number, at: r.at as string, kind: r.kind as EventKind, taskId: r.task_id as string | null,
-      actor: r.actor as Actor, payload: parseJson(r.payload, {}),
+      actor: r.actor as Actor, actorName: (r.actor_name as string | null) ?? null, payload: parseJson(r.payload, {}),
     }));
   }
 
   listComments(taskId: string): Comment[] {
     return this.db.all<Row>('SELECT * FROM comments WHERE task_id = ? ORDER BY created_at, id', [taskId]).map((r) => ({
-      id: r.id as string, taskId: r.task_id as string, author: r.author as Comment['author'], body: r.body as string, createdAt: r.created_at as string,
+      id: r.id as string, taskId: r.task_id as string, author: r.author as Comment['author'],
+      authorName: (r.author_name as string | null) ?? null, body: r.body as string, createdAt: r.created_at as string,
     }));
   }
 
@@ -790,7 +813,7 @@ export class Store {
    * three-way merge: a field is overwritten only if the user has not edited it since the last ingest.
    * Items the user rejected are never resurrected.
    */
-  upsertFromSource(item: SourceItem, actor: Actor = 'system'): UpsertResult {
+  upsertFromSource(item: SourceItem, actor: ActorInput = 'system'): UpsertResult {
     // Propose, do not act: third-party text may only ever arrive as an inbox suggestion. This is
     // enforced here, not left to each ingest module, so a new source cannot skip the inbox by mistake.
     if (EXTERNAL_SOURCE_TYPES.includes(item.sourceType) && item.initialStatus !== undefined && item.initialStatus !== 'inbox') {
@@ -890,7 +913,7 @@ export class Store {
    */
   adoptSource(
     sourceType: SourceType, sourceId: string, contentHash: string, taskId: string,
-    snapshot: Record<string, Json>, actor: Actor = 'system',
+    snapshot: Record<string, Json>, actor: ActorInput = 'system',
   ): boolean {
     return this.db.transaction(() => {
       const task = this.requireTask(taskId);
@@ -923,7 +946,7 @@ export class Store {
    * what upsertFromSource consults before reviving anything. NULL means this system left the task
    * alone, so a later reappearance must not reopen it.
    */
-  markSourceGone(sourceType: SourceType, sourceId: string, resolution: 'complete' | 'drop' | 'drop_open' | 'keep', actor: Actor = 'system'): Task | undefined {
+  markSourceGone(sourceType: SourceType, sourceId: string, resolution: 'complete' | 'drop' | 'drop_open' | 'keep', actor: ActorInput = 'system'): Task | undefined {
     return this.db.transaction(() => {
       const si = this.db.get<Row>('SELECT * FROM source_items WHERE source_type = ? AND source_id = ?', [sourceType, sourceId]);
       if (!si || si.state !== 'active') return si?.task_id ? this.getTask(si.task_id as string) : undefined;
@@ -1098,7 +1121,7 @@ export class Store {
     }
   }
 
-  createGoal(input: NewGoal, actor: Actor = 'human'): Goal {
+  createGoal(input: NewGoal, actor: ActorInput = 'human'): Goal {
     if (typeof input.title !== 'string') throw new ValidationError('goal title is required');
     this.validateGoalFields(input, null);
     if (input.startsOn && input.endsOn && input.endsOn < input.startsOn) throw new ValidationError('endsOn is before startsOn');
@@ -1118,7 +1141,7 @@ export class Store {
     return this.getGoal(id)!;
   }
 
-  updateGoal(id: string, patch: GoalPatch, actor: Actor = 'human'): Goal {
+  updateGoal(id: string, patch: GoalPatch, actor: ActorInput = 'human'): Goal {
     const before = this.requireGoal(id);
     this.validateGoalFields(patch, id);
     const next: Goal = {
@@ -1152,7 +1175,7 @@ export class Store {
   }
 
   /** Deletes a goal and its links. Sub-goals are kept and become top-level goals. */
-  deleteGoal(id: string, actor: Actor = 'human'): boolean {
+  deleteGoal(id: string, actor: ActorInput = 'human'): boolean {
     const goal = this.getGoal(id);
     if (!goal) return false;
     this.db.run('DELETE FROM goals WHERE id = ?', [id]);
@@ -1165,7 +1188,7 @@ export class Store {
   }
 
   /** Links a goal to exactly one project or one task. Linking the same thing twice is a no-op. */
-  linkGoal(goalId: string, target: { projectId?: string | null; taskId?: string | null }, actor: Actor = 'human'): GoalLink {
+  linkGoal(goalId: string, target: { projectId?: string | null; taskId?: string | null }, actor: ActorInput = 'human'): GoalLink {
     this.requireGoal(goalId);
     const taskId = target.taskId ?? null;
     if ((target.projectId == null) === (taskId === null)) throw new ValidationError('link a goal to exactly one of projectId or taskId');
@@ -1185,7 +1208,7 @@ export class Store {
     return this.goalLinks(goalId).find(same)!;
   }
 
-  unlinkGoal(goalId: string, target: { projectId?: string | null; taskId?: string | null }, actor: Actor = 'human'): boolean {
+  unlinkGoal(goalId: string, target: { projectId?: string | null; taskId?: string | null }, actor: ActorInput = 'human'): boolean {
     const taskId = target.taskId ?? null;
     if ((target.projectId == null) === (taskId === null)) throw new ValidationError('unlink exactly one of projectId or taskId');
     const projectId = target.projectId != null ? (this.getProject(target.projectId)?.id ?? target.projectId) : null;

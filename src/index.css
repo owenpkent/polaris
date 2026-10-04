@@ -251,6 +251,19 @@ kbd { color: var(--t1); }
   white-space: nowrap;
 }
 
+/* Text for screen readers only (live regions that announce a change the screen already shows). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .badge-software { background: var(--blue-soft); color: var(--blue); }
 .badge-media { background: var(--purple-soft); color: var(--purple); }
 .badge-hardware { background: var(--orange-soft); color: var(--orange); }

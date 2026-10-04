@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsForm from './command-center/SettingsForm'
+import AgentSettings from './command-center/AgentSettings'
 import BackupSettings from './command-center/BackupSettings'
 import InboxTab from './command-center/InboxTab'
 import MyTasksTab from './command-center/MyTasksTab'
@@ -144,6 +145,7 @@ export default function App() {
           {tab === 'connection' && (
             <div style={{ maxWidth: 480, margin: '2rem auto' }}>
               <SettingsForm />
+              <AgentSettings />
               <BackupSettings />
             </div>
           )}

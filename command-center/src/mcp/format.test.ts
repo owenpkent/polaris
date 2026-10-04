@@ -224,9 +224,9 @@ test('taskDetailText counts and lists subtasks, blockers, blocking, comments, li
   const sub = makeTask({ id: 'sub1', title: 'Subtask' });
   const blocker = makeTask({ id: 'blk1', title: 'Blocker' });
   const blocking = makeTask({ id: 'blkd1', title: 'Blocking' });
-  const comment: Comment = { id: 'c1', taskId: 't1', author: 'human', body: 'a note', createdAt: '2026-09-01T00:00:00.000Z' };
+  const comment: Comment = { id: 'c1', taskId: 't1', author: 'human', authorName: null, body: 'a note', createdAt: '2026-09-01T00:00:00.000Z' };
   const link: Link = { id: 'l1', taskId: 't1', url: 'https://example.com', title: 'Example', kind: 'doc', createdAt: '2026-09-01T00:00:00.000Z' };
-  const hist: CcEvent = { id: 1, at: '2026-09-01T00:00:00.000Z', kind: 'task.created', taskId: 't1', actor: 'human', payload: {} };
+  const hist: CcEvent = { id: 1, at: '2026-09-01T00:00:00.000Z', kind: 'task.created', taskId: 't1', actor: 'human', actorName: null, payload: {} };
   const text = taskDetailText(makeTask(), detailExtra({ subtasks: [sub], blockers: [blocker], blocking: [blocking], comments: [comment], links: [link], history: [hist] }));
   assert.match(text, /Subtasks \(1\):/);
   assert.match(text, /"Subtask" \{sub1\}/);
@@ -259,9 +259,22 @@ test('taskDetailText renders a comment body raw, without JSON-quoting or an untr
   // Comments carry no sourceType/provenance in this model, so unlike task titles they are not
   // escaped or fenced here. This documents that current behavior rather than asserting it is safe
   // for any future untrusted comment source.
-  const comment: Comment = { id: 'c1', taskId: 't1', author: 'agent', body: 'raw "quoted" text', createdAt: '2026-09-01T00:00:00.000Z' };
+  const comment: Comment = { id: 'c1', taskId: 't1', author: 'agent', authorName: null, body: 'raw "quoted" text', createdAt: '2026-09-01T00:00:00.000Z' };
   const text = taskDetailText(makeTask(), detailExtra({ comments: [comment] }));
   assert.match(text, /- \[agent 2026-09-01T00:00:00\.000Z\] raw "quoted" text/);
+});
+
+test('taskDetailText shows the name after the actor in history, and after the author in comments, only when one was declared', () => {
+  const namedComment: Comment = { id: 'c2', taskId: 't1', author: 'agent', authorName: 'scribe', body: 'noted', createdAt: '2026-09-01T00:00:00.000Z' };
+  const namedHist: CcEvent = { id: 2, at: '2026-09-01T00:00:00.000Z', kind: 'task.updated', taskId: 't1', actor: 'agent', actorName: 'scribe', payload: {} };
+  const text = taskDetailText(makeTask(), detailExtra({ comments: [namedComment], history: [namedHist] }));
+  assert.match(text, /- \[agent scribe 2026-09-01T00:00:00\.000Z\] noted/);
+  assert.match(text, /- \[2026-09-01T00:00:00\.000Z\] task\.updated \(agent scribe\)/);
+
+  const unnamedHist: CcEvent = { id: 3, at: '2026-09-01T00:00:00.000Z', kind: 'task.updated', taskId: 't1', actor: 'agent', actorName: null, payload: {} };
+  const plainText = taskDetailText(makeTask(), detailExtra({ history: [unnamedHist] }));
+  assert.match(plainText, /- \[2026-09-01T00:00:00\.000Z\] task\.updated \(agent\)/);
+  assert.ok(!plainText.includes('(agent scribe)'));
 });
 
 // ---- projectSummaryMarkdown ----

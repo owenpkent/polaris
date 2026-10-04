@@ -304,6 +304,23 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Escape')
     await expect(row(page, title)).toHaveCount(0)
   })
+
+  test('Assign to claude-code claims the task, and Take back releases it', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'assign to ai')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: 'Assign to claude-code' }).click()
+    // The chip (found by its title) and the live region both read "Assigned to claude-code".
+    await expect(panel.getByTitle('claude-code')).toBeVisible()
+    await expect(panel.getByRole('status')).toHaveText('Assigned to claude-code')
+    await expect(panel.getByRole('button', { name: 'Take back' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Take back' })).toBeFocused()
+    await panel.getByRole('button', { name: 'Take back' }).click()
+    await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeFocused()
+    await expect(panel.getByRole('status')).toHaveText('Assignment cleared')
+  })
 })
 
 test.describe('task history', { tag: ['@flow'] }, () => {

@@ -85,3 +85,48 @@ test('MCP over HTTP: a request without a bearer token is rejected before reachin
     await assert.rejects(client.connect(transport));
   });
 });
+
+async function connectNamedClient(base: string, agentName: string): Promise<Client> {
+  const transport = new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+    requestInit: { headers: { Authorization: `Bearer ${TEST_TOKENS.mcp}`, 'X-Agent-Name': agentName } },
+  });
+  const client = new Client({ name: 'http-named-test-client', version: '0.0.0' }, { capabilities: {} });
+  await client.connect(transport);
+  return client;
+}
+
+test('MCP over HTTP: a valid X-Agent-Name header is recorded beside the actor', async (t) => {
+  const app: App = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const client = await connectNamedClient(base, 'scribe');
+    try {
+      const created = await client.callTool({ name: 'create_task', arguments: { title: 'Named over HTTP' } }) as unknown as TextResult;
+      assert.equal(created.isError, undefined);
+      const taskId = (created.structuredContent!.task as { id: string }).id;
+      const event = app.store.taskHistory(taskId).find((e) => e.kind === 'task.created');
+      assert.equal(event?.actor, 'agent');
+      assert.equal(event?.actorName, 'scribe');
+    } finally {
+      await client.close();
+    }
+  });
+});
+
+test('MCP over HTTP: an invalid X-Agent-Name header is ignored, recorded as null, not a 400', async (t) => {
+  const app: App = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const client = await connectNamedClient(base, '<script>');
+    try {
+      const created = await client.callTool({ name: 'create_task', arguments: { title: 'Invalid name over HTTP' } }) as unknown as TextResult;
+      assert.equal(created.isError, undefined);
+      const taskId = (created.structuredContent!.task as { id: string }).id;
+      const event = app.store.taskHistory(taskId).find((e) => e.kind === 'task.created');
+      assert.equal(event?.actor, 'agent');
+      assert.equal(event?.actorName, null);
+    } finally {
+      await client.close();
+    }
+  });
+});

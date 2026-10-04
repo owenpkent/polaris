@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
 import {
-  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, restoreFromHistory, restorePatch,
+  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
   type Json, type MoveTarget, type OutboxOp, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
 } from '../core/index.ts';
 import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
@@ -17,7 +17,7 @@ import { registerBackupRoutes } from './backup-routes.ts';
 import { registerGithubRoutes } from './github-routes.ts';
 import { registerIdentityRoute } from './identity.ts';
 import {
-  commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
+  agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
   moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
@@ -165,6 +165,22 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
         today: store.countTasks(todayFilter),
       },
     });
+  });
+
+  // ---------------------------------------------------------------- settings
+
+  router.add('GET', '/api/settings/agent', (ctx) => {
+    sendJson(ctx.res, 200, { defaultAgentName: defaultAgentName(store) });
+  });
+
+  router.add('PATCH', '/api/settings/agent', (ctx) => {
+    const body = parseBody(agentSettingsBodySchema, ctx.body);
+    const normalized = normalizeAgentName(body.defaultAgentName);
+    if (!normalized) {
+      throw new ValidationError('defaultAgentName must be 1 to 40 characters, start with a letter or digit, and use only letters, digits, spaces, "-", "_", or "."');
+    }
+    store.setKv(DEFAULT_AGENT_NAME_KEY, normalized);
+    sendJson(ctx.res, 200, { defaultAgentName: normalized });
   });
 
   // ---------------------------------------------------------------- projects

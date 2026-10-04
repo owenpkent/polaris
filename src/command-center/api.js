@@ -232,6 +232,13 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     disableBackupEncryption: () => call('/api/backup/encryption', { method: 'DELETE' }),
     checkBackup: () => call('/api/backup/check', { method: 'POST' }),
 
+    // The owner's default agent name (command-center/src/http/rest.ts): who "Assign to AI" claims a task for,
+    // and the name history lines show next to "agent" (docs/assign-to-ai-options.md, stage 5B).
+    // The PATCH has no `offline` kind: it is live-only, so a name typed with no server to tell
+    // never sits in the outbox describing a decision the server never saw.
+    getAgentSettings: () => call('/api/settings/agent'),
+    updateAgentSettings: (payload) => call('/api/settings/agent', { method: 'PATCH', body: payload }),
+
     githubStatus: () => call('/api/github/status'),
     githubAppManifest: () => call('/api/github/app/manifest', { method: 'POST', body: {} }),
     githubLogin: () => call('/api/github/login', { method: 'POST', body: {} }),

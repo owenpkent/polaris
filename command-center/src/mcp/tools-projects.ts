@@ -5,15 +5,15 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
+import type { ActorInput } from '../core/index.ts';
 import { parseBody, projectCreateBodySchema } from '../http/schemas.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { guard, ok } from './shared.ts';
 
-const ACTOR = 'agent' as const;
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 
-export function registerProjectWriteTools(server: McpServer, app: App): void {
+export function registerProjectWriteTools(server: McpServer, app: App, actor: ActorInput): void {
   server.registerTool('create_project', {
     description: desc('create_project'),
     inputSchema: {
@@ -25,7 +25,7 @@ export function registerProjectWriteTools(server: McpServer, app: App): void {
       category: z.string().optional(),
     },
   }, (args) => guard(() => {
-    const project = app.store.createProject(parseBody(projectCreateBodySchema, args), ACTOR);
+    const project = app.store.createProject(parseBody(projectCreateBodySchema, args), actor);
     return ok(`Created project ${project.slug}: ${project.name}. Add tasks to it with create_task.`, { project });
   }));
 }

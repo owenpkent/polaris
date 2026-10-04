@@ -77,13 +77,13 @@ export function taskDetailText(
     taskBlock(extra.blocking),
     '',
     `Comments (${extra.comments.length}):`,
-    extra.comments.length ? extra.comments.map((c) => `- [${c.author} ${c.createdAt}] ${c.body}`).join('\n') : 'None.',
+    extra.comments.length ? extra.comments.map((c) => `- [${c.author}${c.authorName ? ` ${c.authorName}` : ''} ${c.createdAt}] ${c.body}`).join('\n') : 'None.',
     '',
     `Links (${extra.links.length}):`,
     extra.links.length ? extra.links.map((l) => `- ${l.title ?? l.url} <${l.url}>`).join('\n') : 'None.',
     '',
     `Recent history (${extra.history.length}):`,
-    extra.history.length ? extra.history.map((h) => `- [${h.at}] ${h.kind} (${h.actor})`).join('\n') : 'None.',
+    extra.history.length ? extra.history.map((h) => `- [${h.at}] ${h.kind} (${h.actor}${h.actorName ? ` ${h.actorName}` : ''})`).join('\n') : 'None.',
   ];
   return lines.filter((l) => l !== '').join('\n');
 }

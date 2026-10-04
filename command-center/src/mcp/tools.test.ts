@@ -28,7 +28,7 @@ function fakeApp(): App {
   };
 }
 
-async function connected(app: App, opts: { readonly?: boolean } = {}): Promise<{ client: Client; app: App }> {
+async function connected(app: App, opts: { readonly?: boolean; agentName?: string } = {}): Promise<{ client: Client; app: App }> {
   const server = createMcpServer(app, opts);
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: {} });
@@ -49,6 +49,98 @@ test('tools list: readonly hides write tools', async (t) => {
   assert.ok(!roNames.includes('update_task'));
   assert.ok(roNames.includes('search_tasks'));
   t.after(() => { full.app.close(); ro.app.close(); });
+});
+
+test('instructions: name the connection, the owner default, and the claim rules', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  const anon = await connected(fakeApp());
+  const sameApp = fakeApp();
+  sameApp.store.setKv('default_agent_name', 'scribe');
+  const same = await connected(sameApp, { agentName: 'scribe' });
+  t.after(() => { named.app.close(); anon.app.close(); same.app.close(); });
+
+  const n = named.client.getInstructions() ?? '';
+  assert.ok(n.includes('Your name on this connection is "scribe"'));
+  assert.ok(n.includes('assigns tasks to "claude-code", which is not your name'));
+  assert.ok(n.includes('search_tasks with assignee "scribe"'));
+
+  const a = anon.client.getInstructions() ?? '';
+  assert.ok(a.includes('This connection declared no name'));
+  assert.ok(a.includes('search_tasks with assignee "claude-code"'));
+  assert.ok(!a.includes('which is not your name'));
+
+  const s = same.client.getInstructions() ?? '';
+  assert.ok(s.includes('assigns tasks to "scribe". Begin'));
+
+  for (const text of [n, a, s]) assert.ok(text.includes('Never claim an inbox item'));
+});
+
+test('agentName: create_task and a comment via update_task carry the name; without it, actorName is null', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+
+  const created = await named.client.callTool({ name: 'create_task', arguments: { title: 'Named agent task' } }) as unknown as TextResult;
+  assert.equal(created.isError, undefined);
+  const taskId = (created.structuredContent!.task as { id: string }).id;
+  const createdEvent = named.app.store.taskHistory(taskId).find((e) => e.kind === 'task.created');
+  assert.equal(createdEvent?.actor, 'agent');
+  assert.equal(createdEvent?.actorName, 'scribe');
+
+  const updated = await named.client.callTool({
+    name: 'update_task', arguments: { task_id: taskId, add_comment: 'noted by scribe' },
+  }) as unknown as TextResult;
+  assert.equal(updated.isError, undefined);
+  const comment = named.app.store.listComments(taskId).find((c) => c.body === 'noted by scribe');
+  assert.equal(comment?.author, 'agent');
+  assert.equal(comment?.authorName, 'scribe');
+
+  const plain = await connected(fakeApp());
+  t.after(() => plain.app.close());
+  const createdPlain = await plain.client.callTool({ name: 'create_task', arguments: { title: 'Unnamed agent task' } }) as unknown as TextResult;
+  const plainTaskId = (createdPlain.structuredContent!.task as { id: string }).id;
+  const plainEvent = plain.app.store.taskHistory(plainTaskId).find((e) => e.kind === 'task.created');
+  assert.equal(plainEvent?.actor, 'agent');
+  assert.equal(plainEvent?.actorName, null);
+});
+
+test('agentName: project and goal writes carry the name on project.upserted, goal.created, goal.updated, goal.linked', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+  const call = async (name: string, args: Record<string, unknown>): Promise<TextResult> => {
+    const r = await named.client.callTool({ name, arguments: args }) as unknown as TextResult;
+    assert.equal(r.isError, undefined, `${name} failed`);
+    return r;
+  };
+
+  const proj = await call('create_project', { name: 'Scribe Project' });
+  const slug = (proj.structuredContent!.project as { slug: string }).slug;
+  const goal = await call('create_goal', { title: 'Scribe goal' });
+  const goalId = (goal.structuredContent!.goal as { id: string }).id;
+  await call('update_goal', { goal_id: goalId, notes: 'revised' });
+  await call('link_goal', { goal_id: goalId, project: slug });
+
+  const events = named.app.store.eventsSince(0);
+  for (const kind of ['project.upserted', 'goal.created', 'goal.updated', 'goal.linked']) {
+    const e = events.find((x) => x.kind === kind);
+    assert.ok(e, `${kind} event missing`);
+    assert.equal(e.actor, 'agent', kind);
+    assert.equal(e.actorName, 'scribe', kind);
+  }
+});
+
+test('agentName: reject_inbox_item with a reason records the name on the event, the comment, and its event', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+  const r = named.app.store.upsertFromSource({ sourceType: 'gmail', sourceId: 'thread-rej', title: 'Unwanted', contentHash: 'hr' });
+  const res = await named.client.callTool({ name: 'reject_inbox_item', arguments: { task_id: r.task.id, reason: 'not needed' } }) as unknown as TextResult;
+  assert.equal(res.isError, undefined);
+
+  const history = named.app.store.taskHistory(r.task.id);
+  assert.equal(history.find((e) => e.kind === 'task.rejected')?.actorName, 'scribe');
+  const comment = named.app.store.listComments(r.task.id).find((c) => c.body === 'Rejected: not needed');
+  assert.equal(comment?.author, 'agent');
+  assert.equal(comment?.authorName, 'scribe');
+  assert.equal(history.find((e) => e.kind === 'comment.added')?.actorName, 'scribe');
 });
 
 test('create -> search -> update -> complete flow', async (t) => {
