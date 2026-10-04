@@ -17,12 +17,21 @@ export default function AgentSettings() {
   // Esc reverts the draft and blurs in one go; the blur that follows must not then save the
   // value Esc just discarded, which a state update alone could not prevent in time.
   const cancelledRef = useRef(false)
+  // The saved name as of the last load, so a load that lands while the owner is typing keeps
+  // what they typed instead of replacing it.
+  const savedRef = useRef(null)
+  // Bumped by every save, so a read that started before a save cannot then undo it.
+  const savesRef = useRef(0)
 
   const load = useCallback(async () => {
+    const saves = savesRef.current
     try {
       const res = await api.getAgentSettings()
+      if (savesRef.current !== saves) return
+      const before = savedRef.current ?? ''
+      savedRef.current = res.defaultAgentName
       setSaved(res.defaultAgentName)
-      setDraft(res.defaultAgentName)
+      setDraft((current) => (current === before ? res.defaultAgentName : current))
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -39,10 +48,12 @@ export default function AgentSettings() {
       setDraft(saved ?? '')
       return
     }
+    savesRef.current += 1
     setBusy(true)
     setError(null)
     try {
       const res = await api.updateAgentSettings({ defaultAgentName: next })
+      savedRef.current = res.defaultAgentName
       setSaved(res.defaultAgentName)
       setDraft(res.defaultAgentName)
     } catch (err) {

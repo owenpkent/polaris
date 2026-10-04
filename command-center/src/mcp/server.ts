@@ -38,8 +38,8 @@ export function createMcpServer(app: App, opts: CreateMcpServerOptions = {}): Mc
   registerGoalReadTools(server, app);
   if (!opts.readonly) {
     registerWriteTools(server, app, { agentName: opts.agentName });
-    registerGoalWriteTools(server, app);
-    registerProjectWriteTools(server, app);
+    registerGoalWriteTools(server, app, { agentName: opts.agentName });
+    registerProjectWriteTools(server, app, { agentName: opts.agentName });
   }
   registerResources(server, app);
   registerPrompts(server);

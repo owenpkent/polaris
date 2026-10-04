@@ -4,12 +4,11 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
-import type { GoalDetail } from '../core/index.ts';
+import type { ActorInput, GoalDetail } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { taskBlock } from './format.ts';
 import { guard, ok, resolveProject } from './shared.ts';
 
-const ACTOR = 'agent' as const;
 const GOAL_STATUS_VALUES = ['on_track', 'at_risk', 'off_track', 'achieved', 'dropped'] as const;
 const GOAL_PROGRESS_MODE_VALUES = ['manual', 'tasks'] as const;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -81,7 +80,9 @@ export function registerGoalReadTools(server: McpServer, app: App): void {
   }));
 }
 
-export function registerGoalWriteTools(server: McpServer, app: App): void {
+export function registerGoalWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
+  // The declared name is recorded beside the actor, never an identity or a permission (see ActorInput).
+  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
   const dateOnly = z.string().regex(DATE_ONLY, 'must be YYYY-MM-DD');
 
   server.registerTool('create_goal', {

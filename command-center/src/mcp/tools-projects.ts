@@ -5,15 +5,17 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
+import type { ActorInput } from '../core/index.ts';
 import { parseBody, projectCreateBodySchema } from '../http/schemas.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { guard, ok } from './shared.ts';
 
-const ACTOR = 'agent' as const;
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 
-export function registerProjectWriteTools(server: McpServer, app: App): void {
+export function registerProjectWriteTools(server: McpServer, app: App, opts: { agentName?: string } = {}): void {
+  // The declared name is recorded beside the actor, never an identity or a permission (see ActorInput).
+  const ACTOR: ActorInput = { actor: 'agent', name: opts.agentName ?? null };
   server.registerTool('create_project', {
     description: desc('create_project'),
     inputSchema: {

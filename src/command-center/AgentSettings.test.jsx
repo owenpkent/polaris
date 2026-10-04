@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import AgentSettings from './AgentSettings'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
 
@@ -35,6 +35,33 @@ describe('AgentSettings', () => {
     const input = screen.getByLabelText('Default agent name')
     expect(card.contains(input)).toBe(true)
     expect(input.value).toBe('claude-code')
+  })
+
+  test('text typed before the first load finishes is kept when it lands', async () => {
+    let resolve
+    api.getAgentSettings.mockReturnValue(new Promise((r) => { resolve = r }))
+    render(<AgentSettings />)
+
+    const input = screen.getByLabelText('Default agent name')
+    fireEvent.change(input, { target: { value: 'new-agent' } })
+    await act(async () => { resolve({ defaultAgentName: 'scribe' }) })
+
+    expect(screen.getByLabelText('Default agent name').value).toBe('new-agent')
+  })
+
+  test('a name saved before the first load finishes is not undone by that load', async () => {
+    let resolve
+    api.getAgentSettings.mockReturnValue(new Promise((r) => { resolve = r }))
+    api.updateAgentSettings.mockResolvedValue({ defaultAgentName: 'new-agent' })
+    render(<AgentSettings />)
+
+    const input = screen.getByLabelText('Default agent name')
+    fireEvent.change(input, { target: { value: 'new-agent' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(screen.getByLabelText('Default agent name').value).toBe('new-agent'))
+    await act(async () => { resolve({ defaultAgentName: 'scribe' }) })
+
+    expect(screen.getByLabelText('Default agent name').value).toBe('new-agent')
   })
 
   test('saves the new name on blur', async () => {

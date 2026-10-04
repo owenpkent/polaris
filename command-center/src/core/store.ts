@@ -629,7 +629,7 @@ export class Store {
         this.db.run(`UPDATE source_items SET state = 'rejected' WHERE source_type = ? AND source_id = ?`, [t.sourceType, t.sourceId]);
       }
       const { actor: who } = normalizeActorInput(actor);
-      if (reason) this.addComment(id, `Rejected: ${reason}`, who === 'agent' ? 'agent' : 'human');
+      if (reason) this.addComment(id, `Rejected: ${reason}`, who === 'agent' ? 'agent' : 'human', actor);
       this.emit('task.rejected', id, actor, { reason });
       return this.requireTask(id);
     });

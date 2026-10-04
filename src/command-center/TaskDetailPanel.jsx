@@ -266,7 +266,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
   const [restoring, setRestoring] = useState(null)
-  const [agentName, setAgentName] = useState('claude-code')
+  const [agentName, setAgentName] = useState(null)
   const [assignBusy, setAssignBusy] = useState(false)
   const offline = useOffline()
   const assigneeInputId = useId()
@@ -347,14 +347,14 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     return () => { cancelled = true }
   }, [api, data?.task?.projectId])
 
-  // The name "Assign to <name>" offers, read once when the panel opens. A load that fails, or
-  // has not finished yet, leaves the 'claude-code' fallback the server itself falls back to.
+  // The name "Assign to <name>" offers, read once when the panel opens. Until it arrives the
+  // name is unknown, not the server's fallback: a click then reads it first (handleAssignToAgent).
   useEffect(() => {
     let cancelled = false
     api.getAgentSettings().then((res) => {
       if (!cancelled && res?.defaultAgentName) setAgentName(res.defaultAgentName)
     }).catch(() => {
-      // Keep the fallback name.
+      // Leave it unknown; a click tries again.
     })
     return () => { cancelled = true }
   }, [api])
@@ -447,20 +447,36 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   }
 
   // 1A of docs/assign-to-ai-options.md: the click is a plain assignee claim, nothing more. The
-  // agent itself picks the task up later, over MCP.
+  // agent itself picks the task up later, over MCP. Both buttons pass what the Assignee box
+  // held as `sent`, so the reload replaces it unless it was edited during the request.
   async function handleAssignToAgent() {
+    const shown = form.assignee
     setAssignBusy(true)
     try {
-      await patchTask({ assignee: agentName })
+      let name = agentName
+      if (!name) {
+        try {
+          name = (await api.getAgentSettings())?.defaultAgentName
+        } catch {
+          name = null
+        }
+        if (!name) {
+          setSaveError('Could not load the default agent name. Try again.')
+          return
+        }
+        setAgentName(name)
+      }
+      await patchTask({ assignee: name }, { assignee: shown })
     } finally {
       setAssignBusy(false)
     }
   }
 
   async function handleTakeBack() {
+    const shown = form.assignee
     setAssignBusy(true)
     try {
-      await patchTask({ assignee: null })
+      await patchTask({ assignee: null }, { assignee: shown })
     } finally {
       setAssignBusy(false)
     }
@@ -605,7 +621,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   disabled={offline || assignBusy}
                   style={headerBtnStyle}
                 >
-                  {assignBusy ? 'Assigning…' : `Assign to ${agentName}`}
+                  {assignBusy ? 'Assigning…' : `Assign to ${agentName ?? 'agent'}`}
                 </button>
               )}
             </div>

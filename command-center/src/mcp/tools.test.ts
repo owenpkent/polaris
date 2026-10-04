@@ -79,6 +79,46 @@ test('agentName: create_task and a comment via update_task carry the name; witho
   assert.equal(plainEvent?.actorName, null);
 });
 
+test('agentName: project and goal writes carry the name on project.upserted, goal.created, goal.updated, goal.linked', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+  const call = async (name: string, args: Record<string, unknown>): Promise<TextResult> => {
+    const r = await named.client.callTool({ name, arguments: args }) as unknown as TextResult;
+    assert.equal(r.isError, undefined, `${name} failed`);
+    return r;
+  };
+
+  const proj = await call('create_project', { name: 'Scribe Project' });
+  const slug = (proj.structuredContent!.project as { slug: string }).slug;
+  const goal = await call('create_goal', { title: 'Scribe goal' });
+  const goalId = (goal.structuredContent!.goal as { id: string }).id;
+  await call('update_goal', { goal_id: goalId, notes: 'revised' });
+  await call('link_goal', { goal_id: goalId, project: slug });
+
+  const events = named.app.store.eventsSince(0);
+  for (const kind of ['project.upserted', 'goal.created', 'goal.updated', 'goal.linked']) {
+    const e = events.find((x) => x.kind === kind);
+    assert.ok(e, `${kind} event missing`);
+    assert.equal(e.actor, 'agent', kind);
+    assert.equal(e.actorName, 'scribe', kind);
+  }
+});
+
+test('agentName: reject_inbox_item with a reason records the name on the event, the comment, and its event', async (t) => {
+  const named = await connected(fakeApp(), { agentName: 'scribe' });
+  t.after(() => named.app.close());
+  const r = named.app.store.upsertFromSource({ sourceType: 'gmail', sourceId: 'thread-rej', title: 'Unwanted', contentHash: 'hr' });
+  const res = await named.client.callTool({ name: 'reject_inbox_item', arguments: { task_id: r.task.id, reason: 'not needed' } }) as unknown as TextResult;
+  assert.equal(res.isError, undefined);
+
+  const history = named.app.store.taskHistory(r.task.id);
+  assert.equal(history.find((e) => e.kind === 'task.rejected')?.actorName, 'scribe');
+  const comment = named.app.store.listComments(r.task.id).find((c) => c.body === 'Rejected: not needed');
+  assert.equal(comment?.author, 'agent');
+  assert.equal(comment?.authorName, 'scribe');
+  assert.equal(history.find((e) => e.kind === 'comment.added')?.actorName, 'scribe');
+});
+
 test('create -> search -> update -> complete flow', async (t) => {
   const { client, app } = await connected(fakeApp());
   t.after(() => app.close());
