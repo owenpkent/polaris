@@ -304,6 +304,18 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Escape')
     await expect(row(page, title)).toHaveCount(0)
   })
+
+  test('Assign to claude-code claims the task, and Take back releases it', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'assign to ai')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: 'Assign to claude-code' }).click()
+    await expect(panel.getByText('Assigned to claude-code')).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Take back' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Take back' }).click()
+    await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeVisible()
+  })
 })
 
 test.describe('task history', { tag: ['@flow'] }, () => {

@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { VIEWS, createTask, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView } from './support.js'
+import { VIEWS, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -101,19 +101,6 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await openTask(page, 'Draft ADR-003 hosting options')
     await expect(page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: 'Clear assignee' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'panel-assigned')
-  })
-
-  // A task claimed through "Assign to AI" (or set up that way from the start, same field):
-  // the chip and the Take back button next to Mark complete. Made with its own task, not the
-  // shared seeded project, since this test changes data.
-  test('mytasks: panel assign to AI', async ({ page, request }, testInfo) => {
-    const title = await createTask(request, testInfo, 'assign to ai', { assignee: 'claude-code' })
-    await openView(page)
-    await openTask(page, title)
-    const dialog = page.getByRole('dialog', { name: 'Task details' })
-    await expect(dialog.getByText('Assigned to claude-code')).toBeVisible()
-    await expect(dialog.getByRole('button', { name: 'Take back' })).toBeVisible()
-    await shot(page, testInfo, 'mytasks', 'panel-assign-to-ai')
   })
 
   test('mytasks: new', async ({ page }, testInfo) => {
