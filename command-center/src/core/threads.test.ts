@@ -194,8 +194,26 @@ test('listPosts: oldest first, after a cursor, with a limit, and a stale cursor 
   assert.deepEqual(store.listPosts(thread.id).map((p) => p.body), ['one', 'two', 'three', 'four']);
   assert.deepEqual(store.listPosts(thread.id, { after: posts[1].id }).map((p) => p.body), ['three', 'four']);
   assert.deepEqual(store.listPosts(thread.id, { after: posts[3].id }), []);
-  assert.deepEqual(store.listPosts(thread.id, { limit: 2 }).map((p) => p.body), ['one', 'two']);
+  // Without a cursor the window is the newest posts, still oldest first: a reader of a long
+  // thread lands where it is now, and countPosts says how much came before.
+  assert.deepEqual(store.listPosts(thread.id, { limit: 2 }).map((p) => p.body), ['three', 'four']);
   assert.deepEqual(store.listPosts(thread.id, { after: posts[0].id, limit: 1 }).map((p) => p.body), ['two']);
   assert.throws(() => store.listPosts(thread.id, { after: 'po_missing000' }), NotFoundError);
   assert.throws(() => store.listPosts('th_missing000'), NotFoundError);
+});
+
+test('listPosts: the cursor follows insertion order, so two posts in the same millisecond are never skipped', () => {
+  const frozen = '2026-10-05T12:00:00.000Z';
+  const store = openStore(':memory:', { now: () => frozen });
+  const task = store.createTask({ title: 'Same instant' }, 'human');
+  const thread = store.createThread(task.id, null, 'human');
+  // Ids are random, so make the later post sort below the earlier one by id on purpose.
+  const first = store.addPost(thread.id, { type: 'question', body: 'first' }, 'human', 'human');
+  const second = store.addPost(thread.id, { type: 'question', body: 'second' }, 'human', 'human');
+  assert.equal(first.createdAt, second.createdAt);
+  const lower = `po_${'0'.repeat(first.id.length - 3)}`;
+  store.db.run('UPDATE posts SET id = ? WHERE id = ?', [lower, second.id]);
+  assert.deepEqual(store.listPosts(thread.id).map((p) => p.body), ['first', 'second']);
+  assert.deepEqual(store.listPosts(thread.id, { after: first.id }).map((p) => p.body), ['second']);
+  assert.deepEqual(store.listPosts(thread.id, { after: lower }), []);
 });

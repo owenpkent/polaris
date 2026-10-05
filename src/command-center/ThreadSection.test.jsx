@@ -84,6 +84,14 @@ describe('with posts', () => {
     expect(within(items[2]).getByText('Untrusted text')).toBeTruthy()
   })
 
+  test('says how many earlier posts the window left out', async () => {
+    api.getThread.mockResolvedValue({ thread: THREAD, posts: POSTS, total: 503 })
+    render(<ThreadSection task={TASK} />)
+
+    await screen.findByRole('list', { name: 'Posts' })
+    expect(screen.getByText('500 earlier posts are not shown.')).toBeTruthy()
+  })
+
   test('Objections only filters the list and reads as pressed', async () => {
     api.getThread.mockResolvedValue({ thread: THREAD, posts: POSTS })
     render(<ThreadSection task={TASK} />)

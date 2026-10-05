@@ -1363,7 +1363,7 @@ export class Store {
   /** Every thread, newest first, with the counts the thread list shows beside each. */
   listThreads(opts: { status?: Thread['status'] } = {}): ThreadSummary[] {
     const rows = this.db.all<Row>(
-      `SELECT th.*, t.title AS task_title,
+      `SELECT th.*, t.title AS task_title, t.untrusted_text AS task_untrusted, t.source_type AS task_source_type,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id) AS post_count,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'claim' AND p.status = 'open') AS open_claims,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection') AS objections,
@@ -1373,7 +1373,10 @@ export class Store {
        ORDER BY th.created_at DESC, th.id DESC`,
       [opts.status ?? null, opts.status ?? null]);
     return rows.map((r) => ({
-      thread: rowToThread(r), taskTitle: r.task_title as string, postCount: r.post_count as number,
+      thread: rowToThread(r), taskTitle: r.task_title as string,
+      // The same stored-or-derived rule as rowToTask, so the list never shows a trusted title for a GitHub task.
+      untrustedText: bool(r.task_untrusted) || (r.task_source_type != null && EXTERNAL_SOURCE_TYPES.includes(r.task_source_type as SourceType)),
+      postCount: r.post_count as number,
       openClaims: r.open_claims as number, objections: r.objections as number, results: r.results as number,
     }));
   }
@@ -1437,18 +1440,20 @@ export class Store {
    */
   listPosts(threadId: string, opts: { after?: string | null; limit?: number } = {}): Post[] {
     this.requireThread(threadId);
-    let afterAt: string | null = null;
-    let afterId: string | null = null;
+    const limit = clampLimit(opts.limit ?? 500, 5000);
+    // Insertion order (rowid), not created_at: two posts made in the same millisecond would
+    // otherwise sort by their random ids, and a cursor past the later id would skip the earlier.
     if (opts.after) {
-      const cursor = this.db.get<Row>('SELECT id, created_at FROM posts WHERE id = ? AND thread_id = ?', [opts.after, threadId]);
+      const cursor = this.db.get<Row>('SELECT rowid AS rid FROM posts WHERE id = ? AND thread_id = ?', [opts.after, threadId]);
       if (!cursor) throw new NotFoundError(`post not found in thread: ${opts.after}`);
-      afterAt = cursor.created_at as string;
-      afterId = cursor.id as string;
+      return this.db.all<Row>('SELECT * FROM posts WHERE thread_id = ? AND rowid > ? ORDER BY rowid LIMIT ?',
+        [threadId, cursor.rid, limit]).map(rowToPost);
     }
+    // No cursor: the newest window, so a reader of a long thread sees where it is now and
+    // countPosts says how much came before.
     return this.db.all<Row>(
-      `SELECT * FROM posts WHERE thread_id = ? AND (? IS NULL OR created_at > ? OR (created_at = ? AND id > ?))
-       ORDER BY created_at, id LIMIT ?`,
-      [threadId, afterAt, afterAt, afterAt, afterId, clampLimit(opts.limit ?? 500, 5000)]).map(rowToPost);
+      'SELECT * FROM (SELECT rowid AS rid, * FROM posts WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?) ORDER BY rid',
+      [threadId, limit]).map(rowToPost);
   }
 
   // -------------------------------------------------------------------- kv

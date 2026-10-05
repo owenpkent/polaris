@@ -87,6 +87,7 @@ export default function ThreadSection({ task, refreshKey = 0 }) {
   const offline = useOffline()
   const [thread, setThread] = useState(null)
   const [posts, setPosts] = useState([])
+  const [total, setTotal] = useState(0)
   const [loaded, setLoaded] = useState(false)
   // True when the server could not be reached and no thread was loaded before: a 404 never lands
   // in the offline copy, so with the server away a task with no thread looks like a network error.
@@ -109,6 +110,7 @@ export default function ThreadSection({ task, refreshKey = 0 }) {
       const res = await api.getThread(taskId)
       setThread(res?.thread || null)
       setPosts(res?.posts || [])
+      setTotal(typeof res?.total === 'number' ? res.total : (res?.posts || []).length)
       setUnavailable(false)
       setError(null)
     } catch (err) {
@@ -200,6 +202,7 @@ export default function ThreadSection({ task, refreshKey = 0 }) {
       {thread && (
         <>
           {thread.status === 'closed' && <div style={muted}>This thread is closed.</div>}
+          {total > posts.length && <div style={muted}>{total - posts.length} earlier posts are not shown.</div>}
           {posts.length === 0 && <div style={muted}>No posts yet.</div>}
           {posts.length > 0 && shown.length === 0 && <div style={muted}>No objections yet.</div>}
           {shown.length > 0 && (

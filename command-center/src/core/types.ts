@@ -148,6 +148,8 @@ export interface NewPost {
 export interface ThreadSummary {
   thread: Thread;
   taskTitle: string;
+  /** The task's flag: the thread title defaults to the task title, so a list line repeats third-party text. */
+  untrustedText: boolean;
   postCount: number;
   openClaims: number;
   objections: number;

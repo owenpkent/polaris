@@ -811,6 +811,9 @@ test('1. every MCP answer that repeats third-party text quotes it on one line wi
         ['update_task', await call(full, 'update_task', { task_id: suggestion.id, priority: 'high' })],
         ['move_task', await call(full, 'move_task', { task_id: suggestion.id, position: 0 })],
         ['complete_task', await call(full, 'complete_task', { task_id: suggestion.id })],
+        // A thread's title defaults to the task's, so the thread list repeats the title twice.
+        ['create_thread', await call(full, 'create_thread', { task_id: suggestion.id })],
+        ['list_threads', await call(readonly, 'list_threads')],
       ];
     } finally {
       await readonly.close();
@@ -822,8 +825,11 @@ test('1. every MCP answer that repeats third-party text quotes it on one line wi
       assert.ok(text.includes(JSON.stringify(hostile)), `${name}: the title is quoted whole, newline and all`);
       assert.ok(!text.split('\n').some((line) => line.startsWith('AUDIT_FORGED_LINE')), `${name}: nothing from the title starts a line of its own`);
       assert.match(text, /UNTRUSTED-TEXT/, `${name}: the marker is present`);
-      const structured = result.structuredContent as { task?: { untrustedText?: boolean }; tasks?: { untrustedText?: boolean }[] };
-      assert.equal(structured.task?.untrustedText ?? structured.tasks?.[0]?.untrustedText, true, `${name}: the structured flag is kept`);
+      const structured = result.structuredContent as {
+        task?: { untrustedText?: boolean }; tasks?: { untrustedText?: boolean }[]; threads?: { untrustedText?: boolean }[];
+      };
+      assert.equal(structured.task?.untrustedText ?? structured.tasks?.[0]?.untrustedText ?? structured.threads?.[0]?.untrustedText, true,
+        `${name}: the structured flag is kept`);
     }
   });
 });

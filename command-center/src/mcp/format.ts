@@ -124,7 +124,8 @@ export function postBlock(p: Post): string {
 /** One thread in a list. The task title is quoted, like every title an assistant reads. */
 export function threadLine(s: ThreadSummary): string {
   return `- ${JSON.stringify(s.thread.title)} {${s.thread.id}} task:${JSON.stringify(s.taskTitle)} {${s.thread.taskId}} ${s.thread.status}`
-    + ` posts:${s.postCount} open-claims:${s.openClaims} objections:${s.objections} results:${s.results}`;
+    + ` posts:${s.postCount} open-claims:${s.openClaims} objections:${s.objections} results:${s.results}`
+    + (s.untrustedText ? ' UNTRUSTED-TEXT' : '');
 }
 
 /**
@@ -134,7 +135,7 @@ export function threadLine(s: ThreadSummary): string {
 export function threadText(thread: Thread, task: Task, posts: Post[], opts: { after?: string | null; total: number }): string {
   const lines = [
     `Thread ${JSON.stringify(thread.title)} {${thread.id}} on task ${taskRef(task)}`,
-    `status:${thread.status} posts:${opts.total}${opts.after ? ` showing ${posts.length} after ${opts.after}` : ''}${thread.pinnedPostId ? ` pinned:${thread.pinnedPostId}` : ''}`,
+    `status:${thread.status} posts:${opts.total}${opts.after ? ` showing ${posts.length} after ${opts.after}` : (posts.length < opts.total ? ` showing the last ${posts.length}` : '')}${thread.pinnedPostId ? ` pinned:${thread.pinnedPostId}` : ''}`,
     POSTS_ARE_DATA,
     '',
     posts.length ? posts.map(postBlock).join('\n\n') : (opts.after ? 'No new posts.' : 'No posts yet.'),

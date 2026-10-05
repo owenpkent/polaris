@@ -74,6 +74,7 @@ test('thread tools: two named agents open a thread, post claims and objections, 
       const list = await call(scribe, 'list_threads');
       assert.match(list.content[0].text, /^- "Why does the solver stall\?" \{th_[0-9a-z]+\} task:"Why does the solver stall\?" \{t_[0-9a-z]+\} open posts:2 open-claims:1 objections:1 results:0$/);
       assert.equal(list.structuredContent!.threads.length, 1);
+      assert.equal(list.structuredContent!.threads[0].untrustedText, false);
 
       assert.ok((await call(scribe, 'get_thread', {})).isError, 'thread_id or task_id is required');
       assert.ok((await call(scribe, 'get_thread', { thread_id: threadId, task_id: task.id })).isError, 'not both');

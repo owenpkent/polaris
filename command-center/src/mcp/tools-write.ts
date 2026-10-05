@@ -259,7 +259,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
     const existing = app.store.getThreadForTask(task.id);
     const thread = app.store.createThread(task.id, args.title ?? null, actor);
     const verb = existing ? 'Thread already open' : 'Opened thread';
-    return ok(`${verb} ${JSON.stringify(thread.title)} {${thread.id}} on task ${taskRef(task)}. Read it with get_thread and add posts with post_to_thread.`, { thread, created: !existing });
+    return ok(`${verb} ${JSON.stringify(thread.title)} {${thread.id}} on task ${taskRef(task)}. Read it with get_thread and add posts with post_to_thread.`, { thread, task, created: !existing });
   }));
 
   server.registerTool('post_to_thread', {

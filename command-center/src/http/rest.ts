@@ -570,7 +570,7 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     const thread = store.requireThread(threadId);
     const after = url.searchParams.get('after');
     const limit = parseIntParam(url.searchParams.get('limit'), 'limit', 1);
-    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }) };
+    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }), total: store.countPosts(thread.id) };
   };
 
   router.add('GET', '/api/threads', (ctx) => {

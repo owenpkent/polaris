@@ -171,8 +171,10 @@ export const commands: Command[] = [
         const thread = app.store.getThreadForTask(task.id);
         if (!thread) { stdout(`No thread on ${task.id}. Start one with "thread post ${task.id} --type question <body>".`); return 0; }
         const posts = app.store.listPosts(thread.id, { after: str(f.after) ?? null });
-        if (f.json) { stdout(JSON.stringify({ thread, posts }, null, 2)); return 0; }
-        const out = [`${thread.title} (${thread.id}) on ${formatTask(app.store, task, app.today())}`, `${thread.status}, ${posts.length} post(s)${f.after ? ` after ${str(f.after)}` : ''}`];
+        const total = app.store.countPosts(thread.id);
+        if (f.json) { stdout(JSON.stringify({ thread, posts, total }, null, 2)); return 0; }
+        const window = f.after ? `${posts.length} after ${str(f.after)}` : (posts.length < total ? `showing the last ${posts.length} of ${total}` : `${total} post(s)`);
+        const out = [`${thread.title} (${thread.id}) on ${formatTask(app.store, task, app.today())}`, `${thread.status}, ${window}`];
         for (const p of posts) out.push('', formatPost(p));
         stdout(out.join('\n'));
         return 0;
