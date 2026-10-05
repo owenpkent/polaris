@@ -7,17 +7,26 @@ const api = {
   getThread: vi.fn(),
   createThread: vi.fn(),
   addPost: vi.fn(),
+  getThreadPosts: vi.fn(),
+  patchThread: vi.fn(),
+  closeThread: vi.fn(),
+  reopenThread: vi.fn(),
+  forkThread: vi.fn(),
+  setPostStatus: vi.fn(),
 }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected: true, api }) }))
 
 const TASK = { id: 't_1', title: 'Hard problem', status: 'open', untrustedText: false }
-const THREAD = { id: 'th_1', taskId: 't_1', title: 'Hard problem', status: 'open', pinnedPostId: null, createdAt: '2026-10-05T10:00:00.000Z', closedAt: null }
+const THREAD = {
+  id: 'th_1', taskId: 't_1', title: 'Hard problem', status: 'open', pinnedPostId: null, authorHidden: false, dailyCap: null,
+  successorThreadId: null, createdAt: '2026-10-05T10:00:00.000Z', closedAt: null,
+}
 
 function post(id, type, body, extra = {}) {
   return {
     id, threadId: 'th_1', parentPostId: null, author: 'agent', authorName: 'scribe', type, body,
-    confidence: null, status: type === 'claim' ? 'open' : null, refs: [], untrustedText: false,
-    createdAt: '2026-10-05T10:05:00.000Z', ...extra,
+    confidence: null, status: type === 'claim' || type === 'result' ? 'open' : null, refs: [], untrustedText: false,
+    judgedAt: null, createdAt: '2026-10-05T10:05:00.000Z', ...extra,
   }
 }
 
@@ -29,6 +38,7 @@ const POSTS = [
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
+  api.getThreadPosts.mockResolvedValue({ thread: { ...THREAD, id: 'th_2', taskId: 't_2' }, posts: [] })
   resetOfflineStatus()
 })
 
@@ -201,6 +211,191 @@ describe('offline', () => {
     await screen.findByRole('list', { name: 'Posts' })
     fireEvent.change(screen.getByRole('textbox', { name: 'New post' }), { target: { value: 'Typed offline' } })
     expect(screen.getByRole('button', { name: 'Post' }).disabled).toBe(true)
+    expect(screen.getByText('Offline. Posting needs the server.')).toBeTruthy()
+  })
+})
+
+describe("the owner's judgement", () => {
+  const SUMMARY = post('p_5', 'summary', 'Where we are: the bound holds in the smooth case.')
+
+  test('a claim shows its status and Accept calls setPostStatus and reloads', async () => {
+    api.getThread.mockResolvedValueOnce({ thread: THREAD, posts: POSTS })
+    api.setPostStatus.mockResolvedValue({ post: { ...POSTS[0], status: 'accepted' } })
+    api.getThread.mockResolvedValue({ thread: THREAD, posts: [{ ...POSTS[0], status: 'accepted' }, ...POSTS.slice(1)] })
+    render(<ThreadSection task={TASK} />)
+
+    const list = await screen.findByRole('list', { name: 'Posts' })
+    const claim = within(list).getAllByRole('listitem')[0]
+    expect(within(claim).getByText('Open')).toBeTruthy()
+    fireEvent.click(within(claim).getByRole('button', { name: 'Accept' }))
+
+    await waitFor(() => expect(api.setPostStatus).toHaveBeenCalledWith('p_1', 'accepted'))
+    await waitFor(() => expect(api.getThread).toHaveBeenCalledTimes(2))
+    const judged = within(screen.getByRole('list', { name: 'Posts' })).getAllByRole('listitem')[0]
+    expect(within(judged).getByText('Accepted')).toBeTruthy()
+    expect(within(judged).queryByRole('button', { name: 'Accept' })).toBeNull()
+    expect(within(judged).getByRole('button', { name: 'Mark open' })).toBeTruthy()
+    // An objection carries no verdict.
+    const objection = within(screen.getByRole('list', { name: 'Posts' })).getAllByRole('listitem')[1]
+    expect(within(objection).queryByRole('button', { name: 'Accept' })).toBeNull()
+  })
+
+  test('a pinned post older than the loaded window still shows, from the payload', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, pinnedPostId: 'p_5' }, posts: POSTS, total: 600, pinned: SUMMARY })
+    render(<ThreadSection task={TASK} />)
+
+    const block = await screen.findByRole('region', { name: 'Pinned state' })
+    expect(within(block).getByText(SUMMARY.body)).toBeTruthy()
+    expect(screen.getByText('597 earlier posts are not shown.')).toBeTruthy()
+  })
+
+  test('Pin sends the post id, and the pinned state block shows it with Unpin', async () => {
+    api.getThread.mockResolvedValueOnce({ thread: THREAD, posts: [...POSTS, SUMMARY] })
+    api.patchThread.mockResolvedValue({ thread: { ...THREAD, pinnedPostId: 'p_5' } })
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, pinnedPostId: 'p_5' }, posts: [...POSTS, SUMMARY] })
+    render(<ThreadSection task={TASK} />)
+
+    const list = await screen.findByRole('list', { name: 'Posts' })
+    expect(screen.queryByRole('region', { name: 'Pinned state' })).toBeNull()
+    fireEvent.click(within(within(list).getAllByRole('listitem')[3]).getByRole('button', { name: 'Pin' }))
+
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { pinnedPostId: 'p_5' }))
+    const pinned = await screen.findByRole('region', { name: 'Pinned state' })
+    expect(within(pinned).getByText(SUMMARY.body)).toBeTruthy()
+    expect(within(pinned).getByText('Pinned')).toBeTruthy()
+
+    api.patchThread.mockClear()
+    fireEvent.click(within(pinned).getByRole('button', { name: 'Unpin' }))
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { pinnedPostId: null }))
+  })
+
+  test('Close thread hides the form and the controls, and Reopen thread brings them back', async () => {
+    api.getThread.mockResolvedValueOnce({ thread: THREAD, posts: POSTS })
+    const closed = { ...THREAD, status: 'closed', closedAt: '2026-10-05T12:00:00.000Z' }
+    api.closeThread.mockResolvedValue({ thread: closed })
+    api.getThread.mockResolvedValueOnce({ thread: closed, posts: POSTS })
+    render(<ThreadSection task={TASK} />)
+
+    await screen.findByRole('list', { name: 'Posts' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close thread' }))
+
+    await waitFor(() => expect(api.closeThread).toHaveBeenCalledWith('th_1'))
+    expect(await screen.findByText(/^Closed/)).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'New post' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Thread settings' })).toBeNull()
+
+    api.reopenThread.mockResolvedValue({ thread: THREAD })
+    api.getThread.mockResolvedValue({ thread: THREAD, posts: POSTS })
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen thread' }))
+    await waitFor(() => expect(api.reopenThread).toHaveBeenCalledWith('th_1'))
+    expect(await screen.findByRole('textbox', { name: 'New post' })).toBeTruthy()
+  })
+
+  test('Fork opens a titled form, Esc cancels it without bubbling, and Fork thread sends the title', async () => {
+    api.getThread.mockResolvedValue({ thread: THREAD, posts: POSTS })
+    api.forkThread.mockResolvedValue({ thread: { ...THREAD, status: 'closed', successorThreadId: 'th_2' }, successor: { ...THREAD, id: 'th_2', taskId: 't_2' }, task: { id: 't_2' } })
+    const onWindowKey = vi.fn()
+    window.addEventListener('keydown', onWindowKey)
+    render(<ThreadSection task={TASK} />)
+
+    await screen.findByRole('list', { name: 'Posts' })
+    const fork = screen.getByRole('button', { name: 'Fork' })
+    expect(fork.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(fork)
+    const title = screen.getByRole('textbox', { name: 'Title of the new thread' })
+    expect(screen.getByRole('button', { name: 'Fork thread' }).disabled).toBe(true)
+
+    fireEvent.keyDown(title, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'Title of the new thread' })).toBeNull()
+    expect(onWindowKey).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(fork)
+
+    fireEvent.click(fork)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title of the new thread' }), { target: { value: 'The unforced case' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Fork thread' }))
+    await waitFor(() => expect(api.forkThread).toHaveBeenCalledWith('th_1', 'The unforced case'))
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Title of the new thread' })).toBeNull())
+    window.removeEventListener('keydown', onWindowKey)
+  })
+
+  test('the Hide authors switch reads its state and patches the thread', async () => {
+    api.getThread.mockResolvedValueOnce({ thread: THREAD, posts: POSTS })
+    api.patchThread.mockResolvedValue({ thread: { ...THREAD, authorHidden: true } })
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, authorHidden: true }, posts: POSTS })
+    render(<ThreadSection task={TASK} />)
+
+    const toggle = await screen.findByRole('switch', { name: 'Hide authors from agents' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(toggle)
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { authorHidden: true }))
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Hide authors from agents' }).getAttribute('aria-checked')).toBe('true'))
+  })
+
+  test('the daily cap saves on blur and on Enter, and an empty field means none', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 5 }, posts: POSTS })
+    api.patchThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 20 } })
+    render(<ThreadSection task={TASK} />)
+
+    const cap = await screen.findByRole('spinbutton', { name: 'Daily cap per agent' })
+    expect(cap.value).toBe('5')
+    fireEvent.change(cap, { target: { value: '20' } })
+    fireEvent.blur(cap)
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { dailyCap: 20 }))
+
+    api.patchThread.mockClear()
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 20 }, posts: POSTS })
+    fireEvent.change(cap, { target: { value: '' } })
+    fireEvent.keyDown(cap, { key: 'Enter' })
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { dailyCap: null }))
+  })
+
+  test('an unchanged cap is not sent, and a bad value is refused without a request', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 5 }, posts: POSTS })
+    render(<ThreadSection task={TASK} />)
+
+    const cap = await screen.findByRole('spinbutton', { name: 'Daily cap per agent' })
+    fireEvent.blur(cap)
+    fireEvent.change(cap, { target: { value: '0' } })
+    fireEvent.blur(cap)
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(api.patchThread).not.toHaveBeenCalled()
+  })
+
+  test('a closed thread with a successor offers to open it', async () => {
+    const closed = { ...THREAD, status: 'closed', closedAt: '2026-10-05T12:00:00.000Z', successorThreadId: 'th_2' }
+    api.getThread.mockResolvedValue({ thread: closed, posts: POSTS })
+    const onOpenTask = vi.fn()
+    render(<ThreadSection task={TASK} onOpenTask={onOpenTask} />)
+
+    const button = await screen.findByRole('button', { name: 'Open the successor thread' })
+    expect(api.getThreadPosts).toHaveBeenCalledWith('th_2')
+    fireEvent.click(button)
+    expect(onOpenTask).toHaveBeenCalledWith('t_2')
+  })
+
+  test('a task holding third-party text gets no controls', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, pinnedPostId: 'p_1' }, posts: POSTS })
+    render(<ThreadSection task={{ ...TASK, untrustedText: true }} />)
+
+    await screen.findByRole('list', { name: 'Posts' })
+    expect(screen.queryByRole('group', { name: 'Thread settings' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Unpin' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Pinned state' })).toBeTruthy()
+  })
+
+  test('every control is off offline', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, pinnedPostId: 'p_1' }, posts: POSTS })
+    markOffline()
+    render(<ThreadSection task={TASK} />)
+
+    await screen.findByRole('list', { name: 'Posts' })
+    for (const name of ['Close thread', 'Fork', 'Accept', 'Reject', 'Supersede', 'Pin']) {
+      for (const button of screen.getAllByRole('button', { name })) expect(button.disabled).toBe(true)
+    }
+    expect(screen.getByRole('switch', { name: 'Hide authors from agents' }).disabled).toBe(true)
+    expect(screen.getByRole('spinbutton', { name: 'Daily cap per agent' }).disabled).toBe(true)
     expect(screen.getByText('Offline. Posting needs the server.')).toBeTruthy()
   })
 })

@@ -3,9 +3,9 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runView } from '../automation/index.ts';
-import { ACTIVE_STATUSES, NotFoundError, ValidationError, type TaskFilter, type Thread } from '../core/index.ts';
+import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type TaskFilter, type Thread } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
-import { blockedBlock, inboxLine, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
+import { POSTS_ARE_DATA, blockedBlock, inboxLine, postHitText, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
 import {
   DEFAULT_SEARCH_STATUSES, ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES,
   guard, ok, resolveProject, resolveSectionRead,
@@ -13,7 +13,8 @@ import {
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 
-export function registerReadTools(server: McpServer, app: App): void {
+/** `agentName` is the name this connection declared, used only to tell a reader whether a thread's daily cap has been reached for it. */
+export function registerReadTools(server: McpServer, app: App, agentName: string | null = null): void {
   server.registerTool('search_tasks', {
     description: desc('search_tasks'),
     annotations: { readOnlyHint: true },
@@ -168,7 +169,30 @@ export function registerReadTools(server: McpServer, app: App): void {
     const task = app.store.requireTask(thread.taskId);
     const posts = app.store.listPosts(thread.id, { after: args.after ?? null, limit: args.limit ?? 50 });
     const total = app.store.countPosts(thread.id);
-    return ok(threadText(thread, task, posts, { after: args.after ?? null, total }), { thread, task, posts, total });
+    const pinned = thread.pinnedPostId ? app.store.getPost(thread.pinnedPostId) : null;
+    const atCap = thread.dailyCap !== null && app.store.postsTodayBy(thread.id, agentName ?? null) >= thread.dailyCap;
+    return ok(threadText(thread, task, posts, { after: args.after ?? null, total, pinned, atCap }), { thread, task, posts, total, pinned, atCap });
+  }));
+
+  server.registerTool('search_posts', {
+    description: desc('search_posts'),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      type: z.enum(POST_TYPES).optional(),
+      status: z.enum(POST_STATUSES).optional().describe('open, accepted, rejected, or superseded; only claims and results carry one.'),
+      query: z.string().optional().describe('Text the body must contain.'),
+      task_id: z.string().optional().describe('Only the thread of this task.'),
+      limit: z.number().int().positive().max(500).optional().describe('Default 50.'),
+    },
+  }, (args) => guard(() => {
+    const hits = app.store.searchPosts({ type: args.type, status: args.status, query: args.query, taskId: args.task_id, limit: args.limit });
+    const threads = new Map<string, Thread>();
+    const text = hits.map((hit) => {
+      let thread = threads.get(hit.post.threadId);
+      if (!thread) { thread = app.store.requireThread(hit.post.threadId); threads.set(thread.id, thread); }
+      return postHitText(hit, thread);
+    });
+    return ok(hits.length ? [POSTS_ARE_DATA, '', ...text].join('\n') : 'No posts match.', { posts: hits });
   }));
 }
 

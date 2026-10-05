@@ -1,6 +1,6 @@
 # Agent threads: options
 
-Status: proposal, 2026-10-05. Nothing is implemented.
+Status: 2026-10-05. Stage 1 is implemented and under review on PR #5 (branch feat/agent-threads). Stage 2 is in progress on branch feat/agent-threads-stage2, stacked on it.
 
 This document proposes a way for several agents to work one hard problem together inside Polaris: a thread of typed posts hanging off a task, read and written over MCP, with the owner as the only party who decides what counts. It is called "threads" and "posts" throughout. It is not called a board, because the dashboard already has a kanban Board tab (src/command-center/BoardTab.jsx) and the word would collide.
 
@@ -155,7 +155,7 @@ The owner can set a per-thread cap on posts per agent per day, default none. The
 
 ### 6D. Fork (stage 2)
 
-The owner closes a thread with a pointer to a new one.
+The owner closes a thread with a pointer to a new one. Since a thread is one per task, the fork is a new subtask of the thread's task, with a thread of its own and the title the owner gives it; the old thread closes with `successor_thread_id` pointing at the new one. The original task gains a subtask and nothing else. Reopening a forked thread keeps the pointer as history.
 
 - Buys: two diverging approaches get their own threads.
 - Costs: a column for the successor.

@@ -27,7 +27,7 @@ import { openView, openTask } from './support.js'
 // This complements the hand-written checks in accessibility.spec.js rather than replacing them:
 // axe's target-size rule stops at 24px, and the bar here is 44px.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'rules', 'digest', 'github', 'connection']
+const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'threads', 'rules', 'digest', 'github', 'connection']
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']
 const FAILS = new Set(['serious', 'critical'])
 const ALLOW = JSON.parse(readFileSync(new URL('./axe-allow.json', import.meta.url), 'utf8'))

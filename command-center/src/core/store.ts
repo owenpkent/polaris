@@ -4,11 +4,11 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_TYPES, PRIORITIES, TASK_STATUSES,
+  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, TASK_STATUSES,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
-  type NewProject, type NewTask, type Post, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
-  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadSummary, type UpsertResult,
+  type NewProject, type NewTask, type Post, type PostSearch, type PostSearchHit, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
+  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadOptions, type ThreadSummary, type UpsertResult,
 } from './types.ts';
 
 const INBOX_HAS_NO_THREAD = 'an inbox task has no thread until the owner accepts it';
@@ -91,7 +91,10 @@ function normalizeActorInput(who: ActorInput): { actor: Actor; name: string | nu
 function rowToThread(r: Row): Thread {
   return {
     id: r.id as string, taskId: r.task_id as string, title: r.title as string, status: r.status as Thread['status'],
-    pinnedPostId: (r.pinned_post_id as string | null) ?? null, createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
+    pinnedPostId: (r.pinned_post_id as string | null) ?? null,
+    authorHidden: bool(r.author_hidden), dailyCap: (r.daily_cap as number | null) ?? null,
+    successorThreadId: (r.successor_thread_id as string | null) ?? null,
+    createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
   };
 }
 
@@ -101,7 +104,7 @@ function rowToPost(r: Row): Post {
     author: r.author as Post['author'], authorName: (r.author_name as string | null) ?? null,
     type: r.type as PostType, body: r.body as string, confidence: (r.confidence as Post['confidence']) ?? null,
     status: (r.status as PostStatus | null) ?? null, refs: parseJson<string[]>(r.refs, []),
-    untrustedText: bool(r.untrusted_text), createdAt: r.created_at as string,
+    untrustedText: bool(r.untrusted_text), judgedAt: (r.judged_at as string | null) ?? null, createdAt: r.created_at as string,
   };
 }
 
@@ -1318,8 +1321,9 @@ export class Store {
 
   // --------------------------------------------------------------- threads
   // docs/agent-threads-proposal.md. A thread is the argument about one task; posts are typed,
-  // short, and never change the task. The owner is the only party who decides what counts, and
-  // in stage 1 nothing here can set a status, pin, or close at all.
+  // short, and never change the task. The owner is the only party who decides what counts: a
+  // verdict on a claim, a pinned state, closing, forking, and the thread's settings all require
+  // the human actor here (ownerOnly), and MCP has no tool for any of them.
 
   // Propose, do not act: a suggestion waiting in the inbox is not yet the owner's work, so nothing
   // argues about it until they accept it. The same check guards a post, in case the task went back.
@@ -1336,7 +1340,10 @@ export class Store {
       const existing = this.getThreadForTask(task.id);
       if (existing) return existing;
       const name = (title ?? '').replace(/\s+/g, ' ').trim() || task.title;
-      const thread: Thread = { id: newId('th'), taskId: task.id, title: name, status: 'open', pinnedPostId: null, createdAt: this.now(), closedAt: null };
+      const thread: Thread = {
+        id: newId('th'), taskId: task.id, title: name, status: 'open', pinnedPostId: null, authorHidden: false, dailyCap: null, successorThreadId: null,
+        createdAt: this.now(), closedAt: null,
+      };
       this.db.run('INSERT INTO threads (id, task_id, title, status, pinned_post_id, created_at, closed_at) VALUES (?, ?, ?, ?, NULL, ?, NULL)',
         [thread.id, thread.taskId, thread.title, thread.status, thread.createdAt]);
       this.emit('thread.created', task.id, actor, { threadId: thread.id });
@@ -1367,7 +1374,14 @@ export class Store {
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id) AS post_count,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'claim' AND p.status = 'open') AS open_claims,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection') AS objections,
-         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'result') AS results
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection' AND NOT EXISTS (
+            SELECT 1 FROM posts a WHERE a.thread_id = p.thread_id AND a.id <> p.id
+              AND (a.created_at > p.created_at OR (a.created_at = p.created_at AND a.id > p.id))
+              AND (a.parent_post_id = p.id OR EXISTS (SELECT 1 FROM json_each(a.refs) WHERE json_each.value = p.id))
+         )) AS unanswered_objections,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'result') AS results,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'result' AND p.status = 'accepted') AS accepted_results,
+         COALESCE((SELECT MAX(p.judged_at) FROM posts p WHERE p.thread_id = th.id), th.created_at) AS last_progress_at
        FROM threads th JOIN tasks t ON t.id = th.task_id
        WHERE (? IS NULL OR th.status = ?)
        ORDER BY th.created_at DESC, th.id DESC`,
@@ -1377,8 +1391,135 @@ export class Store {
       // The same stored-or-derived rule as rowToTask, so the list never shows a trusted title for a GitHub task.
       untrustedText: bool(r.task_untrusted) || (r.task_source_type != null && EXTERNAL_SOURCE_TYPES.includes(r.task_source_type as SourceType)),
       postCount: r.post_count as number,
-      openClaims: r.open_claims as number, objections: r.objections as number, results: r.results as number,
+      openClaims: r.open_claims as number, objections: r.objections as number, unansweredObjections: r.unanswered_objections as number,
+      results: r.results as number, acceptedResults: r.accepted_results as number, lastProgressAt: r.last_progress_at as string,
     }));
+  }
+
+  /**
+   * Posts across every thread, newest first: the library. A later thread cites an earlier
+   * accepted result by id after finding it here. The query matches the body, case-insensitively.
+   */
+  searchPosts(opts: PostSearch = {}): PostSearchHit[] {
+    if (opts.type !== undefined && !POST_TYPES.includes(opts.type)) throw new ValidationError(`invalid post type: ${String(opts.type)}`);
+    if (opts.status !== undefined && !POST_STATUSES.includes(opts.status)) throw new ValidationError(`invalid post status: ${String(opts.status)}`);
+    const query = opts.query?.trim() || null;
+    const rows = this.db.all<Row>(
+      `SELECT p.*, th.task_id AS hit_task_id, th.title AS thread_title, t.title AS task_title
+       FROM posts p JOIN threads th ON th.id = p.thread_id JOIN tasks t ON t.id = th.task_id
+       WHERE (? IS NULL OR p.type = ?) AND (? IS NULL OR p.status = ?) AND (? IS NULL OR th.task_id = ?)
+         AND (? IS NULL OR instr(lower(p.body), lower(?)) > 0)
+       ORDER BY p.created_at DESC, p.id DESC LIMIT ?`,
+      [opts.type ?? null, opts.type ?? null, opts.status ?? null, opts.status ?? null, opts.taskId ?? null, opts.taskId ?? null,
+        query, query, clampLimit(opts.limit ?? 50, 500)]);
+    return rows.map((r) => ({
+      post: rowToPost(r), taskId: r.hit_task_id as string, taskTitle: r.task_title as string, threadTitle: r.thread_title as string,
+    }));
+  }
+
+  // Propose, do not act, from the other side: what counts is the owner's call and nobody else's.
+  private ownerOnly(actor: ActorInput, what: string): void {
+    if (normalizeActorInput(actor).actor !== 'human') throw new ValidationError(`only the owner can ${what}`);
+  }
+
+  /**
+   * The owner's verdict on a claim or a result. Open again clears it. judged_at is when the last
+   * verdict was given, which is what the thread list calls progress.
+   */
+  setPostStatus(postId: string, status: PostStatus, actor: ActorInput): Post {
+    this.ownerOnly(actor, 'set a post status');
+    if (!POST_STATUSES.includes(status)) throw new ValidationError(`invalid post status: ${String(status)}`);
+    const post = this.getPost(postId);
+    if (!post) throw new NotFoundError(`post not found: ${postId}`);
+    if (!JUDGED_POST_TYPES.includes(post.type)) throw new ValidationError(`a ${post.type} post carries no status; only a claim or a result does`);
+    const judgedAt = status === 'open' ? null : this.now();
+    const thread = this.requireThread(post.threadId);
+    this.db.transaction(() => {
+      this.db.run('UPDATE posts SET status = ?, judged_at = ? WHERE id = ?', [status, judgedAt, post.id]);
+      this.emit('post.status_changed', thread.taskId, actor, { threadId: thread.id, postId: post.id, status });
+    });
+    return { ...post, status, judgedAt };
+  }
+
+  /** The post shown first as the thread's current state, or null to unpin. */
+  pinPost(threadId: string, postId: string | null, actor: ActorInput): Thread {
+    this.ownerOnly(actor, 'pin a post');
+    const thread = this.requireThread(threadId);
+    if (postId !== null && !this.postInThread(postId, thread.id)) throw new ValidationError(`not a post of this thread: ${postId}`);
+    this.db.transaction(() => {
+      this.db.run('UPDATE threads SET pinned_post_id = ? WHERE id = ?', [postId, thread.id]);
+      this.emit('thread.updated', thread.taskId, actor, { threadId: thread.id, field: 'pinnedPostId' });
+    });
+    return { ...thread, pinnedPostId: postId };
+  }
+
+  setThreadOptions(threadId: string, options: ThreadOptions, actor: ActorInput): Thread {
+    this.ownerOnly(actor, 'change thread settings');
+    const thread = this.requireThread(threadId);
+    const next = { ...thread };
+    const fields: string[] = [];
+    if (options.authorHidden !== undefined) {
+      if (typeof options.authorHidden !== 'boolean') throw new ValidationError('authorHidden must be true or false');
+      next.authorHidden = options.authorHidden;
+      fields.push('authorHidden');
+    }
+    if (options.dailyCap !== undefined) {
+      if (options.dailyCap !== null && (!Number.isInteger(options.dailyCap) || options.dailyCap < 1)) throw new ValidationError('dailyCap must be a positive integer or null');
+      next.dailyCap = options.dailyCap;
+      fields.push('dailyCap');
+    }
+    if (!fields.length) throw new ValidationError('nothing to change');
+    this.db.transaction(() => {
+      this.db.run('UPDATE threads SET author_hidden = ?, daily_cap = ? WHERE id = ?', [next.authorHidden ? 1 : 0, next.dailyCap, thread.id]);
+      for (const field of fields) this.emit('thread.updated', thread.taskId, actor, { threadId: thread.id, field });
+    });
+    return next;
+  }
+
+  closeThread(threadId: string, actor: ActorInput): Thread {
+    this.ownerOnly(actor, 'close a thread');
+    const thread = this.requireThread(threadId);
+    if (thread.status === 'closed') throw new ValidationError('thread is already closed');
+    const closedAt = this.now();
+    this.db.transaction(() => {
+      this.db.run("UPDATE threads SET status = 'closed', closed_at = ? WHERE id = ?", [closedAt, thread.id]);
+      this.emit('thread.closed', thread.taskId, actor, { threadId: thread.id, successorThreadId: null });
+    });
+    return { ...thread, status: 'closed', closedAt };
+  }
+
+  /** Open again. A successor set by a fork stays recorded: the pointer is history, not state. */
+  reopenThread(threadId: string, actor: ActorInput): Thread {
+    this.ownerOnly(actor, 'reopen a thread');
+    const thread = this.requireThread(threadId);
+    if (thread.status === 'open') throw new ValidationError('thread is already open');
+    this.db.transaction(() => {
+      this.db.run("UPDATE threads SET status = 'open', closed_at = NULL WHERE id = ?", [thread.id]);
+      this.emit('thread.reopened', thread.taskId, actor, { threadId: thread.id });
+    });
+    return { ...thread, status: 'open', closedAt: null };
+  }
+
+  /**
+   * Two approaches that diverge get their own threads. A thread is one per task, so the fork is
+   * a subtask of this thread's task, with a thread of its own; this thread closes and points at
+   * it. The original task gains a subtask and nothing else.
+   */
+  forkThread(threadId: string, input: { title: string }, actor: ActorInput): { thread: Thread; successor: Thread; task: Task } {
+    this.ownerOnly(actor, 'fork a thread');
+    const thread = this.requireThread(threadId);
+    if (thread.status === 'closed') throw new ValidationError('thread is closed; reopen it to fork it');
+    const title = (input.title ?? '').replace(/\s+/g, ' ').trim();
+    if (!title) throw new ValidationError('a fork needs a title');
+    const parent = this.requireTask(thread.taskId);
+    return this.db.transaction(() => {
+      const task = this.createTask({ title, parentId: parent.id, projectId: parent.projectId, sectionId: parent.sectionId }, actor);
+      const successor = this.createThread(task.id, title, actor);
+      const closedAt = this.now();
+      this.db.run("UPDATE threads SET status = 'closed', closed_at = ?, successor_thread_id = ? WHERE id = ?", [closedAt, successor.id, thread.id]);
+      this.emit('thread.closed', thread.taskId, actor, { threadId: thread.id, successorThreadId: successor.id });
+      return { thread: { ...thread, status: 'closed' as const, closedAt, successorThreadId: successor.id }, successor, task };
+    });
   }
 
   /**
@@ -1402,12 +1543,17 @@ export class Store {
     const task = this.requireTask(thread.taskId);
     if (task.status === 'inbox') throw new ValidationError(INBOX_HAS_NO_THREAD);
     const { actor: who, name } = normalizeActorInput(actor);
+    const now = this.now();
     const post: Post = {
       id: newId('po'), threadId: thread.id, parentPostId, author, authorName: who === author ? name : null,
       type: input.type, body: input.body, confidence: input.confidence ?? null,
-      status: JUDGED_POST_TYPES.includes(input.type) ? 'open' : null, refs, untrustedText: task.untrustedText, createdAt: this.now(),
+      status: JUDGED_POST_TYPES.includes(input.type) ? 'open' : null, refs, untrustedText: task.untrustedText, judgedAt: null, createdAt: now,
     };
     this.db.transaction(() => {
+      // The cap is on agents, per name, per UTC day. The owner is never capped: it is their thread.
+      if (author === 'agent' && thread.dailyCap !== null && this.postsTodayBy(thread.id, post.authorName, now) >= thread.dailyCap) {
+        throw new ValidationError(`daily cap of ${thread.dailyCap} posts reached for ${post.authorName ?? 'an unnamed agent'} on this thread`);
+      }
       this.db.run(
         `INSERT INTO posts (id, thread_id, parent_post_id, author, author_name, type, body, confidence, status, refs, untrusted_text, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1416,6 +1562,14 @@ export class Store {
       this.emit('post.added', task.id, actor, { threadId: thread.id, postId: post.id, type: post.type });
     });
     return post;
+  }
+
+  /** How many posts the agent with this name (null for an unnamed one) made to the thread since 00:00 UTC of `at`'s day. */
+  postsTodayBy(threadId: string, agentName: string | null, at: string = this.now()): number {
+    const dayStart = `${at.slice(0, 10)}T00:00:00.000Z`;
+    return this.db.get<Row>(
+      `SELECT COUNT(*) AS n FROM posts WHERE thread_id = ? AND author = 'agent' AND author_name IS ? AND created_at >= ?`,
+      [threadId, agentName, dayStart])!.n as number;
   }
 
   private postInThread(postId: string, threadId: string): boolean {

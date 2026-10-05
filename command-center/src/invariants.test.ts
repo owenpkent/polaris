@@ -15,7 +15,10 @@
 //      exactly "1", and it can only read.
 //   9. A thread is talk, not action: a post never changes a task or a goal, rules cannot hear or
 //      write one, the read-only endpoint cannot post, nothing posts offline, every post says who,
-//      and an inbox task cannot carry a thread until the owner accepts it.
+//      and an inbox task cannot carry a thread until the owner accepts it. What counts is the
+//      owner's call alone: only the human actor judges a claim, pins, closes, reopens, forks, or
+//      changes a thread's settings, no MCP tool does any of it, the daily cap never binds the
+//      owner, and a fork leaves the original task alone except for its new subtask.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -924,7 +927,7 @@ test('9. a post of any type never changes the task, its assignee, its inbox stat
 });
 
 test('9. thread events are not rule triggers, and there is no thread action', () => {
-  for (const kind of ['thread.created', 'post.added']) {
+  for (const kind of ['thread.created', 'post.added', 'post.status_changed', 'thread.updated', 'thread.closed', 'thread.reopened']) {
     const result = validateRuleDefinition({ trigger: { type: 'event', kinds: [kind] }, conditions: [], actions: [{ type: 'notify', message: 'x' }] });
     assert.equal(result.ok, false, `a rule must not be able to trigger on ${kind}`);
   }
@@ -932,6 +935,10 @@ test('9. thread events are not rule triggers, and there is no thread action', ()
     { type: 'post_to_thread', threadId: 'th1', postType: 'claim', body: 'x' },
     { type: 'create_thread', taskId: 't1' },
     { type: 'set_field', field: 'postStatus', value: 'accepted' },
+    { type: 'set_post_status', postId: 'po1', status: 'accepted' },
+    { type: 'pin_post', threadId: 'th1', postId: 'po1' },
+    { type: 'close_thread', threadId: 'th1' },
+    { type: 'fork_thread', threadId: 'th1', title: 'x' },
   ] as Record<string, Json>[]) {
     assert.equal(validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [action] }).ok, false, JSON.stringify(action));
   }
@@ -947,8 +954,8 @@ test('9. thread events are not rule triggers, and there is no thread action', ()
 });
 
 test('9. the read-only endpoint can read threads and cannot open one or post', async (t) => {
-  assert.deepEqual(TOOL_CATALOG.filter((e) => e.name.includes('thread')).map((e) => [e.name, e.readonly]).sort(),
-    [['create_thread', false], ['get_thread', true], ['list_threads', true], ['post_to_thread', false]]);
+  assert.deepEqual(TOOL_CATALOG.filter((e) => /thread|post/.test(e.name)).map((e) => [e.name, e.readonly]).sort(),
+    [['create_thread', false], ['get_thread', true], ['list_threads', true], ['post_to_thread', false], ['search_posts', true]]);
   const app = fakeApp();
   t.after(() => app.close());
   const task = app.store.createTask({ title: 'Challenge' }, 'human');
@@ -1058,4 +1065,73 @@ test('9. every post records its actor and its name beside it, like every event',
   const events = app.store.taskHistory(task.id).filter((e) => e.kind === 'thread.created' || e.kind === 'post.added');
   assert.deepEqual(events.map((e) => [e.kind, e.actor, e.actorName]), [['thread.created', 'agent', 'scribe'], ['post.added', 'agent', 'scribe'], ['post.added', 'human', null]]);
   for (const e of events) assert.ok(['human', 'agent', 'system', 'rule'].includes(e.actor));
+});
+
+test('9. what counts is the owner\'s call alone: no other actor, and no MCP tool, judges, pins, closes, reopens, forks, or sets a thread\'s options', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Challenge' }, 'human');
+  const thread = app.store.createThread(task.id, null, 'human');
+  const claim = app.store.addPost(thread.id, { type: 'claim', body: 'Cache miss.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  const before = app.store.lastEventId();
+  for (const actor of [{ actor: 'agent', name: 'scribe' }, 'agent', 'system', 'rule'] as const) {
+    assert.throws(() => app.store.setPostStatus(claim.id, 'accepted', actor), ValidationError, `${JSON.stringify(actor)} judges`);
+    assert.throws(() => app.store.pinPost(thread.id, claim.id, actor), ValidationError, `${JSON.stringify(actor)} pins`);
+    assert.throws(() => app.store.setThreadOptions(thread.id, { authorHidden: true, dailyCap: 1 }, actor), ValidationError, `${JSON.stringify(actor)} sets options`);
+    assert.throws(() => app.store.closeThread(thread.id, actor), ValidationError, `${JSON.stringify(actor)} closes`);
+    assert.throws(() => app.store.forkThread(thread.id, { title: 'B' }, actor), ValidationError, `${JSON.stringify(actor)} forks`);
+    assert.throws(() => app.store.reopenThread(thread.id, actor), ValidationError, `${JSON.stringify(actor)} reopens`);
+  }
+  // No tool on either endpoint reaches any of them, under any plausible name.
+  const names = TOOL_CATALOG.map((e) => e.name);
+  for (const name of names) assert.ok(!/status|judge|pin|close|reopen|fork|option|setting|hide/.test(name), `${name} looks like an owner control`);
+  await withServer(app, {}, async (base) => {
+    for (const path of ['/mcp', '/mcp/readonly'] as const) {
+      const client = await mcpClient(base, path, path === '/mcp' ? TEST_TOKENS.mcp : TEST_TOKENS.mcpReadonly);
+      try {
+        const served = (await client.listTools()).tools.map((tool) => tool.name);
+        for (const name of served) assert.ok(names.includes(name), `${name} is not in the catalog`);
+        for (const [name, args] of [
+          ['set_post_status', { post_id: claim.id, status: 'accepted' }],
+          ['pin_post', { thread_id: thread.id, post_id: claim.id }],
+          ['close_thread', { thread_id: thread.id }],
+          ['fork_thread', { thread_id: thread.id, title: 'B' }],
+          ['set_thread_options', { thread_id: thread.id, author_hidden: true }],
+        ] as const) {
+          const result = await call(client, name, args as Record<string, unknown>).catch(() => ({ isError: true, content: [] }));
+          assert.ok(result.isError, `${name} on ${path} must fail`);
+        }
+      } finally {
+        await client.close();
+      }
+    }
+  });
+  const after = app.store.getThread(thread.id)!;
+  assert.deepEqual(after, thread, 'the thread row is unchanged');
+  assert.equal(app.store.getPost(claim.id)!.status, 'open');
+  assert.equal(app.store.lastEventId(), before, 'and nothing was recorded');
+  // The owner can, and it is recorded as the human.
+  app.store.setPostStatus(claim.id, 'accepted', 'human');
+  app.store.pinPost(thread.id, claim.id, 'human');
+  app.store.setThreadOptions(thread.id, { authorHidden: true }, 'human');
+  assert.ok(app.store.eventsSince(before).every((e) => e.actor === 'human'));
+});
+
+test('9. the daily cap binds agents, never the owner, and a fork changes the original task only by giving it a subtask', () => {
+  const store = openStore(':memory:');
+  const task = store.createTask({ title: 'Challenge', priority: 'high', assignee: 'scribe' }, 'human');
+  const thread = store.createThread(task.id, null, 'human');
+  store.setThreadOptions(thread.id, { dailyCap: 1 }, 'human');
+  store.addPost(thread.id, { type: 'claim', body: 'one' }, 'agent', { actor: 'agent', name: 'scribe' });
+  assert.throws(() => store.addPost(thread.id, { type: 'claim', body: 'two' }, 'agent', { actor: 'agent', name: 'scribe' }), /daily cap/);
+  for (let i = 0; i < 10; i++) store.addPost(thread.id, { type: 'question', body: `owner ${i}` }, 'human', 'human');
+  const taskBefore = store.requireTask(task.id);
+  const forked = store.forkThread(thread.id, { title: 'Approach B' }, 'human');
+  assert.deepEqual(store.requireTask(task.id), taskBefore);
+  assert.equal(forked.task.parentId, task.id);
+  assert.equal(forked.task.assignee, null, 'the fork claims nothing');
+  assert.equal(forked.task.status, 'open');
+  assert.deepEqual(store.searchTasks({ parentId: task.id }).map((t) => t.id), [forked.task.id]);
+  const kinds = store.taskHistory(task.id).map((e) => e.kind).filter((k) => k.startsWith('task.'));
+  assert.deepEqual(kinds, ['task.created'], 'no task event on the original from any of it');
 });

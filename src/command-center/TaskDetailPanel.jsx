@@ -1124,7 +1124,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             </button>
           </div>
 
-          <ThreadSection task={data.task} refreshKey={loadSeq} />
+          <ThreadSection task={data.task} refreshKey={loadSeq} onOpenTask={onOpenTask} />
         </>
       )}
     </div>
