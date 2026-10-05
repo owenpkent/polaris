@@ -60,7 +60,7 @@ export default function TopBar({
         aria-label="Open navigation"
         aria-expanded={menuOpen}
         onClick={onMenuClick}
-        className="icon-btn"
+        className="icon-btn topbar-menu-btn"
         style={{ color: 'var(--t1)' }}
       >
         <MenuIcon size={22} aria-hidden="true" />

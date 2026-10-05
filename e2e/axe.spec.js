@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { readFileSync } from 'node:fs'
 import { test, expect } from './fixtures.js'
-import { openView, openTask } from './support.js'
+import { openView, openTask, isPhone } from './support.js'
 
 // The automated accessibility audit (initiatives/ui-ux-testing.md, phase 2): axe-core over every
 // view in its resting state and over the panels, drawer, menus, and forms that open on top of
@@ -97,6 +97,7 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
   }
 
   test('the navigation drawer', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: the desktop sidebar is audited with every view at rest')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible()

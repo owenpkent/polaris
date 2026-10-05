@@ -94,7 +94,7 @@ The dashboard is built from layers with crisp edges, so surfaces never blend tog
 
 One breakpoint for the whole dashboard: phone is `max-width: 640px`. Static layout differences live in `src/index.css` under a media query on class names; layout computed in JavaScript (the My tasks grid template) uses `useNarrowBreakpoints` in `src/command-center/columnsState.js`, which exposes `phone` alongside the older 900 and 600 flags. No Tailwind breakpoint classes.
 
-Under 640px the navigation is the tab bar in `src/BottomNav.jsx` (More opens the drawer), new tasks come from `src/command-center/NewTaskSheet.jsx` behind the floating New task button, and the dashboard installs from `public/manifest.webmanifest` (icons by `node scripts/icons.mjs`). Layout work is verified with screenshots, and they are one command.
+Above 640px the navigation is the sidebar in `src/Sidebar.jsx`, which lists every view and leaves the top bar without a menu button. Under 640px it is the tab bar in `src/BottomNav.jsx` (More opens the drawer), new tasks come from `src/command-center/NewTaskSheet.jsx` behind the floating New task button, and the dashboard installs from `public/manifest.webmanifest` (icons by `node scripts/icons.mjs`). Layout work is verified with screenshots, and they are one command.
 
 ## Screenshots
 

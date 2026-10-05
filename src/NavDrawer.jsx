@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useConnection } from './command-center/ConnectionContext'
+import NavItem, { ConnectionStatus, InboxBadge, inboxLabel } from './NavItem'
 
 const MORE_EXPANDED_KEY = 'cc-nav-more-v1'
 
@@ -109,39 +110,9 @@ export default function NavDrawer({
 
   if (!open) return null
 
-  const renderItem = (item, { indent = false, trailing = null } = {}) => {
-    const isActive = item.id === activeTab
-    const isHovered = hoveredId === item.id
-    return (
-      <button
-        key={item.id}
-        type="button"
-        aria-current={isActive ? 'page' : undefined}
-        onClick={() => onSelect(item.id)}
-        onMouseEnter={() => setHoveredId(item.id)}
-        onMouseLeave={() => setHoveredId((h) => (h === item.id ? null : h))}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          minHeight: 44,
-          padding: indent ? '0 20px 0 36px' : '0 20px',
-          background: isActive || isHovered ? 'var(--bg3)' : 'transparent',
-          border: 'none',
-          borderLeft: isActive ? '3px solid var(--blue)' : '3px solid transparent',
-          color: isActive ? 'var(--t1)' : 'var(--t2)',
-          fontWeight: isActive ? 600 : 400,
-          fontSize: 15,
-          textAlign: 'left',
-          cursor: 'pointer',
-        }}
-      >
-        <span>{item.label}</span>
-        {trailing}
-      </button>
-    )
-  }
+  const renderItem = (item, { indent = false, trailing = null, ariaLabel } = {}) => (
+    <NavItem key={item.id} item={item} active={item.id === activeTab} onSelect={onSelect} indent={indent} trailing={trailing} ariaLabel={ariaLabel} />
+  )
 
   const moreHovered = hoveredId === '__more__'
 
@@ -216,12 +187,8 @@ export default function NavDrawer({
         <div style={{ display: 'flex', flexDirection: 'column', padding: '8px 0' }}>
           {primaryItems.map((item) =>
             renderItem(item, {
-              trailing:
-                item.id === 'inbox' && typeof inboxCount === 'number' && inboxCount > 0 ? (
-                  <span className="badge" style={{ background: 'var(--blue-soft)', color: 'var(--blue)' }}>
-                    {inboxCount}
-                  </span>
-                ) : null,
+              trailing: item.id === 'inbox' ? <InboxBadge count={inboxCount} /> : null,
+              ariaLabel: item.id === 'inbox' ? inboxLabel(item, inboxCount) : undefined,
             })
           )}
         </div>
@@ -261,20 +228,7 @@ export default function NavDrawer({
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid var(--bd)', padding: '8px 0' }}>
           {renderItem(connectionItem, {
-            trailing: (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--t2)' }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: connected ? 'var(--green)' : 'var(--t2)',
-                    flexShrink: 0,
-                  }}
-                />
-                {connected ? 'Connected' : 'Not connected'}
-              </span>
-            ),
+            trailing: <ConnectionStatus connected={connected} />,
           })}
         </div>
       </div>

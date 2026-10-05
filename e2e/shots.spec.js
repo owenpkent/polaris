@@ -215,7 +215,9 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'goal-menu')
   })
 
+  // The drawer is the phone's navigation; on desktop the sidebar is in every shot already.
   test('mytasks: drawer', async ({ page }, testInfo) => {
+    test.skip(!phone(testInfo), 'phone layout only')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })

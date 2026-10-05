@@ -418,6 +418,34 @@ kbd { color: var(--t1); }
 .dot-stable { background: var(--purple); }
 
 /* Full-width tab shell: every tab uses the whole viewport width. */
+/* App shell (src/App.jsx). Above 640px the navigation is the always-visible sidebar
+   (src/Sidebar.jsx) and the top bar's menu button goes away; under it the sidebar is hidden and
+   the phone's tab bar and drawer take over. */
+.app-shell { display: flex; min-height: 100vh; }
+.app-content { flex: 1; min-width: 0; }
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 232px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border-right: 1px solid var(--bd-surface);
+}
+/* One view in the sidebar or the drawer (src/NavItem.jsx). Hover only tints the row; nothing is
+   revealed by it. */
+.nav-item { background: transparent; }
+.nav-item:hover, .nav-item[aria-current='page'] { background: var(--bg3); }
+@media (min-width: 641px) {
+  .topbar-menu-btn { display: none; }
+}
+@media (max-width: 640px) {
+  .app-sidebar { display: none; }
+}
+
 .app-main-full {
   padding: 24px 32px 48px;
 }
@@ -880,7 +908,7 @@ kbd { color: var(--t1); }
   .chat-panel { width: 100vw; border-left: none; }
 }
 
-/* Phone tab bar (src/BottomNav.jsx): My tasks, Inbox, Board, More. Desktop keeps the drawer.
+/* Phone tab bar (src/BottomNav.jsx): My tasks, Inbox, Board, More. Desktop has the sidebar.
    Under 640px it is fixed to the bottom edge, the page gets padding for it, the toolbar's own
    Add task row gives way to the floating button, and due dates become chips. */
 .bottom-nav { display: none; }

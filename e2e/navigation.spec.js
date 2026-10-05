@@ -7,7 +7,45 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('My tasks')
   })
 
-  test('the drawer lists the primary views and reports the connection', async ({ page }) => {
+  test('desktop shows every view in the sidebar, with no menu button', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'desktop layout only')
+    await openView(page)
+    const sidebar = page.getByRole('navigation', { name: 'Navigation' })
+    await expect(sidebar).toBeVisible()
+    for (const name of ['My tasks', 'Board', 'Goals', 'Projects', 'Threads', 'Rules', 'Digest', 'GitHub']) {
+      await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()
+    }
+    await expect(sidebar.getByRole('button', { name: /^Inbox, \d+ waiting$/ })).toBeVisible()
+    await expect(sidebar.getByRole('button', { name: /Connection/ })).toContainText('Connected')
+    await expect(sidebar.getByRole('button', { name: 'My tasks' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden()
+    expect(await smallTargets(sidebar)).toEqual([])
+  })
+
+  test('choosing a view in the sidebar switches the page and updates the URL', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'desktop layout only')
+    await openView(page)
+    const sidebar = page.getByRole('navigation', { name: 'Navigation' })
+    await sidebar.getByRole('button', { name: 'Goals', exact: true }).click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Goals')
+    await expect(sidebar.getByRole('button', { name: 'Goals', exact: true })).toHaveAttribute('aria-current', 'page')
+    expect(new URL(page.url()).searchParams.get('view')).toBe('goals')
+  })
+
+  test('the sidebar is reachable from the keyboard and shows a focus ring', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'desktop layout only')
+    await openView(page)
+    const sidebar = page.getByRole('navigation', { name: 'Navigation' })
+    await sidebar.getByRole('button', { name: 'My tasks' }).focus()
+    await page.keyboard.press('Tab')
+    await expect(sidebar.getByRole('button', { name: /^Inbox/ })).toBeFocused()
+    await expectFocusRing(page)
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Inbox')
+  })
+
+  test('the drawer lists the primary views and reports the connection', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: desktop has the sidebar')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })
@@ -18,7 +56,8 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await expect(drawer.getByRole('button', { name: 'My tasks' })).toHaveAttribute('aria-current', 'page')
   })
 
-  test('choosing a view switches the page, closes the drawer, and updates the URL', async ({ page }) => {
+  test('choosing a view switches the page, closes the drawer, and updates the URL', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: desktop has the sidebar')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await page.getByRole('dialog', { name: 'Navigation' }).getByRole('button', { name: /^Inbox/ }).click()
@@ -27,7 +66,8 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     expect(new URL(page.url()).searchParams.get('view')).toBe('inbox')
   })
 
-  test('Esc closes the drawer and focus returns to the menu button', async ({ page }) => {
+  test('Esc closes the drawer and focus returns to the menu button', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: desktop has the sidebar')
     await openView(page)
     const menuButton = page.getByRole('button', { name: 'Open navigation' })
     await menuButton.click()
@@ -37,7 +77,8 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await expect(menuButton).toBeFocused()
   })
 
-  test('Tab stays inside the open drawer and the focused item shows a ring', async ({ page }) => {
+  test('Tab stays inside the open drawer and the focused item shows a ring', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: desktop has the sidebar')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })
@@ -49,7 +90,8 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await expectFocusRing(page)
   })
 
-  test('More expands to the secondary views', async ({ page }) => {
+  test('More expands to the secondary views', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: desktop has the sidebar')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })
@@ -75,7 +117,7 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
   })
 })
 
-// The phone's tab bar (src/BottomNav.jsx). Desktop navigates through the drawer alone.
+// The phone's tab bar (src/BottomNav.jsx). Desktop navigates through the sidebar.
 test.describe('phone tab bar', { tag: ['@flow'] }, () => {
   test('is hidden on desktop', async ({ page }, testInfo) => {
     test.skip(isPhone(testInfo), 'phone layout only')
