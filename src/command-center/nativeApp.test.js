@@ -83,8 +83,20 @@ describe('native calls', () => {
     expect(calls[1]).toEqual(['LocalNotifications', 'cancel', { notifications: [{ id: 5 }, { id: 6 }] }])
     expect(calls[2]).toEqual(['LocalNotifications', 'schedule', { notifications: [{
       id: 7, title: 'Pay rent', body: 'Due today',
-      schedule: { at: at.toISOString(), allowWhileIdle: true }, extra: { taskId: 't_abc123def4' },
+      schedule: { at: at.toISOString(), allowWhileIdle: true }, isExactNotification: false, extra: { taskId: 't_abc123def4' },
     }] }])
+  })
+
+  test('every reminder asks for an inexact alarm, so Android 12+ never sends the owner to settings', async () => {
+    const cap = bridge()
+    const at = new Date(2026, 9, 6, 9, 0)
+    await scheduleNotifications([
+      { id: 1, taskId: 't_aaaaaaaaaa', title: 'One', body: 'Due today', at },
+      { id: 2, taskId: 't_bbbbbbbbbb', title: 'Two', body: 'Overdue', at },
+    ])
+    const schedule = cap.nativePromise.mock.calls.find((c) => c[1] === 'schedule')
+    expect(schedule[2].notifications).toHaveLength(2)
+    for (const n of schedule[2].notifications) expect(n.isExactNotification).toBe(false)
   })
 
   test('an empty plan only cancels', async () => {

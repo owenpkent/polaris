@@ -37,6 +37,9 @@ export async function cancelAllNotifications() {
 }
 
 // Replaces every pending notification with the plan (reminders.js planReminders).
+// Each one is an inexact alarm: the plugin defaults to exact, and on Android 12 and later an
+// exact alarm without its special permission makes schedule() open the system settings instead,
+// which every resume would then do again. A reminder a few minutes late is fine.
 export async function scheduleNotifications(plan) {
   await cancelAllNotifications()
   if (!plan.length) return
@@ -46,6 +49,7 @@ export async function scheduleNotifications(plan) {
       title: item.title,
       body: item.body,
       schedule: { at: item.at.toISOString(), allowWhileIdle: true },
+      isExactNotification: false,
       extra: { taskId: item.taskId },
     })),
   })
