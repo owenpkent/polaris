@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { connect } from 'node:net';
+import { loadApp, saveAppFromConversion } from '../ingest/github/app.ts';
+import { memorySecretStore } from '../ingest/secrets.ts';
 import { identityProof } from './identity.ts';
 import { TEST_TOKENS, api, authHeaders, fakeApp, withServer } from './test-support.ts';
 
@@ -238,4 +240,97 @@ test('the identity proof matches the vector the desktop shell tests against', ()
     identityProof('test-api-token-0000000000000000', 8788, '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'),
     IDENTITY_VECTOR,
   );
+});
+
+test('Tailscale identity: the configured login through the proxy stands in for the api token on /api, and nowhere else', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const login = 'owner@example.com';
+  await withServer(app, { tailscaleLogin: login }, async (base) => {
+    // What `tailscale serve` on this machine adds to a request from one of the owner's devices.
+    // The test server listens on 127.0.0.1, so the peer is loopback, as the proxy's is.
+    const viaProxy = { 'Tailscale-User-Login': login };
+    const ok = await fetch(`${base}/api/health`, { headers: viaProxy });
+    assert.equal(ok.status, 200);
+    assert.deepEqual((await ok.json() as { auth: unknown }).auth, { via: 'tailscale', login });
+    // The token path is unchanged, and health says which one it was.
+    assert.deepEqual((await api(base, 'GET', '/api/health')).json.auth, { via: 'token' });
+    // The header is an alternative to the token, not an extra check: a bad token beside it is fine.
+    assert.equal((await fetch(`${base}/api/health`, { headers: { ...viaProxy, Authorization: 'Bearer nope' } })).status, 200);
+    // Without the header, or with another tailnet user's login, nothing changed.
+    assert.equal((await fetch(`${base}/api/health`)).status, 401);
+    assert.equal((await fetch(`${base}/api/health`, { headers: { 'Tailscale-User-Login': 'guest@example.com' } })).status, 401);
+    // It is the owner: a mutation goes through, and is recorded as the human, as the token's are.
+    const before = app.store.lastEventId();
+    // (A write over identity also has to come from the dashboard's own page; see the test below.)
+    const made = await fetch(`${base}/api/tasks`, { method: 'POST', headers: { ...viaProxy, 'Sec-Fetch-Site': 'same-origin', 'content-type': 'application/json' }, body: JSON.stringify({ title: 'From the phone' }) });
+    assert.equal(made.status, 201);
+    for (const e of app.store.eventsSince(before)) assert.equal(e.actor, 'human');
+    // Never MCP: agents keep their tokens.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      const res = await fetch(`${base}${path}`, { method: 'GET', headers: { ...viaProxy, Accept: 'text/event-stream' } });
+      assert.equal(res.status, 401, path);
+    }
+  });
+});
+
+test('Tailscale identity: a write needs the dashboard\'s own origin, since the header proves the device and not the page', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const login = 'owner@example.com';
+  const secrets = memorySecretStore();
+  await saveAppFromConversion(secrets, {
+    id: 1, slug: 'cc', name: 'Polaris Command Center', html_url: 'https://github.com/apps/cc',
+    client_id: 'login-client-id', client_secret: 'login-client-secret',
+  });
+  const task = app.store.createTask({ title: 'Leave me open' });
+  await withServer(app, { tailscaleLogin: login, githubSecrets: secrets }, async (base) => {
+    const viaProxy = { 'Tailscale-User-Login': login };
+    // Another site open in the owner's browser: a simple POST with no body needs no preflight,
+    // and the proxy would stamp it with the owner's login.
+    const fromEvil = { ...viaProxy, Origin: 'https://evil.example' };
+    for (const path of ['/api/github/app/forget', `/api/tasks/${task.id}/complete`]) {
+      const res = await fetch(`${base}${path}`, { method: 'POST', headers: fromEvil });
+      assert.equal(res.status, 403, path);
+      assert.equal((await res.json() as { error: { code: string } }).error.code, 'Forbidden');
+    }
+    assert.ok(await loadApp(secrets));
+    assert.equal(app.store.getTask(task.id)?.status, 'open');
+    // The browser saying cross-site, or saying nothing at all, is refused the same way.
+    for (const headers of [{ ...viaProxy, 'Sec-Fetch-Site': 'cross-site' }, viaProxy]) {
+      assert.equal((await fetch(`${base}/api/tasks/${task.id}/complete`, { method: 'POST', headers })).status, 403);
+    }
+    assert.equal(app.store.getTask(task.id)?.status, 'open');
+    // A JSON body dressed as text/plain, which also needs no preflight, gets nowhere either: the
+    // origin check refuses it first, and body.ts refuses the media type even from the right page.
+    const before = app.store.searchTasks({}).length;
+    for (const [headers, status] of [[fromEvil, 403], [{ ...viaProxy, 'Sec-Fetch-Site': 'same-origin' }, 400]] as const) {
+      const res = await fetch(`${base}/api/tasks`, { method: 'POST', headers: { ...headers, 'Content-Type': 'text/plain;x=application/json' }, body: JSON.stringify({ title: 'Planted' }) });
+      assert.equal(res.status, status);
+    }
+    assert.equal(app.store.searchTasks({}).length, before);
+    // Reads are not affected: another site cannot read the answer.
+    assert.equal((await fetch(`${base}/api/health`, { headers: fromEvil })).status, 200);
+    // The dashboard's own page passes, by Sec-Fetch-Site or by an Origin naming this host.
+    const done = await fetch(`${base}/api/tasks/${task.id}/complete`, { method: 'POST', headers: { ...viaProxy, 'Sec-Fetch-Site': 'same-origin' } });
+    assert.equal(done.status, 200);
+    assert.equal(app.store.getTask(task.id)?.status, 'done');
+    const reopened = await fetch(`${base}/api/tasks/${task.id}/reopen`, { method: 'POST', headers: { ...viaProxy, Origin: base } });
+    assert.equal(reopened.status, 200);
+    assert.equal(app.store.getTask(task.id)?.status, 'open');
+    // The token path is unchanged: a bearer token from a foreign origin is still the token.
+    const byToken = await fetch(`${base}/api/github/app/forget`, { method: 'POST', headers: authHeaders({ Origin: 'https://evil.example' }) });
+    assert.equal(byToken.status, 200);
+    assert.equal(await loadApp(secrets), undefined);
+  });
+});
+
+test('Tailscale identity is off until a login is configured', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const res = await fetch(`${base}/api/health`, { headers: { 'Tailscale-User-Login': 'owner@example.com' } });
+    assert.equal(res.status, 401);
+    assert.deepEqual((await api(base, 'GET', '/api/health')).json.auth, { via: 'token' });
+  });
 });

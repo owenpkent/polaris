@@ -31,8 +31,11 @@ export function readJsonBody(req: IncomingMessage, maxBytes: number, opts: ReadB
         reject(new HttpError(400, 'BadRequest', 'request body is required'));
         return;
       }
-      const contentType = String(req.headers['content-type'] ?? '');
-      if (!contentType.toLowerCase().includes('application/json')) {
+      // The media type itself, parameters dropped, must be application/json. A substring match let
+      // `text/plain;x=application/json` through, which a page on another site can send without a
+      // CORS preflight; a real application/json body from another site always needs one.
+      const mediaType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+      if (mediaType !== 'application/json') {
         reject(new HttpError(400, 'BadRequest', 'Content-Type must be application/json'));
         return;
       }

@@ -19,6 +19,8 @@
 //      owner's call alone: only the human actor judges a claim, pins, closes, reopens, forks, or
 //      changes a thread's settings, no MCP tool does any of it, the daily cap never binds the
 //      owner, and a fork leaves the original task alone except for its new subtask.
+//  10. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
+//      API, and only from the proxy on this machine. MCP keeps its tokens.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -29,6 +31,7 @@ import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
 import { readFileSync } from 'node:fs';
 import { githubFakeFromEnv } from './http/commands.ts';
+import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
 import { syncGithub } from './ingest/github/sync.ts';
@@ -1165,4 +1168,56 @@ test('9. the daily cap binds agents, never the owner, and a fork changes the ori
   assert.deepEqual(store.searchTasks({ parentId: task.id }).map((t) => t.id), [forked.task.id]);
   const kinds = store.taskHistory(task.id).map((e) => e.kind).filter((k) => k.startsWith('task.'));
   assert.deepEqual(kinds, ['task.created'], 'no task event on the original from any of it');
+});
+
+// =====================================================================================
+// 10. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
+//    API, and only from the proxy on this machine (docs/tailscale-identity.md)
+// =====================================================================================
+
+const OWNER_LOGIN = 'owner@example.com';
+const AS_OWNER = { 'Tailscale-User-Login': OWNER_LOGIN };
+
+test('10. the Tailscale login header opens nothing until CC_TAILSCALE_LOGIN names a login', async (t) => {
+  assert.equal(tailscaleLoginFromEnv({}), undefined);
+  assert.equal(tailscaleLoginFromEnv({ CC_TAILSCALE_LOGIN: '  ' }), undefined);
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    for (const path of ['/api/health', '/api/tasks', '/api/rules', '/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { headers: AS_OWNER })).status, 401, path);
+    }
+  });
+});
+
+test('10. with a login named, identity is the owner on REST only, from a loopback peer only, and never on MCP', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
+  const enable = (base: string, headers: Record<string, string>) => fetch(`${base}/api/rules/${rule.id}`, {
+    method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+  });
+  await withServer(app, { tailscaleLogin: OWNER_LOGIN }, async (base) => {
+    // Another user on the same tailnet is not the owner.
+    assert.equal((await enable(base, { 'Tailscale-User-Login': 'guest@example.com' })).status, 401);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The MCP endpoints never take the header, whoever it names.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { headers: { ...AS_OWNER, Accept: 'text/event-stream' } })).status, 401, path);
+    }
+    // The header proves the device, not the page: a write that another site's page sent through
+    // the owner's browser, or one that does not say where it came from, is refused.
+    assert.equal((await enable(base, { ...AS_OWNER, Origin: 'https://evil.example' })).status, 403);
+    assert.equal((await enable(base, AS_OWNER)).status, 403);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The owner, from the dashboard on one of their own devices, is the owner: the same reach as the
+    // dashboard's token.
+    assert.equal((await enable(base, { ...AS_OWNER, 'Sec-Fetch-Site': 'same-origin' })).status, 200);
+    assert.equal(app.store.getRule(rule.id)?.enabled, true);
+  });
+  // The proxy is on this machine. A peer that is not loopback does not get to say who it is,
+  // which is what keeps a daemon bound wider than loopback from taking the header off the LAN.
+  const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
+  assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
+  assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
 });

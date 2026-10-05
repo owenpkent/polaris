@@ -46,4 +46,10 @@ export interface HttpServerOptions {
   githubStateStore?: OAuthStateStore;
   /** Absolute path of the built dashboard to serve at `/`. When unset, `/` is a 404 as before. */
   dashboardDir?: string;
+  /**
+   * The Tailscale login (email) whose requests through `tailscale serve` on this machine are the
+   * owner on /api/* without the api token (tailscale.ts, docs/tailscale-identity.md). Unset, the
+   * default, means the header is ignored. Never applies to /mcp or /mcp/readonly.
+   */
+  tailscaleLogin?: string;
 }
