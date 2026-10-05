@@ -32,7 +32,7 @@ Run `npm run cc` with no arguments for the full command list, and `npm run cc --
 - **Claude Code in this repo:** the repo root `.mcp.json` registers the stdio server. Approve it when Claude Code asks.
 - **Claude Code elsewhere:** `claude mcp add polaris -- node <ABS_PATH_TO_REPO>\command-center\src\mcp\stdio.ts`
 - **Over HTTP** while the daemon or `serve` is running: `claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>"`, using the token in `command-center/data/mcp-token`. For read-only access use `/mcp/readonly` with `data/mcp-readonly-token`.
-- **Phone and laptop:** keep the server on loopback and reach it behind a reverse proxy on a private network you control, such as Tailscale (`tailscale serve`). Never expose it publicly: the MCP routes have no OAuth. On the phone, use the browser or the Android app in [../mobile/](../mobile/README.md), which needs `CC_CORS_ORIGINS=https://localhost` on the server.
+- **Phone and laptop:** keep the server on loopback and reach it behind a reverse proxy on a private network you control, such as Tailscale (`tailscale serve`). Never expose it publicly: the MCP routes have no OAuth. With `CC_TAILSCALE_LOGIN` set to your Tailscale login, a dashboard opened through `tailscale serve` signs in with your Tailscale identity and needs no token pasted; MCP clients still need theirs. docs/tailscale-identity.md says what that trusts. On the phone, use the browser or the Android app in [../mobile/](../mobile/README.md), which needs `CC_CORS_ORIGINS=https://localhost` on the server.
 - **claude.ai:** not yet. It needs a public HTTPS endpoint with OAuth, deferred until you ask for it.
 
 Details: [src/mcp/README.md](src/mcp/README.md) and [src/http/README.md](src/http/README.md).
@@ -206,6 +206,7 @@ Start-ScheduledTask 'Constellation Command Center'
 | CC_SECRETS_DIR | %APPDATA%\constellation\secrets on Windows, the database's folder elsewhere | Where the secret store lives |
 | CC_API_TOKEN, CC_MCP_TOKEN, CC_MCP_READONLY_TOKEN | generated | Bearer token overrides |
 | CC_CORS_ORIGINS | localhost:5173 | Dashboard origins allowed to call the API |
+| CC_TAILSCALE_LOGIN | unset | Your Tailscale login. A dashboard opened through `tailscale serve` on this machine then needs no token (docs/tailscale-identity.md). Never applies to MCP |
 | CC_DASHBOARD_DIR | repo root's dist/ | Built dashboard directory served at / |
 | GITHUB_WEBHOOK_SECRET | unset | Enables POST /webhooks/github |
 

@@ -55,6 +55,20 @@ export function isAllowedHandoffUrl(raw) {
   }
 }
 
+// A dashboard opened through the tailnet, from any origin that is not loopback, may be in front of
+// a daemon with CC_TAILSCALE_LOGIN set, where the owner's Tailscale sign-in stands in for the token
+// (docs/tailscale-identity.md). This is the origin to ask, or null on the host itself, where no
+// proxy is in the path and the token is the way in.
+export function tailnetOrigin(loc = window.location) {
+  try {
+    if (loc.protocol !== 'http:' && loc.protocol !== 'https:') return null
+    if (LOOPBACK_HOSTS.has(loc.hostname)) return null
+    return loc.origin
+  } catch {
+    return null
+  }
+}
+
 function takeHandoff() {
   try {
     const params = new URLSearchParams(window.location.hash.slice(1))
@@ -91,7 +105,8 @@ export function ConnectionProvider({ children }) {
   // `keepOnNetworkError` is for the silent re-check on load: a saved connection whose server
   // cannot be reached right now stays connected, so every tab opens on its local copy instead of
   // the settings form. A refused token still disconnects, and so does any test the owner runs themselves.
-  const testConnection = useCallback(async (candidateBaseUrl = baseUrl, candidateToken = token, { keepOnNetworkError = false } = {}) => {
+  // `silent` is for the Tailscale probe on load: a test the owner did not run shows no result either way.
+  const testConnection = useCallback(async (candidateBaseUrl = baseUrl, candidateToken = token, { keepOnNetworkError = false, silent = false } = {}) => {
     setTesting(true)
     setTestResult(null)
     try {
@@ -109,17 +124,19 @@ export function ConnectionProvider({ children }) {
       setToken(candidateToken)
       setSaved(true)
       const sending = adopted > 0 ? ` Sending ${adopted} ${adopted === 1 ? 'change' : 'changes'} made before connecting.` : ''
-      setTestResult({
-        ok: true,
-        message: `Connected. Server v${res?.version ?? '?'} · today ${res?.today ?? ''} · ${res?.counts?.inbox ?? 0} in inbox.${sending}`,
-      })
+      if (!silent) {
+        setTestResult({
+          ok: true,
+          message: `Connected. Server v${res?.version ?? '?'} · today ${res?.today ?? ''} · ${res?.counts?.inbox ?? 0} in inbox.${sending}`,
+        })
+      }
       persist({ baseUrl: candidateBaseUrl, token: candidateToken, connected: true })
       return true
     } catch (err) {
       if (keepOnNetworkError && err instanceof ApiError && err.code === 'network_error') return false
       setConnected(false)
       const message = err instanceof ApiError ? err.message : 'Could not reach the server.'
-      setTestResult({ ok: false, message })
+      if (!silent) setTestResult({ ok: false, message })
       return false
     } finally {
       setTesting(false)
@@ -151,7 +168,14 @@ export function ConnectionProvider({ children }) {
     refreshPendingCount(initial ? initial.baseUrl : LOCAL_ORIGIN)
     if (initial?.connected && initial?.baseUrl) {
       testConnection(initial.baseUrl, initial.token || '', { keepOnNetworkError: true }).catch(() => {})
+      return
     }
+    // Nothing saved and no handoff: a page served through the tailnet asks its own origin, with
+    // no token, whether the owner's Tailscale sign-in is enough. A 200 connects this device with
+    // nothing stored on it. A 401 is the ordinary answer from a daemon without CC_TAILSCALE_LOGIN,
+    // and is not shown: the owner did not run this test, and the connect form says what to do.
+    const origin = initial ? null : tailnetOrigin()
+    if (origin) testConnection(origin, '', { keepOnNetworkError: true, silent: true }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

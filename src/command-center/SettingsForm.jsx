@@ -21,6 +21,12 @@ export default function SettingsForm() {
     <form className="card" onSubmit={handleSubmit}>
       <div className="section-header">Connection settings</div>
 
+      {connected && health?.auth?.via === 'tailscale' && (
+        <p role="note" style={{ fontSize: '0.85rem', color: 'var(--t2)', margin: '0 0 1rem' }}>
+          Connected through Tailscale as {health.auth.login}. No token is stored on this device.
+        </p>
+      )}
+
       <div className="field">
         <label htmlFor="cc-base-url">Server URL</label>
         <input
