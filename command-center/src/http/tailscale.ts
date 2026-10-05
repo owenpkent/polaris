@@ -46,3 +46,33 @@ export function isTailscaleOwner(req: Pick<IncomingMessage, 'headers' | 'socket'
   if (typeof header !== 'string' || header.includes(',')) return false;
   return normalizeTailscaleLogin(header) === expected;
 }
+
+/**
+ * Whether `req` was sent by a page on this server's own origin, as the browser reports it.
+ * server.ts requires it of every request other than GET or HEAD that is authorized by identity
+ * alone.
+ *
+ * The identity header proves which device a request came from, not which page sent it. The
+ * browser holds no credential here (the proxy adds the header), so any website open in a browser
+ * on the owner's device could send a "simple" cross-site POST, which needs no preflight, to the
+ * tailnet address, and the proxy would stamp it with the owner's login. A bearer token is safe
+ * from that because a page from another site cannot read it. Identity is not, so a write over
+ * identity must also show it came from the dashboard's own origin.
+ *
+ * Sec-Fetch-Site, which current browsers send on HTTPS and a page cannot set, is checked first and
+ * must be `same-origin`. Without it, the Origin header must name this server's own host (the Host
+ * header, which `tailscale serve` forwards as the client sent it by default). With neither, or with
+ * an Origin that does not parse, the request is refused.
+ */
+export function isSameOriginBrowserRequest(req: Pick<IncomingMessage, 'headers'>): boolean {
+  const site = req.headers['sec-fetch-site'];
+  if (site !== undefined) return site === 'same-origin';
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (!origin || !host) return false;
+  try {
+    return new URL(origin).host === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}

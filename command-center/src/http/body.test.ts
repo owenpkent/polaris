@@ -110,6 +110,23 @@ test('content-type matching is case-insensitive and tolerates a charset paramete
   assert.deepEqual(await promise, { a: 1 });
 });
 
+test('the media type must be application/json itself, not a type that merely mentions it', async () => {
+  // A page on another site can send text/plain without a CORS preflight; a parameter naming
+  // application/json does not make it JSON.
+  for (const contentType of ['text/plain;x=application/json', 'text/plain; charset=application/json', 'application/jsonp', 'application/json-seq', 'text/application/json']) {
+    const req = fakeRequest({ 'content-type': contentType });
+    const promise = readJsonBody(req, 1024);
+    req.push(Buffer.from('{"a":1}'));
+    req.push(null);
+    await assert.rejects(promise, /Content-Type must be application\/json/, contentType);
+  }
+  const req = fakeRequest({ 'content-type': '  application/json ;charset=utf-8' });
+  const promise = readJsonBody(req, 1024);
+  req.push(Buffer.from('{"a":1}'));
+  req.push(null);
+  assert.deepEqual(await promise, { a: 1 });
+});
+
 test('a body of exactly maxBytes is accepted (the cap rejects only when total exceeds it)', async () => {
   const body = JSON.stringify({ x: 1 });
   const req = fakeRequest({ 'content-type': 'application/json' });

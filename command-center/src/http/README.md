@@ -82,6 +82,15 @@ the same trust the token files next to the database extend on a single-user mach
 process on one of the owner's tailnet devices is the owner on `/api`, which is where a rule is
 enabled. Leave it unset if either matters.
 
+A write over identity (any method but GET and HEAD, without a valid api token) must also be a
+same-origin browser request, or it is a `403`: `Sec-Fetch-Site` must be `same-origin` when the
+browser sends it, and otherwise `Origin` must name the request's own `Host`
+(`isSameOriginBrowserRequest`). The header proves the device, not the page, so without this any
+website open in the owner's browser could send a simple cross-site POST, which needs no preflight,
+through the proxy as the owner. Reads and the token path are unaffected. For the same reason
+`body.ts` takes a body only when the media type is exactly `application/json`, so
+`text/plain;x=application/json` is refused.
+
 Every response carries `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors
 'none'`, set in `server.ts` before anything else runs, so the dashboard cannot be embedded by a
 page on another origin and clicked through with its saved token. A request target that is not a

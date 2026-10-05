@@ -15,7 +15,7 @@ import { createMcpHandler, type McpRequestHandler } from './mcp.ts';
 import { registerRestRoutes } from './rest.ts';
 import { createRouter } from './router.ts';
 import { createStaticHandler } from './static.ts';
-import { isTailscaleOwner } from './tailscale.ts';
+import { isSameOriginBrowserRequest, isTailscaleOwner } from './tailscale.ts';
 import type { HttpServerOptions } from './types.ts';
 
 export type { ApiTokens, HttpServerOptions, JobStatus } from './types.ts';
@@ -143,7 +143,16 @@ export function createHttpServer(app: App, opts: HttpServerOptions): Server {
           // in for the api token here and nowhere else (tailscale.ts). Off until CC_TAILSCALE_LOGIN
           // names the login; the MCP branches above never look at the header.
           const isOwnerOverTailscale = isTailscaleOwner(req, opts.tailscaleLogin);
-          if (!isGithubCallback && !isIdentity && !isOwnerOverTailscale && !isAuthorized(req, apiTokenBuf)) { sendError(res, 401, 'Unauthorized', 'missing or invalid bearer token'); return; }
+          const hasApiToken = isAuthorized(req, apiTokenBuf);
+          if (!isGithubCallback && !isIdentity && !isOwnerOverTailscale && !hasApiToken) { sendError(res, 401, 'Unauthorized', 'missing or invalid bearer token'); return; }
+          // The identity header proves the device, not the page: a site open in the owner's browser
+          // could send a simple cross-site POST through the proxy and be stamped as the owner. So a
+          // write authorized by identity alone must come from the dashboard's own origin. Reads are
+          // left alone (another site cannot read the answer), and the token path is unchanged.
+          if (isOwnerOverTailscale && !hasApiToken && method !== 'GET' && method !== 'HEAD' && !isSameOriginBrowserRequest(req)) {
+            sendError(res, 403, 'Forbidden', 'a write signed in through Tailscale must come from the dashboard\'s own origin');
+            return;
+          }
           const body = method === 'POST' || method === 'PATCH' || method === 'PUT'
             ? await readJsonBody(req, MAX_BODY_BYTES)
             : undefined;

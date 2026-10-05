@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TAILSCALE_LOGIN_HEADER, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
+import { TAILSCALE_LOGIN_HEADER, isSameOriginBrowserRequest, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
 
 const LOGIN = 'owner@example.com';
 
@@ -47,4 +47,35 @@ test('tailscaleLoginFromEnv trims and lower-cases, and a blank value leaves iden
   assert.equal(tailscaleLoginFromEnv({ CC_TAILSCALE_LOGIN: '   ' }), undefined);
   assert.equal(tailscaleLoginFromEnv({ CC_TAILSCALE_LOGIN: ' Owner@Example.com ' }), LOGIN);
   assert.equal(normalizeTailscaleLogin(undefined), undefined);
+});
+
+/** A request as the same-origin check sees it: headers only, Host as node received it. */
+function browserReq(headers: Record<string, string | undefined>) {
+  return { headers: { host: 'polaris.tail1234.ts.net', ...headers } } as unknown as Parameters<typeof isSameOriginBrowserRequest>[0];
+}
+
+test('isSameOriginBrowserRequest trusts Sec-Fetch-Site first, and only same-origin passes', () => {
+  assert.equal(isSameOriginBrowserRequest(browserReq({ 'sec-fetch-site': 'same-origin' })), true);
+  for (const site of ['cross-site', 'same-site', 'none', '']) {
+    assert.equal(isSameOriginBrowserRequest(browserReq({ 'sec-fetch-site': site })), false, site);
+  }
+  // An Origin naming this host does not rescue a cross-site Sec-Fetch-Site.
+  assert.equal(isSameOriginBrowserRequest(browserReq({ 'sec-fetch-site': 'cross-site', origin: 'https://polaris.tail1234.ts.net' })), false);
+});
+
+test('isSameOriginBrowserRequest without Sec-Fetch-Site needs an Origin naming this host', () => {
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://polaris.tail1234.ts.net' })), true);
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://POLARIS.tail1234.ts.net' })), true);
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://evil.example' })), false);
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://polaris.tail1234.ts.net.evil.example' })), false);
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://polaris.tail1234.ts.net:8443' })), false);
+  for (const origin of ['null', 'not a url', '://']) {
+    assert.equal(isSameOriginBrowserRequest(browserReq({ origin })), false, origin);
+  }
+  // No Host to compare against is not a match.
+  assert.equal(isSameOriginBrowserRequest(browserReq({ origin: 'https://polaris.tail1234.ts.net', host: undefined })), false);
+});
+
+test('isSameOriginBrowserRequest refuses a request with neither header', () => {
+  assert.equal(isSameOriginBrowserRequest(browserReq({})), false);
 });

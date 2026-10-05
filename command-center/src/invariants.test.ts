@@ -920,8 +920,14 @@ test('9. with a login named, identity is the owner on REST only, from a loopback
     for (const path of ['/mcp', '/mcp/readonly']) {
       assert.equal((await fetch(`${base}${path}`, { headers: { ...AS_OWNER, Accept: 'text/event-stream' } })).status, 401, path);
     }
-    // The owner, from one of their own devices, is the owner: the same reach as the dashboard's token.
-    assert.equal((await enable(base, AS_OWNER)).status, 200);
+    // The header proves the device, not the page: a write that another site's page sent through
+    // the owner's browser, or one that does not say where it came from, is refused.
+    assert.equal((await enable(base, { ...AS_OWNER, Origin: 'https://evil.example' })).status, 403);
+    assert.equal((await enable(base, AS_OWNER)).status, 403);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The owner, from the dashboard on one of their own devices, is the owner: the same reach as the
+    // dashboard's token.
+    assert.equal((await enable(base, { ...AS_OWNER, 'Sec-Fetch-Site': 'same-origin' })).status, 200);
     assert.equal(app.store.getRule(rule.id)?.enabled, true);
   });
   // The proxy is on this machine. A peer that is not loopback does not get to say who it is,
