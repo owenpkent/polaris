@@ -30,8 +30,10 @@ function linkLabel(url) {
 // closes it nor puts the old request's error or busy state on it.
 //
 // `initial` ({ title, notes, sourceUrl } or null) starts the draft from a share (shareIntake.js).
-// Its link is kept with the draft, shown as one read-only line, and sent as `sourceUrl`.
-export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef, initial = null }) {
+// Its link is kept with the draft, shown as one read-only line, and sent as `sourceUrl`. A new
+// `seed` while the sheet is open starts the draft again from the current `initial`, as a new
+// opening: a create still in flight for the old draft then leaves the new one alone.
+export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef, initial = null, seed = 0 }) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState(null)
   const [projectId, setProjectId] = useState('')
@@ -46,7 +48,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   const wasOpenRef = useRef(open)
   const openingRef = useRef(0)
 
-  // A fresh form each time it opens, with the title focused.
+  // A fresh form each time it opens or is reseeded, with the title focused.
   useEffect(() => {
     if (!open) return
     openingRef.current += 1
@@ -58,7 +60,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setBusy(false)
     setError(null)
     titleRef.current?.focus()
-  }, [open])
+  }, [open, seed])
 
   useEffect(() => {
     if (wasOpenRef.current && !open) openButtonRef?.current?.focus()

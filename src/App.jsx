@@ -82,6 +82,8 @@ export default function App() {
   useEffect(() => { stripTaskParam() }, [])
   const [tab, setTab] = useState(() => (pendingShare || pendingTaskId ? DEFAULT_TAB : readInitialTab()))
   const consumeFocusTask = useCallback(() => setPendingTaskId(null), [])
+  // Drops a share only if it is still the pending one: a newer share that arrived meanwhile stays.
+  const consumeShare = useCallback((done) => setPendingShare((cur) => (cur === done ? null : cur)), [])
 
   // The Android shell delivers shares as a native event instead of a URL load.
   useEffect(() => subscribeNativeShares((share) => {
@@ -166,7 +168,7 @@ export default function App() {
           {tab === 'mytasks' && (
             <MyTasksTab
               share={pendingShare}
-              onShareConsumed={() => setPendingShare(null)}
+              onShareConsumed={consumeShare}
               focusTaskId={pendingTaskId}
               onFocusTaskConsumed={consumeFocusTask}
             />

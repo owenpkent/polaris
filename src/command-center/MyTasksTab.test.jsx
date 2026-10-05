@@ -83,6 +83,24 @@ describe('MyTasksTab share', () => {
     expect(onShareConsumed).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('dialog', { name: 'New task' })).toBeNull()
   })
+
+  test('a second share while the sheet is open replaces the draft, and only that share is consumed', async () => {
+    stubMatchMedia(390)
+    const onShareConsumed = vi.fn()
+    const SECOND = { title: 'Second article', text: '', url: 'https://example.com/second' }
+    const { rerender } = render(<MyTasksTab share={SHARE} onShareConsumed={onShareConsumed} />)
+    expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+    rerender(<MyTasksTab share={SECOND} onShareConsumed={onShareConsumed} />)
+    expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Second article')
+    expect(screen.getByText('Link: example.com/second')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Second article', sourceUrl: 'https://example.com/second',
+    })))
+    await waitFor(() => expect(onShareConsumed).toHaveBeenCalled())
+    expect(onShareConsumed).toHaveBeenCalledTimes(1)
+    expect(onShareConsumed).toHaveBeenCalledWith(SECOND)
+  })
 })
 
 describe('MyTasksTab focusTaskId', () => {

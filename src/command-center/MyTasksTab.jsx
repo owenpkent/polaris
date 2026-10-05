@@ -64,7 +64,9 @@ function groupIdFor(task, mode, dueBounds) {
 }
 
 // `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
-// new-task sheet prefilled, and `onShareConsumed` tells App to drop it once the sheet is done.
+// new-task sheet prefilled, and `onShareConsumed(share)` tells App to drop that share once the
+// sheet is done. A share that arrives while the sheet is open starts the draft again from it, and
+// closing consumes only the share the draft was made from, so a newer one is never dropped unseen.
 // `focusTaskId` is a task id handed in by App (a reminder tap, or ?task=): it opens that task's
 // panel, and `onFocusTaskConsumed` tells App to drop it.
 export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId = null, onFocusTaskConsumed }) {
@@ -87,12 +89,14 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // The phone tier creates tasks through a sheet opened by the floating Add task button; the
   // toolbar's inline row is desktop only (index.css hides it under 640px).
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [sheetInitial, setSheetInitial] = useState(null)
+  // `seq` numbers each share the sheet is seeded from, so a second share while it is open reseeds
+  // the draft; `share` is the one the draft belongs to, and the only one closing consumes.
+  const [sheetSeed, setSheetSeed] = useState({ seq: 0, initial: null, share: null })
   const fabRef = useRef(null)
 
   useEffect(() => {
     if (!share) return
-    setSheetInitial(shareToTaskFields(share))
+    setSheetSeed((prev) => ({ seq: prev.seq + 1, initial: shareToTaskFields(share), share }))
     setSheetOpen(true)
   }, [share])
 
@@ -103,10 +107,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [focusTaskId, onFocusTaskConsumed])
 
   const closeSheet = useCallback(() => {
+    const consumed = sheetSeed.share
     setSheetOpen(false)
-    setSheetInitial(null)
-    onShareConsumed?.()
-  }, [onShareConsumed])
+    setSheetSeed((prev) => ({ seq: prev.seq, initial: null, share: null }))
+    if (consumed) onShareConsumed?.(consumed)
+  }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
   const { narrow900, narrow600, phone } = useNarrowBreakpoints()
@@ -554,7 +559,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         open={sheetOpen}
         onClose={closeSheet}
         onCreate={submitSheet}
-        initial={sheetInitial}
+        initial={sheetSeed.initial}
+        seed={sheetSeed.seq}
         projects={projectOptions}
         openButtonRef={fabRef}
       />
