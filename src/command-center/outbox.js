@@ -18,6 +18,7 @@
 
 import { cacheGet, cachePatchAll, cachePut, indexedDbBackend, memoryBackend } from './offlineCache'
 import { setPending, setLastSync } from './offlineStatus'
+import { notifyTaskChanges } from './taskChanges'
 
 const DEVICE_KEY = 'cc-device-id-v1'
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -169,6 +170,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
       createdAt: at, updatedAt: at, completedAt: null, offlineCreated: true,
     }
     await addCreatedTask(baseUrl, myTasksUrl, task)
+    notifyTaskChanges()
     return { task }
   }
 
@@ -190,6 +192,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     if (body.section === null || /^s_[0-9a-z]+$/.test(String(body.section))) fields = { sectionId: body.section }
   }
   await patchTaskEverywhere(taskId, fields)
+  notifyTaskChanges()
   const task = { ...(existing || { id: taskId }), ...fields }
   return kind === 'complete_task' ? { task, next: null } : { task }
 }

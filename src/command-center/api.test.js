@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { defaultBaseUrl, DEFAULT_BASE_URL, ApiError, createApiClient } from './api'
 import { memoryBackend, setCacheBackend } from './offlineCache'
+import { subscribeTaskChanges } from './taskChanges'
 
 function jsonResponse(status, body) {
   return {
@@ -365,5 +366,37 @@ describe('createApiClient: updateAgentSettings is live-only', () => {
 
     global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     expect(await client.getAgentSettings()).toEqual({ defaultAgentName: 'claude-code' })
+  })
+})
+
+describe('createApiClient: task change signal', () => {
+  test('a task write the server took raises it, and a read or a comment does not', async () => {
+    const seen = vi.fn()
+    const unsubscribe = subscribeTaskChanges(seen)
+    try {
+      global.fetch.mockResolvedValue(jsonResponse(200, { task: { id: 't1' } }))
+      const api = createApiClient('http://pc.test', 'tok')
+      await api.listTasks({ status: 'open' })
+      await api.addComment('t1', 'hello')
+      expect(seen).not.toHaveBeenCalled()
+      await api.completeTask('t1')
+      expect(seen).toHaveBeenCalledTimes(1)
+      await api.restoreTask('t1', 5)
+      expect(seen).toHaveBeenCalledTimes(2)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test('a refused write does not raise it', async () => {
+    const seen = vi.fn()
+    const unsubscribe = subscribeTaskChanges(seen)
+    try {
+      global.fetch.mockResolvedValue(jsonResponse(400, { error: { code: 'validation_error', message: 'No.' } }))
+      await expect(createApiClient('http://pc.test', 'tok').updateTask('t1', { title: '' })).rejects.toThrow('No.')
+      expect(seen).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
   })
 })

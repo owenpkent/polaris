@@ -6,6 +6,7 @@ import { cacheGet, cachePut } from './offlineCache'
 import { getOfflineState, markOffline, markOnline } from './offlineStatus'
 import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, queueOfflineWrite } from './outbox'
 import { isNativeApp } from './nativeApp'
+import { notifyTaskChanges } from './taskChanges'
 
 const DEV_SERVER_DEFAULT = 'http://127.0.0.1:8788'
 
@@ -129,6 +130,8 @@ async function request(baseUrl, token, path, { method = 'GET', body, query, offl
   }
 
   if (cacheable) cachePut(url, data)
+  // A task write the server took. A queued one raises the same signal from outbox.js.
+  if (method !== 'GET' && path.startsWith('/api/tasks') && !path.endsWith('/comments')) notifyTaskChanges()
   return data
 }
 
