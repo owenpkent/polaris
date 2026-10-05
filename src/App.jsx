@@ -14,6 +14,7 @@ import ProjectsTab from './command-center/ProjectsTab'
 import ThreadsTab from './command-center/ThreadsTab'
 import TopBar from './TopBar'
 import NavDrawer from './NavDrawer'
+import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
@@ -107,7 +108,15 @@ export default function App() {
 
   return (
     <ConnectionProvider>
-      <div style={{ minHeight: '100vh' }}>
+      <div className="app-shell">
+        <Sidebar
+          primaryItems={PRIMARY_ITEMS}
+          moreItems={MORE_ITEMS}
+          connectionItem={CONNECTION_ITEM}
+          activeTab={tab}
+          onSelect={setTab}
+        />
+        <div className="app-content">
         <TopBar
           title={currentTitle}
           onMenuClick={(e) => openDrawer(e?.currentTarget)}
@@ -163,6 +172,7 @@ export default function App() {
         {chatMockup.enabled && (
           <ChatPanelMockup open={chatOpen} onClose={() => setChatOpen(false)} openButtonRef={chatButtonRef} />
         )}
+        </div>
       </div>
     </ConnectionProvider>
   )

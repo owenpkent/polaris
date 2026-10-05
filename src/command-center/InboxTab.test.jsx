@@ -2,6 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import InboxTab from './InboxTab'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { BREAKPOINT_QUERIES } from './columnsState'
 
 let connected = true
 const api = {}
@@ -51,6 +52,31 @@ describe('InboxTab', () => {
     render(<InboxTab />)
     expect(await screen.findByText('Fix the login bug')).toBeTruthy()
     expect(screen.getByText('GitHub')).toBeTruthy()
+  })
+
+  test('is a table on a wide window and stacked cards where the sidebar leaves the table too little room', async () => {
+    const { unmount } = render(<InboxTab />)
+    await screen.findByText('Fix the login bug')
+    expect(screen.getByRole('table', { name: 'Inbox' })).toBeTruthy()
+    expect(screen.getByRole('row', { name: /Fix the login bug/ })).toBeTruthy()
+    unmount()
+
+    // Between the phone tier and narrowInbox (641px to 1032px) the fixed Project, Source, and
+    // action columns no longer fit beside the sidebar, so the cards take over, with their roles.
+    window.matchMedia = vi.fn((query) => ({
+      matches: query === BREAKPOINT_QUERIES.narrowInbox,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    render(<InboxTab />)
+    await screen.findByText('Fix the login bug')
+    expect(screen.queryByRole('table', { name: 'Inbox' })).toBeNull()
+    expect(screen.getByRole('list', { name: 'Inbox' })).toBeTruthy()
+    expect(screen.getByRole('listitem')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
+    expect(screen.getByRole('button', { name: 'Accept as task' })).toBeTruthy()
   })
 
   test('shows the empty state once there is nothing left to review', async () => {

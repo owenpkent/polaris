@@ -198,7 +198,7 @@ function AcceptFormRow({ item, projects, onAccept, onCancel, busy, error }) {
           <option value="urgent">Urgent</option>
         </select>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+      <div className="inbox-form-actions">
         {error && <span style={{ fontSize: 13, color: 'var(--red)', marginRight: 4 }}>{error}</span>}
         <button type="button" onClick={onCancel} disabled={busy} style={cancelBtnStyle}>
           Cancel
@@ -241,7 +241,7 @@ function RejectFormRow({ onConfirm, onCancel, busy, error }) {
           style={{ ...controlStyle, height: 44, paddingTop: 10, resize: 'vertical' }}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+      <div className="inbox-form-actions">
         {error && <span style={{ fontSize: 13, color: 'var(--red)', marginRight: 4 }}>{error}</span>}
         <button type="button" onClick={onCancel} disabled={busy} style={cancelBtnStyle}>
           Cancel
@@ -254,7 +254,7 @@ function RejectFormRow({ onConfirm, onCancel, busy, error }) {
   )
 }
 
-function InboxRow({ item, selected, striped, phone, expandedType, onExpand, projects, projectName, onAccept, onReject }) {
+function InboxRow({ item, selected, striped, stacked, expandedType, onExpand, projects, projectName, onAccept, onReject }) {
   const offline = useOffline()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -287,7 +287,7 @@ function InboxRow({ item, selected, striped, phone, expandedType, onExpand, proj
 
   const titleStyle = { display: 'block', fontSize: 15, color: 'var(--t1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
 
-  // Shared between the desktop grid row and the phone card so Accept/Reject
+  // Shared between the desktop grid row and the stacked card so Accept/Reject
   // keep exactly the same classes, handlers, and confirmation semantics in
   // both layouts -- only their container changes.
   const actionButtons = (
@@ -309,7 +309,7 @@ function InboxRow({ item, selected, striped, phone, expandedType, onExpand, proj
     </>
   )
 
-  const row = phone ? (
+  const row = stacked ? (
     <div
       role={expanded ? undefined : 'listitem'}
       className={`inbox-card${striped && !expanded ? ' is-striped' : ''}`}
@@ -375,9 +375,9 @@ function InboxRow({ item, selected, striped, phone, expandedType, onExpand, proj
 
   if (!expanded) return row
 
-  // The open form must keep the list or table valid: on a phone the wrapper is the list item
-  // (the card above gives up that role), on desktop the wrapper is a row group and the form is a
-  // row with one cell spanning the columns. Otherwise axe reports aria-required-children.
+  // The open form must keep the list or table valid: in the stacked layout the wrapper is the
+  // list item (the card above gives up that role), in the table the wrapper is a row group and the
+  // form is a row with one cell spanning the columns. Otherwise axe reports aria-required-children.
   const form =
     expandedType === 'accept' ? (
       <AcceptFormRow item={item} projects={projects} busy={busy} error={error} onAccept={runAccept} onCancel={() => onExpand(null)} />
@@ -385,9 +385,9 @@ function InboxRow({ item, selected, striped, phone, expandedType, onExpand, proj
       <RejectFormRow busy={busy} error={error} onConfirm={runReject} onCancel={() => onExpand(null)} />
     )
   return (
-    <div role={phone ? 'listitem' : 'rowgroup'} style={{ background: 'var(--bg3)', borderBottom: '1px solid var(--bd)' }}>
+    <div role={stacked ? 'listitem' : 'rowgroup'} style={{ background: 'var(--bg3)', borderBottom: '1px solid var(--bd)' }}>
       {row}
-      {phone ? (
+      {stacked ? (
         form
       ) : (
         <div role="row">
@@ -410,7 +410,11 @@ export default function InboxTab() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [actionState, setActionState] = useState(null) // { id, type: 'accept' | 'reject' }
   const [legendOpen, setLegendOpen] = useState(false)
-  const { phone } = useNarrowBreakpoints()
+  // The table's Project, Source, and action columns are fixed, and above the phone breakpoint the
+  // sidebar takes 232px of the window, so the table gives way to the phone's stacked cards well
+  // before the phone tier: see narrowInbox in columnsState.js.
+  const { phone, narrowInbox } = useNarrowBreakpoints()
+  const stacked = phone || narrowInbox
 
   const beginRequest = useRequestGuard()
   const fetchInbox = useCallback(async () => {
@@ -529,8 +533,8 @@ export default function InboxTab() {
           {items.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--t2)', fontSize: 14 }}>Inbox is empty.</div>
           ) : (
-            <div role={phone ? 'list' : 'table'} aria-label="Inbox" className="surface flush-last" style={{ overflow: phone ? undefined : 'hidden' }}>
-              {!phone && (
+            <div role={stacked ? 'list' : 'table'} aria-label="Inbox" className="surface flush-last" style={{ overflow: stacked ? undefined : 'hidden' }}>
+              {!stacked && (
                 <div role="row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE, height: 44, alignItems: 'center', padding: '0 16px', background: 'var(--bg3)', borderBottom: '1px solid var(--bd-surface)' }}>
                   <div role="columnheader" style={{ fontSize: 13, color: 'var(--t2)', paddingRight: 16 }}>Name</div>
                   <div role="columnheader" style={{ fontSize: 13, color: 'var(--t2)', paddingRight: 16 }}>Project</div>
@@ -545,7 +549,7 @@ export default function InboxTab() {
                   item={item}
                   selected={index === selectedIndex}
                   striped={index % 2 === 1}
-                  phone={phone}
+                  stacked={stacked}
                   expandedType={actionState?.id === item.id ? actionState.type : null}
                   onExpand={(type) => setActionState(type ? { id: item.id, type } : null)}
                   projects={projects}

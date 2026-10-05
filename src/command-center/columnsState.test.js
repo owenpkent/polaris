@@ -6,8 +6,11 @@ import {
   useNarrowBreakpoints,
   getVisibleColumns,
   buildGridTemplate,
+  BREAKPOINT_QUERIES,
 } from './columnsState'
 import { SORT_FIELDS } from './viewState'
+
+const Q = BREAKPOINT_QUERIES
 
 const COLUMNS_STORAGE_KEY = 'cc-mytasks-columns-v1'
 
@@ -297,49 +300,50 @@ describe('useNarrowBreakpoints', () => {
 
   test('reports all breakpoints inactive on a wide viewport', () => {
     stubMatchMedia({
-      '(max-width: 900px)': false,
-      '(max-width: 600px)': false,
-      '(max-width: 640px)': false,
+      [Q.narrow900]: false,
+      [Q.narrow600]: false,
+      [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: false, narrow600: false, phone: false })
+    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports narrow900 alone at a mid-size viewport', () => {
     stubMatchMedia({
-      '(max-width: 900px)': true,
-      '(max-width: 600px)': false,
-      '(max-width: 640px)': false,
+      [Q.narrow900]: true,
+      [Q.narrow600]: false,
+      [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, phone: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports narrow900 and narrow600 together, but not phone, just above the phone breakpoint', () => {
     stubMatchMedia({
-      '(max-width: 900px)': true,
-      '(max-width: 600px)': true,
-      '(max-width: 640px)': false,
+      [Q.narrow900]: true,
+      [Q.narrow600]: true,
+      [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, phone: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports all three breakpoints active on a phone-size viewport', () => {
     stubMatchMedia({
-      '(max-width: 900px)': true,
-      '(max-width: 600px)': true,
-      '(max-width: 640px)': true,
+      [Q.narrow900]: true,
+      [Q.narrow600]: true,
+      [Q.narrowInbox]: true,
+      [Q.phone]: true,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, phone: true })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true, narrowPanel: false })
   })
 
   test('updates state when a media query change event fires', () => {
     const matches = {
-      '(max-width: 900px)': false,
-      '(max-width: 600px)': false,
-      '(max-width: 640px)': false,
+      [Q.narrow900]: false,
+      [Q.narrow600]: false,
+      [Q.phone]: false,
     }
     const stub = stubMatchMedia(matches)
     const { result } = renderHook(() => useNarrowBreakpoints())
@@ -348,26 +352,48 @@ describe('useNarrowBreakpoints', () => {
     // Simulate the window shrinking below 900px: flip the backing value the
     // mocked MediaQueryList's `matches` getter reads, then fire its
     // registered change listener the way a real MediaQueryList would.
-    matches['(max-width: 900px)'] = true
+    matches[Q.narrow900] = true
     act(() => {
-      stub.fire('(max-width: 900px)')
+      stub.fire(Q.narrow900)
     })
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, phone: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
-  test('removes all three change listeners on unmount', () => {
+  test('removes every change listener on unmount', () => {
     const stub = stubMatchMedia({
-      '(max-width: 900px)': false,
-      '(max-width: 600px)': false,
-      '(max-width: 640px)': false,
+      [Q.narrow900]: false,
+      [Q.narrow600]: false,
+      [Q.phone]: false,
     })
     const { unmount } = renderHook(() => useNarrowBreakpoints())
-    expect(stub.listenerCount('(max-width: 900px)')).toBe(1)
-    expect(stub.listenerCount('(max-width: 600px)')).toBe(1)
-    expect(stub.listenerCount('(max-width: 640px)')).toBe(1)
+    expect(stub.listenerCount(Q.narrow900)).toBe(1)
+    expect(stub.listenerCount(Q.narrow600)).toBe(1)
+    expect(stub.listenerCount(Q.phone)).toBe(1)
     unmount()
-    expect(stub.listenerCount('(max-width: 900px)')).toBe(0)
-    expect(stub.listenerCount('(max-width: 600px)')).toBe(0)
-    expect(stub.listenerCount('(max-width: 640px)')).toBe(0)
+    expect(stub.listenerCount(Q.narrow900)).toBe(0)
+    expect(stub.listenerCount(Q.narrow600)).toBe(0)
+    expect(stub.listenerCount(Q.phone)).toBe(0)
+  })
+})
+
+describe('the sidebar and an open task panel', () => {
+  const noHidden = { name: false, due: false, project: false, priority: false, source: false }
+  const ids = (cols) => cols.map((c) => c.id)
+
+  test('the list thresholds sit one sidebar width beyond the widths they are named for', () => {
+    expect(Q.narrow900).toBe('(max-width: 1132px)')
+    expect(Q.narrow600).toBe('(max-width: 832px)')
+    expect(Q.narrowInbox).toBe('(max-width: 1032px)')
+    expect(Q.phone).toBe('(max-width: 640px)')
+  })
+
+  test('an open panel on a narrowPanel window hides Project too', () => {
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: true, narrowPanel: true })
+    expect(ids(visible)).toEqual(['name', 'due'])
+  })
+
+  test('narrowPanel alone, with no panel open, hides nothing', () => {
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false, narrowPanel: true })
+    expect(ids(visible)).toEqual(['name', 'due', 'project', 'priority', 'source'])
   })
 })

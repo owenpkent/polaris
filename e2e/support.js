@@ -26,6 +26,20 @@ export function isPhone(testInfo) {
   return testInfo.project.use.viewport.width < 640
 }
 
+// The navigation for the project's layout: the always-visible sidebar on desktop, or on a phone
+// the drawer, opened from the top bar's menu button. Both list the views as buttons.
+export async function openNavigation(page, testInfo) {
+  if (!isPhone(testInfo)) {
+    const sidebar = page.getByRole('navigation', { name: 'Navigation' })
+    await expect(sidebar).toBeVisible()
+    return sidebar
+  }
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  const drawer = page.getByRole('dialog', { name: 'Navigation' })
+  await expect(drawer).toBeVisible()
+  return drawer
+}
+
 function localToday() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

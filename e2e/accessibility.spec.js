@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, openTask, expectNoHorizontalOverflow, smallTargets, expectFocusRing } from './support.js'
+import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing } from './support.js'
 
 // The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
 // targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
@@ -86,10 +86,9 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     expect(offenders).toEqual([])
   })
 
-  test('navigation drawer', async ({ page }) => {
+  test('navigation: the sidebar on desktop, the drawer on a phone', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Open navigation' }).click()
-    expect(await smallTargets(page.getByRole('dialog', { name: 'Navigation' }))).toEqual([])
+    expect(await smallTargets(await openNavigation(page, testInfo))).toEqual([])
   })
 
   test('inbox Accept and Reject, and the accept form buttons', async ({ page }) => {
