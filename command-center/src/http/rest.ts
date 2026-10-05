@@ -16,6 +16,7 @@ import { HttpError, sendJson, sendNoContent } from './errors.ts';
 import { registerBackupRoutes } from './backup-routes.ts';
 import { registerGithubRoutes } from './github-routes.ts';
 import { registerIdentityRoute } from './identity.ts';
+import { isTailscaleOwner } from './tailscale.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
@@ -164,6 +165,9 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
         overdue: store.countTasks(overdueFilter),
         today: store.countTasks(todayFilter),
       },
+      // How this request got in, so the dashboard can say "through Tailscale" in Settings. The
+      // same predicate server.ts used, so the login is only named back to a request that sent it.
+      auth: isTailscaleOwner(ctx.req, opts.tailscaleLogin) ? { via: 'tailscale', login: opts.tailscaleLogin } : { via: 'token' },
     });
   });
 

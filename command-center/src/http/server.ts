@@ -15,6 +15,7 @@ import { createMcpHandler, type McpRequestHandler } from './mcp.ts';
 import { registerRestRoutes } from './rest.ts';
 import { createRouter } from './router.ts';
 import { createStaticHandler } from './static.ts';
+import { isTailscaleOwner } from './tailscale.ts';
 import type { HttpServerOptions } from './types.ts';
 
 export type { ApiTokens, HttpServerOptions, JobStatus } from './types.ts';
@@ -138,7 +139,11 @@ export function createHttpServer(app: App, opts: HttpServerOptions): Server {
           // token to a client that must not send that token first, and reveals nothing else.
           const isGithubCallback = method === 'GET' && GITHUB_UNAUTHENTICATED_GET_PATHS.has(pathname);
           const isIdentity = method === 'GET' && pathname === IDENTITY_PATH;
-          if (!isGithubCallback && !isIdentity && !isAuthorized(req, apiTokenBuf)) { sendError(res, 401, 'Unauthorized', 'missing or invalid bearer token'); return; }
+          // The owner's Tailscale sign-in, arriving through `tailscale serve` on this machine, stands
+          // in for the api token here and nowhere else (tailscale.ts). Off until CC_TAILSCALE_LOGIN
+          // names the login; the MCP branches above never look at the header.
+          const isOwnerOverTailscale = isTailscaleOwner(req, opts.tailscaleLogin);
+          if (!isGithubCallback && !isIdentity && !isOwnerOverTailscale && !isAuthorized(req, apiTokenBuf)) { sendError(res, 401, 'Unauthorized', 'missing or invalid bearer token'); return; }
           const body = method === 'POST' || method === 'PATCH' || method === 'PUT'
             ? await readJsonBody(req, MAX_BODY_BYTES)
             : undefined;

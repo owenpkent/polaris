@@ -239,3 +239,44 @@ test('the identity proof matches the vector the desktop shell tests against', ()
     IDENTITY_VECTOR,
   );
 });
+
+test('Tailscale identity: the configured login through the proxy stands in for the api token on /api, and nowhere else', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const login = 'owner@example.com';
+  await withServer(app, { tailscaleLogin: login }, async (base) => {
+    // What `tailscale serve` on this machine adds to a request from one of the owner's devices.
+    // The test server listens on 127.0.0.1, so the peer is loopback, as the proxy's is.
+    const viaProxy = { 'Tailscale-User-Login': login };
+    const ok = await fetch(`${base}/api/health`, { headers: viaProxy });
+    assert.equal(ok.status, 200);
+    assert.deepEqual((await ok.json() as { auth: unknown }).auth, { via: 'tailscale', login });
+    // The token path is unchanged, and health says which one it was.
+    assert.deepEqual((await api(base, 'GET', '/api/health')).json.auth, { via: 'token' });
+    // The header is an alternative to the token, not an extra check: a bad token beside it is fine.
+    assert.equal((await fetch(`${base}/api/health`, { headers: { ...viaProxy, Authorization: 'Bearer nope' } })).status, 200);
+    // Without the header, or with another tailnet user's login, nothing changed.
+    assert.equal((await fetch(`${base}/api/health`)).status, 401);
+    assert.equal((await fetch(`${base}/api/health`, { headers: { 'Tailscale-User-Login': 'guest@example.com' } })).status, 401);
+    // It is the owner: a mutation goes through, and is recorded as the human, as the token's are.
+    const before = app.store.lastEventId();
+    const made = await fetch(`${base}/api/tasks`, { method: 'POST', headers: { ...viaProxy, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'From the phone' }) });
+    assert.equal(made.status, 201);
+    for (const e of app.store.eventsSince(before)) assert.equal(e.actor, 'human');
+    // Never MCP: agents keep their tokens.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      const res = await fetch(`${base}${path}`, { method: 'GET', headers: { ...viaProxy, Accept: 'text/event-stream' } });
+      assert.equal(res.status, 401, path);
+    }
+  });
+});
+
+test('Tailscale identity is off until a login is configured', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const res = await fetch(`${base}/api/health`, { headers: { 'Tailscale-User-Login': 'owner@example.com' } });
+    assert.equal(res.status, 401);
+    assert.deepEqual((await api(base, 'GET', '/api/health')).json.auth, { via: 'token' });
+  });
+});

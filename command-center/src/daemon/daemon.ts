@@ -3,7 +3,7 @@
 import { dirname } from 'node:path';
 import type { App } from '../app.ts';
 import { createScheduler } from '../automation/index.ts';
-import { corsOriginsFromEnv, resolveDashboardDir, startHttp, type RunningHttp } from '../http/commands.ts';
+import { corsOriginsFromEnv, resolveDashboardDir, startHttp, tailscaleIdentityLine, tailscaleLoginFromEnv, type RunningHttp } from '../http/commands.ts';
 import { resolveTokens } from '../http/token.ts';
 import type { JobStatus } from '../http/types.ts';
 import { dueAtStartup, JOBS, runJob } from './jobs.ts';
@@ -57,11 +57,13 @@ export async function runDaemon(app: App, opts: DaemonOptions): Promise<number> 
   if (opts.http) {
     try {
       const dashboardDir = resolveDashboardDir(app.config, opts.stderr);
+      const tailscaleLogin = tailscaleLoginFromEnv();
       http = await startHttp(app, {
         port: opts.port,
         host: opts.host,
         tokens: resolveTokens(app.config.dbPath),
         corsOrigins: corsOriginsFromEnv(),
+        tailscaleLogin,
         readonlyMcp: opts.readonlyMcp,
         webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
         dashboardDir,
@@ -70,6 +72,7 @@ export async function runDaemon(app: App, opts: DaemonOptions): Promise<number> 
       });
       log(`HTTP API and MCP endpoint at ${http.url} (tokens: api-token, mcp-token, mcp-readonly-token in ${dirname(app.config.dbPath)})`);
       if (dashboardDir) log(`Dashboard at ${http.url}/`);
+      if (tailscaleLogin) log(tailscaleIdentityLine(tailscaleLogin));
     } catch (e) {
       scheduler.stop();
       opts.stderr(`Could not start HTTP server: ${e instanceof Error ? e.message : String(e)}`);

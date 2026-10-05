@@ -13,6 +13,8 @@
 //   7. Offline edits replay only what the owner did to their own tasks. An inbox decision stays a live click.
 //   8. The fake GitHub behind CC_GITHUB_FAKE exists for the UI tests only: off unless the flag is
 //      exactly "1", and it can only read.
+//   9. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
+//      API, and only from the proxy on this machine. MCP keeps its tokens.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -23,6 +25,7 @@ import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
 import { readFileSync } from 'node:fs';
 import { githubFakeFromEnv } from './http/commands.ts';
+import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
 import { syncGithub } from './ingest/github/sync.ts';
@@ -880,4 +883,50 @@ test('8. the fake GitHub has no writer: a write is refused and recorded, and a f
   assert.equal(inbox.length, 2);
   assert.ok(inbox.every((task) => task.sourceType === 'github' && task.untrustedText));
   assert.equal(app.store.searchTasks({ status: ['open'] }).filter((task) => task.sourceType === 'todo_md').length, 4);
+});
+
+// =====================================================================================
+// 9. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
+//    API, and only from the proxy on this machine (docs/tailscale-identity.md)
+// =====================================================================================
+
+const OWNER_LOGIN = 'owner@example.com';
+const AS_OWNER = { 'Tailscale-User-Login': OWNER_LOGIN };
+
+test('9. the Tailscale login header opens nothing until CC_TAILSCALE_LOGIN names a login', async (t) => {
+  assert.equal(tailscaleLoginFromEnv({}), undefined);
+  assert.equal(tailscaleLoginFromEnv({ CC_TAILSCALE_LOGIN: '  ' }), undefined);
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    for (const path of ['/api/health', '/api/tasks', '/api/rules', '/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { headers: AS_OWNER })).status, 401, path);
+    }
+  });
+});
+
+test('9. with a login named, identity is the owner on REST only, from a loopback peer only, and never on MCP', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
+  const enable = (base: string, headers: Record<string, string>) => fetch(`${base}/api/rules/${rule.id}`, {
+    method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+  });
+  await withServer(app, { tailscaleLogin: OWNER_LOGIN }, async (base) => {
+    // Another user on the same tailnet is not the owner.
+    assert.equal((await enable(base, { 'Tailscale-User-Login': 'guest@example.com' })).status, 401);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The MCP endpoints never take the header, whoever it names.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { headers: { ...AS_OWNER, Accept: 'text/event-stream' } })).status, 401, path);
+    }
+    // The owner, from one of their own devices, is the owner: the same reach as the dashboard's token.
+    assert.equal((await enable(base, AS_OWNER)).status, 200);
+    assert.equal(app.store.getRule(rule.id)?.enabled, true);
+  });
+  // The proxy is on this machine. A peer that is not loopback does not get to say who it is,
+  // which is what keeps a daemon bound wider than loopback from taking the header off the LAN.
+  const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
+  assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
+  assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
 });

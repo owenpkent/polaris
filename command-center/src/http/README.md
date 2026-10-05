@@ -33,6 +33,7 @@ Environment variables:
 | `CC_MCP_TOKEN` | (generated) | Bearer token for the full `/mcp` (read + write tools). Generated at `<dirname(dbPath)>/mcp-token` if unset. |
 | `CC_MCP_READONLY_TOKEN` | (generated) | Bearer token for `/mcp/readonly` only. Generated at `<dirname(dbPath)>/mcp-readonly-token` if unset. |
 | `CC_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins allowed to receive CORS headers (including preflight). |
+| `CC_TAILSCALE_LOGIN` | (unset) | Your Tailscale login (email). When set, a request on `/api/*` that arrives from `tailscale serve` on this machine carrying that login in `Tailscale-User-Login` is the owner without the api token. Never applies to `/mcp` or `/mcp/readonly`. See [Tailscale identity](#tailscale-identity). |
 | `CC_DASHBOARD_DIR` | `<repo root>/dist` | Built dashboard directory served at `/` (see [Dashboard](#dashboard)). |
 | `GITHUB_WEBHOOK_SECRET` | (unset) | Enables `POST /webhooks/github`. Without it the route is 404. |
 
@@ -63,6 +64,23 @@ challenge with an HMAC keyed with the api token, so a client that has the token 
 server from anything else on the port before sending the token to it (the desktop shell does
 this; see `identity.ts`). The proof gives nothing away, and the route takes nothing but the
 challenge.
+
+### Tailscale identity
+
+With `CC_TAILSCALE_LOGIN` set, `/api/*` takes one more credential besides the api token: the
+owner's own Tailscale sign-in, as `tailscale serve` reports it (`tailscale.ts`,
+docs/tailscale-identity.md). The proxy runs on this machine, connects from loopback, adds
+`Tailscale-User-Login` to every request it forwards from a user-owned device, deletes any such
+header the client sent, and sets none for a tagged device or a Funnel request. So a request is the
+owner when a login is configured, the TCP peer is loopback, and the one `Tailscale-User-Login`
+header equals that login (case-insensitively). `GET /api/health` then reports `auth: { via:
+"tailscale", login }` instead of `{ via: "token" }`, which is how the dashboard knows it needs no
+token. The header is only ever an alternative to the api token: every token keeps working, and
+`/mcp` and `/mcp/readonly` never look at the header, so agents keep their tokens. Off by default.
+What it trusts: any process that can reach the loopback port can send the header itself, which is
+the same trust the token files next to the database extend on a single-user machine; and every
+process on one of the owner's tailnet devices is the owner on `/api`, which is where a rule is
+enabled. Leave it unset if either matters.
 
 Every response carries `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors
 'none'`, set in `server.ts` before anything else runs, so the dashboard cannot be embedded by a
@@ -216,5 +234,6 @@ configured at all.
 - `body.ts`, `errors.ts` -- body reading (1 MB cap, JSON only) and the `{ error: { code, message } }` envelope.
 - `types.ts` -- `ApiTokens` (`{ api, mcp, mcpReadonly }`) and `HttpServerOptions` (`tokens: ApiTokens`, ...).
 - `token.ts` -- `resolveTokens(dbPath, env)`: `CC_API_TOKEN` / `CC_MCP_TOKEN` / `CC_MCP_READONLY_TOKEN`, or three persisted generated tokens.
+- `tailscale.ts` -- `isTailscaleOwner(req, login)` and `tailscaleLoginFromEnv(env)`: the owner's Tailscale sign-in through `tailscale serve` as an alternative to the api token on `/api/*` (see [Tailscale identity](#tailscale-identity)).
 - `commands.ts` -- the `serve` CLI command, and `startHttp(app, opts)`, also used by the daemon (`src/daemon/daemon.ts`).
 - `test-support.ts` -- shared test helpers (not a test file itself), including `TEST_TOKENS`.

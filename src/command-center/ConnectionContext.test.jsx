@@ -130,3 +130,58 @@ describe('ConnectionProvider with no saved connection', () => {
     expect(ctx).toMatchObject({ connected: false, local: false })
   })
 })
+
+describe('ConnectionProvider opened through the tailnet with nothing saved', () => {
+  let ctx = null
+  function Probe() {
+    ctx = useConnection()
+    return null
+  }
+  const TAILNET = 'https://cc.tailnet.ts.net'
+  const healthAnswer = (auth) => ({ ok: true, status: 200, text: async () => JSON.stringify({ version: '1', today: '2026-09-26', counts: { inbox: 0 }, auth }) })
+
+  beforeEach(() => {
+    localStorage.clear()
+    setCacheBackend(memoryBackend())
+    setOutboxBackend(memoryBackend())
+    resetOfflineStatus()
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+  })
+
+  test('connects with no token when the server takes the Tailscale sign-in, and stores none', async () => {
+    vi.stubGlobal('location', new URL(`${TAILNET}/`))
+    global.fetch.mockResolvedValue(healthAnswer({ via: 'tailscale', login: 'owner@example.com' }))
+    render(<ConnectionProvider><Probe /></ConnectionProvider>)
+    await vi.waitFor(() => expect(ctx.connected).toBe(true))
+    expect(ctx).toMatchObject({ baseUrl: TAILNET, token: '', local: false, testResult: null })
+    expect(ctx.health.auth).toEqual({ via: 'tailscale', login: 'owner@example.com' })
+    const [url, init] = global.fetch.mock.calls[0]
+    expect(url).toBe(`${TAILNET}/api/health`)
+    expect(init.headers.Authorization).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('cc-connection-v1'))).toEqual({ baseUrl: TAILNET, token: '', connected: true })
+  })
+
+  test('stays local, with no result shown, when the server wants a token', async () => {
+    vi.stubGlobal('location', new URL(`${TAILNET}/`))
+    global.fetch.mockResolvedValue({ ok: false, status: 401, text: async () => JSON.stringify({ error: { code: 'Unauthorized', message: 'missing or invalid bearer token' } }) })
+    render(<ConnectionProvider><Probe /></ConnectionProvider>)
+    await vi.waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(ctx.testing).toBe(false))
+    expect(ctx).toMatchObject({ connected: false, local: true, testResult: null })
+    expect(localStorage.getItem('cc-connection-v1')).toBeNull()
+  })
+
+  test('asks nothing on the host itself, where the token is the way in', async () => {
+    vi.stubGlobal('location', new URL('http://127.0.0.1:8788/'))
+    render(<ConnectionProvider><Probe /></ConnectionProvider>)
+    await act(async () => {})
+    expect(global.fetch).not.toHaveBeenCalled()
+    expect(ctx).toMatchObject({ connected: false, local: true })
+  })
+})

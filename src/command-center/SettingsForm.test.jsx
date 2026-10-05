@@ -3,17 +3,18 @@ import { cleanup, render, screen, act, fireEvent } from '@testing-library/react'
 import { resetOfflineStatus, setPending } from './offlineStatus'
 
 const disconnect = vi.fn()
-vi.mock('./ConnectionContext', () => ({
-  useConnection: () => ({
-    baseUrl: 'http://x', token: 'tok', connected: true, health: null, testing: false, testResult: null,
-    saveSettings: vi.fn(), disconnect,
-  }),
-}))
+const connection = {
+  baseUrl: 'http://x', token: 'tok', connected: true, health: null, testing: false, testResult: null,
+  saveSettings: vi.fn(), disconnect,
+}
+vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
 
 const { default: SettingsForm } = await import('./SettingsForm')
 
 beforeEach(() => {
   disconnect.mockClear()
+  connection.token = 'tok'
+  connection.health = null
   resetOfflineStatus()
 })
 
@@ -46,5 +47,22 @@ describe('Disconnect with offline edits waiting', () => {
     render(<SettingsForm />)
     act(() => setPending(1))
     expect(screen.getByRole('note').textContent).toContain('1 offline change has not reached the server yet')
+  })
+})
+
+describe('Connected through Tailscale', () => {
+  test('says so, names the login, and says no token is stored', () => {
+    connection.token = ''
+    connection.health = { ok: true, counts: { inbox: 0 }, auth: { via: 'tailscale', login: 'owner@example.com' } }
+    render(<SettingsForm />)
+    expect(screen.getByRole('note').textContent).toBe('Connected through Tailscale as owner@example.com. No token is stored on this device.')
+    // The token field stays, for a server where identity is off.
+    expect(screen.getByLabelText('Access token')).toBeTruthy()
+  })
+
+  test('says nothing about Tailscale when the token got in', () => {
+    connection.health = { ok: true, counts: { inbox: 0 }, auth: { via: 'token' } }
+    render(<SettingsForm />)
+    expect(screen.queryByRole('note')).toBeNull()
   })
 })

@@ -9,8 +9,16 @@ import { parseFlags } from '../cli-types.ts';
 import type { Config } from '../config.ts';
 import type { GithubFakeWiring } from '../dev/githubFake.ts';
 import { createHttpServer } from './server.ts';
+import { tailscaleLoginFromEnv } from './tailscale.ts';
 import { resolveTokens } from './token.ts';
 import type { HttpServerOptions } from './types.ts';
+
+export { tailscaleLoginFromEnv };
+
+/** The startup line that says identity is on, shared by `serve` and the daemon so the logs agree. */
+export function tailscaleIdentityLine(login: string): string {
+  return `Dashboard sign-in through Tailscale for ${login}: a request from tailscale serve on this machine carrying that login needs no api token on /api. MCP still needs its tokens.`;
+}
 
 const DEFAULT_CORS_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -100,14 +108,16 @@ const serveCommand: Command = {
     const readonlyMcp = Boolean(flags['readonly-mcp']);
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
     const dashboardDir = resolveDashboardDir(app.config, stderr);
+    const tailscaleLogin = tailscaleLoginFromEnv();
 
     try {
       // Test-only: undefined unless CC_GITHUB_FAKE is exactly "1" (see githubFakeFromEnv).
       const fake = await githubFakeFromEnv(app);
       const { url, close } = await startHttp(fake?.app ?? app, {
-        tokens, port, host, readonlyMcp, webhookSecret, dashboardDir, corsOrigins: corsOriginsFromEnv(), ...fake?.http,
+        tokens, port, host, readonlyMcp, webhookSecret, dashboardDir, tailscaleLogin, corsOrigins: corsOriginsFromEnv(), ...fake?.http,
       });
       stdout(`Command Center HTTP server listening at ${url}`);
+      if (tailscaleLogin) stdout(tailscaleIdentityLine(tailscaleLogin));
       if (fake) stdout('GitHub is the fake in src/dev/githubFake.ts (CC_GITHUB_FAKE=1): a fixture sign-in, and no request leaves this process.');
       if (dashboardDir) stdout(`  dashboard: ${url}/`);
       stdout(`MCP endpoint: ${url}/mcp${readonlyMcp ? ' (readonly)' : ''}`);
