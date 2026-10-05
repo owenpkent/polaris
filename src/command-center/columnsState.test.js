@@ -305,7 +305,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: false, narrow600: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports narrow900 alone at a mid-size viewport', () => {
@@ -315,7 +315,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports narrow900 and narrow600 together, but not phone, just above the phone breakpoint', () => {
@@ -325,17 +325,18 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('reports all three breakpoints active on a phone-size viewport', () => {
     stubMatchMedia({
       [Q.narrow900]: true,
       [Q.narrow600]: true,
+      [Q.narrowInbox]: true,
       [Q.phone]: true,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, phone: true, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true, narrowPanel: false })
   })
 
   test('updates state when a media query change event fires', () => {
@@ -355,7 +356,7 @@ describe('useNarrowBreakpoints', () => {
     act(() => {
       stub.fire(Q.narrow900)
     })
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
   })
 
   test('removes every change listener on unmount', () => {
@@ -382,6 +383,7 @@ describe('the sidebar and an open task panel', () => {
   test('the list thresholds sit one sidebar width beyond the widths they are named for', () => {
     expect(Q.narrow900).toBe('(max-width: 1132px)')
     expect(Q.narrow600).toBe('(max-width: 832px)')
+    expect(Q.narrowInbox).toBe('(max-width: 1032px)')
     expect(Q.phone).toBe('(max-width: 640px)')
   })
 

@@ -99,12 +99,15 @@ export const SIDEBAR_WIDTH = 232
 
 // The media queries behind useNarrowBreakpoints. narrow900 and narrow600 are the two widths the My
 // Tasks list used to hide columns at via plain CSS (900px: Source/Priority, 600px: Project),
-// measured on the list rather than the window. phone is the single phone breakpoint (640px) the
-// whole dashboard uses for its phone layout tier. narrowPanel is where an open task panel leaves
-// the list too little room for Project as well.
+// measured on the list rather than the window. narrowInbox is where the Inbox table, whose
+// Project, Source, and action columns are fixed at 540px, would leave the name under 200px: below
+// it Inbox uses the same stacked cards it shows on a phone (InboxTab.jsx). phone is the single
+// phone breakpoint (640px) the whole dashboard uses for its phone layout tier. narrowPanel is
+// where an open task panel leaves the list too little room for Project as well.
 export const BREAKPOINT_QUERIES = {
   narrow900: `(max-width: ${900 + SIDEBAR_WIDTH}px)`,
   narrow600: `(max-width: ${600 + SIDEBAR_WIDTH}px)`,
+  narrowInbox: `(max-width: ${800 + SIDEBAR_WIDTH}px)`,
   phone: '(max-width: 640px)',
   narrowPanel: '(max-width: 1440px)',
 }

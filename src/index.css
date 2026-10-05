@@ -525,72 +525,87 @@ kbd { color: var(--t1); }
   background-image: linear-gradient(var(--blue), var(--blue)) !important;
 }
 
-/* Inbox accept/reject forms: fields sit in a row on desktop and stack on
-   phone (InboxTab.jsx renders the same markup at both tiers, so this is a
-   plain CSS override, no JS branch needed). inbox-reject-fields carries its
-   own padding since the reject form has no separate outer wrapper. */
+/* Inbox accept/reject forms (InboxTab.jsx renders the same markup at every
+   width, so the layout is plain CSS, no JS branch). The fields keep their
+   widths and the actions take what is left of the row; when the row is too
+   narrow for all of them, which the sidebar makes true well into tablet
+   widths, the actions wrap under the fields instead of being clipped by the
+   card. On a phone every field takes the whole row. inbox-reject-fields
+   carries its own padding since the reject form has no separate outer
+   wrapper. */
 .inbox-form-stack {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 4px 16px 20px;
 }
-.inbox-form-fields {
-  display: grid;
-  grid-template-columns: 240px 180px 160px minmax(0, 1fr);
+.inbox-form-fields,
+.inbox-reject-fields {
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: end;
 }
 .inbox-reject-fields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
-  gap: 16px;
-  align-items: end;
   padding: 4px 16px 20px;
 }
+.inbox-form-fields > :nth-child(1) { flex: 0 0 240px; }
+.inbox-form-fields > :nth-child(2) { flex: 0 0 180px; }
+.inbox-form-fields > :nth-child(3) { flex: 0 0 160px; }
+.inbox-reject-fields > :first-child { flex: 1 1 240px; min-width: 0; }
+.inbox-form-actions {
+  flex: 1 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
 
-/* Inbox at phone width: each item becomes a stacked card (title, then a
-   Project/Source meta line, then full-width Accept/Reject) instead of a grid
-   row, and InboxTab.jsx switches the surrounding roles from table/row to
-   list/listitem to match -- see the `phone` branch in InboxRow. */
 @media (max-width: 640px) {
-  .inbox-form-fields,
-  .inbox-reject-fields {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
+  /* :nth-child(n) matches every child at the same specificity as the fixed widths above. */
+  .inbox-form-fields > :nth-child(n),
+  .inbox-reject-fields > :nth-child(n) {
+    flex: 1 1 100%;
   }
+}
 
-  .inbox-card {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--bd);
-  }
-  .inbox-card:first-child { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
-  .inbox-card:last-child { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
-  .inbox-card-title {
-    display: block;
-    font-size: 0.9375rem;
-    color: var(--t1);
-    text-decoration: none;
-    overflow-wrap: anywhere;
-  }
-  .inbox-card-meta {
-    font-size: 0.8125rem;
-    color: var(--t2);
-    margin-top: 4px;
-    overflow-wrap: anywhere;
-  }
-  .inbox-card-actions {
-    display: flex;
-    gap: 8px;
-  }
-  .inbox-card-actions .btn {
-    flex: 1 1 0;
-    min-width: 0;
-  }
+/* Inbox as stacked cards: each item is a card (title, then a Project/Source
+   meta line, then full-width Accept/Reject) instead of a grid row, and
+   InboxTab.jsx switches the surrounding roles from table/row to list/listitem
+   to match -- see the `stacked` branch in InboxRow. The cards are used on a
+   phone and wherever the sidebar leaves the table too little room
+   (narrowInbox in columnsState.js), so these rules are not behind a media
+   query: the markup decides. */
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--bd);
+}
+.inbox-card:first-child { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+.inbox-card:last-child { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
+.inbox-card-title {
+  display: block;
+  font-size: 0.9375rem;
+  color: var(--t1);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.inbox-card-meta {
+  font-size: 0.8125rem;
+  color: var(--t2);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.inbox-card-actions {
+  display: flex;
+  gap: 8px;
+}
+.inbox-card-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* Board: lanes scroll horizontally in a row (BoardTab.jsx). Width and gap

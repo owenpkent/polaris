@@ -19,6 +19,33 @@ function entry(page, testInfo, title) {
 }
 
 test.describe('Inbox', { tag: ['@flow'] }, () => {
+  test('its controls stay inside the card at the widths where the sidebar crowds the table', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the sidebar is only shown above the phone breakpoint')
+    await openView(page, 'inbox')
+    // The card is a table where the columns fit and a list of cards where they do not; both widths
+    // between the phone tier and the sidebar-offset threshold used to clip the name and Accept.
+    const card = page.getByRole('table', { name: 'Inbox' }).or(page.getByRole('list', { name: 'Inbox' }))
+    const inside = async (locator) => {
+      await expect(locator).toBeVisible()
+      const [box, within] = await Promise.all([locator.boundingBox(), card.boundingBox()])
+      expect(box.x).toBeGreaterThanOrEqual(within.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(within.x + within.width + 1)
+      expect(box.width).toBeGreaterThan(40)
+    }
+    for (const width of [768, 900, 1100]) {
+      await page.setViewportSize({ width, height: 900 })
+      const title = page.getByRole('link', { name: ITEMS.desktop.accept, exact: true })
+      await inside(title)
+      const entryAt = page.getByRole('row').or(page.getByRole('listitem')).filter({ has: title })
+      await inside(entryAt.getByRole('button', { name: 'Accept' }))
+      await entryAt.getByRole('button', { name: 'Accept' }).click()
+      await inside(page.getByRole('button', { name: 'Accept as task' }))
+      await inside(page.getByRole('button', { name: 'Cancel' }))
+      await page.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.getByRole('button', { name: 'Accept as task' })).toHaveCount(0)
+    }
+  })
+
   test('explains that nothing becomes a task until it is accepted', async ({ page }) => {
     await openView(page, 'inbox')
     await expect(page.locator('main')).toContainText('Nothing becomes a task until you accept it.')
