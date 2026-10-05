@@ -92,6 +92,107 @@ export interface Comment {
   createdAt: string;
 }
 
+// ---- threads (docs/agent-threads-proposal.md) ----
+
+/** One idea per post. The type is what the owner filters and counts by. */
+export const POST_TYPES = ['claim', 'evidence', 'objection', 'question', 'failed_attempt', 'summary', 'result'] as const;
+export type PostType = (typeof POST_TYPES)[number];
+/** The owner's verdict on a claim or a result. Only those two types carry one; it starts open. */
+export const POST_STATUSES = ['open', 'accepted', 'rejected', 'superseded'] as const;
+export type PostStatus = (typeof POST_STATUSES)[number];
+export const CONFIDENCES = ['low', 'medium', 'high'] as const;
+export type Confidence = (typeof CONFIDENCES)[number];
+/** The post types that carry a status. */
+export const JUDGED_POST_TYPES: readonly PostType[] = ['claim', 'result'];
+
+/** At most one per task: the discussion of the task that is the challenge. */
+export interface Thread {
+  id: string;
+  taskId: string;
+  title: string;
+  status: 'open' | 'closed';
+  /** The summary post the owner pinned as the current state, if any. */
+  pinnedPostId: string | null;
+  /** When set, an assistant reading the thread sees every author as "participant". The dashboard always shows names. */
+  authorHidden: boolean;
+  /** The most posts one agent may add per UTC day, or null for no cap. Never applies to the owner. */
+  dailyCap: number | null;
+  /** Set by a fork: the thread the argument continues in. The thread is closed when this is set. */
+  successorThreadId: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+/** The thread settings only the owner changes. */
+export interface ThreadOptions {
+  authorHidden?: boolean;
+  dailyCap?: number | null;
+}
+
+export interface Post {
+  id: string;
+  threadId: string;
+  parentPostId: string | null;
+  author: 'human' | 'agent';
+  /** The name an MCP connection self-declared for itself, when `author` was that connection. See ActorInput. */
+  authorName: string | null;
+  type: PostType;
+  body: string;
+  confidence: Confidence | null;
+  /** Set on claim and result posts only, by the owner. Null on every other type. */
+  status: PostStatus | null;
+  /** Ids of posts in the same thread this one answers or builds on. */
+  refs: string[];
+  /** Copied from the task when the post was made, and never cleared. */
+  untrustedText: boolean;
+  /** When the owner last set the status; null while a claim or result is open, and on every other type. */
+  judgedAt: string | null;
+  createdAt: string;
+}
+
+export interface NewPost {
+  type: PostType;
+  body: string;
+  confidence?: Confidence | null;
+  refs?: string[];
+  parentPostId?: string | null;
+}
+
+/** A thread with the counts the thread list shows. */
+export interface ThreadSummary {
+  thread: Thread;
+  taskTitle: string;
+  /** The task's flag: the thread title defaults to the task title, so a list line repeats third-party text. */
+  untrustedText: boolean;
+  postCount: number;
+  openClaims: number;
+  objections: number;
+  /** Objections no later post answers (by parent or by refs). */
+  unansweredObjections: number;
+  results: number;
+  acceptedResults: number;
+  /** The last verdict the owner gave in this thread, or the thread's creation when there is none. */
+  lastProgressAt: string;
+}
+
+/** A post found across threads, with where it lives. */
+export interface PostSearchHit {
+  post: Post;
+  taskId: string;
+  taskTitle: string;
+  threadTitle: string;
+  /** The task's flag: the thread title defaults to the task's, so both titles here are third-party text when set. */
+  untrustedText: boolean;
+}
+
+export interface PostSearch {
+  type?: PostType;
+  status?: PostStatus;
+  query?: string;
+  taskId?: string;
+  limit?: number;
+}
+
 export interface Link {
   id: string;
   taskId: string;
@@ -118,6 +219,12 @@ export type EventKind =
   | 'task.source_gone'
   | 'task.sync_conflict'
   | 'comment.added'
+  | 'thread.created'
+  | 'thread.updated'
+  | 'thread.closed'
+  | 'thread.reopened'
+  | 'post.added'
+  | 'post.status_changed'
   | 'project.upserted'
   | 'rule.fired'
   | 'goal.created'

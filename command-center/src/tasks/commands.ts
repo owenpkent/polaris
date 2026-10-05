@@ -1,8 +1,8 @@
 // Human-facing task commands. Actor is always 'human'.
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
-import type { Priority, Store, Task, TaskStatus } from '../core/index.ts';
-import { ACTIVE_STATUSES } from '../core/index.ts';
+import type { Confidence, Post, PostStatus, PostType, Priority, Store, Task, TaskStatus, ThreadSummary } from '../core/index.ts';
+import { ACTIVE_STATUSES, CONFIDENCES, POST_STATUSES, POST_TYPES } from '../core/index.ts';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
@@ -20,6 +20,31 @@ export function formatTask(store: Store, t: Task, today?: string): string {
     t.sourceType ? `<${t.sourceType}>` : '',
   ];
   return bits.filter(Boolean).join(' ');
+}
+
+/** One thread for `thread list`: the counts the dashboard's Threads tab shows, on one line. */
+export function formatThreadSummary(s: ThreadSummary, today: string): string {
+  const days = Math.max(0, Math.floor((Date.parse(`${today}T00:00:00.000Z`) - Date.parse(s.lastProgressAt)) / 86_400_000));
+  const th = s.thread;
+  const bits = [th.id, th.status, th.taskId, th.title, `posts ${s.postCount}`, `open claims ${s.openClaims}`, `unanswered objections ${s.unansweredObjections}`,
+    `accepted results ${s.acceptedResults}`, `${days} day(s) since a verdict`, th.pinnedPostId ? `pinned ${th.pinnedPostId}` : '', th.authorHidden ? 'authors hidden' : '',
+    th.dailyCap !== null ? `cap ${th.dailyCap}/day` : '', th.successorThreadId ? `continued in ${th.successorThreadId}` : ''];
+  return bits.filter(Boolean).join('  ');
+}
+
+/** One post for the terminal: the metadata line, then the body indented under it. */
+export function formatPost(p: Post): string {
+  const who = p.author === 'human' ? 'owner' : `agent${p.authorName ? ` ${p.authorName}` : ''}`;
+  const bits = [p.createdAt.slice(0, 16), p.id, p.type, who, p.confidence ? `confidence ${p.confidence}` : '', p.status ? `[${p.status}]` : '',
+    p.refs.length ? `refs ${p.refs.join(',')}` : '', p.untrustedText ? 'UNTRUSTED-TEXT' : ''];
+  return [bits.filter(Boolean).join(' '), ...p.body.split('\n').map((line) => `    ${line}`)].join('\n');
+}
+
+function requireThreadOf(store: Store, taskId: string) {
+  const task = store.requireTask(taskId);
+  const thread = store.getThreadForTask(task.id);
+  if (!thread) throw new Error(`No thread on ${task.id}.`);
+  return thread;
 }
 
 function resolveProjectId(store: Store, ref: string | undefined): string | undefined {
@@ -146,6 +171,202 @@ export const commands: Command[] = [
       const app = openApp();
       try {
         for (const id of f._) stdout(formatTask(app.store, app.store.rejectInboxItem(id, str(f.reason) ?? null, 'human')));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  // Threads (docs/agent-threads-proposal.md). The owner's own posts, so the actor is 'human'.
+  {
+    name: 'thread show',
+    summary: 'Show a task\'s discussion thread: its posts, oldest first',
+    usage: 'thread show <taskId> [--after <postId>] [--json]',
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const app = openApp();
+      try {
+        const task = app.store.requireTask(f._[0] ?? '');
+        const thread = app.store.getThreadForTask(task.id);
+        if (!thread) { stdout(`No thread on ${task.id}. Start one with "thread post ${task.id} --type question <body>".`); return 0; }
+        const posts = app.store.listPosts(thread.id, { after: str(f.after) ?? null });
+        const total = app.store.countPosts(thread.id);
+        if (f.json) { stdout(JSON.stringify({ thread, posts, total }, null, 2)); return 0; }
+        const window = f.after ? `${posts.length} after ${str(f.after)}` : (posts.length < total ? `showing the last ${posts.length} of ${total}` : `${total} post(s)`);
+        const out = [`${thread.title} (${thread.id}) on ${formatTask(app.store, task, app.today())}`, `${thread.status}, ${window}`
+          + `${thread.successorThreadId ? `, continued in ${thread.successorThreadId}` : ''}${thread.authorHidden ? ', authors hidden from agents' : ''}${thread.dailyCap !== null ? `, cap ${thread.dailyCap} posts per agent per day` : ''}`];
+        const pinned = thread.pinnedPostId ? app.store.getPost(thread.pinnedPostId) : null;
+        if (pinned) out.push('', 'Pinned state:', formatPost(pinned));
+        for (const p of posts) out.push('', formatPost(p));
+        stdout(out.join('\n'));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread post',
+    summary: 'Post to a task\'s thread as the owner, opening the thread if there is none',
+    usage: `thread post <taskId> --type ${POST_TYPES.join('|')} [--confidence ${CONFIDENCES.join('|')}] [--refs <postId,postId>] [--reply-to <postId>] <body>`,
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const [taskId, ...words] = f._;
+      const body = words.join(' ');
+      const type = str(f.type);
+      if (!taskId) throw new Error('A task id is required.');
+      if (!type || !(POST_TYPES as readonly string[]).includes(type)) throw new Error(`--type must be one of ${POST_TYPES.join(', ')}.`);
+      if (!body) throw new Error('A body is required.');
+      const refs = (str(f.refs) ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+      const app = openApp();
+      try {
+        const thread = app.store.createThread(app.store.requireTask(taskId).id, null, 'human');
+        const post = app.store.addPost(thread.id, {
+          type: type as PostType, body, confidence: (str(f.confidence) as Confidence | undefined) ?? null, refs, parentPostId: str(f['reply-to']) ?? null,
+        }, 'human', 'human');
+        stdout(formatPost(post));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  // The owner's stage 2 controls. Each needs the human actor, which the command line always is.
+  {
+    name: 'thread list',
+    summary: 'List threads with their counts and days since the last verdict',
+    usage: 'thread list [--status open|closed] [--json]',
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const status = str(f.status);
+      if (status !== undefined && status !== 'open' && status !== 'closed') throw new Error('--status must be open or closed.');
+      const app = openApp();
+      try {
+        const rows = app.store.listThreads(status ? { status } : {});
+        if (f.json) { stdout(JSON.stringify(rows, null, 2)); return 0; }
+        stdout(rows.map((r) => formatThreadSummary(r, app.today())).join('\n') || 'No threads.');
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread judge',
+    summary: 'Set a claim\'s or result\'s status as the owner',
+    usage: `thread judge <postId> ${POST_STATUSES.join('|')}`,
+    run(args, { openApp, stdout }) {
+      const [postId, status] = parseFlags(args)._;
+      if (!postId) throw new Error('A post id is required.');
+      if (!status || !(POST_STATUSES as readonly string[]).includes(status)) throw new Error(`The status must be one of ${POST_STATUSES.join(', ')}.`);
+      const app = openApp();
+      try {
+        stdout(formatPost(app.store.setPostStatus(postId, status as PostStatus, 'human')));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread pin',
+    summary: 'Pin a post as the thread\'s current state, or "none" to unpin',
+    usage: 'thread pin <taskId> <postId|none>',
+    run(args, { openApp, stdout }) {
+      const [taskId, postId] = parseFlags(args)._;
+      if (!taskId || !postId) throw new Error('A task id and a post id (or none) are required.');
+      const app = openApp();
+      try {
+        const thread = requireThreadOf(app.store, taskId);
+        const next = app.store.pinPost(thread.id, postId === 'none' ? null : postId, 'human');
+        stdout(next.pinnedPostId ? `Pinned ${next.pinnedPostId} on ${next.id}.` : `Unpinned on ${next.id}.`);
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread close',
+    summary: 'Close a task\'s thread; it takes no more posts',
+    usage: 'thread close <taskId>',
+    run(args, { openApp, stdout }) {
+      const [taskId] = parseFlags(args)._;
+      if (!taskId) throw new Error('A task id is required.');
+      const app = openApp();
+      try {
+        const thread = app.store.closeThread(requireThreadOf(app.store, taskId).id, 'human');
+        stdout(`Closed ${thread.id} at ${thread.closedAt}.`);
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread reopen',
+    summary: 'Reopen a closed thread',
+    usage: 'thread reopen <taskId>',
+    run(args, { openApp, stdout }) {
+      const [taskId] = parseFlags(args)._;
+      if (!taskId) throw new Error('A task id is required.');
+      const app = openApp();
+      try {
+        stdout(`Reopened ${app.store.reopenThread(requireThreadOf(app.store, taskId).id, 'human').id}.`);
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread fork',
+    summary: 'Close a thread and continue it on a new subtask with a thread of its own',
+    usage: 'thread fork <taskId> <title>',
+    run(args, { openApp, stdout }) {
+      const [taskId, ...words] = parseFlags(args)._;
+      const title = words.join(' ');
+      if (!taskId) throw new Error('A task id is required.');
+      if (!title) throw new Error('A title for the fork is required.');
+      const app = openApp();
+      try {
+        const forked = app.store.forkThread(requireThreadOf(app.store, taskId).id, { title }, 'human');
+        stdout([`Closed ${forked.thread.id}; continued in ${forked.successor.id} on`, formatTask(app.store, forked.task, app.today())].join(' '));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread set',
+    summary: 'Change a thread\'s settings: hide authors from agents, cap posts per agent per day',
+    usage: 'thread set <taskId> [--hide-authors on|off] [--daily-cap <n>|none]',
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const [taskId] = f._;
+      if (!taskId) throw new Error('A task id is required.');
+      const options: { authorHidden?: boolean; dailyCap?: number | null } = {};
+      const hide = str(f['hide-authors']);
+      if (hide !== undefined) {
+        if (hide !== 'on' && hide !== 'off') throw new Error('--hide-authors must be on or off.');
+        options.authorHidden = hide === 'on';
+      }
+      const cap = str(f['daily-cap']);
+      if (cap !== undefined) {
+        if (cap === 'none') options.dailyCap = null;
+        else if (/^[1-9][0-9]*$/.test(cap)) options.dailyCap = Number(cap);
+        else throw new Error('--daily-cap must be a positive whole number or none.');
+      }
+      if (!Object.keys(options).length) throw new Error('Nothing to change: give --hide-authors or --daily-cap.');
+      const app = openApp();
+      try {
+        const thread = app.store.setThreadOptions(requireThreadOf(app.store, taskId).id, options, 'human');
+        stdout(`${thread.id}: authors ${thread.authorHidden ? 'hidden' : 'shown'}, daily cap ${thread.dailyCap ?? 'none'}.`);
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread search',
+    summary: 'Search posts across every thread: the library of what was argued and accepted',
+    usage: `thread search [--type ${POST_TYPES.join('|')}] [--status ${POST_STATUSES.join('|')}] [--task <taskId>] [--limit <n>] [--json] [query]`,
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const type = str(f.type);
+      const status = str(f.status);
+      if (type !== undefined && !(POST_TYPES as readonly string[]).includes(type)) throw new Error(`--type must be one of ${POST_TYPES.join(', ')}.`);
+      if (status !== undefined && !(POST_STATUSES as readonly string[]).includes(status)) throw new Error(`--status must be one of ${POST_STATUSES.join(', ')}.`);
+      const app = openApp();
+      try {
+        const hits = app.store.searchPosts({
+          type: type as PostType | undefined, status: status as PostStatus | undefined, taskId: str(f.task), query: f._.join(' ') || undefined,
+          limit: str(f.limit) !== undefined ? Number(str(f.limit)) : undefined,
+        });
+        if (f.json) { stdout(JSON.stringify(hits, null, 2)); return 0; }
+        stdout(hits.map((h) => `${h.taskId} ${h.taskTitle} / ${h.threadTitle}\n${formatPost(h.post)}`).join('\n\n') || 'No posts match.');
         return 0;
       } finally { app.close(); }
     },

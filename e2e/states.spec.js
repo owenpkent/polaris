@@ -8,6 +8,8 @@ import {
   failRequest,
   failureBanner,
   gotoView,
+  isPhone,
+  openNavigation,
   openView,
   smallTargets,
 } from './support.js'
@@ -31,13 +33,6 @@ test.afterEach(async ({ page }) => {
 
 const nextRequest = (page, request) => page.waitForRequest((req) => req.method() === 'GET' && request(new URL(req.url())))
 
-async function openDrawer(page) {
-  await page.getByRole('button', { name: 'Open navigation' }).click()
-  const drawer = page.getByRole('dialog', { name: 'Navigation' })
-  await expect(drawer).toBeVisible()
-  return drawer
-}
-
 test.describe('States between success and failure', { tag: ['@flow'] }, () => {
   for (const [index, view] of VIEWS.entries()) {
     const next = VIEWS[(index + 1) % VIEWS.length]
@@ -50,9 +45,13 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       const loading = main.getByText(view.loading, { exact: true })
       await expect(loading).toBeVisible()
 
-      const drawer = await openDrawer(page)
-      await page.keyboard.press('Escape')
-      await expect(drawer).toBeHidden()
+      // The way to another view still answers: the sidebar's buttons on desktop, the drawer on a phone.
+      const nav = await openNavigation(page, testInfo)
+      await expect(nav.getByRole('button', { name: 'My tasks' })).toBeEnabled()
+      if (isPhone(testInfo)) {
+        await page.keyboard.press('Escape')
+        await expect(nav).toBeHidden()
+      }
 
       await expect(view.ready(page, testInfo)).toBeVisible({ timeout: SLOW_MS + 10000 })
       await expect(loading).toHaveCount(0)
@@ -78,10 +77,10 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       await expect(view.ready(page, testInfo)).toBeVisible()
 
       // A failure on one view must not blank the next one.
-      const drawer = await openDrawer(page)
-      const nextButton = drawer.getByRole('button', { name: new RegExp(`^${next.label}`) })
-      // Secondary views sit behind More in the drawer.
-      if (!(await nextButton.isVisible())) await drawer.getByRole('button', { name: 'More' }).click()
+      const nav = await openNavigation(page, testInfo)
+      const nextButton = nav.getByRole('button', { name: new RegExp(`^${next.label}`) })
+      // Secondary views sit behind More in the phone's drawer.
+      if (!(await nextButton.isVisible())) await nav.getByRole('button', { name: 'More' }).click()
       // The next view's own request must succeed; if it does not, say what the server answered
       // rather than time out on the text it would have shown.
       const nextAnswer = page.waitForResponse((res) => res.request().method() === 'GET' && next.request(new URL(res.url())))

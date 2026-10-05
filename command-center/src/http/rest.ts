@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
 import {
-  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
-  type Json, type MoveTarget, type OutboxOp, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
+  NotFoundError, POST_STATUSES, POST_TYPES, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
+  type Json, type MoveTarget, type OutboxOp, type PostStatus, type PostType, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
 } from '../core/index.ts';
 import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
 import { ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES, resolveProject, resolveSectionWrite } from '../mcp/shared.ts';
@@ -20,9 +20,9 @@ import { isTailscaleOwner } from './tailscale.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
-  moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, projectCreateBodySchema, projectPatchBodySchema,
+  moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
-  restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema,
+  postStatusBodySchema, restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema, threadForkBodySchema, threadPatchBodySchema,
 } from './schemas.ts';
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -563,6 +563,93 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     if (!goal) throw new NotFoundError(`goal not found: ${ctx.params.id}`);
     store.unlinkGoal(goal.id, { projectId: body.project, taskId: body.taskId }, 'human');
     sendJson(ctx.res, 200, goalPayload(goal.id));
+  });
+
+  // ----------------------------------------------------------------- threads
+  // docs/agent-threads-proposal.md, stage 1. The owner's posts are actor 'human'. Posting is a
+  // live write: it carries no op id and has no outbox kind, so an offline post is refused by the
+  // dashboard rather than queued.
+
+  const threadPayload = (threadId: string, url: URL) => {
+    const thread = store.requireThread(threadId);
+    const after = url.searchParams.get('after');
+    const limit = parseIntParam(url.searchParams.get('limit'), 'limit', 1);
+    // The pinned post travels by id: it may be older than the window of posts returned.
+    const pinned = thread.pinnedPostId ? store.getPost(thread.pinnedPostId) : null;
+    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }), total: store.countPosts(thread.id), pinned };
+  };
+
+  router.add('GET', '/api/threads', (ctx) => {
+    const status = ctx.url.searchParams.get('status');
+    if (status !== null && status !== 'open' && status !== 'closed') throw new ValidationError(`invalid status: ${status}`);
+    sendJson(ctx.res, 200, { threads: store.listThreads(status ? { status } : {}) });
+  });
+
+  router.add('GET', '/api/tasks/:id/thread', (ctx) => {
+    const task = store.requireTask(ctx.params.id);
+    const thread = store.getThreadForTask(task.id);
+    if (!thread) throw new NotFoundError(`task ${task.id} has no thread`);
+    sendJson(ctx.res, 200, threadPayload(thread.id, ctx.url));
+  });
+
+  router.add('POST', '/api/tasks/:id/thread', (ctx) => {
+    const body = parseBody(threadCreateBodySchema, ctx.body);
+    const task = store.requireTask(ctx.params.id);
+    const existing = store.getThreadForTask(task.id);
+    const thread = store.createThread(task.id, body.title ?? null, 'human');
+    sendJson(ctx.res, existing ? 200 : 201, { thread });
+  });
+
+  router.add('GET', '/api/threads/:id', (ctx) => {
+    sendJson(ctx.res, 200, threadPayload(ctx.params.id, ctx.url));
+  });
+
+  router.add('POST', '/api/threads/:id/posts', (ctx) => {
+    const body = parseBody(postBodySchema, ctx.body);
+    const post = store.addPost(ctx.params.id, body, 'human', 'human');
+    sendJson(ctx.res, 201, { post });
+  });
+
+  // Stage 2: what the owner decides. Each is a live click as the human; none queues offline.
+  router.add('PATCH', '/api/threads/:id', (ctx) => {
+    const body = parseBody(threadPatchBodySchema, ctx.body);
+    let thread = store.requireThread(ctx.params.id);
+    const { pinnedPostId, ...options } = body;
+    if (pinnedPostId !== undefined) thread = store.pinPost(thread.id, pinnedPostId, 'human');
+    if (Object.keys(options).length) thread = store.setThreadOptions(thread.id, options, 'human');
+    sendJson(ctx.res, 200, { thread });
+  });
+
+  router.add('POST', '/api/threads/:id/close', (ctx) => {
+    sendJson(ctx.res, 200, { thread: store.closeThread(ctx.params.id, 'human') });
+  });
+
+  router.add('POST', '/api/threads/:id/reopen', (ctx) => {
+    sendJson(ctx.res, 200, { thread: store.reopenThread(ctx.params.id, 'human') });
+  });
+
+  router.add('POST', '/api/threads/:id/fork', (ctx) => {
+    const body = parseBody(threadForkBodySchema, ctx.body);
+    sendJson(ctx.res, 201, store.forkThread(ctx.params.id, body, 'human'));
+  });
+
+  router.add('PATCH', '/api/posts/:id', (ctx) => {
+    const body = parseBody(postStatusBodySchema, ctx.body);
+    sendJson(ctx.res, 200, { post: store.setPostStatus(ctx.params.id, body.status, 'human') });
+  });
+
+  router.add('GET', '/api/posts', (ctx) => {
+    const q = ctx.url.searchParams;
+    const type = q.get('type');
+    const status = q.get('status');
+    if (type !== null && !(POST_TYPES as readonly string[]).includes(type)) throw new ValidationError(`invalid type: ${type}`);
+    if (status !== null && !(POST_STATUSES as readonly string[]).includes(status)) throw new ValidationError(`invalid status: ${status}`);
+    sendJson(ctx.res, 200, {
+      posts: store.searchPosts({
+        type: (type as PostType | null) ?? undefined, status: (status as PostStatus | null) ?? undefined,
+        query: q.get('q') ?? undefined, taskId: q.get('taskId') ?? undefined, limit: parseIntParam(q.get('limit'), 'limit', 1),
+      }),
+    });
   });
 
   // ------------------------------------------------------------------ github

@@ -6,8 +6,8 @@ import { useEventRefresh } from './command-center/useEvents'
 const ICONS = { mytasks: CheckCircle2, inbox: Inbox, board: Columns3 }
 
 // The phone's tab bar: the three primary views and More, which opens the same drawer as the top
-// bar's menu button. Shown only under 640px (see .bottom-nav in index.css); on desktop the drawer
-// is the navigation. Every item is a 44px-plus target with a visible focus ring.
+// bar's menu button. Shown only under 640px (see .bottom-nav in index.css); on desktop the sidebar
+// (src/Sidebar.jsx) is the navigation. Every item is a 44px-plus target with a visible focus ring.
 export default function BottomNav({ items, activeTab, onSelect, onMore, moreOpen }) {
   const { connected, api } = useConnection()
   const [inboxCount, setInboxCount] = useState(null)

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, openTask, crowdedTargets } from './support.js'
+import { openView, openTask, openNavigation, crowdedTargets } from './support.js'
 
 // Targets that are big enough can still be too close together. WCAG 2.5.8 asks for 24px targets
 // or spacing; the bar here is 44px targets (accessibility.spec.js) with at least 8px between
@@ -12,10 +12,9 @@ test.describe('target spacing', { tag: ['@a11y'] }, () => {
     expect(await crowdedTargets(page.getByRole('toolbar', { name: 'Tasks' }))).toEqual([])
   })
 
-  test('navigation drawer', async ({ page }) => {
+  test('navigation: the sidebar on desktop, the drawer on a phone', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Open navigation' }).click()
-    expect(await crowdedTargets(page.getByRole('dialog', { name: 'Navigation' }))).toEqual([])
+    expect(await crowdedTargets(await openNavigation(page, testInfo))).toEqual([])
   })
 
   test('task details panel', async ({ page }) => {

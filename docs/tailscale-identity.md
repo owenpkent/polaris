@@ -60,7 +60,7 @@ A later hardening, not built here: ask tailscaled over its local API (`tailscale
 - http/server.test.ts, writes: with the header and a foreign `Origin`, `POST /api/github/app/forget` and `POST /api/tasks/:id/complete` are 403 and change nothing; with `Sec-Fetch-Site: same-origin` or an `Origin` equal to the server they go through; a JSON body sent as `text/plain;x=application/json` creates nothing; a bearer token with a foreign `Origin` is unaffected; a read with a foreign `Origin` still works.
 - http/body.test.ts: the media type must be exactly `application/json`.
 - http/server.test.ts: with `tailscaleLogin` set, a tokenless `GET /api/health` carrying the header is 200 and reports `auth.via: 'tailscale'`; without the header, or with another login, it is 401; the same header on `/mcp` and `/mcp/readonly` is 401; with `tailscaleLogin` unset, the header opens nothing. A request that carries both a bad token and a good header is still authorized, since the header is an alternative, not an extra check.
-- invariants.test.ts, group 9: Tailscale identity is off unless a login is named, opens only `/api`, and only from loopback, and a write over it from another origin, or from no stated origin, is refused.
+- invariants.test.ts, group 10: Tailscale identity is off unless a login is named, opens only `/api`, and only from loopback, and a write over it from another origin, or from no stated origin, is refused.
 - ConnectionContext.test.jsx: at a tailnet origin with nothing saved, a 200 from the probe connects with an empty token and persists; a 401 leaves the device local with no error shown; at a loopback origin nothing is fetched.
 - SettingsForm.test.jsx: the Tailscale note appears when health says so and not otherwise.
 

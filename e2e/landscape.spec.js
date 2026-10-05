@@ -23,12 +23,14 @@ test.describe('landscape phone', { tag: ['@landscape'] }, () => {
     await expect(panel).toHaveCount(0)
   })
 
-  test('the navigation drawer keeps its close control on screen and closes on Esc', async ({ page }) => {
+  // 844px wide is the desktop layout, so the navigation is the sidebar. It is taller than the
+  // screen here, and must scroll on its own to bring its last item, Connection, into reach.
+  test('the sidebar scrolls to its last item', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Open navigation' }).click()
-    const drawer = page.getByRole('dialog', { name: 'Navigation' })
-    await onScreen(page, drawer.getByRole('button', { name: 'Close navigation' }))
-    await page.keyboard.press('Escape')
-    await expect(drawer).toHaveCount(0)
+    const connection = page.getByRole('navigation', { name: 'Navigation' }).getByRole('button', { name: /Connection/ })
+    await connection.scrollIntoViewIfNeeded()
+    await onScreen(page, connection)
+    await connection.click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Connection')
   })
 })
