@@ -10,7 +10,7 @@ Polaris:
 
 - The task panel has a "Hand off to Claude Code" menu (src/command-center/HandoffMenu.jsx). It builds a prompt, wraps third-party text in a marked block, copies the prompt to the clipboard, and links to the repo on GitHub. It writes nothing.
 - `assignee` is a free-text name on a task (migration 6). docs/decision-maps.md defines the loop an agent runs: pick from the `ready` view, set `assignee` to its own name, comment, complete research, prototype, and setup tickets, and hand discuss tickets back to the owner.
-- Every change records an actor: human over REST, agent over MCP, system for jobs, rule for the rule engine. Nothing records which agent.
+- Every change records an actor: human over REST, agent over MCP, system for jobs, rule for the rule engine. Since 5B landed (migration 7), the name an MCP connection declared rides beside the actor; before it, nothing recorded which agent.
 - Three bearer tokens, one per trust boundary: api, mcp, mcp-readonly. The MCP token cannot enable a rule, over MCP or over REST.
 - The daemon runs its jobs in-process and never starts a program. CLAUDE.md asks for the owner's word before anything reads a local clone or path.
 - The README says Polaris is not for teams: one owner, one database, loopback only.
@@ -222,6 +222,6 @@ The Anchor agent uses the Polaris MCP server and self-reports. Approvals stay in
 ## Open questions
 
 - Anchor M0: can the approval callback block for fifteen minutes without the CLI timing out?
-- Where the transcript goes. Comments on the task is the proposal, but a long turn produces a lot of text. Turn summaries plus a pointer to `claude logs <id>` may be enough.
+- Where the transcript goes. Comments on the task is the proposal, but a long turn produces a lot of text. Turn summaries plus a pointer to `claude logs <id>` may be enough. A task's thread (docs/agent-threads-proposal.md) is now the place for an argument with other agents, but it is typed posts the owner judges, not a transcript.
 - The teammates initiative document in the private constellation repo (initiatives/teammates-and-goals.md) may already settle identity and assignment. It was not read for this exploration.
 - One message schema for the three channel methods plus session start and end, shared by the Polaris and Deckhand channels. The approvals table could be its persistent form.

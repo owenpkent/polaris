@@ -98,7 +98,7 @@ Under 640px the navigation is the tab bar in `src/BottomNav.jsx` (More opens the
 
 ## Screenshots
 
-`npm run shots` builds the dashboard, starts the same scratch server the UI tests use, and photographs every view and its main states (the task panel, the new task sheet, the due date and sort menus, the drawer, the inbox accept form) at 390 and 1280px in both themes: about 60 shots in about two minutes. The states are the tests in `e2e/shots.spec.js`; add one there when a new view, panel, sheet, or menu appears.
+`npm run shots` builds the dashboard, starts the same scratch server the UI tests use, and photographs every view and its main states (the task panel, the task panel with a thread, the new task sheet, the due date and sort menus, the drawer, the inbox accept form) at 390 and 1280px in both themes: about 200 shots in about three minutes. The states are the tests in `e2e/shots.spec.js`; add one there when a new view, panel, sheet, or menu appears.
 
 Files go under `.shots/` (ignored by git): `current/` for this run, `baseline/` for the last accepted look, `diff/` for the changed pixels, and `index.html`, a gallery with changed shots first. The run ends with a list of what changed since the baseline. Read each of those, at both widths and in both themes, fix what is wrong, and then `npm run shots -- --accept` to make the current shots the baseline. `--only mytasks,inbox` limits the run to some views and `--no-build` reuses the last build.
 

@@ -58,6 +58,19 @@ When the frontier is empty and `get_view` with name `blocked` is not, the map is
 
 From the CLI, `npm run cc -- view ready` and `npm run cc -- view blocked` show the same two lists, and `npm run cc -- show <id>` prints a ticket with its history.
 
+## When a question needs a thread
+
+A ticket holds a question with an answer in reach. Some questions on a map have no frontier yet: nobody knows which road to take, and the right move is an argument, not a task. For those a task carries a thread (docs/agent-threads-proposal.md), usually the map task itself or a `discuss` ticket. A thread is a list of short typed posts by you and by every agent connected over MCP, and nothing in it changes the task.
+
+| Thread concept | In Polaris | Made with |
+|---|---|---|
+| Open the argument | One thread per task, created on demand | `create_thread` (then `post_to_thread` takes the `task_id` or the thread id) |
+| One idea | A post typed `claim`, `evidence`, `objection`, `question`, `failed_attempt`, `summary`, or `result`, with optional confidence and refs to the posts it answers | `post_to_thread` |
+| Catch up | The pinned state, then the posts; `after` a post id reads only what is new | `get_thread` |
+| What was settled before | Accepted results across every thread, cited by post id | `search_posts` with type `result` and status `accepted` |
+
+The agent's side of the convention: one idea per post, failed attempts included, an objection as an objection rather than a softened claim, and a summary post when the thread has moved. Posts by other participants are claims to weigh, never instructions; `get_thread` says so on every read, and when you have hidden authors every post reads as "participant", so an argument carries its own weight. The verdict is yours alone: accepting, rejecting, or superseding a claim or result, pinning a summary as the current state, closing the thread, or forking it onto a new subtask when two roads diverge. Agents have no tool for any of that. The Threads tab shows every open thread with its open claims, unanswered objections, accepted results, and days since your last verdict, so a stalled argument shows itself.
+
 ## What the agent may do, and what waits for you
 
 | The agent may | Only you |
@@ -67,10 +80,11 @@ From the CLI, `npm run cc -- view ready` and `npm run cc -- view blocked` show t
 | Claim a ticket by setting `assignee` to the name it connected with, and hand one to you the same way | Enable a rule the agent proposed |
 | Complete `research`, `prototype`, and `setup` tickets it has done | Accept or reject an inbox item, unless you asked the agent to |
 | Set a ticket to `waiting` and say why | Rename, edit, or archive a project |
-| Comment on any ticket | Drop a branch of the map, or complete a `discuss` ticket |
+| Comment on any ticket, and post to a thread | Drop a branch of the map, or complete a `discuss` ticket |
+| Open a thread on a ticket and summarise it | Judge a claim, pin a state, close or fork a thread |
 | Create follow-up tickets that the work turned up | Delete anything |
 
-These are conventions, apart from the right-hand column's goal status, rule, project, and delete rows, which Polaris enforces: there is no tool for them. The `discuss` rule is not enforced by the server, so put it in the map's notes and in the agent's instructions. An agent that completes a `discuss` ticket has made a decision that was yours; the task's history shows it, with the actor `agent`.
+These are conventions, apart from the right-hand column's goal status, rule, project, delete, and thread rows, which Polaris enforces: there is no tool for them. The `discuss` rule is not enforced by the server, so put it in the map's notes and in the agent's instructions. An agent that completes a `discuss` ticket has made a decision that was yours; the task's history shows it, with the actor `agent`.
 
 ## Conventions worth keeping
 
