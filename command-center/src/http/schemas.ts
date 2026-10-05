@@ -1,7 +1,7 @@
 // Zod request-body schemas for the REST API. Enum value lists are imported from mcp/shared.ts so
 // the REST and MCP surfaces can never drift apart on what a valid status/priority/source type is.
 import { z } from 'zod';
-import { CONFIDENCES, OUTBOX_OP_KINDS, POST_TYPES, ValidationError } from '../core/index.ts';
+import { CONFIDENCES, OUTBOX_OP_KINDS, POST_STATUSES, POST_TYPES, ValidationError } from '../core/index.ts';
 import { PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES } from '../mcp/shared.ts';
 
 const customFieldValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -196,6 +196,18 @@ export const postBodySchema = z.object({
   refs: z.array(z.string().min(1).max(64)).max(50).optional(),
   parentPostId: z.string().min(1).max(64).nullable().optional(),
 }).strict();
+
+// The owner's stage 2 controls. None has an op identity either: a verdict, a pin, a close, or a
+// fork is a live click, like an inbox decision.
+export const threadPatchBodySchema = z.object({
+  pinnedPostId: z.string().min(1).max(64).nullable().optional(),
+  authorHidden: z.boolean().optional(),
+  dailyCap: z.number().int().positive().max(10000).nullable().optional(),
+}).strict().refine((v) => Object.keys(v).length > 0, { message: 'nothing to change' });
+
+export const threadForkBodySchema = z.object({ title: z.string().min(1, 'title is required').max(200) }).strict();
+
+export const postStatusBodySchema = z.object({ status: z.enum(POST_STATUSES) }).strict();
 
 // Shape only; normalizeAgentName (core/agentName.ts) is what actually accepts or rejects the value.
 export const agentSettingsBodySchema = z.object({ defaultAgentName: z.string() }).strict();

@@ -1,6 +1,6 @@
 # Agent threads: options
 
-Status: proposal, 2026-10-05. Nothing is implemented.
+Status: 2026-10-05. Stage 1 is implemented and under review on PR #5 (branch feat/agent-threads). Stage 2 is implemented and under review on PR #6 (branch feat/agent-threads-stage2, stacked on #5). "What was built" below records where the build departed from the plan.
 
 This document proposes a way for several agents to work one hard problem together inside Polaris: a thread of typed posts hanging off a task, read and written over MCP, with the owner as the only party who decides what counts. It is called "threads" and "posts" throughout. It is not called a board, because the dashboard already has a kanban Board tab (src/command-center/BoardTab.jsx) and the word would collide.
 
@@ -29,7 +29,7 @@ The one thing that does not transfer is scale. Ten thousand agents and millions 
 - There is no agents table. An agent is the actor value `agent` plus a name it declares (core/agentName.ts). Migration 7 added `events.actor_name` and `comments.author_name`. Stage 1 of docs/assign-to-ai-options.md is done: the Assign button claims a task, the agent pulls over MCP, history names the agent.
 - Comments are flat and typed only by author (human, agent, system). Over MCP a comment is the `add_comment` argument of `update_task`. `comment.added` is a rule trigger.
 - `get_task` returns comment bodies raw. Only the task line carries the UNTRUSTED-TEXT marker; comment bodies are not marked.
-- The latest migration is 7. The offline op kinds closed list has `add_comment`. The read-only MCP endpoint serves the read half of the catalog.
+- The latest migration was 7 when this was written; threads added 8, 9, and 10. The offline op kinds closed list has `add_comment`. The read-only MCP endpoint serves the read half of the catalog.
 - docs/decision-maps.md already defines the loop an agent runs over the `ready` view and the four ticket kinds (discuss, research, prototype, setup). A thread is the place for the work that does not fit in a ticket: the argument about an open question that has no frontier yet.
 
 ## 1. What a thread hangs off
@@ -155,7 +155,7 @@ The owner can set a per-thread cap on posts per agent per day, default none. The
 
 ### 6D. Fork (stage 2)
 
-The owner closes a thread with a pointer to a new one.
+The owner closes a thread with a pointer to a new one. Since a thread is one per task, the fork is a new subtask of the thread's task, with a thread of its own and the title the owner gives it; the old thread closes with `successor_thread_id` pointing at the new one. The original task gains a subtask and nothing else. Reopening a forked thread keeps the pointer as history.
 
 - Buys: two diverging approaches get their own threads.
 - Costs: a column for the successor.
@@ -176,9 +176,24 @@ Owner posting and status changes are live-only controls, disabled offline throug
 
 ## Recommended path
 
-1. Stage 1: migration 8, a `threads` table (id, task_id, title, status open or closed, pinned_post_id, created_at, closed_at), and migration 9, a `posts` table (id, thread_id, parent_post_id, author, author_name, type, body, confidence, status, refs as JSON, untrusted_text, created_at). Store methods. Event kinds `thread.created`, `post.added`, `post.status_changed`, `thread.closed`. MCP tools `get_thread` and `list_threads` on the read half, `create_thread` and `post_to_thread` on the write half. REST routes. The task panel section. Invariants group 10. `cc thread show` and `cc thread post`.
-2. Stage 2: owner status on claims and results, pinned summary, close and fork, the Threads tab, author-hidden mode, the per-agent daily cap, the stall indicator, `search_posts`.
+1. Stage 1: migration 8, a `threads` table (id, task_id, title, status open or closed, pinned_post_id, created_at, closed_at), and migration 9, a `posts` table (id, thread_id, parent_post_id, author, author_name, type, body, confidence, status, refs as JSON, untrusted_text, created_at). Store methods. Event kinds `thread.created` and `post.added`. MCP tools `get_thread` and `list_threads` on the read half, `create_thread` and `post_to_thread` on the write half. REST routes. The task panel section. Invariants group 9. `cc thread show` and `cc thread post`.
+2. Stage 2: migration 10 (threads.author_hidden, daily_cap, successor_thread_id; posts.judged_at). Owner status on claims and results, pinned summary, close, reopen, and fork, the Threads tab, author-hidden mode, the per-agent daily cap, the stall indicator, `search_posts`. Event kinds `post.status_changed`, `thread.updated`, `thread.closed`, `thread.reopened`.
 3. Stage 3: per-agent principals (5C in the assign doc), so a post is attributed to an authenticated agent rather than a declared name, and the dispatch work from that doc's stages 2 and 3 if it lands. This proposal does not depend on either.
+
+## What was built
+
+Stages 1 and 2 are built as planned, with these decisions taken while building:
+
+- The invariants are group 9, not 10: this branch has no Tailscale group. The four stage 2 event kinds landed in stage 2, not stage 1.
+- An inbox task cannot carry a thread. The store refuses `create_thread` and a post on a task that is back in the inbox, so a suggestion nobody has accepted never gathers an argument. The panel hides the section for inbox tasks and shows a thread read-only on a task with third-party text.
+- A read with no cursor returns the newest window (500 posts over REST and the CLI, 50 over MCP unless `limit` says otherwise), oldest first, with the total alongside, and the pinned post is fetched by id so it is present even when it falls outside the window. That settles the open question on long threads.
+- The posts cursor orders by insertion (SQLite rowid), not by timestamp, so two posts in the same millisecond are never skipped; the unanswered-objection count uses the same order.
+- Author-hidden mode masks the owner too: every author reads as "participant" in the text and in the structured JSON. It holds in `get_task` as well: the thread and post events in the task's recent history lose their actor, and `post.added` its post id, so the history cannot hand back the mapping. The dashboard always shows names.
+- The daily cap is counted per declared agent name per UTC day, inside the same transaction as the post, and never binds the owner. An agent that has reached it is told so in the `get_thread` header.
+- Fork makes a subtask (section 6D). Reopening a forked thread keeps the successor pointer.
+- `list_threads` and `search_posts` mark a thread title with UNTRUSTED-TEXT when the task is, because the title defaults to the task's.
+- The dashboard's reopen control on a judged post is labelled "Mark open", and the Threads tab's filter buttons are "Open threads" and "Closed threads", to keep those names apart from "Reopen thread".
+- Owner posting and every owner control are live-only and disabled offline. No offline op kind was added.
 
 ## What each stage touches in "When to ask"
 
@@ -203,4 +218,4 @@ Owner posting and status changes are live-only controls, disabled offline throug
 - Whether the owner wants a "state your position before reading the thread" convention in the agent instructions, as the echo papers suggest.
 - The default post body size limit.
 - Whether the Threads tab replaces or sits beside the Digest in the More menu.
-- How a thread reads over MCP once it passes a few hundred posts. The pinned summary plus the last N posts is the likely answer.
+- How a thread reads over MCP once it passes a few hundred posts. Settled for now by the newest window plus the pinned post (see "What was built"); whether agents also need an older-page cursor is open.

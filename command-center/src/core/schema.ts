@@ -262,4 +262,18 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX posts_thread ON posts(thread_id, created_at);
   `,
+  // 10: the owner's stage 2 controls (docs/agent-threads-proposal.md, sections 4C, 6C, 6D).
+  // threads.author_hidden: when set, an assistant reading the thread sees every author as
+  // "participant", the owner included, so no post carries more weight for who wrote it; the
+  // dashboard always shows names. threads.daily_cap: the most posts one agent may add to this
+  // thread per UTC day, NULL for no cap; it never applies to the owner. threads.successor_thread_id:
+  // set by a fork, which closes this thread and points at the one the argument continues in.
+  // posts.judged_at: when the owner last set a claim's or result's status, NULL while it is open,
+  // so the thread list can say how long since the last verdict. All NULL or 0 for existing rows.
+  `
+  ALTER TABLE threads ADD COLUMN author_hidden INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE threads ADD COLUMN daily_cap INTEGER;
+  ALTER TABLE threads ADD COLUMN successor_thread_id TEXT;
+  ALTER TABLE posts ADD COLUMN judged_at TEXT;
+  `,
 ];

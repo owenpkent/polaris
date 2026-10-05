@@ -101,3 +101,89 @@ test('threads: an inbox task refuses a thread, and once accepted its posts are m
     assert.equal(post.json.post.untrustedText, true);
   });
 });
+
+// ---- stage 2: the owner's controls over REST ----
+
+test('threads: the owner judges, pins, sets options, closes, reopens, forks, and searches, every one as the human', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Why does the solver stall?' }, 'human');
+  const thread = app.store.createThread(task.id, null, 'human');
+  const claim = app.store.addPost(thread.id, { type: 'claim', body: 'Cache miss.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  const objection = app.store.addPost(thread.id, { type: 'objection', body: 'Profile says no.' }, 'agent', { actor: 'agent', name: 'critic' });
+  const summary = app.store.addPost(thread.id, { type: 'summary', body: 'Where we are.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  const result = app.store.addPost(thread.id, { type: 'result', body: 'Holds on the small case.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  await withServer(app, {}, async (base) => {
+    const judged = await api(base, 'PATCH', `/api/posts/${claim.id}`, { status: 'accepted' });
+    assert.equal(judged.status, 200);
+    assert.equal(judged.json.post.status, 'accepted');
+    assert.ok(judged.json.post.judgedAt);
+    assert.equal((await api(base, 'PATCH', `/api/posts/${objection.id}`, { status: 'accepted' })).status, 400, 'an objection carries no status');
+    assert.equal((await api(base, 'PATCH', `/api/posts/${claim.id}`, { status: 'done' })).status, 400);
+    assert.equal((await api(base, 'PATCH', '/api/posts/po_missing000', { status: 'accepted' })).status, 404);
+    assert.equal((await api(base, 'PATCH', `/api/posts/${result.id}`, { status: 'accepted' })).status, 200);
+
+    const pinned = await api(base, 'PATCH', `/api/threads/${thread.id}`, { pinnedPostId: summary.id, authorHidden: true, dailyCap: 3 });
+    assert.equal(pinned.status, 200);
+    assert.equal(pinned.json.thread.pinnedPostId, summary.id);
+    assert.equal(pinned.json.thread.authorHidden, true);
+    assert.equal(pinned.json.thread.dailyCap, 3);
+    // A reader of the thread gets the pinned post by id, whatever window of posts it asked for.
+    const windowed = await api(base, 'GET', `/api/threads/${thread.id}?limit=1`);
+    assert.equal(windowed.json.pinned.id, summary.id);
+    assert.equal(windowed.json.posts.length, 1);
+    assert.ok(windowed.json.total >= 2);
+    assert.equal((await api(base, 'PATCH', `/api/threads/${thread.id}`, {})).status, 400, 'nothing to change');
+    assert.equal((await api(base, 'PATCH', `/api/threads/${thread.id}`, { dailyCap: 0 })).status, 400);
+    assert.equal((await api(base, 'PATCH', `/api/threads/${thread.id}`, { pinnedPostId: 'po_missing000' })).status, 400);
+    assert.equal((await api(base, 'PATCH', `/api/threads/${thread.id}`, { status: 'closed' })).status, 400, 'status is not a patch field');
+    const unpinned = await api(base, 'PATCH', `/api/threads/${thread.id}`, { pinnedPostId: null, dailyCap: null });
+    assert.equal(unpinned.json.thread.pinnedPostId, null);
+    assert.equal(unpinned.json.thread.dailyCap, null);
+    assert.equal(unpinned.json.thread.authorHidden, true);
+
+    const list = await api(base, 'GET', '/api/threads');
+    const row = list.json.threads[0];
+    assert.equal(row.unansweredObjections, 1);
+    assert.equal(row.acceptedResults, 1);
+    assert.equal(row.openClaims, 0);
+    assert.equal(row.lastProgressAt, (await api(base, 'GET', `/api/threads/${thread.id}`)).json.posts.find((p: { id: string }) => p.id === result.id).judgedAt);
+    assert.equal(row.thread.authorHidden, true);
+
+    const search = await api(base, 'GET', '/api/posts?type=result&status=accepted');
+    assert.deepEqual(search.json.posts.map((h: { post: { id: string }; taskTitle: string; threadTitle: string }) => [h.post.id, h.taskTitle, h.threadTitle]), [[result.id, 'Why does the solver stall?', 'Why does the solver stall?']]);
+    assert.equal((await api(base, 'GET', '/api/posts?q=profile')).json.posts.length, 1);
+    assert.equal((await api(base, 'GET', `/api/posts?taskId=${task.id}&limit=2`)).json.posts.length, 2);
+    assert.equal((await api(base, 'GET', '/api/posts?type=verdict')).status, 400);
+    assert.equal((await api(base, 'GET', '/api/posts?status=done')).status, 400);
+
+    const closed = await api(base, 'POST', `/api/threads/${thread.id}/close`, {});
+    assert.equal(closed.status, 200);
+    assert.equal(closed.json.thread.status, 'closed');
+    assert.equal((await api(base, 'POST', `/api/threads/${thread.id}/posts`, { type: 'claim', body: 'x' })).status, 400, 'closed threads take no posts');
+    assert.equal((await api(base, 'POST', `/api/threads/${thread.id}/close`, {})).status, 400);
+    assert.equal((await api(base, 'POST', `/api/threads/${thread.id}/fork`, { title: 'B' })).status, 400, 'a closed thread cannot fork');
+    const reopened = await api(base, 'POST', `/api/threads/${thread.id}/reopen`, {});
+    assert.equal(reopened.json.thread.status, 'open');
+    assert.equal((await api(base, 'POST', `/api/threads/${thread.id}/reopen`, {})).status, 400);
+
+    assert.equal((await api(base, 'POST', `/api/threads/${thread.id}/fork`, {})).status, 400, 'a fork needs a title');
+    const forked = await api(base, 'POST', `/api/threads/${thread.id}/fork`, { title: 'Approach B' });
+    assert.equal(forked.status, 201);
+    assert.equal(forked.json.thread.status, 'closed');
+    assert.equal(forked.json.thread.successorThreadId, forked.json.successor.id);
+    assert.equal(forked.json.task.parentId, task.id);
+    assert.equal(forked.json.task.title, 'Approach B');
+    assert.equal((await api(base, 'GET', `/api/tasks/${forked.json.task.id}/thread`)).json.thread.id, forked.json.successor.id);
+    assert.equal((await api(base, 'POST', '/api/threads/th_missing000/close', {})).status, 404);
+
+    // The MCP tokens are refused on every owner route.
+    for (const [method, path] of [['PATCH', `/api/posts/${claim.id}`], ['PATCH', `/api/threads/${thread.id}`], ['POST', `/api/threads/${thread.id}/reopen`], ['POST', `/api/threads/${forked.json.successor.id}/fork`]] as const) {
+      const res = await fetch(`${base}${path}`, { method, headers: { Authorization: `Bearer ${TEST_TOKENS.mcp}`, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'open', title: 'x' }) });
+      assert.equal(res.status, 401, `${method} ${path}`);
+    }
+  });
+  const owner = app.store.taskHistory(task.id).filter((e) => /^(thread|post)\./.test(e.kind) && e.kind !== 'post.added');
+  assert.ok(owner.length >= 8);
+  assert.ok(owner.every((e) => e.actor === 'human'), 'every owner control is recorded as the human');
+});

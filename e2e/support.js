@@ -46,9 +46,12 @@ export async function createTask(request, testInfo, label, extra = {}) {
 }
 
 // Creates a task with a thread and the given posts straight through the REST API
-// (docs/agent-threads-proposal.md, stage 1), for a test or a shot that needs a thread to look at.
-// Each post is { type, body } and lands as the owner's. Returns the task's title and id.
-export async function seedThread(request, testInfo, label, posts = []) {
+// (docs/agent-threads-proposal.md), for a test or a shot that needs a thread to look at.
+// Each post is { type, body } and lands as the owner's. `opts` applies the owner's judgement
+// afterwards (stage 2): `judge` is { postIndex, status }, `pin` a post index, `close` true, and
+// `fork` the title of the successor thread, which closes this one.
+// Returns the task's title and id, the thread id, and the post ids in order.
+export async function seedThread(request, testInfo, label, posts = [], opts = {}) {
   const headers = { Authorization: `Bearer ${TOKEN}` }
   const title = `UI test thread ${label} ${testInfo.project.name} ${++created}`
   const task = await request.post('/api/tasks', { headers, data: { title, dueAt: localToday() } })
@@ -57,11 +60,31 @@ export async function seedThread(request, testInfo, label, posts = []) {
   const thread = await request.post(`/api/tasks/${id}/thread`, { headers, data: {} })
   expect(thread.ok(), `create thread failed: ${thread.status()}`).toBeTruthy()
   const { thread: { id: threadId } } = await thread.json()
+  const postIds = []
   for (const post of posts) {
     const res = await request.post(`/api/threads/${threadId}/posts`, { headers, data: post })
     expect(res.ok(), `post failed: ${res.status()}`).toBeTruthy()
+    postIds.push((await res.json()).post.id)
   }
-  return { title, id, threadId }
+  if (opts.judge) {
+    const res = await request.patch(`/api/posts/${postIds[opts.judge.postIndex]}`, { headers, data: { status: opts.judge.status } })
+    expect(res.ok(), `judge failed: ${res.status()}`).toBeTruthy()
+  }
+  if (opts.pin != null) {
+    const res = await request.patch(`/api/threads/${threadId}`, { headers, data: { pinnedPostId: postIds[opts.pin] } })
+    expect(res.ok(), `pin failed: ${res.status()}`).toBeTruthy()
+  }
+  if (opts.close) {
+    const res = await request.post(`/api/threads/${threadId}/close`, { headers })
+    expect(res.ok(), `close failed: ${res.status()}`).toBeTruthy()
+  }
+  let successor = null
+  if (opts.fork) {
+    const res = await request.post(`/api/threads/${threadId}/fork`, { headers, data: { title: opts.fork } })
+    expect(res.ok(), `fork failed: ${res.status()}`).toBeTruthy()
+    successor = (await res.json()).successor
+  }
+  return { title, id, threadId, postIds, successor }
 }
 
 // Titles of real tasks. Inbox suggestions are stored as tasks with status "inbox" (and rejected
@@ -280,6 +303,18 @@ export const VIEWS = [
     emptyText: ['No projects yet', 'Add one to start filing tasks under it.'],
     emptyControls: ['New project'],
     ready: (page) => page.getByRole('article', { name: 'UI Test Project', exact: true }),
+  },
+  {
+    id: 'threads',
+    label: 'Threads',
+    request: (url) => url.pathname === '/api/threads',
+    loading: 'Loading threads…',
+    emptyBody: { threads: [] },
+    emptyText: ['No open threads', "A thread starts from a task's panel, under Thread."],
+    emptyControls: ['Open threads'],
+    // The Open/Closed switch is there whatever the list holds, so it stands for the page being
+    // ready; the tests that make threads run beside this one on the same database.
+    ready: (page) => page.getByRole('button', { name: 'Open threads', exact: true }),
   },
   {
     id: 'rules',

@@ -111,10 +111,22 @@ export interface Thread {
   taskId: string;
   title: string;
   status: 'open' | 'closed';
-  /** The summary post the owner pinned as the current state, if any. Stage 2 sets it. */
+  /** The summary post the owner pinned as the current state, if any. */
   pinnedPostId: string | null;
+  /** When set, an assistant reading the thread sees every author as "participant". The dashboard always shows names. */
+  authorHidden: boolean;
+  /** The most posts one agent may add per UTC day, or null for no cap. Never applies to the owner. */
+  dailyCap: number | null;
+  /** Set by a fork: the thread the argument continues in. The thread is closed when this is set. */
+  successorThreadId: string | null;
   createdAt: string;
   closedAt: string | null;
+}
+
+/** The thread settings only the owner changes. */
+export interface ThreadOptions {
+  authorHidden?: boolean;
+  dailyCap?: number | null;
 }
 
 export interface Post {
@@ -133,6 +145,8 @@ export interface Post {
   refs: string[];
   /** Copied from the task when the post was made, and never cleared. */
   untrustedText: boolean;
+  /** When the owner last set the status; null while a claim or result is open, and on every other type. */
+  judgedAt: string | null;
   createdAt: string;
 }
 
@@ -153,7 +167,30 @@ export interface ThreadSummary {
   postCount: number;
   openClaims: number;
   objections: number;
+  /** Objections no later post answers (by parent or by refs). */
+  unansweredObjections: number;
   results: number;
+  acceptedResults: number;
+  /** The last verdict the owner gave in this thread, or the thread's creation when there is none. */
+  lastProgressAt: string;
+}
+
+/** A post found across threads, with where it lives. */
+export interface PostSearchHit {
+  post: Post;
+  taskId: string;
+  taskTitle: string;
+  threadTitle: string;
+  /** The task's flag: the thread title defaults to the task's, so both titles here are third-party text when set. */
+  untrustedText: boolean;
+}
+
+export interface PostSearch {
+  type?: PostType;
+  status?: PostStatus;
+  query?: string;
+  taskId?: string;
+  limit?: number;
 }
 
 export interface Link {
@@ -183,7 +220,11 @@ export type EventKind =
   | 'task.sync_conflict'
   | 'comment.added'
   | 'thread.created'
+  | 'thread.updated'
+  | 'thread.closed'
+  | 'thread.reopened'
   | 'post.added'
+  | 'post.status_changed'
   | 'project.upserted'
   | 'rule.fired'
   | 'goal.created'

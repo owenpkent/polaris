@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
 import {
-  NotFoundError, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
-  type Json, type MoveTarget, type OutboxOp, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
+  NotFoundError, POST_STATUSES, POST_TYPES, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
+  type Json, type MoveTarget, type OutboxOp, type PostStatus, type PostType, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
 } from '../core/index.ts';
 import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
 import { ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES, resolveProject, resolveSectionWrite } from '../mcp/shared.ts';
@@ -21,7 +21,7 @@ import {
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
   moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
-  restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema,
+  postStatusBodySchema, restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema, threadForkBodySchema, threadPatchBodySchema,
 } from './schemas.ts';
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -570,7 +570,9 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     const thread = store.requireThread(threadId);
     const after = url.searchParams.get('after');
     const limit = parseIntParam(url.searchParams.get('limit'), 'limit', 1);
-    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }), total: store.countPosts(thread.id) };
+    // The pinned post travels by id: it may be older than the window of posts returned.
+    const pinned = thread.pinnedPostId ? store.getPost(thread.pinnedPostId) : null;
+    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }), total: store.countPosts(thread.id), pinned };
   };
 
   router.add('GET', '/api/threads', (ctx) => {
@@ -602,6 +604,48 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     const body = parseBody(postBodySchema, ctx.body);
     const post = store.addPost(ctx.params.id, body, 'human', 'human');
     sendJson(ctx.res, 201, { post });
+  });
+
+  // Stage 2: what the owner decides. Each is a live click as the human; none queues offline.
+  router.add('PATCH', '/api/threads/:id', (ctx) => {
+    const body = parseBody(threadPatchBodySchema, ctx.body);
+    let thread = store.requireThread(ctx.params.id);
+    const { pinnedPostId, ...options } = body;
+    if (pinnedPostId !== undefined) thread = store.pinPost(thread.id, pinnedPostId, 'human');
+    if (Object.keys(options).length) thread = store.setThreadOptions(thread.id, options, 'human');
+    sendJson(ctx.res, 200, { thread });
+  });
+
+  router.add('POST', '/api/threads/:id/close', (ctx) => {
+    sendJson(ctx.res, 200, { thread: store.closeThread(ctx.params.id, 'human') });
+  });
+
+  router.add('POST', '/api/threads/:id/reopen', (ctx) => {
+    sendJson(ctx.res, 200, { thread: store.reopenThread(ctx.params.id, 'human') });
+  });
+
+  router.add('POST', '/api/threads/:id/fork', (ctx) => {
+    const body = parseBody(threadForkBodySchema, ctx.body);
+    sendJson(ctx.res, 201, store.forkThread(ctx.params.id, body, 'human'));
+  });
+
+  router.add('PATCH', '/api/posts/:id', (ctx) => {
+    const body = parseBody(postStatusBodySchema, ctx.body);
+    sendJson(ctx.res, 200, { post: store.setPostStatus(ctx.params.id, body.status, 'human') });
+  });
+
+  router.add('GET', '/api/posts', (ctx) => {
+    const q = ctx.url.searchParams;
+    const type = q.get('type');
+    const status = q.get('status');
+    if (type !== null && !(POST_TYPES as readonly string[]).includes(type)) throw new ValidationError(`invalid type: ${type}`);
+    if (status !== null && !(POST_STATUSES as readonly string[]).includes(status)) throw new ValidationError(`invalid status: ${status}`);
+    sendJson(ctx.res, 200, {
+      posts: store.searchPosts({
+        type: (type as PostType | null) ?? undefined, status: (status as PostStatus | null) ?? undefined,
+        query: q.get('q') ?? undefined, taskId: q.get('taskId') ?? undefined, limit: parseIntParam(q.get('limit'), 'limit', 1),
+      }),
+    });
   });
 
   // ------------------------------------------------------------------ github

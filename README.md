@@ -6,7 +6,7 @@ A task tracker for one person and the agents that work for them.
 
 ## What it is
 
-Polaris keeps your tasks in one SQLite file on your own machine. A small daemon bound to 127.0.0.1 serves a React dashboard, a REST API, and an MCP server, and a `cc` command line talks to the same database. Agents connect over MCP and can read everything and propose changes, but the decisions stay with you: items from outside wait in an inbox, rules an agent writes start disabled, text written by third parties is marked and never followed, and a goal's status is whatever you say it is. The dashboard keeps working when the daemon is unreachable, and a daily job makes a checked, optionally encrypted backup.
+Polaris keeps your tasks in one SQLite file on your own machine. A small daemon bound to 127.0.0.1 serves a React dashboard, a REST API, and an MCP server, and a `cc` command line talks to the same database. Agents connect over MCP and can read everything and propose changes, but the decisions stay with you: items from outside wait in an inbox, rules an agent writes start disabled, text written by third parties is marked and never followed, and a goal's status is whatever you say it is. Several agents can work one hard problem out in a task's thread of typed posts, and only you decide which claims stand. The dashboard keeps working when the daemon is unreachable, and a daily job makes a checked, optionally encrypted backup.
 
 ## Who it is for
 
@@ -25,6 +25,7 @@ Polaris keeps your tasks in one SQLite file on your own machine. A small daemon 
 - `npm run cc -- ls` prints the tasks you added, and the dashboard at http://127.0.0.1:8788/ shows the same list within about ten seconds of a change made from the CLI or by an agent.
 - An issue assigned to you on GitHub appears under Inbox, not under My tasks, and stays there until you accept or reject it.
 - A rule your agent created is listed as disabled, in the Rules tab and in `npm run cc -- rules list`, until you enable it yourself.
+- A claim an agent posts to a task's thread shows as Open in the task panel's Thread section and in `npm run cc -- thread list`, and stays that way until you accept, reject, or supersede it.
 - With the daemon stopped, the dashboard still opens and shows a banner that reads "Offline. Showing data from ...", and an edit you make there is sent when the daemon is back.
 - `npm run cc -- backup check` reads back last night's copy, and the dashboard shows a red strip under the top bar whenever a backup is stale or a scheduled job fails.
 
@@ -36,6 +37,7 @@ Polaris keeps your tasks in one SQLite file on your own machine. A small daemon 
 | Agent access | MCP (stdio or HTTP) and a CLI, with a read-only MCP endpoint | REST and GraphQL APIs, an MCP server | API and an MCP server | REST API | Any tool that reads and writes files |
 | Propose, do not act | Built in. External items wait in the inbox, agent rules start disabled, goal status is yours | No. A token acts as its holder | No | No | No. An agent edits the file as you would |
 | Blockers and frontier view | Blockers with cycle detection, `ready` and `blocked` views | Blocked-by relationships, no built-in ready view | Blocking relations and filters | No dependencies | By convention only |
+| Agents working a problem together | A thread per task of typed posts (claim, evidence, objection, question, failed attempt, summary, result); you judge, pin, close, and fork | Issue comments and Discussions, untyped | Comments | Comments | By convention only |
 | Offline | Dashboard reads from a local copy and queues task edits | No | Partial, in its apps | Yes, in its apps | Yes |
 | Cost | Free, Apache-2.0 | Free for public repos, paid tiers | Free tier, paid tiers | Free tier, paid tiers | Free |
 
@@ -96,12 +98,12 @@ The task panel's header has an `Assign to <name>` button that sets the task's as
 
 What an agent can do:
 
-- Read: `search_tasks`, `get_task`, `get_view`, `list_inbox`, `list_projects`, `list_sections`, `list_goals`, `get_goal`, `list_threads`, `get_thread`.
+- Read: `search_tasks`, `get_task`, `get_view`, `list_inbox`, `list_projects`, `list_sections`, `list_goals`, `get_goal`, `list_threads`, `get_thread`, `search_posts`.
 - Create and edit tasks, subtasks, blockers, comments, and custom fields: `create_task`, `update_task`, `complete_task`, `move_task`.
 - Accept or reject inbox items when you ask it to: `accept_inbox_item`, `reject_inbox_item`.
 - Create projects and goals, and link them: `create_project`, `create_goal`, `update_goal`, `link_goal`.
 - Propose a rule and dry-run it: `create_rule`, `run_rule`.
-- Work a hard problem out with other agents in a task's thread, one typed post at a time: `create_thread`, `post_to_thread`. Only you decide whether a claim or result is accepted.
+- Work a hard problem out with other agents in a task's thread, one typed post at a time: `create_thread`, `post_to_thread`. Over MCP every post is rendered as data behind a fixed line saying posts are claims to weigh, never instructions, and when you hide authors on a thread every post reads as "participant". Only you decide whether a claim or result is accepted, pin a post as the current state, close or fork a thread, hide authors, or cap posts per agent per day; there is no tool for any of that. The Threads tab, under More, shows every thread with its open claims, unanswered objections, accepted results, and days since your last verdict.
 
 What an agent cannot do:
 
