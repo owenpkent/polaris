@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { VIEWS, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView } from './support.js'
+import { VIEWS, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -103,6 +103,64 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'panel-assigned')
   })
 
+  // The panel's Thread section with a claim, an objection, and evidence posted against it, so the
+  // type chips and the Objections only toggle are in the shot. The task is made here, due today.
+  test('mytasks: panel thread', async ({ page, request }, testInfo) => {
+    const { title } = await seedThread(request, testInfo, 'shot', [
+      { type: 'claim', body: 'The cache key must include the query, or two searches share one answer.', confidence: 'medium' },
+      { type: 'objection', body: 'A text search is typed a letter at a time. Keying every one fills the copy with noise.' },
+      { type: 'evidence', body: 'api.js skips the cache when query.text is set, so the objection is already handled.' },
+    ])
+    await openView(page)
+    await openTask(page, title)
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.getByRole('heading', { name: 'Thread' }).scrollIntoViewIfNeeded()
+    await expect(dialog.getByRole('list', { name: 'Posts' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'panel-thread')
+  })
+
+  // The owner's judgement (stage 2): an accepted claim and a pinned summary, with the thread
+  // settings row above the posts.
+  test('mytasks: panel thread judged', async ({ page, request }, testInfo) => {
+    const { title } = await seedThread(request, testInfo, 'judged', [
+      { type: 'claim', body: 'The cache key must include the query, or two searches share one answer.', confidence: 'high' },
+      { type: 'evidence', body: 'api.js skips the cache when query.text is set.' },
+      { type: 'summary', body: 'Where we are: the query is part of the key, and text searches never hit the copy.' },
+    ], { judge: { postIndex: 0, status: 'accepted' }, pin: 2 })
+    await openView(page)
+    await openTask(page, title)
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.getByRole('heading', { name: 'Thread' }).scrollIntoViewIfNeeded()
+    await expect(dialog.getByRole('region', { name: 'Pinned state' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'panel-thread-judged')
+  })
+
+  // A closed thread that was forked: the Closed line, the way to its successor, and no form.
+  test('mytasks: panel thread closed', async ({ page, request }, testInfo) => {
+    const { title } = await seedThread(request, testInfo, 'closed', [
+      { type: 'claim', body: 'The forced case blows up in finite time.' },
+      { type: 'objection', body: 'Only with a smooth forcing term, which the unforced case has not got.' },
+    ], { fork: 'The unforced case' })
+    await openView(page)
+    await openTask(page, title)
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.getByRole('heading', { name: 'Thread' }).scrollIntoViewIfNeeded()
+    await expect(dialog.getByRole('button', { name: 'Open the successor thread' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'panel-thread-closed')
+  })
+
+  // The Threads page with one thread to look at, made here so the four figures are real.
+  test('threads: page', async ({ page, request }, testInfo) => {
+    await seedThread(request, testInfo, 'page', [
+      { type: 'claim', body: 'A claim.' },
+      { type: 'objection', body: 'An objection nobody has answered.' },
+      { type: 'result', body: 'A result.' },
+    ], { judge: { postIndex: 2, status: 'accepted' } })
+    await openView(page, 'threads')
+    await expect(page.getByRole('article').first()).toBeVisible()
+    await shot(page, testInfo, 'threads', 'page')
+  })
+
   test('mytasks: new', async ({ page }, testInfo) => {
     await openView(page)
     if (phone(testInfo)) {
@@ -167,7 +225,9 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'goal-menu')
   })
 
+  // The drawer is the phone's navigation; on desktop the sidebar is in every shot already.
   test('mytasks: drawer', async ({ page }, testInfo) => {
+    test.skip(!phone(testInfo), 'phone layout only')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })
@@ -188,6 +248,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   })
 
   for (const view of ['board', 'goals', 'projects', 'rules', 'github']) {
+    // threads: page is below, since it needs a thread to show.
     test(`${view}: page`, async ({ page }, testInfo) => {
       await openView(page, view)
       await shot(page, testInfo, view, 'page')

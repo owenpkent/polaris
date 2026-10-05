@@ -92,33 +92,51 @@ export function useColumnsState() {
   return { widths: state.widths, hidden: state.hidden, setWidth, resetWidth, setHidden }
 }
 
-// Tracks the app's three breakpoints: the two the My Tasks grid used to hide
-// columns at via plain CSS (900px: Source/Priority, 600px: Project), plus the
-// single phone breakpoint (640px) the whole dashboard uses for its phone
-// layout tier. Column widths are computed in JS so they stay aligned between
-// the header and every row, so this responsive hiding has to move to JS too
-// -- otherwise an inline gridTemplateColumns would silently defeat a media
-// query.
+// Above the phone breakpoint the sidebar (src/Sidebar.jsx, .app-sidebar in index.css, which must
+// stay this wide) takes this much of the window, so the list's own thresholds, which are about the
+// width the list really has, sit that much further out than the window width they are named for.
+export const SIDEBAR_WIDTH = 232
+
+// The media queries behind useNarrowBreakpoints. narrow900 and narrow600 are the two widths the My
+// Tasks list used to hide columns at via plain CSS (900px: Source/Priority, 600px: Project),
+// measured on the list rather than the window. narrowInbox is where the Inbox table, whose
+// Project, Source, and action columns are fixed at 540px, would leave the name under 200px: below
+// it Inbox uses the same stacked cards it shows on a phone (InboxTab.jsx). phone is the single
+// phone breakpoint (640px) the whole dashboard uses for its phone layout tier. narrowPanel is
+// where an open task panel leaves the list too little room for Project as well.
+export const BREAKPOINT_QUERIES = {
+  narrow900: `(max-width: ${900 + SIDEBAR_WIDTH}px)`,
+  narrow600: `(max-width: ${600 + SIDEBAR_WIDTH}px)`,
+  narrowInbox: `(max-width: ${800 + SIDEBAR_WIDTH}px)`,
+  phone: '(max-width: 640px)',
+  narrowPanel: '(max-width: 1440px)',
+}
+
+const BREAKPOINT_KEYS = Object.keys(BREAKPOINT_QUERIES)
+
+function widthOf(query) {
+  return Number(/max-width: (\d+)px/.exec(query)[1])
+}
+
+// Column widths are computed in JS so they stay aligned between the header and every row, so
+// this responsive hiding has to live in JS too -- otherwise an inline gridTemplateColumns would
+// silently defeat a media query.
 export function useNarrowBreakpoints() {
-  const [state, setState] = useState(() => ({
-    narrow900: typeof window !== 'undefined' ? window.innerWidth <= 900 : false,
-    narrow600: typeof window !== 'undefined' ? window.innerWidth <= 600 : false,
-    phone: typeof window !== 'undefined' ? window.innerWidth <= 640 : false,
-  }))
+  const [state, setState] = useState(() => {
+    const initial = {}
+    for (const key of BREAKPOINT_KEYS) {
+      initial[key] = typeof window !== 'undefined' ? window.innerWidth <= widthOf(BREAKPOINT_QUERIES[key]) : false
+    }
+    return initial
+  })
 
   useEffect(() => {
-    const mq900 = window.matchMedia('(max-width: 900px)')
-    const mq600 = window.matchMedia('(max-width: 600px)')
-    const mqPhone = window.matchMedia('(max-width: 640px)')
-    const update = () => setState({ narrow900: mq900.matches, narrow600: mq600.matches, phone: mqPhone.matches })
+    const lists = BREAKPOINT_KEYS.map((key) => [key, window.matchMedia(BREAKPOINT_QUERIES[key])])
+    const update = () => setState(Object.fromEntries(lists.map(([key, mq]) => [key, mq.matches])))
     update()
-    mq900.addEventListener('change', update)
-    mq600.addEventListener('change', update)
-    mqPhone.addEventListener('change', update)
+    for (const [, mq] of lists) mq.addEventListener('change', update)
     return () => {
-      mq900.removeEventListener('change', update)
-      mq600.removeEventListener('change', update)
-      mqPhone.removeEventListener('change', update)
+      for (const [, mq] of lists) mq.removeEventListener('change', update)
     }
   }, [])
 
@@ -128,16 +146,17 @@ export function useNarrowBreakpoints() {
 // Which columns actually render, combining the user's own hide/show choices
 // with the responsive rules above and (matching the previous mt-panel-open
 // CSS) hiding Priority/Source while the task detail panel is open so Name
-// and Due date have room. On the phone tier the column set is fixed to
+// and Due date have room, and Project too when the window is narrowPanel or
+// less, since the sidebar and the panel then leave the list little width. On the phone tier the column set is fixed to
 // checkbox + Name + Due date regardless of the saved hidden state or an open
 // panel -- there isn't room for anything else.
-export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOpen }) {
+export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOpen, narrowPanel = false }) {
   return COLUMN_DEFS.filter((col) => {
     if (!col.canHide) return true
     if (phone) return col.id === 'due'
     if (hidden[col.id]) return false
     if ((narrow900 || panelOpen) && (col.id === 'priority' || col.id === 'source')) return false
-    if (narrow600 && col.id === 'project') return false
+    if ((narrow600 || (panelOpen && narrowPanel)) && col.id === 'project') return false
     return true
   })
 }

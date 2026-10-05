@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,7 +36,26 @@ async function waitForServer(url, attempts = 100) {
   throw new Error(`Command Center server did not answer at ${url}`)
 }
 
+// Resolves when nothing listens on 127.0.0.1:port, rejects when something does. Without this an
+// orphaned server from an earlier run answers the readiness poll, the new process dies with
+// EADDRINUSE unseen, and the worker silently runs on a database full of old tasks.
+function assertPortFree(port) {
+  return new Promise((resolvePort, reject) => {
+    const probe = createServer()
+    probe.once('error', (err) => {
+      reject(
+        new Error(
+          `Port ${port} is already in use (${err.code || err.message}): a server from an earlier run is probably still running. ` +
+            `Stop it with: pkill -f "serve --port ${port}"`,
+        ),
+      )
+    })
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolvePort()))
+  })
+}
+
 export async function startScratchServer(port) {
+  await assertPortFree(port)
   const dataDir = mkdtempSync(join(tmpdir(), 'cc-ui-test-'))
   // CC_SECRETS_DIR and CC_BACKUP_DIR keep the test server out of this machine's real secret store
   // and real backup folder: the settings test sets a backup passphrase.
@@ -69,10 +89,31 @@ export async function startScratchServer(port) {
     }
   }
 
-  const server = spawn(process.execPath, ['src/cli.ts', 'serve', '--port', String(port)], { cwd: CC, env, stdio: 'ignore' })
+  const server = spawn(process.execPath, ['src/cli.ts', 'serve', '--port', String(port)], {
+    cwd: CC,
+    env,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  // Keep the tail of stderr so a server that dies at start can say why.
+  let stderrTail = ''
+  server.stderr.on('data', (chunk) => {
+    stderrTail = (stderrTail + chunk).split('\n').slice(-20).join('\n')
+  })
+  const died = new Promise((_, reject) => {
+    server.once('exit', (code, signal) => {
+      const lastLines = stderrTail.trim().split('\n').slice(-10).join('\n')
+      reject(
+        new Error(
+          `Command Center server on port ${port} exited before it answered (${signal ? `signal ${signal}` : `code ${code}`})` +
+            (lastLines ? `:\n${lastLines}` : ''),
+        ),
+      )
+    })
+  })
+  died.catch(() => {}) // handled by the race below, or ignored once the server is up and stops later
   const url = `http://127.0.0.1:${port}`
   try {
-    await waitForServer(`${url}/`)
+    await Promise.race([waitForServer(`${url}/`), died])
   } catch (err) {
     server.kill()
     rmSync(dataDir, { recursive: true, force: true })

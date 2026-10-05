@@ -114,7 +114,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
-  const { narrow900, narrow600, phone } = useNarrowBreakpoints()
+  const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
   const { view, setSort, setGroup, toggleFilter, clearFilters } = useViewState()
 
   const projectNameById = useMemo(() => {
@@ -129,8 +129,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   )
 
   const visibleColumns = useMemo(
-    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, panelOpen: Boolean(detailTaskId) }),
-    [columns.hidden, narrow900, narrow600, phone, detailTaskId]
+    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, narrowPanel, panelOpen: Boolean(detailTaskId) }),
+    [columns.hidden, narrow900, narrow600, phone, narrowPanel, detailTaskId]
   )
   const gridTemplateColumns = useMemo(
     () => buildGridTemplate(visibleColumns, columns.widths, { phone }),

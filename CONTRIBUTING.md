@@ -96,11 +96,11 @@ The dashboard is built from layers with crisp edges, so surfaces never blend tog
 
 One breakpoint for the whole dashboard: phone is `max-width: 640px`. Static layout differences live in `src/index.css` under a media query on class names; layout computed in JavaScript (the My tasks grid template) uses `useNarrowBreakpoints` in `src/command-center/columnsState.js`, which exposes `phone` alongside the older 900 and 600 flags. No Tailwind breakpoint classes.
 
-Under 640px the navigation is the tab bar in `src/BottomNav.jsx` (More opens the drawer), new tasks come from `src/command-center/NewTaskSheet.jsx` behind the floating New task button, and the dashboard installs from `public/manifest.webmanifest` (icons by `node scripts/icons.mjs`). Layout work is verified with screenshots, and they are one command.
+Above 640px the navigation is the sidebar in `src/Sidebar.jsx`, which lists every view and leaves the top bar without a menu button. Under 640px it is the tab bar in `src/BottomNav.jsx` (More opens the drawer), new tasks come from `src/command-center/NewTaskSheet.jsx` behind the floating New task button, and the dashboard installs from `public/manifest.webmanifest` (icons by `node scripts/icons.mjs`). Layout work is verified with screenshots, and they are one command.
 
 ## Screenshots
 
-`npm run shots` builds the dashboard, starts the same scratch server the UI tests use, and photographs every view and its main states (the task panel, the new task sheet, the due date and sort menus, the drawer, the inbox accept form) at 390 and 1280px in both themes: about 60 shots in about two minutes. The states are the tests in `e2e/shots.spec.js`; add one there when a new view, panel, sheet, or menu appears.
+`npm run shots` builds the dashboard, starts the same scratch server the UI tests use, and photographs every view and its main states (the task panel, the task panel with a thread, the new task sheet, the due date and sort menus, the drawer, the inbox accept form) at 390 and 1280px in both themes: about 200 shots in about three minutes. The states are the tests in `e2e/shots.spec.js`; add one there when a new view, panel, sheet, or menu appears.
 
 Files go under `.shots/` (ignored by git): `current/` for this run, `baseline/` for the last accepted look, `diff/` for the changed pixels, and `index.html`, a gallery with changed shots first. The run ends with a list of what changed since the baseline. Read each of those, at both widths and in both themes, fix what is wrong, and then `npm run shots -- --accept` to make the current shots the baseline. `--only mytasks,inbox` limits the run to some views and `--no-build` reuses the last build.
 

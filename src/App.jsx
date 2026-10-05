@@ -11,8 +11,10 @@ import DigestTab from './command-center/DigestTab'
 import GithubTab from './command-center/GithubTab'
 import GoalsTab from './command-center/GoalsTab'
 import ProjectsTab from './command-center/ProjectsTab'
+import ThreadsTab from './command-center/ThreadsTab'
 import TopBar from './TopBar'
 import NavDrawer from './NavDrawer'
+import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
@@ -33,6 +35,7 @@ const PRIMARY_ITEMS = [
 const MORE_ITEMS = [
   { id: 'goals', label: 'Goals' },
   { id: 'projects', label: 'Projects' },
+  { id: 'threads', label: 'Threads' },
   { id: 'rules', label: 'Rules' },
   { id: 'digest', label: 'Digest' },
   { id: 'github', label: 'GitHub' },
@@ -47,7 +50,7 @@ const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, CONNECTION_ITEM].m
 const VIEW_ALIASES = { settings: 'connection' }
 
 // Accepted `?view=` query values: mytasks (the default; also the value the URL is cleared to),
-// inbox, board, goals, projects, rules, digest, github, connection (or its alias settings). Anything else is ignored and the default tab is used instead.
+// inbox, board, goals, projects, threads, rules, digest, github, connection (or its alias settings). Anything else is ignored and the default tab is used instead.
 function readInitialTab() {
   try {
     const raw = new URLSearchParams(window.location.search).get('view')
@@ -132,7 +135,15 @@ export default function App() {
 
   return (
     <ConnectionProvider>
-      <div style={{ minHeight: '100vh' }}>
+      <div className="app-shell">
+        <Sidebar
+          primaryItems={PRIMARY_ITEMS}
+          moreItems={MORE_ITEMS}
+          connectionItem={CONNECTION_ITEM}
+          activeTab={tab}
+          onSelect={setTab}
+        />
+        <div className="app-content">
         <TopBar
           title={currentTitle}
           onMenuClick={(e) => openDrawer(e?.currentTarget)}
@@ -174,6 +185,7 @@ export default function App() {
             />
           )}
           {tab === 'board' && <BoardTab />}
+          {tab === 'threads' && <ThreadsTab />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}
           {tab === 'github' && <GithubTab />}
@@ -196,6 +208,7 @@ export default function App() {
         {chatMockup.enabled && (
           <ChatPanelMockup open={chatOpen} onClose={() => setChatOpen(false)} openButtonRef={chatButtonRef} />
         )}
+        </div>
       </div>
     </ConnectionProvider>
   )

@@ -17,6 +17,8 @@ const WRITE_TOOL_NAMES = new Set([
   'update_goal',
   'link_goal',
   'create_project',
+  'create_thread',
+  'post_to_thread',
 ]);
 
 test('the catalog is non-empty', () => {
@@ -88,7 +90,7 @@ test('accept_inbox_item and reject_inbox_item exist and are write tools (inbox i
 });
 
 test('the expected read-only search/list/get tools are present and marked readonly', () => {
-  for (const name of ['search_tasks', 'get_task', 'list_projects', 'list_sections', 'get_view', 'list_inbox', 'list_goals', 'get_goal']) {
+  for (const name of ['search_tasks', 'get_task', 'list_projects', 'list_sections', 'get_view', 'list_inbox', 'list_goals', 'get_goal', 'list_threads', 'get_thread']) {
     const entry = TOOL_CATALOG.find((e) => e.name === name);
     assert.ok(entry, `${name} missing from catalog`);
     assert.equal(entry!.readonly, true);

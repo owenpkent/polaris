@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import MyTasksTab from './MyTasksTab'
+import { BREAKPOINT_QUERIES } from './columnsState'
 
 const api = {}
 let connected = true
@@ -8,7 +9,7 @@ let connected = true
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected, api }) }))
 vi.mock('./useEvents', () => ({ useEventRefresh: () => {} }))
 
-const PHONE_QUERIES = ['(max-width: 900px)', '(max-width: 600px)', '(max-width: 640px)']
+const PHONE_QUERIES = Object.values(BREAKPOINT_QUERIES)
 
 // jsdom has no window.matchMedia. This stub reports every breakpoint from one width and lets a
 // test change that width and fire the change listeners, like a phone turned to landscape.

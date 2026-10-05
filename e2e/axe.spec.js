@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { readFileSync } from 'node:fs'
 import { test, expect } from './fixtures.js'
-import { openView, openTask } from './support.js'
+import { openView, openTask, isPhone } from './support.js'
 
 // The automated accessibility audit (initiatives/ui-ux-testing.md, phase 2): axe-core over every
 // view in its resting state and over the panels, drawer, menus, and forms that open on top of
@@ -27,7 +27,7 @@ import { openView, openTask } from './support.js'
 // This complements the hand-written checks in accessibility.spec.js rather than replacing them:
 // axe's target-size rule stops at 24px, and the bar here is 44px.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'rules', 'digest', 'github', 'connection']
+const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'threads', 'rules', 'digest', 'github', 'connection']
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']
 const FAILS = new Set(['serious', 'critical'])
 const ALLOW = JSON.parse(readFileSync(new URL('./axe-allow.json', import.meta.url), 'utf8'))
@@ -97,6 +97,7 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
   }
 
   test('the navigation drawer', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only: the desktop sidebar is audited with every view at rest')
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible()

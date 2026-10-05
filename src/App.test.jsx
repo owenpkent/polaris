@@ -21,6 +21,7 @@ vi.mock('./command-center/AgentSettings', () => ({ default: () => null }))
 vi.mock('./command-center/BackupSettings', () => ({ default: () => null }))
 vi.mock('./NavDrawer', () => ({ default: () => <div data-testid="nav-drawer" /> }))
 vi.mock('./BottomNav', () => ({ default: () => <div data-testid="bottom-nav" /> }))
+vi.mock('./Sidebar', () => ({ default: () => <div data-testid="sidebar" /> }))
 
 const ALL_TAB_TESTIDS = [
   'tab-goals',
