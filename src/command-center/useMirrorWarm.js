@@ -61,6 +61,9 @@ export function useMirrorWarm() {
         () => api.getSync(),
         () => api.githubStatus(),
         () => api.githubRepos(),
+        // The Threads tab reads one of these two filters; the copy is keyed by the whole URL.
+        () => api.getThreads('open'),
+        () => api.getThreads('closed'),
       ])
       // Offline, those answers came from the copy itself: there is nothing newer to fetch.
       if (getOfflineState().offline) return

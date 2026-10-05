@@ -278,3 +278,53 @@ test('search_posts: a hit on a third-party task carries the marker on its title 
     }
   });
 });
+
+test('get_task keeps a hidden thread\'s authors out of the task history too, on both endpoints', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Hidden authors' }, 'human');
+  await withServer(app, {}, async (base) => {
+    const scribe = await connect(base, '/mcp', 'scribe');
+    const ro = await connect(base, '/mcp/readonly');
+    try {
+      const opened = await call(scribe, 'create_thread', { task_id: task.id });
+      const threadId = opened.structuredContent!.thread.id as string;
+      const claim = await call(scribe, 'post_to_thread', { thread_id: threadId, type: 'claim', body: 'It is the cache.' });
+      const postId = claim.structuredContent!.post.id as string;
+      app.store.addPost(threadId, { type: 'question', body: 'Which cache?' }, 'human', 'human');
+      app.store.setPostStatus(postId, 'accepted', 'human');
+
+      // Before the owner hides authors, the history names them, so the test below is not vacuous.
+      const open = await call(ro, 'get_task', { task_id: task.id });
+      assert.ok(open.content[0].text.includes('post.added (agent scribe)'));
+      assert.ok(JSON.stringify(open.structuredContent!.history).includes(postId));
+
+      app.store.setThreadOptions(threadId, { authorHidden: true }, 'human');
+      for (const client of [ro, scribe]) {
+        const res = await call(client, 'get_task', { task_id: task.id });
+        assert.ok(!res.isError, res.content[0].text);
+        const text = res.content[0].text;
+        assert.ok(!text.includes('scribe'), 'no agent name in the text');
+        assert.match(text, /post\.added \(participant\)/);
+        assert.ok(!/(post|thread)\.[a-z_]+ \((human|agent)/.test(text), 'no thread event names the human or an agent');
+        const history = res.structuredContent!.history as { kind: string; actor: string; actorName: string | null; payload: Record<string, unknown> }[];
+        const threadEvents = history.filter((e) => /^(post|thread)\./.test(e.kind));
+        assert.ok(threadEvents.length >= 4, 'created, two posts, a verdict, and the option change');
+        for (const e of threadEvents) {
+          assert.equal(e.actor, 'participant', `${e.kind} actor is masked`);
+          assert.equal(e.actorName, null, `${e.kind} name is gone`);
+          assert.ok(!('postId' in e.payload), `${e.kind} carries no way back to a post`);
+        }
+        assert.ok(!JSON.stringify(res.structuredContent).includes('scribe'), 'the name is nowhere in the structured content');
+        assert.ok(!JSON.stringify(history).includes(postId), 'the post id is nowhere in the history');
+        // Events that are not about the thread keep their actor: the trail is masked, not erased.
+        assert.ok(history.some((e) => e.kind === 'task.created' && e.actor === 'human'));
+      }
+      // The store still has the whole trail for the owner.
+      assert.ok(app.store.taskHistory(task.id).some((e) => e.kind === 'post.added' && e.actorName === 'scribe'));
+    } finally {
+      await scribe.close();
+      await ro.close();
+    }
+  });
+});

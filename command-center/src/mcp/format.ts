@@ -59,7 +59,8 @@ export function inboxLine(t: Task): string {
 
 export function taskDetailText(
   task: Task,
-  extra: { subtasks: Task[]; blockers: Task[]; blocking: Task[]; comments: Comment[]; links: Link[]; history: CcEvent[] },
+  // The history may come masked (see maskHistory in tools-read.ts), so the actor is any string here.
+  extra: { subtasks: Task[]; blockers: Task[]; blocking: Task[]; comments: Comment[]; links: Link[]; history: (Omit<CcEvent, 'actor'> & { actor: string })[] },
 ): string {
   const lines: string[] = [
     `${JSON.stringify(task.title)} {${task.id}}${untrusted(task)}`,

@@ -1123,6 +1123,31 @@ test('9. what counts is the owner\'s call alone: no other actor, and no MCP tool
   assert.ok(app.store.eventsSince(before).every((e) => e.actor === 'human'));
 });
 
+test('9. hiding a thread\'s authors holds in every MCP read of it: the thread, the library, and the task\'s own history', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Hidden' }, 'human');
+  const thread = app.store.createThread(task.id, null, { actor: 'agent', name: 'scribe' });
+  const post = app.store.addPost(thread.id, { type: 'result', body: 'Holds.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  app.store.setPostStatus(post.id, 'accepted', 'human');
+  app.store.setThreadOptions(thread.id, { authorHidden: true }, 'human');
+  await withServer(app, {}, async (base) => {
+    const client = await mcpClient(base, '/mcp/readonly', TEST_TOKENS.mcpReadonly);
+    try {
+      for (const [name, args] of [['get_thread', { task_id: task.id }], ['search_posts', { type: 'result' }], ['get_task', { task_id: task.id }]] as const) {
+        const res = await call(client, name, args);
+        assert.ok(!res.isError, res.content[0].text);
+        assert.ok(!res.content[0].text.includes('scribe'), `${name} text names nobody`);
+        assert.ok(!JSON.stringify(res.structuredContent).includes('scribe'), `${name} JSON names nobody`);
+      }
+    } finally {
+      await client.close();
+    }
+  });
+  // The owner's own trail is untouched.
+  assert.ok(app.store.taskHistory(task.id).some((e) => e.actorName === 'scribe'));
+});
+
 test('9. the daily cap binds agents, never the owner, and a fork changes the original task only by giving it a subtask', () => {
   const store = openStore(':memory:');
   const task = store.createTask({ title: 'Challenge', priority: 'high', assignee: 'scribe' }, 'human');

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runView } from '../automation/index.ts';
-import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type Post, type PostSearchHit, type TaskFilter, type Thread } from '../core/index.ts';
+import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type CcEvent, type Json, type Post, type PostSearchHit, type TaskFilter, type Thread } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { POSTS_ARE_DATA, blockedBlock, inboxLine, postHitText, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
 import {
@@ -78,7 +78,7 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
     const blocking = app.store.blocking(task.id);
     const comments = app.store.listComments(task.id);
     const links = app.store.listLinks(task.id);
-    const history = app.store.taskHistory(task.id).slice(-10);
+    const history = maskHistory(app, app.store.taskHistory(task.id).slice(-10));
     const text = taskDetailText(task, { subtasks, blockers, blocking, comments, links, history });
     return ok(text, { task, subtasks, blockers, blocking, comments, links, history });
   }));
@@ -206,6 +206,34 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
 type MaskedPost = Omit<Post, 'author'> & { author: Post['author'] | 'participant' };
 
 const maskAuthor = (p: Post): MaskedPost => ({ ...p, author: 'participant', authorName: null });
+
+/** A task-history event as get_task shows it: the actor may read "participant" where a thread hides its authors. */
+type MaskedEvent = Omit<CcEvent, 'actor'> & { actor: CcEvent['actor'] | 'participant' };
+
+/**
+ * Hiding a thread's authors has to hold in the task's history too: a `post.added` event names
+ * its actor and carries the post id, which would hand an agent the mapping get_thread withheld.
+ * Every thread and post event on a hidden thread loses its actor here, and `post.added` its
+ * post id, so neither the name nor the way back to a post survives. The store and the dashboard
+ * keep the full trail: this runs only on what MCP returns.
+ */
+function maskHistory(app: App, events: CcEvent[]): MaskedEvent[] {
+  const hidden = new Map<string, boolean>();
+  const hides = (threadId: Json | undefined): boolean => {
+    if (typeof threadId !== 'string') return false;
+    let value = hidden.get(threadId);
+    if (value === undefined) {
+      value = app.store.getThread(threadId)?.authorHidden ?? false;
+      hidden.set(threadId, value);
+    }
+    return value;
+  };
+  return events.map((e) => {
+    if (!/^(post|thread)\./.test(e.kind) || !hides(e.payload.threadId)) return e;
+    const { postId: _postId, ...payload } = e.payload;
+    return { ...e, actor: 'participant', actorName: null, payload };
+  });
+}
 
 /** A thread by its id or by its task's id. Exactly one of the two is required. */
 export function resolveThread(store: App['store'], args: { thread_id?: string; task_id?: string }): Thread {
