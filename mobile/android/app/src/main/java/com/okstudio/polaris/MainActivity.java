@@ -33,8 +33,8 @@ public class MainActivity extends BridgeActivity {
         if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
         String type = intent.getType();
         if (type == null || !type.startsWith("text/")) return;
-        String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-        String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+        String text = stringExtra(intent, Intent.EXTRA_TEXT);
+        String subject = stringExtra(intent, Intent.EXTRA_SUBJECT);
         boolean hasText = text != null && !text.isEmpty();
         boolean hasSubject = subject != null && !subject.isEmpty();
         if (!hasText && !hasSubject) return;
@@ -44,5 +44,12 @@ public class MainActivity extends BridgeActivity {
         if (hasText) url.appendQueryParameter("share-text", text);
         intent.setAction(Intent.ACTION_VIEW);
         intent.setData(url.build());
+    }
+
+    // Many apps share styled text (a SpannableString), for which getStringExtra returns null, so
+    // the extra is read as a CharSequence and flattened to plain text.
+    private static String stringExtra(Intent intent, String name) {
+        CharSequence value = intent.getCharSequenceExtra(name);
+        return value == null ? null : value.toString();
     }
 }
