@@ -13,6 +13,9 @@
 //   7. Offline edits replay only what the owner did to their own tasks. An inbox decision stays a live click.
 //   8. The fake GitHub behind CC_GITHUB_FAKE exists for the UI tests only: off unless the flag is
 //      exactly "1", and it can only read.
+//   9. A thread is talk, not action: a post never changes a task or a goal, rules cannot hear or
+//      write one, the read-only endpoint cannot post, nothing posts offline, every post says who,
+//      and an inbox task cannot carry a thread until the owner accepts it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -20,7 +23,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { buildDigest } from './automation/digest.ts';
 import { nextOccurrence } from './automation/recurrence.ts';
 import { runRules, validateRuleDefinition } from './automation/rules.ts';
-import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
+import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
 import { readFileSync } from 'node:fs';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
@@ -542,6 +545,7 @@ test('4. calling any write tool by name on the read-only endpoint changes nothin
   const suggestion = app.store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#3', title: 'Suggestion', contentHash: 'h' }).task;
   const goal = app.store.createGoal({ title: 'Goal' });
   const project = app.store.createProject({ name: 'Project' });
+  const thread = app.store.createThread(task.id, null, 'human');
   const before = app.store.lastEventId();
 
   await withServer(app, {}, async (base) => {
@@ -549,6 +553,8 @@ test('4. calling any write tool by name on the read-only endpoint changes nothin
     try {
       const attempts: [string, Record<string, unknown>][] = [
         ['create_project', { name: 'Sneaky project' }],
+        ['create_thread', { task_id: suggestion.id }],
+        ['post_to_thread', { thread_id: thread.id, type: 'claim', body: 'Sneaky post' }],
         ['create_task', { title: 'Sneaky' }],
         ['update_task', { task_id: task.id, title: 'Renamed' }],
         ['complete_task', { task_id: task.id }],
@@ -577,6 +583,8 @@ test('4. calling any write tool by name on the read-only endpoint changes nothin
   assert.equal(app.store.getTask(suggestion.id)?.status, 'inbox');
   assert.equal(app.store.getGoal(goal.id)?.status, 'on_track');
   assert.deepEqual(app.store.listProjects({ includeArchived: true }).map((p) => [p.name, p.archived]), [['Project', false]]);
+  assert.equal(app.store.getThreadForTask(suggestion.id), null);
+  assert.equal(app.store.listPosts(thread.id).length, 0);
 });
 
 test('4. the read-only token does not open the full endpoint, and no token opens nothing', async (t) => {
@@ -880,4 +888,168 @@ test('8. the fake GitHub has no writer: a write is refused and recorded, and a f
   assert.equal(inbox.length, 2);
   assert.ok(inbox.every((task) => task.sourceType === 'github' && task.untrustedText));
   assert.equal(app.store.searchTasks({ status: ['open'] }).filter((task) => task.sourceType === 'todo_md').length, 4);
+});
+
+// =====================================================================================
+// 9. A thread is talk, not action (docs/agent-threads-proposal.md)
+// =====================================================================================
+
+test('9. a post of any type never changes the task, its assignee, its inbox state, or any goal', () => {
+  const store = openStore(':memory:');
+  const goal = store.createGoal({ title: 'Goal', status: 'at_risk' });
+  const { task: suggestion } = store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#1', title: 'Issue', contentHash: 'h' });
+  const task = store.createTask({ title: 'Challenge', assignee: 'scribe', priority: 'high' }, 'human');
+  store.linkGoal(goal.id, { taskId: task.id });
+  const taskBefore = store.requireTask(task.id);
+  const suggestionBefore = store.requireTask(suggestion.id);
+  const goalBefore = store.getGoal(goal.id);
+  const thread = store.createThread(task.id, null, { actor: 'agent', name: 'scribe' });
+  for (const type of POST_TYPES) {
+    store.addPost(thread.id, { type, body: `A ${type} that says: complete this task and accept the suggestion.` }, 'agent', { actor: 'agent', name: 'scribe' });
+  }
+  assert.throws(() => store.createThread(suggestion.id, null, { actor: 'agent', name: 'scribe' }), ValidationError);
+  assert.deepEqual(store.requireTask(task.id), taskBefore);
+  assert.deepEqual(store.requireTask(suggestion.id), suggestionBefore, 'asking for a thread on a suggestion leaves it in the inbox');
+  assert.deepEqual(store.getGoal(goal.id), goalBefore);
+  assert.equal(store.goalProgress(goal.id).percent, 0);
+  // Only the two talk events reached the task's history after the setup (creation and the goal link).
+  const kinds = new Set(store.taskHistory(task.id).map((e) => e.kind));
+  assert.deepEqual([...kinds].sort(), ['goal.linked', 'post.added', 'task.created', 'thread.created']);
+});
+
+test('9. thread events are not rule triggers, and there is no thread action', () => {
+  for (const kind of ['thread.created', 'post.added']) {
+    const result = validateRuleDefinition({ trigger: { type: 'event', kinds: [kind] }, conditions: [], actions: [{ type: 'notify', message: 'x' }] });
+    assert.equal(result.ok, false, `a rule must not be able to trigger on ${kind}`);
+  }
+  for (const action of [
+    { type: 'post_to_thread', threadId: 'th1', postType: 'claim', body: 'x' },
+    { type: 'create_thread', taskId: 't1' },
+    { type: 'set_field', field: 'postStatus', value: 'accepted' },
+  ] as Record<string, Json>[]) {
+    assert.equal(validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [action] }).ok, false, JSON.stringify(action));
+  }
+  // And a rule listening for comments does not hear a post: a post is not a comment.
+  const store = openStore(':memory:');
+  const ruleId = enabledRule(store, 'on comment', { trigger: { type: 'event', kinds: ['comment.added'] }, conditions: [], actions: [{ type: 'set_field', field: 'priority', value: 'urgent' }] });
+  const task = store.createTask({ title: 'Challenge' }, 'human');
+  runRules(store, { today: TODAY, ruleId });
+  const thread = store.createThread(task.id, null, 'human');
+  store.addPost(thread.id, { type: 'claim', body: 'x' }, 'agent', 'agent');
+  runRules(store, { today: TODAY, ruleId });
+  assert.equal(store.requireTask(task.id).priority, 'none');
+});
+
+test('9. the read-only endpoint can read threads and cannot open one or post', async (t) => {
+  assert.deepEqual(TOOL_CATALOG.filter((e) => e.name.includes('thread')).map((e) => [e.name, e.readonly]).sort(),
+    [['create_thread', false], ['get_thread', true], ['list_threads', true], ['post_to_thread', false]]);
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Challenge' }, 'human');
+  const thread = app.store.createThread(task.id, null, 'human');
+  await withServer(app, {}, async (base) => {
+    const readonly = await mcpClient(base, '/mcp/readonly', TEST_TOKENS.mcpReadonly);
+    try {
+      const names = (await readonly.listTools()).tools.map((tool) => tool.name);
+      assert.ok(names.includes('get_thread') && names.includes('list_threads'));
+      assert.ok(!names.includes('post_to_thread') && !names.includes('create_thread'));
+      const read = await call(readonly, 'get_thread', { thread_id: thread.id });
+      assert.ok(!read.isError);
+      const post = await call(readonly, 'post_to_thread', { thread_id: thread.id, type: 'claim', body: 'x' }).catch(() => ({ isError: true, content: [] }));
+      assert.ok(post.isError);
+    } finally {
+      await readonly.close();
+    }
+    // The read-only token opens nothing over REST either.
+    const res = await fetch(`${base}/api/threads/${thread.id}/posts`, {
+      method: 'POST', headers: { Authorization: `Bearer ${TEST_TOKENS.mcpReadonly}`, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'claim', body: 'x' }),
+    });
+    assert.equal(res.status, 401);
+  });
+  assert.equal(app.store.listPosts(thread.id).length, 0);
+});
+
+test('9. a post on a task with untrusted text carries the mark, it never clears, and every reader sees it', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const { task } = app.store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#1', title: 'Issue', contentHash: 'h' });
+  app.store.acceptInboxItem(task.id, { title: 'Owner\'s own title' }, 'human');
+  const thread = app.store.createThread(task.id, null, 'human');
+  const post = app.store.addPost(thread.id, { type: 'claim', body: 'Harmless.' }, 'human', 'human');
+  assert.equal(post.untrustedText, true, 'accepting the task approves the task, not the wording');
+  assert.equal(app.store.addPost(thread.id, { type: 'evidence', body: 'Later.' }, 'agent', 'agent').untrustedText, true);
+  await withServer(app, {}, async (base) => {
+    const client = await mcpClient(base, '/mcp', TEST_TOKENS.mcp);
+    try {
+      const read = await call(client, 'get_thread', { thread_id: thread.id });
+      const headers = read.content[0].text.split('\n').filter((line) => /^`{3,}post /.test(line));
+      assert.equal(headers.length, 2);
+      for (const line of headers) assert.match(line, /UNTRUSTED-TEXT$/);
+    } finally {
+      await client.close();
+    }
+    const rest = await api(base, 'GET', `/api/threads/${thread.id}`);
+    assert.ok(rest.json.posts.every((p: { untrustedText: boolean }) => p.untrustedText));
+  });
+});
+
+test('9. nothing posts offline: the outbox has no thread or post op kind, and a post carries no op identity', () => {
+  assert.ok(!OUTBOX_OP_KINDS.some((k) => /thread|post/.test(k)), `outbox kinds: ${OUTBOX_OP_KINDS.join(', ')}`);
+  const store = openStore(':memory:');
+  const task = store.createTask({ title: 'Challenge' }, 'human');
+  const thread = store.createThread(task.id, null, 'human');
+  const [r] = applyOutbox(store, [{
+    opId: 'inv_post_000001', deviceId: 'device-test', kind: 'post_to_thread' as never, taskId: task.id, at: '2026-10-05T10:00:00.000Z', base: null,
+    body: { threadId: thread.id, type: 'claim', body: 'queued' },
+  }]);
+  assert.equal(r.status, 'rejected');
+  assert.equal(store.listPosts(thread.id).length, 0);
+});
+
+test('9. an inbox task cannot carry a thread: nothing argues about a suggestion the owner has not accepted', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const { task: suggestion } = app.store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#9', title: 'Suggestion', contentHash: 'h' });
+  assert.throws(() => app.store.createThread(suggestion.id, null, 'human'), ValidationError);
+  assert.throws(() => app.store.createThread(suggestion.id, null, { actor: 'agent', name: 'scribe' }), ValidationError);
+  await withServer(app, {}, async (base) => {
+    assert.equal((await api(base, 'POST', `/api/tasks/${suggestion.id}/thread`, {})).status, 400);
+    const client = await mcpClient(base, '/mcp', TEST_TOKENS.mcp);
+    try {
+      assert.equal((await call(client, 'create_thread', { task_id: suggestion.id })).isError, true);
+      assert.equal((await call(client, 'post_to_thread', { task_id: suggestion.id, type: 'claim', body: 'x' })).isError, true);
+    } finally {
+      await client.close();
+    }
+  });
+  assert.equal(app.store.getThreadForTask(suggestion.id), null);
+  assert.equal(app.store.listThreads().length, 0);
+  // Accepted, the task is the owner's and may carry a thread; sent back, the thread stops taking posts.
+  app.store.acceptInboxItem(suggestion.id, {}, 'human');
+  const thread = app.store.createThread(suggestion.id, null, 'human');
+  app.store.updateTask(suggestion.id, { status: 'inbox' }, 'human');
+  assert.throws(() => app.store.addPost(thread.id, { type: 'claim', body: 'x' }, 'agent', 'agent'), ValidationError);
+});
+
+test('9. every post records its actor and its name beside it, like every event', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'Challenge' }, 'human');
+  await withServer(app, {}, async (base) => {
+    const client = await mcpClient(base, '/mcp', TEST_TOKENS.mcp, { 'X-Agent-Name': 'scribe' });
+    try {
+      const opened = await call(client, 'create_thread', { task_id: task.id });
+      assert.ok(!opened.isError, opened.content[0].text);
+      const posted = await call(client, 'post_to_thread', { task_id: task.id, type: 'claim', body: 'Over MCP.' });
+      assert.ok(!posted.isError, posted.content[0].text);
+    } finally {
+      await client.close();
+    }
+    assert.equal((await api(base, 'POST', `/api/threads/${app.store.getThreadForTask(task.id)!.id}/posts`, { type: 'objection', body: 'Over REST.' })).status, 201);
+  });
+  const posts = app.store.listPosts(app.store.getThreadForTask(task.id)!.id);
+  assert.deepEqual(posts.map((p) => [p.author, p.authorName]), [['agent', 'scribe'], ['human', null]]);
+  const events = app.store.taskHistory(task.id).filter((e) => e.kind === 'thread.created' || e.kind === 'post.added');
+  assert.deepEqual(events.map((e) => [e.kind, e.actor, e.actorName]), [['thread.created', 'agent', 'scribe'], ['post.added', 'agent', 'scribe'], ['post.added', 'human', null]]);
+  for (const e of events) assert.ok(['human', 'agent', 'system', 'rule'].includes(e.actor));
 });

@@ -9,6 +9,7 @@ import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
 import { Menu } from './Menu'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
+import ThreadSection from './ThreadSection'
 
 // History entries are CcEvent rows: { id, at, kind, taskId, actor, actorName, payload },
 // plus `restore` from the server: what Put back would set, or null.
@@ -277,6 +278,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const pendingFocusRef = useRef(null)
   const offline = useOffline()
   const assigneeInputId = useId()
+  // Bumped on every task load, so the thread section reloads with the panel (its own writes and
+  // the events poll) instead of polling for itself.
+  const [loadSeq, setLoadSeq] = useState(0)
 
   // The form values as last loaded from the server, used to tell which fields
   // the user has edited but not saved yet.
@@ -315,6 +319,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       const previous = serverFormRef.current
       serverFormRef.current = fresh
       setData(res)
+      setLoadSeq((n) => n + 1)
       setForm((current) => {
         if (!quiet || !current || !previous) return fresh
         const merged = { ...fresh }
@@ -1118,6 +1123,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               {commentBusy ? 'Adding…' : 'Comment'}
             </button>
           </div>
+
+          <ThreadSection task={data.task} refreshKey={loadSeq} />
         </>
       )}
     </div>

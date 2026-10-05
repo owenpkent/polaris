@@ -45,6 +45,25 @@ export async function createTask(request, testInfo, label, extra = {}) {
   return title
 }
 
+// Creates a task with a thread and the given posts straight through the REST API
+// (docs/agent-threads-proposal.md, stage 1), for a test or a shot that needs a thread to look at.
+// Each post is { type, body } and lands as the owner's. Returns the task's title and id.
+export async function seedThread(request, testInfo, label, posts = []) {
+  const headers = { Authorization: `Bearer ${TOKEN}` }
+  const title = `UI test thread ${label} ${testInfo.project.name} ${++created}`
+  const task = await request.post('/api/tasks', { headers, data: { title, dueAt: localToday() } })
+  expect(task.ok(), `create task failed: ${task.status()}`).toBeTruthy()
+  const { task: { id } } = await task.json()
+  const thread = await request.post(`/api/tasks/${id}/thread`, { headers, data: {} })
+  expect(thread.ok(), `create thread failed: ${thread.status()}`).toBeTruthy()
+  const { thread: { id: threadId } } = await thread.json()
+  for (const post of posts) {
+    const res = await request.post(`/api/threads/${threadId}/posts`, { headers, data: post })
+    expect(res.ok(), `post failed: ${res.status()}`).toBeTruthy()
+  }
+  return { title, id, threadId }
+}
+
 // Titles of real tasks. Inbox suggestions are stored as tasks with status "inbox" (and rejected
 // ones as "dropped"), so they are left out: only an accepted suggestion counts as a task.
 const ACTIVE = new Set(['open', 'in_progress', 'waiting'])

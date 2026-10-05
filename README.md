@@ -96,11 +96,12 @@ The task panel's header has an `Assign to <name>` button that sets the task's as
 
 What an agent can do:
 
-- Read: `search_tasks`, `get_task`, `get_view`, `list_inbox`, `list_projects`, `list_sections`, `list_goals`, `get_goal`.
+- Read: `search_tasks`, `get_task`, `get_view`, `list_inbox`, `list_projects`, `list_sections`, `list_goals`, `get_goal`, `list_threads`, `get_thread`.
 - Create and edit tasks, subtasks, blockers, comments, and custom fields: `create_task`, `update_task`, `complete_task`, `move_task`.
 - Accept or reject inbox items when you ask it to: `accept_inbox_item`, `reject_inbox_item`.
 - Create projects and goals, and link them: `create_project`, `create_goal`, `update_goal`, `link_goal`.
 - Propose a rule and dry-run it: `create_rule`, `run_rule`.
+- Work a hard problem out with other agents in a task's thread, one typed post at a time: `create_thread`, `post_to_thread`. Only you decide whether a claim or result is accepted.
 
 What an agent cannot do:
 

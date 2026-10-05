@@ -1,8 +1,8 @@
 // Human-facing task commands. Actor is always 'human'.
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
-import type { Priority, Store, Task, TaskStatus } from '../core/index.ts';
-import { ACTIVE_STATUSES } from '../core/index.ts';
+import type { Confidence, Post, PostType, Priority, Store, Task, TaskStatus } from '../core/index.ts';
+import { ACTIVE_STATUSES, CONFIDENCES, POST_TYPES } from '../core/index.ts';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
@@ -20,6 +20,14 @@ export function formatTask(store: Store, t: Task, today?: string): string {
     t.sourceType ? `<${t.sourceType}>` : '',
   ];
   return bits.filter(Boolean).join(' ');
+}
+
+/** One post for the terminal: the metadata line, then the body indented under it. */
+export function formatPost(p: Post): string {
+  const who = p.author === 'human' ? 'owner' : `agent${p.authorName ? ` ${p.authorName}` : ''}`;
+  const bits = [p.createdAt.slice(0, 16), p.id, p.type, who, p.confidence ? `confidence ${p.confidence}` : '', p.status ? `[${p.status}]` : '',
+    p.refs.length ? `refs ${p.refs.join(',')}` : '', p.untrustedText ? 'UNTRUSTED-TEXT' : ''];
+  return [bits.filter(Boolean).join(' '), ...p.body.split('\n').map((line) => `    ${line}`)].join('\n');
 }
 
 function resolveProjectId(store: Store, ref: string | undefined): string | undefined {
@@ -146,6 +154,51 @@ export const commands: Command[] = [
       const app = openApp();
       try {
         for (const id of f._) stdout(formatTask(app.store, app.store.rejectInboxItem(id, str(f.reason) ?? null, 'human')));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  // Threads (docs/agent-threads-proposal.md). The owner's own posts, so the actor is 'human'.
+  {
+    name: 'thread show',
+    summary: 'Show a task\'s discussion thread: its posts, oldest first',
+    usage: 'thread show <taskId> [--after <postId>] [--json]',
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const app = openApp();
+      try {
+        const task = app.store.requireTask(f._[0] ?? '');
+        const thread = app.store.getThreadForTask(task.id);
+        if (!thread) { stdout(`No thread on ${task.id}. Start one with "thread post ${task.id} --type question <body>".`); return 0; }
+        const posts = app.store.listPosts(thread.id, { after: str(f.after) ?? null });
+        if (f.json) { stdout(JSON.stringify({ thread, posts }, null, 2)); return 0; }
+        const out = [`${thread.title} (${thread.id}) on ${formatTask(app.store, task, app.today())}`, `${thread.status}, ${posts.length} post(s)${f.after ? ` after ${str(f.after)}` : ''}`];
+        for (const p of posts) out.push('', formatPost(p));
+        stdout(out.join('\n'));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'thread post',
+    summary: 'Post to a task\'s thread as the owner, opening the thread if there is none',
+    usage: `thread post <taskId> --type ${POST_TYPES.join('|')} [--confidence ${CONFIDENCES.join('|')}] [--refs <postId,postId>] [--reply-to <postId>] <body>`,
+    run(args, { openApp, stdout }) {
+      const f = parseFlags(args);
+      const [taskId, ...words] = f._;
+      const body = words.join(' ');
+      const type = str(f.type);
+      if (!taskId) throw new Error('A task id is required.');
+      if (!type || !(POST_TYPES as readonly string[]).includes(type)) throw new Error(`--type must be one of ${POST_TYPES.join(', ')}.`);
+      if (!body) throw new Error('A body is required.');
+      const refs = (str(f.refs) ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+      const app = openApp();
+      try {
+        const thread = app.store.createThread(app.store.requireTask(taskId).id, null, 'human');
+        const post = app.store.addPost(thread.id, {
+          type: type as PostType, body, confidence: (str(f.confidence) as Confidence | undefined) ?? null, refs, parentPostId: str(f['reply-to']) ?? null,
+        }, 'human', 'human');
+        stdout(formatPost(post));
         return 0;
       } finally { app.close(); }
     },

@@ -3,9 +3,9 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runView } from '../automation/index.ts';
-import { ACTIVE_STATUSES, ValidationError, type TaskFilter } from '../core/index.ts';
+import { ACTIVE_STATUSES, NotFoundError, ValidationError, type TaskFilter, type Thread } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
-import { blockedBlock, inboxLine, taskBlock, taskDetailText } from './format.ts';
+import { blockedBlock, inboxLine, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
 import {
   DEFAULT_SEARCH_STATUSES, ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES,
   guard, ok, resolveProject, resolveSectionRead,
@@ -142,4 +142,43 @@ export function registerReadTools(server: McpServer, app: App): void {
     const text = tasks.length ? tasks.map(inboxLine).join('\n') : 'Inbox is empty.';
     return ok(text, { tasks });
   }));
+
+  // Threads (docs/agent-threads-proposal.md). Read on both endpoints; the write half is in tools-write.ts.
+  server.registerTool('list_threads', {
+    description: desc('list_threads'),
+    annotations: { readOnlyHint: true },
+    inputSchema: { status: z.enum(['open', 'closed']).optional().describe('Default: every thread.') },
+  }, (args) => guard(() => {
+    const threads = app.store.listThreads(args.status ? { status: args.status } : {});
+    const text = threads.length ? threads.map(threadLine).join('\n') : 'No threads.';
+    return ok(text, { threads });
+  }));
+
+  server.registerTool('get_thread', {
+    description: desc('get_thread'),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      thread_id: z.string().optional(),
+      task_id: z.string().optional().describe('The task the thread hangs off, when thread_id is not known.'),
+      after: z.string().optional().describe('A post id: return only the posts made after it.'),
+      limit: z.number().int().positive().max(1000).optional().describe('Default 50.'),
+    },
+  }, (args) => guard(() => {
+    const thread = resolveThread(app.store, args);
+    const task = app.store.requireTask(thread.taskId);
+    const posts = app.store.listPosts(thread.id, { after: args.after ?? null, limit: args.limit ?? 50 });
+    const total = app.store.countPosts(thread.id);
+    return ok(threadText(thread, task, posts, { after: args.after ?? null, total }), { thread, task, posts, total });
+  }));
+}
+
+/** A thread by its id or by its task's id. Exactly one of the two is required. */
+export function resolveThread(store: App['store'], args: { thread_id?: string; task_id?: string }): Thread {
+  if (args.thread_id && args.task_id) throw new ValidationError('give thread_id or task_id, not both');
+  if (args.thread_id) return store.requireThread(args.thread_id);
+  if (!args.task_id) throw new ValidationError('thread_id or task_id is required');
+  const task = store.requireTask(args.task_id);
+  const thread = store.getThreadForTask(task.id);
+  if (!thread) throw new NotFoundError(`task ${task.id} has no thread`);
+  return thread;
 }

@@ -92,6 +92,68 @@ export interface Comment {
   createdAt: string;
 }
 
+// ---- threads (docs/agent-threads-proposal.md) ----
+
+/** One idea per post. The type is what the owner filters and counts by. */
+export const POST_TYPES = ['claim', 'evidence', 'objection', 'question', 'failed_attempt', 'summary', 'result'] as const;
+export type PostType = (typeof POST_TYPES)[number];
+/** The owner's verdict on a claim or a result. Only those two types carry one; it starts open. */
+export const POST_STATUSES = ['open', 'accepted', 'rejected', 'superseded'] as const;
+export type PostStatus = (typeof POST_STATUSES)[number];
+export const CONFIDENCES = ['low', 'medium', 'high'] as const;
+export type Confidence = (typeof CONFIDENCES)[number];
+/** The post types that carry a status. */
+export const JUDGED_POST_TYPES: readonly PostType[] = ['claim', 'result'];
+
+/** At most one per task: the discussion of the task that is the challenge. */
+export interface Thread {
+  id: string;
+  taskId: string;
+  title: string;
+  status: 'open' | 'closed';
+  /** The summary post the owner pinned as the current state, if any. Stage 2 sets it. */
+  pinnedPostId: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface Post {
+  id: string;
+  threadId: string;
+  parentPostId: string | null;
+  author: 'human' | 'agent';
+  /** The name an MCP connection self-declared for itself, when `author` was that connection. See ActorInput. */
+  authorName: string | null;
+  type: PostType;
+  body: string;
+  confidence: Confidence | null;
+  /** Set on claim and result posts only, by the owner. Null on every other type. */
+  status: PostStatus | null;
+  /** Ids of posts in the same thread this one answers or builds on. */
+  refs: string[];
+  /** Copied from the task when the post was made, and never cleared. */
+  untrustedText: boolean;
+  createdAt: string;
+}
+
+export interface NewPost {
+  type: PostType;
+  body: string;
+  confidence?: Confidence | null;
+  refs?: string[];
+  parentPostId?: string | null;
+}
+
+/** A thread with the counts the thread list shows. */
+export interface ThreadSummary {
+  thread: Thread;
+  taskTitle: string;
+  postCount: number;
+  openClaims: number;
+  objections: number;
+  results: number;
+}
+
 export interface Link {
   id: string;
   taskId: string;
@@ -118,6 +180,8 @@ export type EventKind =
   | 'task.source_gone'
   | 'task.sync_conflict'
   | 'comment.added'
+  | 'thread.created'
+  | 'post.added'
   | 'project.upserted'
   | 'rule.fired'
   | 'goal.created'
