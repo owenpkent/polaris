@@ -172,8 +172,11 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   const [draft, setDraft] = useState('')
   const [forkOpen, setForkOpen] = useState(false)
   const [forkTitle, setForkTitle] = useState('')
-  // The cap field as typed; the thread's value lands here on every load.
+  // The cap field as typed. The thread's value lands here on a load unless the owner is in the
+  // field or has changed it since the server last spoke: a poll must never eat a half-typed number.
   const [cap, setCap] = useState('')
+  const capInputRef = useRef(null)
+  const serverCapRef = useRef('')
   // The task the successor thread lives on, looked up once per successor id.
   const [successorTaskId, setSuccessorTaskId] = useState(null)
   const forkButtonRef = useRef(null)
@@ -193,7 +196,13 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
       setPosts(res?.posts || [])
       setTotal(typeof res?.total === 'number' ? res.total : (res?.posts || []).length)
       setPinnedFromServer(res?.pinned || null)
-      setCap(res?.thread?.dailyCap == null ? '' : String(res.thread.dailyCap))
+      const serverCap = res?.thread?.dailyCap == null ? '' : String(res.thread.dailyCap)
+      const previous = serverCapRef.current
+      serverCapRef.current = serverCap
+      setCap((current) => {
+        const focused = typeof document !== 'undefined' && document.activeElement === capInputRef.current
+        return focused || current !== previous ? current : serverCap
+      })
       setUnavailable(false)
       setError(null)
     } catch (err) {
@@ -225,7 +234,11 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   // Runs one owner action against the server, then reloads. The error banner reports a failure
   // and the thread on screen stays as it was.
   async function run(action, failure) {
-    if (busy) return false
+    if (busy) {
+      // A click that lands while a save is in flight is told so, never dropped on the floor.
+      setError('Another change is still saving. Try again.')
+      return false
+    }
     setBusy(true)
     try {
       await action()
@@ -366,6 +379,7 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
               <label htmlFor={capId} style={muted}>Daily cap per agent</label>
               <input
                 id={capId}
+                ref={capInputRef}
                 type="number"
                 inputMode="numeric"
                 min={1}

@@ -163,7 +163,7 @@ export function threadText(thread: Thread, task: Task, posts: Post[], opts: { af
 
 /** One search hit: where the post lives, then the post itself. Authors follow the thread's setting. */
 export function postHitText(hit: PostSearchHit, thread: Thread): string {
-  return `In thread ${JSON.stringify(hit.threadTitle)} {${hit.post.threadId}} on task ${JSON.stringify(hit.taskTitle)} {${hit.taskId}}:\n${postBlock(hit.post, { authorHidden: thread.authorHidden })}`;
+  return `In thread ${JSON.stringify(hit.threadTitle)} {${hit.post.threadId}} on task ${JSON.stringify(hit.taskTitle)} {${hit.taskId}}${hit.untrustedText ? ' UNTRUSTED-TEXT' : ''}:\n${postBlock(hit.post, { authorHidden: thread.authorHidden })}`;
 }
 
 export function projectSummaryMarkdown(

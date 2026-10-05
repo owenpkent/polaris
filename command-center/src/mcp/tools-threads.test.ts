@@ -198,6 +198,13 @@ test('thread tools: a pinned state comes first, hidden authors read as participa
       assert.equal(headers.length, 3, 'the pinned post and the two posts');
       for (const line of headers) assert.match(line, / by:participant /);
       assert.ok(!hidden.includes('scribe') && !hidden.includes('by:owner'), 'no name and no owner marker anywhere');
+      // The JSON an assistant reads beside the text keeps the same silence.
+      const hiddenJson = (await call(critic, 'get_thread', { task_id: task.id })).structuredContent!;
+      for (const p of [...hiddenJson.posts, hiddenJson.pinned]) {
+        assert.equal(p.author, 'participant', 'structured author is masked');
+        assert.equal(p.authorName, null, 'structured name is gone');
+      }
+      assert.ok(!JSON.stringify(hiddenJson).includes('scribe'), 'the name is nowhere in the structured content');
       const list = (await call(critic, 'list_threads')).content[0].text;
       assert.match(list, / open posts:2 open-claims:0 objections:0 unanswered:0 results:0 accepted:0 last-verdict:2026-/);
       assert.match(list, / pinned:po_[0-9a-z]+ authors-hidden daily-cap:1$/);
@@ -232,9 +239,40 @@ test('search_posts: the library, on both endpoints, honouring each thread\'s aut
       assert.equal(cache.structuredContent!.posts.length, 2);
       assert.ok(cache.content[0].text.includes('by:participant'), 'the second thread hides its authors');
       assert.ok(cache.content[0].text.includes('by:agent "scribe"'), 'the first does not');
+      type HitPost = { threadId: string; author: string; authorName: string | null };
+      const byThread = new Map<string, HitPost>(cache.structuredContent!.posts.map((h: { post: HitPost }): [string, HitPost] => [h.post.threadId, h.post]));
+      assert.deepEqual([byThread.get(second.id)!.author, byThread.get(second.id)!.authorName], ['participant', null], 'the hidden thread is masked in the JSON too');
+      assert.deepEqual([byThread.get(first.id)!.author, byThread.get(first.id)!.authorName], ['agent', 'scribe']);
       assert.deepEqual((await call(ro, 'search_posts', { task_id: second.taskId, query: 'index' })).structuredContent!.posts.map((h: { post: { id: string } }) => h.post.id), [r2.id]);
       assert.match((await call(ro, 'search_posts', { query: 'nothing like it' })).content[0].text, /^No posts match\./);
       assert.ok((await call(ro, 'search_posts', { type: 'verdict' })).isError);
+    } finally {
+      await ro.close();
+    }
+  });
+});
+
+test('search_posts: a hit on a third-party task carries the marker on its title line and in the structured flag', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const suggestion = app.store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#9', title: 'Issue title from GitHub', contentHash: 'h' }).task;
+  app.store.acceptInboxItem(suggestion.id, {}, 'human');
+  const thread = app.store.createThread(suggestion.id, null, 'human');
+  app.store.addPost(thread.id, { type: 'result', body: 'Holds.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  const own = app.store.createThread(app.store.createTask({ title: 'Own task' }, 'human').id, null, 'human');
+  app.store.addPost(own.id, { type: 'result', body: 'Holds too.' }, 'agent', { actor: 'agent', name: 'scribe' });
+  await withServer(app, {}, async (base) => {
+    const ro = await connect(base, '/mcp/readonly');
+    try {
+      const res = await call(ro, 'search_posts', { type: 'result' });
+      const lines = res.content[0].text.split('\n').filter((line) => line.startsWith('In thread '));
+      assert.equal(lines.length, 2);
+      const marked = lines.find((line) => line.includes(thread.id))!;
+      assert.match(marked, / UNTRUSTED-TEXT:$/, 'the title line of the GitHub task is marked');
+      assert.ok(!lines.find((line) => line.includes(own.id))!.includes('UNTRUSTED-TEXT'), 'the owner\'s own task is not');
+      const flags = new Map(res.structuredContent!.posts.map((h: { post: { threadId: string }; untrustedText: boolean }) => [h.post.threadId, h.untrustedText]));
+      assert.equal(flags.get(thread.id), true);
+      assert.equal(flags.get(own.id), false);
     } finally {
       await ro.close();
     }

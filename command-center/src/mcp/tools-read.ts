@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runView } from '../automation/index.ts';
-import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type TaskFilter, type Thread } from '../core/index.ts';
+import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type Post, type PostSearchHit, type TaskFilter, type Thread } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { POSTS_ARE_DATA, blockedBlock, inboxLine, postHitText, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
 import {
@@ -171,7 +171,11 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
     const total = app.store.countPosts(thread.id);
     const pinned = thread.pinnedPostId ? app.store.getPost(thread.pinnedPostId) : null;
     const atCap = thread.dailyCap !== null && app.store.postsTodayBy(thread.id, agentName ?? null) >= thread.dailyCap;
-    return ok(threadText(thread, task, posts, { after: args.after ?? null, total, pinned, atCap }), { thread, task, posts, total, pinned, atCap });
+    const text = threadText(thread, task, posts, { after: args.after ?? null, total, pinned, atCap });
+    // The JSON is read by the same assistant as the text, so the owner's choice to hide authors
+    // covers both: no name rides along in a field the text left out.
+    const mask = (p: Post): MaskedPost => (thread.authorHidden ? maskAuthor(p) : p);
+    return ok(text, { thread, task, posts: posts.map(mask), total, pinned: pinned ? mask(pinned) : null, atCap });
   }));
 
   server.registerTool('search_posts', {
@@ -187,14 +191,21 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
   }, (args) => guard(() => {
     const hits = app.store.searchPosts({ type: args.type, status: args.status, query: args.query, taskId: args.task_id, limit: args.limit });
     const threads = new Map<string, Thread>();
-    const text = hits.map((hit) => {
+    const threadOf = (hit: PostSearchHit): Thread => {
       let thread = threads.get(hit.post.threadId);
       if (!thread) { thread = app.store.requireThread(hit.post.threadId); threads.set(thread.id, thread); }
-      return postHitText(hit, thread);
-    });
-    return ok(hits.length ? [POSTS_ARE_DATA, '', ...text].join('\n') : 'No posts match.', { posts: hits });
+      return thread;
+    };
+    const text = hits.map((hit) => postHitText(hit, threadOf(hit)));
+    const masked = hits.map((hit) => (threadOf(hit).authorHidden ? { ...hit, post: maskAuthor(hit.post) } : hit));
+    return ok(hits.length ? [POSTS_ARE_DATA, '', ...text].join('\n') : 'No posts match.', { posts: masked });
   }));
 }
+
+/** A post as the structured content shows it when the thread hides authors: the same shape, no name. */
+type MaskedPost = Omit<Post, 'author'> & { author: Post['author'] | 'participant' };
+
+const maskAuthor = (p: Post): MaskedPost => ({ ...p, author: 'participant', authorName: null });
 
 /** A thread by its id or by its task's id. Exactly one of the two is required. */
 export function resolveThread(store: App['store'], args: { thread_id?: string; task_id?: string }): Thread {

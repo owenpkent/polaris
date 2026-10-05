@@ -181,6 +181,8 @@ export interface PostSearchHit {
   taskId: string;
   taskTitle: string;
   threadTitle: string;
+  /** The task's flag: the thread title defaults to the task's, so both titles here are third-party text when set. */
+  untrustedText: boolean;
 }
 
 export interface PostSearch {

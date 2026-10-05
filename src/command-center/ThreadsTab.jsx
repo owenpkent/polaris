@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { MessagesSquare } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
@@ -61,16 +61,22 @@ export default function ThreadsTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [detailTaskId, setDetailTaskId] = useState(null)
+  // Each request takes a number; an answer that is not the latest is dropped, so a slow fetch for
+  // Open threads cannot land under the Closed threads toggle after a faster one.
+  const requestSeq = useRef(0)
 
   const fetchThreads = useCallback(async () => {
+    const seq = ++requestSeq.current
     setError(null)
     try {
       const res = await api.getThreads(status)
+      if (seq !== requestSeq.current) return
       setRows(res.threads || [])
     } catch (err) {
+      if (seq !== requestSeq.current) return
       setError(err.message || 'Could not load threads.')
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [api, status])
 

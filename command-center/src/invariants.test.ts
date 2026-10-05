@@ -818,6 +818,10 @@ test('1. every MCP answer that repeats third-party text quotes it on one line wi
         ['create_thread', await call(full, 'create_thread', { task_id: suggestion.id })],
         ['list_threads', await call(readonly, 'list_threads')],
       ];
+      // A search hit names the thread and the task it lives in.
+      const thread = app.store.getThreadForTask(suggestion.id)!;
+      app.store.addPost(thread.id, { type: 'claim', body: 'A claim.' }, 'agent', { actor: 'agent', name: 'scribe' });
+      answers.push(['search_posts', await call(readonly, 'search_posts', { task_id: suggestion.id })]);
     } finally {
       await readonly.close();
       await full.close();
@@ -830,8 +834,10 @@ test('1. every MCP answer that repeats third-party text quotes it on one line wi
       assert.match(text, /UNTRUSTED-TEXT/, `${name}: the marker is present`);
       const structured = result.structuredContent as {
         task?: { untrustedText?: boolean }; tasks?: { untrustedText?: boolean }[]; threads?: { untrustedText?: boolean }[];
+        posts?: { untrustedText?: boolean }[];
       };
-      assert.equal(structured.task?.untrustedText ?? structured.tasks?.[0]?.untrustedText ?? structured.threads?.[0]?.untrustedText, true,
+      assert.equal(structured.task?.untrustedText ?? structured.tasks?.[0]?.untrustedText ?? structured.threads?.[0]?.untrustedText
+        ?? structured.posts?.[0]?.untrustedText, true,
         `${name}: the structured flag is kept`);
     }
   });

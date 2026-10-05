@@ -218,6 +218,26 @@ test('listPosts: the cursor follows insertion order, so two posts in the same mi
   assert.deepEqual(store.listPosts(thread.id, { after: lower }), []);
 });
 
+test('listThreads: an objection answered in the same millisecond by a reply with a lower id still counts as answered', () => {
+  const frozen = '2026-10-05T12:00:00.000Z';
+  const store = openStore(':memory:', { now: () => frozen });
+  const task = store.createTask({ title: 'Same instant' }, 'human');
+  const thread = store.createThread(task.id, null, 'human');
+  const objection = store.addPost(thread.id, { type: 'objection', body: 'But the lemma.' }, 'agent', { actor: 'agent', name: 'critic' });
+  const byParent = store.addPost(thread.id, { type: 'evidence', body: 'The lemma holds.', parentPostId: objection.id }, 'agent', { actor: 'agent', name: 'scribe' });
+  const second = store.addPost(thread.id, { type: 'objection', body: 'And the bound.' }, 'agent', { actor: 'agent', name: 'critic' });
+  const byRef = store.addPost(thread.id, { type: 'evidence', body: 'The bound holds.', refs: [second.id] }, 'agent', { actor: 'agent', name: 'scribe' });
+  const unanswered = store.addPost(thread.id, { type: 'objection', body: 'Nobody answers this.' }, 'agent', { actor: 'agent', name: 'critic' });
+  // Ids are random: give both answers ids that sort below their objections, in the same instant.
+  const low = (n: number) => `po_${String(n).padStart(byParent.id.length - 3, '0')}`;
+  store.db.run('UPDATE posts SET id = ? WHERE id = ?', [low(1), byParent.id]);
+  store.db.run('UPDATE posts SET id = ? WHERE id = ?', [low(2), byRef.id]);
+  assert.equal(store.getPost(unanswered.id)!.createdAt, objection.createdAt);
+  const [row] = store.listThreads();
+  assert.equal(row.objections, 3);
+  assert.equal(row.unansweredObjections, 1, 'only the objection nobody replied to');
+});
+
 // ---- stage 2: the owner's controls ----
 
 const AGENT = { actor: 'agent', name: 'scribe' } as const;

@@ -362,6 +362,53 @@ describe("the owner's judgement", () => {
     expect(api.patchThread).not.toHaveBeenCalled()
   })
 
+  test('a refresh while the cap is being typed keeps the typed value, and an untouched field follows the server', async () => {
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 5 }, posts: POSTS })
+    const { rerender } = render(<ThreadSection task={TASK} refreshKey={0} />)
+
+    const cap = await screen.findByRole('spinbutton', { name: 'Daily cap per agent' })
+    expect(cap.value).toBe('5')
+    cap.focus()
+    fireEvent.change(cap, { target: { value: '1' } })
+    // An agent posts, the panel reloads, the server still says 5.
+    rerender(<ThreadSection task={TASK} refreshKey={1} />)
+    await waitFor(() => expect(api.getThread).toHaveBeenCalledTimes(2))
+    expect(cap.value).toBe('1')
+    expect(api.patchThread).not.toHaveBeenCalled()
+
+    // Leaving the field saves it, and the server echoes the new value.
+    api.patchThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 1 } })
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 1 }, posts: POSTS })
+    cap.blur()
+    await waitFor(() => expect(api.patchThread).toHaveBeenCalledWith('th_1', { dailyCap: 1 }))
+    await waitFor(() => expect(api.getThread).toHaveBeenCalledTimes(3))
+    expect(cap.value).toBe('1')
+
+    // Left alone, the field takes a value changed elsewhere (the CLI, say).
+    api.getThread.mockResolvedValue({ thread: { ...THREAD, dailyCap: 9 }, posts: POSTS })
+    rerender(<ThreadSection task={TASK} refreshKey={2} />)
+    await waitFor(() => expect(cap.value).toBe('9'))
+  })
+
+  test('a click that lands while another change is saving is told so, not dropped', async () => {
+    api.getThread.mockResolvedValue({ thread: THREAD, posts: POSTS })
+    let finish
+    api.closeThread.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    render(<ThreadSection task={TASK} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fork' }))
+    const title = screen.getByRole('textbox', { name: 'Title of the new thread' })
+    fireEvent.change(title, { target: { value: 'The unforced case' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close thread' }))
+    await waitFor(() => expect(api.closeThread).toHaveBeenCalledTimes(1))
+    // The buttons are disabled while the close is in flight, but a form can still be submitted
+    // from the keyboard, and that submit is told to wait rather than vanishing.
+    fireEvent.submit(title.closest('form'))
+    expect((await screen.findByRole('alert')).textContent).toContain('Another change is still saving. Try again.')
+    expect(api.forkThread).not.toHaveBeenCalled()
+    finish({ thread: { ...THREAD, status: 'closed', closedAt: '2026-10-05T12:00:00.000Z' } })
+  })
+
   test('a closed thread with a successor offers to open it', async () => {
     const closed = { ...THREAD, status: 'closed', closedAt: '2026-10-05T12:00:00.000Z', successorThreadId: 'th_2' }
     api.getThread.mockResolvedValue({ thread: closed, posts: POSTS })

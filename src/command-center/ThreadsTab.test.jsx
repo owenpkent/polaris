@@ -92,6 +92,24 @@ describe('ThreadsTab', () => {
     expect(await screen.findByRole('article', { name: 'The bound' })).toBeTruthy()
   })
 
+  test('a slow answer for the other toggle never lands under the current one', async () => {
+    let resolveOpen
+    api.getThreads.mockImplementation((status) => {
+      if (status === 'open') return new Promise((resolve) => { resolveOpen = resolve })
+      return Promise.resolve({ threads: [row({ thread: { ...row().thread, status: 'closed', title: 'Closed one' } })] })
+    })
+    render(<ThreadsTab />)
+    await waitFor(() => expect(api.getThreads).toHaveBeenCalledWith('open'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Closed threads' }))
+    expect(await screen.findByRole('article', { name: 'Closed one' })).toBeTruthy()
+    // The first request answers last, with open threads.
+    resolveOpen({ threads: [row({ thread: { ...row().thread, title: 'Stale open one' } })] })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByRole('article', { name: 'Stale open one' })).toBeNull()
+    expect(screen.getByRole('article', { name: 'Closed one' })).toBeTruthy()
+  })
+
   test('the empty state says where a thread starts', async () => {
     render(<ThreadsTab />)
     expect(await screen.findByText('No open threads')).toBeTruthy()

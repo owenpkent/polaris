@@ -1375,8 +1375,7 @@ export class Store {
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'claim' AND p.status = 'open') AS open_claims,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection') AS objections,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection' AND NOT EXISTS (
-            SELECT 1 FROM posts a WHERE a.thread_id = p.thread_id AND a.id <> p.id
-              AND (a.created_at > p.created_at OR (a.created_at = p.created_at AND a.id > p.id))
+            SELECT 1 FROM posts a WHERE a.thread_id = p.thread_id AND a.rowid > p.rowid
               AND (a.parent_post_id = p.id OR EXISTS (SELECT 1 FROM json_each(a.refs) WHERE json_each.value = p.id))
          )) AS unanswered_objections,
          (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'result') AS results,
@@ -1405,7 +1404,8 @@ export class Store {
     if (opts.status !== undefined && !POST_STATUSES.includes(opts.status)) throw new ValidationError(`invalid post status: ${String(opts.status)}`);
     const query = opts.query?.trim() || null;
     const rows = this.db.all<Row>(
-      `SELECT p.*, th.task_id AS hit_task_id, th.title AS thread_title, t.title AS task_title
+      `SELECT p.*, th.task_id AS hit_task_id, th.title AS thread_title, t.title AS task_title,
+         t.untrusted_text AS task_untrusted, t.source_type AS task_source_type
        FROM posts p JOIN threads th ON th.id = p.thread_id JOIN tasks t ON t.id = th.task_id
        WHERE (? IS NULL OR p.type = ?) AND (? IS NULL OR p.status = ?) AND (? IS NULL OR th.task_id = ?)
          AND (? IS NULL OR instr(lower(p.body), lower(?)) > 0)
@@ -1414,6 +1414,8 @@ export class Store {
         query, query, clampLimit(opts.limit ?? 50, 500)]);
     return rows.map((r) => ({
       post: rowToPost(r), taskId: r.hit_task_id as string, taskTitle: r.task_title as string, threadTitle: r.thread_title as string,
+      // The task's flag by the same stored-or-derived rule as listThreads, so the hit's titles are marked too.
+      untrustedText: bool(r.task_untrusted) || (r.task_source_type != null && EXTERNAL_SOURCE_TYPES.includes(r.task_source_type as SourceType)),
     }));
   }
 
