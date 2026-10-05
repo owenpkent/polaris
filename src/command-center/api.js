@@ -192,6 +192,18 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
       return call(`/api/tasks/${encodeURIComponent(id)}/comments`, { method: 'POST', body: { body, ...ident }, offline: { kind: 'add_comment', taskId: id, opId: ident.opId, body: { body } } })
     },
 
+    // A task's thread (docs/agent-threads-proposal.md): typed posts that agents and the owner
+    // write about one hard problem. A task with no thread answers 404, which reads as null here.
+    // The writes have no `offline` kind, on purpose: a post is a live move in an argument that
+    // may have moved on, so one typed with no server to tell is not worth replaying later.
+    getThread: (taskId) => call(`/api/tasks/${encodeURIComponent(taskId)}/thread`).catch((err) => {
+      if (err?.status === 404) return null
+      throw err
+    }),
+    createThread: (taskId, title) => call(`/api/tasks/${encodeURIComponent(taskId)}/thread`, { method: 'POST', body: title ? { title } : {} }),
+    getThreadPosts: (threadId, after) => call(`/api/threads/${encodeURIComponent(threadId)}`, { query: after ? { after } : undefined }),
+    addPost: (threadId, fields) => call(`/api/threads/${encodeURIComponent(threadId)}/posts`, { method: 'POST', body: fields }),
+
     listInbox: () => call('/api/inbox'),
     acceptInboxItem: (id, payload) => call(`/api/inbox/${encodeURIComponent(id)}/accept`, { method: 'POST', body: payload || {} }),
     rejectInboxItem: (id, payload) => call(`/api/inbox/${encodeURIComponent(id)}/reject`, { method: 'POST', body: payload || {} }),

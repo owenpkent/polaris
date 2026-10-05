@@ -19,9 +19,9 @@ import { registerIdentityRoute } from './identity.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
-  moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, projectCreateBodySchema, projectPatchBodySchema,
+  moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
-  restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema,
+  restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema,
 } from './schemas.ts';
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -559,6 +559,49 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     if (!goal) throw new NotFoundError(`goal not found: ${ctx.params.id}`);
     store.unlinkGoal(goal.id, { projectId: body.project, taskId: body.taskId }, 'human');
     sendJson(ctx.res, 200, goalPayload(goal.id));
+  });
+
+  // ----------------------------------------------------------------- threads
+  // docs/agent-threads-proposal.md, stage 1. The owner's posts are actor 'human'. Posting is a
+  // live write: it carries no op id and has no outbox kind, so an offline post is refused by the
+  // dashboard rather than queued.
+
+  const threadPayload = (threadId: string, url: URL) => {
+    const thread = store.requireThread(threadId);
+    const after = url.searchParams.get('after');
+    const limit = parseIntParam(url.searchParams.get('limit'), 'limit', 1);
+    return { thread, posts: store.listPosts(thread.id, { after: after || null, limit }), total: store.countPosts(thread.id) };
+  };
+
+  router.add('GET', '/api/threads', (ctx) => {
+    const status = ctx.url.searchParams.get('status');
+    if (status !== null && status !== 'open' && status !== 'closed') throw new ValidationError(`invalid status: ${status}`);
+    sendJson(ctx.res, 200, { threads: store.listThreads(status ? { status } : {}) });
+  });
+
+  router.add('GET', '/api/tasks/:id/thread', (ctx) => {
+    const task = store.requireTask(ctx.params.id);
+    const thread = store.getThreadForTask(task.id);
+    if (!thread) throw new NotFoundError(`task ${task.id} has no thread`);
+    sendJson(ctx.res, 200, threadPayload(thread.id, ctx.url));
+  });
+
+  router.add('POST', '/api/tasks/:id/thread', (ctx) => {
+    const body = parseBody(threadCreateBodySchema, ctx.body);
+    const task = store.requireTask(ctx.params.id);
+    const existing = store.getThreadForTask(task.id);
+    const thread = store.createThread(task.id, body.title ?? null, 'human');
+    sendJson(ctx.res, existing ? 200 : 201, { thread });
+  });
+
+  router.add('GET', '/api/threads/:id', (ctx) => {
+    sendJson(ctx.res, 200, threadPayload(ctx.params.id, ctx.url));
+  });
+
+  router.add('POST', '/api/threads/:id/posts', (ctx) => {
+    const body = parseBody(postBodySchema, ctx.body);
+    const post = store.addPost(ctx.params.id, body, 'human', 'human');
+    sendJson(ctx.res, 201, { post });
   });
 
   // ------------------------------------------------------------------ github

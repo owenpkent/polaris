@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { VIEWS, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView } from './support.js'
+import { VIEWS, emptyRequest, failRequest, failureBanner, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -101,6 +101,22 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await openTask(page, 'Draft ADR-003 hosting options')
     await expect(page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: 'Clear assignee' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'panel-assigned')
+  })
+
+  // The panel's Thread section with a claim, an objection, and evidence posted against it, so the
+  // type chips and the Objections only toggle are in the shot. The task is made here, due today.
+  test('mytasks: panel thread', async ({ page, request }, testInfo) => {
+    const { title } = await seedThread(request, testInfo, 'shot', [
+      { type: 'claim', body: 'The cache key must include the query, or two searches share one answer.', confidence: 'medium' },
+      { type: 'objection', body: 'A text search is typed a letter at a time. Keying every one fills the copy with noise.' },
+      { type: 'evidence', body: 'api.js skips the cache when query.text is set, so the objection is already handled.' },
+    ])
+    await openView(page)
+    await openTask(page, title)
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.getByRole('heading', { name: 'Thread' }).scrollIntoViewIfNeeded()
+    await expect(dialog.getByRole('list', { name: 'Posts' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'panel-thread')
   })
 
   test('mytasks: new', async ({ page }, testInfo) => {

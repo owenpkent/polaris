@@ -126,6 +126,11 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | POST | `/api/goals/:id/links` | Body: exactly one of `{ project }` (id or slug) or `{ taskId }`. Idempotent. 201 with the goal payload. |
 | POST | `/api/goals/:id/unlink` | Same body as `links`. A POST because a DELETE body is not reliably delivered. |
 | PATCH | `/api/goal-vision` | Body: `{ text }` (4000 characters at most). The free-text vision statement shown above the goals. |
+| GET | `/api/threads` | `?status=open|closed` filters. `{ threads: { thread, taskTitle, postCount, openClaims, objections, results }[] }`, newest first. |
+| GET | `/api/tasks/:id/thread` | The task's thread and its posts, oldest first: `{ thread, posts }`. Query `after` (a post id) and `limit` page the posts. `404` when the task has no thread. |
+| POST | `/api/tasks/:id/thread` | Body: `{ title? }`, defaulting to the task title. `201 { thread }`, or `200` with the existing thread: one per task. |
+| GET | `/api/threads/:id` | `{ thread, posts }`, same query as above. |
+| POST | `/api/threads/:id/posts` | Body: `{ type, body, confidence?, refs?, parentPostId? }` with `type` one of `claim`, `evidence`, `objection`, `question`, `failed_attempt`, `summary`, `result`. Recorded as the human. `201 { post }`. No op identity and no outbox kind: a post is a live write, and the dashboard disables the form offline. A claim or result starts with `status: open`; nothing sets it yet. |
 | GET | `/api/events` | Query: `after` (event id, default 0), `limit`. `{ events, lastId, headId }` -- poll with `after=<lastId>` to resume; `lastId` never regresses. `headId` is the newest event id overall, for clients that only need change detection. |
 | GET | `/api/github/status` | `{ mode: 'app' \| 'none', app, user, signedIn, refreshExpiresAt, installations, error? }` |
 | POST | `/api/github/app/manifest` | Body `{}`. `{ action, manifest }` for the dashboard to POST to github.com. `409 github_app_exists`. |

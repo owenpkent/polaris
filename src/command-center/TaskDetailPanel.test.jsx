@@ -16,6 +16,7 @@ const api = {
   linkGoal: vi.fn(),
   unlinkGoal: vi.fn(),
   getAgentSettings: vi.fn(),
+  getThread: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -35,6 +36,7 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
   resetDefaultAgentNameCache()
   api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
+  api.getThread.mockResolvedValue(null)
 })
 
 afterEach(() => {

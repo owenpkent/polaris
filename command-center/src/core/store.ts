@@ -4,12 +4,14 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, OPEN_GOAL_STATUSES, PRIORITIES, TASK_STATUSES,
+  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_TYPES, PRIORITIES, TASK_STATUSES,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
-  type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal,
-  type NewProject, type NewTask, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
-  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type UpsertResult,
+  type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
+  type NewProject, type NewTask, type Post, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
+  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadSummary, type UpsertResult,
 } from './types.ts';
+
+const INBOX_HAS_NO_THREAD = 'an inbox task has no thread until the owner accepts it';
 
 export class NotFoundError extends Error {}
 export class ValidationError extends Error {}
@@ -84,6 +86,23 @@ function normalizeAssignee(v: string | null | undefined): string | null {
  */
 function normalizeActorInput(who: ActorInput): { actor: Actor; name: string | null } {
   return typeof who === 'string' ? { actor: who, name: null } : { actor: who.actor, name: who.name ?? null };
+}
+
+function rowToThread(r: Row): Thread {
+  return {
+    id: r.id as string, taskId: r.task_id as string, title: r.title as string, status: r.status as Thread['status'],
+    pinnedPostId: (r.pinned_post_id as string | null) ?? null, createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
+  };
+}
+
+function rowToPost(r: Row): Post {
+  return {
+    id: r.id as string, threadId: r.thread_id as string, parentPostId: (r.parent_post_id as string | null) ?? null,
+    author: r.author as Post['author'], authorName: (r.author_name as string | null) ?? null,
+    type: r.type as PostType, body: r.body as string, confidence: (r.confidence as Post['confidence']) ?? null,
+    status: (r.status as PostStatus | null) ?? null, refs: parseJson<string[]>(r.refs, []),
+    untrustedText: bool(r.untrusted_text), createdAt: r.created_at as string,
+  };
 }
 
 function rowToTask(r: Row): Task {
@@ -1295,6 +1314,146 @@ export class Store {
   /** Every goal (open ones unless includeClosed) with its progress, for the Goals view and the digest. */
   listGoalDetails(opts: { includeClosed?: boolean } = {}): GoalDetail[] {
     return this.listGoals(opts).map((g) => this.goalDetail(g.id));
+  }
+
+  // --------------------------------------------------------------- threads
+  // docs/agent-threads-proposal.md. A thread is the argument about one task; posts are typed,
+  // short, and never change the task. The owner is the only party who decides what counts, and
+  // in stage 1 nothing here can set a status, pin, or close at all.
+
+  // Propose, do not act: a suggestion waiting in the inbox is not yet the owner's work, so nothing
+  // argues about it until they accept it. The same check guards a post, in case the task went back.
+  /**
+   * The thread for a task, made if there is none. Idempotent: a second call returns the existing
+   * thread and records nothing, so two agents opening the same discussion do not race. The title
+   * defaults to the task's own, which keeps a third-party title inside the thread row too; the
+   * untrusted flag is read from the task when each post is made, not copied here.
+   */
+  createThread(taskId: string, title: string | null, actor: ActorInput): Thread {
+    const task = this.requireTask(taskId);
+    if (task.status === 'inbox') throw new ValidationError(INBOX_HAS_NO_THREAD);
+    return this.db.transaction(() => {
+      const existing = this.getThreadForTask(task.id);
+      if (existing) return existing;
+      const name = (title ?? '').replace(/\s+/g, ' ').trim() || task.title;
+      const thread: Thread = { id: newId('th'), taskId: task.id, title: name, status: 'open', pinnedPostId: null, createdAt: this.now(), closedAt: null };
+      this.db.run('INSERT INTO threads (id, task_id, title, status, pinned_post_id, created_at, closed_at) VALUES (?, ?, ?, ?, NULL, ?, NULL)',
+        [thread.id, thread.taskId, thread.title, thread.status, thread.createdAt]);
+      this.emit('thread.created', task.id, actor, { threadId: thread.id });
+      return thread;
+    });
+  }
+
+  getThread(threadId: string): Thread | null {
+    const r = this.db.get<Row>('SELECT * FROM threads WHERE id = ?', [threadId]);
+    return r ? rowToThread(r) : null;
+  }
+
+  requireThread(threadId: string): Thread {
+    const thread = this.getThread(threadId);
+    if (!thread) throw new NotFoundError(`thread not found: ${threadId}`);
+    return thread;
+  }
+
+  getThreadForTask(taskId: string): Thread | null {
+    const r = this.db.get<Row>('SELECT * FROM threads WHERE task_id = ?', [taskId]);
+    return r ? rowToThread(r) : null;
+  }
+
+  /** Every thread, newest first, with the counts the thread list shows beside each. */
+  listThreads(opts: { status?: Thread['status'] } = {}): ThreadSummary[] {
+    const rows = this.db.all<Row>(
+      `SELECT th.*, t.title AS task_title, t.untrusted_text AS task_untrusted, t.source_type AS task_source_type,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id) AS post_count,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'claim' AND p.status = 'open') AS open_claims,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'objection') AS objections,
+         (SELECT COUNT(*) FROM posts p WHERE p.thread_id = th.id AND p.type = 'result') AS results
+       FROM threads th JOIN tasks t ON t.id = th.task_id
+       WHERE (? IS NULL OR th.status = ?)
+       ORDER BY th.created_at DESC, th.id DESC`,
+      [opts.status ?? null, opts.status ?? null]);
+    return rows.map((r) => ({
+      thread: rowToThread(r), taskTitle: r.task_title as string,
+      // The same stored-or-derived rule as rowToTask, so the list never shows a trusted title for a GitHub task.
+      untrustedText: bool(r.task_untrusted) || (r.task_source_type != null && EXTERNAL_SOURCE_TYPES.includes(r.task_source_type as SourceType)),
+      postCount: r.post_count as number,
+      openClaims: r.open_claims as number, objections: r.objections as number, results: r.results as number,
+    }));
+  }
+
+  /**
+   * One post. The body must say something; refs and the parent must be posts of this thread, so
+   * a post cannot point outside the argument it belongs to. untrusted_text comes from the task
+   * at this moment and never clears. author_name follows addComment: kept only when the actor is
+   * the author, so a name never lands on a post it did not write. Nothing here touches the task.
+   */
+  addPost(threadId: string, input: NewPost, author: Post['author'], actor: ActorInput): Post {
+    const thread = this.requireThread(threadId);
+    if (thread.status !== 'open') throw new ValidationError('thread is closed');
+    if (!POST_TYPES.includes(input.type)) throw new ValidationError(`invalid post type: ${String(input.type)}`);
+    if (typeof input.body !== 'string' || !input.body.trim()) throw new ValidationError('post body must not be empty');
+    if (input.confidence != null && !CONFIDENCES.includes(input.confidence)) throw new ValidationError(`invalid confidence: ${String(input.confidence)}`);
+    const refs = [...new Set(input.refs ?? [])];
+    for (const ref of refs) {
+      if (typeof ref !== 'string' || !this.postInThread(ref, thread.id)) throw new ValidationError(`ref is not a post of this thread: ${String(ref)}`);
+    }
+    const parentPostId = input.parentPostId ?? null;
+    if (parentPostId !== null && !this.postInThread(parentPostId, thread.id)) throw new ValidationError(`parent is not a post of this thread: ${parentPostId}`);
+    const task = this.requireTask(thread.taskId);
+    if (task.status === 'inbox') throw new ValidationError(INBOX_HAS_NO_THREAD);
+    const { actor: who, name } = normalizeActorInput(actor);
+    const post: Post = {
+      id: newId('po'), threadId: thread.id, parentPostId, author, authorName: who === author ? name : null,
+      type: input.type, body: input.body, confidence: input.confidence ?? null,
+      status: JUDGED_POST_TYPES.includes(input.type) ? 'open' : null, refs, untrustedText: task.untrustedText, createdAt: this.now(),
+    };
+    this.db.transaction(() => {
+      this.db.run(
+        `INSERT INTO posts (id, thread_id, parent_post_id, author, author_name, type, body, confidence, status, refs, untrusted_text, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [post.id, post.threadId, post.parentPostId, post.author, post.authorName, post.type, post.body, post.confidence, post.status,
+          JSON.stringify(post.refs), post.untrustedText ? 1 : 0, post.createdAt]);
+      this.emit('post.added', task.id, actor, { threadId: thread.id, postId: post.id, type: post.type });
+    });
+    return post;
+  }
+
+  private postInThread(postId: string, threadId: string): boolean {
+    return !!this.db.get<Row>('SELECT 1 AS one FROM posts WHERE id = ? AND thread_id = ?', [postId, threadId]);
+  }
+
+  /** How many posts a thread holds, for a reader that fetched a window of them. */
+  countPosts(threadId: string): number {
+    this.requireThread(threadId);
+    return this.db.get<Row>('SELECT COUNT(*) AS n FROM posts WHERE thread_id = ?', [threadId])!.n as number;
+  }
+
+  getPost(postId: string): Post | null {
+    const r = this.db.get<Row>('SELECT * FROM posts WHERE id = ?', [postId]);
+    return r ? rowToPost(r) : null;
+  }
+
+  /**
+   * A thread's posts, oldest first. `after` is a post id: only posts made after it are returned,
+   * so a reader polling a long thread pays for the new posts only. An unknown `after` is a
+   * NotFoundError rather than the whole thread, so a stale cursor is noticed.
+   */
+  listPosts(threadId: string, opts: { after?: string | null; limit?: number } = {}): Post[] {
+    this.requireThread(threadId);
+    const limit = clampLimit(opts.limit ?? 500, 5000);
+    // Insertion order (rowid), not created_at: two posts made in the same millisecond would
+    // otherwise sort by their random ids, and a cursor past the later id would skip the earlier.
+    if (opts.after) {
+      const cursor = this.db.get<Row>('SELECT rowid AS rid FROM posts WHERE id = ? AND thread_id = ?', [opts.after, threadId]);
+      if (!cursor) throw new NotFoundError(`post not found in thread: ${opts.after}`);
+      return this.db.all<Row>('SELECT * FROM posts WHERE thread_id = ? AND rowid > ? ORDER BY rowid LIMIT ?',
+        [threadId, cursor.rid, limit]).map(rowToPost);
+    }
+    // No cursor: the newest window, so a reader of a long thread sees where it is now and
+    // countPosts says how much came before.
+    return this.db.all<Row>(
+      'SELECT * FROM (SELECT rowid AS rid, * FROM posts WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?) ORDER BY rid',
+      [threadId, limit]).map(rowToPost);
   }
 
   // -------------------------------------------------------------------- kv

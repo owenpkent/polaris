@@ -5,10 +5,11 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runRules, validateRuleDefinition } from '../automation/index.ts';
-import { taskRef } from './format.ts';
-import { NotFoundError, ValidationError, type ActorInput, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
+import { postBlock, taskRef } from './format.ts';
+import { CONFIDENCES, NotFoundError, POST_TYPES, ValidationError, type ActorInput, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { PRIORITY_VALUES, TASK_STATUS_VALUES, guard, ok, err, resolveProject, resolveProjectByGithubRepo, resolveSectionWrite } from './shared.ts';
+import { resolveThread } from './tools-read.ts';
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
 const customFieldSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
@@ -243,5 +244,40 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
     const report = runRules(app.store, { today: app.today(), ruleId: rule.id, dryRun });
     const text = `${report.dryRun ? '[dry run] ' : ''}${report.fired.length} action(s) fired, ${report.errors.length} error(s).`;
     return ok(text, { report });
+  }));
+
+  // Threads (docs/agent-threads-proposal.md). An agent may open a thread and post to it; it may
+  // not set a status, pin, or close: those are the owner's, and stage 1 has no setter at all.
+  server.registerTool('create_thread', {
+    description: desc('create_thread'),
+    inputSchema: {
+      task_id: z.string(),
+      title: z.string().max(200).optional().describe('Defaults to the task title.'),
+    },
+  }, (args) => guard(() => {
+    const task = app.store.requireTask(args.task_id);
+    const existing = app.store.getThreadForTask(task.id);
+    const thread = app.store.createThread(task.id, args.title ?? null, actor);
+    const verb = existing ? 'Thread already open' : 'Opened thread';
+    return ok(`${verb} ${JSON.stringify(thread.title)} {${thread.id}} on task ${taskRef(task)}. Read it with get_thread and add posts with post_to_thread.`, { thread, task, created: !existing });
+  }));
+
+  server.registerTool('post_to_thread', {
+    description: desc('post_to_thread'),
+    inputSchema: {
+      thread_id: z.string().optional(),
+      task_id: z.string().optional().describe('The task the thread hangs off, when thread_id is not known.'),
+      type: z.enum(POST_TYPES),
+      body: z.string().min(1).max(20000).describe('One idea. Short. Say what you tried and what happened, failures included.'),
+      confidence: z.enum(CONFIDENCES).optional(),
+      refs: z.array(z.string()).max(50).optional().describe('Ids of posts in this thread that this one answers or builds on.'),
+      parent_post_id: z.string().optional().describe('The post this one replies to.'),
+    },
+  }, (args) => guard(() => {
+    const thread = resolveThread(app.store, args);
+    const post = app.store.addPost(thread.id, {
+      type: args.type, body: args.body, confidence: args.confidence ?? null, refs: args.refs ?? [], parentPostId: args.parent_post_id ?? null,
+    }, 'agent', actor);
+    return ok(`Posted to thread {${thread.id}}:\n${postBlock(post)}`, { post });
   }));
 }

@@ -9,8 +9,8 @@ import { MIGRATIONS } from './schema.ts';
 // sqlite_sequence is SQLite's own bookkeeping table, created implicitly because events.id is
 // an AUTOINCREMENT primary key.
 const EXPECTED_TABLES = [
-  'applied_ops', 'comments', 'dependencies', 'events', 'goal_links', 'goals', 'kv', 'links', 'projects',
-  'rules', 'schema_version', 'sections', 'source_items', 'sqlite_sequence', 'sync_cursors', 'tasks', 'views',
+  'applied_ops', 'comments', 'dependencies', 'events', 'goal_links', 'goals', 'kv', 'links', 'posts', 'projects',
+  'rules', 'schema_version', 'sections', 'source_items', 'sqlite_sequence', 'sync_cursors', 'tasks', 'threads', 'views',
 ];
 
 function tableNames(db: SqlDriver): string[] {
@@ -239,6 +239,8 @@ test('migration 3 backfills untrusted_text from source_type on a database that p
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE posts');
+    db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [2]);
     assert.ok(!new Set(columnNames(db, 'tasks')).has('untrusted_text'), 'set up a database without the column');
 
@@ -321,6 +323,8 @@ test('migration 7 adds events.actor_name and comments.author_name to a database 
   try {
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE posts');
+    db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [6]);
     assert.ok(!new Set(columnNames(db, 'events')).has('actor_name'), 'set up a database without the column');
     assert.ok(!new Set(columnNames(db, 'comments')).has('author_name'), 'set up a database without the column');
@@ -355,6 +359,8 @@ test('migration 6 adds tasks.assignee to a database that predates it and leaves 
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE posts');
+    db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [5]);
     assert.ok(!new Set(columnNames(db, 'tasks')).has('assignee'), 'set up a database without the column');
     db.run(

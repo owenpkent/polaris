@@ -219,4 +219,47 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE events ADD COLUMN actor_name TEXT;
   ALTER TABLE comments ADD COLUMN author_name TEXT;
   `,
+  // 8: threads (docs/agent-threads-proposal.md, stage 1). A thread is where several agents and
+  // the owner argue one hard problem out: it hangs off the task that is the challenge, at most one
+  // per task, and is deleted with it. Its status, pinned post, and closed_at exist for the owner's
+  // stage 2 controls (pin a summary, close, fork); nothing sets them in stage 1, so every row is
+  // open with no pin. A thread has no actor column of its own: who opened it is the thread.created
+  // event, like every other change.
+  `
+  CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+    pinned_post_id TEXT,
+    created_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+  CREATE INDEX threads_task ON threads(task_id);
+  `,
+  // 9: posts. One idea per post, typed so the owner can filter objections from claims and count
+  // results without reading every word. author and author_name follow comments (migration 7): the
+  // actor, plus the name an MCP connection declared, which is never an identity or a permission.
+  // status is only ever set on a claim or a result, starts open, and is the owner's to change (no
+  // setter until stage 2): agents agreeing is not acceptance. untrusted_text is copied from the
+  // task at post time and never clears, so a post made on a third-party task is marked wherever an
+  // assistant reads it, the same one-way rule tasks follow. refs is a JSON array of post ids in
+  // the same thread.
+  `
+  CREATE TABLE posts (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    parent_post_id TEXT,
+    author TEXT NOT NULL CHECK (author IN ('human','agent')),
+    author_name TEXT,
+    type TEXT NOT NULL CHECK (type IN ('claim','evidence','objection','question','failed_attempt','summary','result')),
+    body TEXT NOT NULL,
+    confidence TEXT CHECK (confidence IS NULL OR confidence IN ('low','medium','high')),
+    status TEXT CHECK (status IS NULL OR status IN ('open','accepted','rejected','superseded')),
+    refs TEXT NOT NULL DEFAULT '[]',
+    untrusted_text INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX posts_thread ON posts(thread_id, created_at);
+  `,
 ];
