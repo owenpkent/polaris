@@ -202,13 +202,33 @@ How the daemon is restarted comes from `CC_UPDATE_RESTART`, or is detected: the 
 | systemd user unit | `systemd-user:<unit>` | `systemctl --user stop`, swap, `systemctl --user start` |
 | A plain process | `manual` | Prints that you must stop the daemon, waits for the port to free, swaps, asks you to start it, waits, then health-checks. A rollback restores the code, `dist`, and the database and asks you to restart once more |
 
-For a system unit, add this line with `visudo`, naming your user and the unit: it allows that one command and nothing else.
+For a system unit, add this line with `visudo`, naming your user and the unit (`scripts/install-updater-systemd.sh` prints it with the paths filled in, and writes it with `--sudoers`): it allows `systemctl` with those three verbs on that one unit and nothing else, because an update stops the daemon, swaps the built dashboard (and restores the snapshot on a rollback) while nothing holds the port, then starts it.
 
 ```
-owen ALL=(root) NOPASSWD: /usr/bin/systemctl restart polaris
+owen ALL=(root) NOPASSWD: /usr/bin/systemctl stop polaris, /usr/bin/systemctl start polaris, /usr/bin/systemctl restart polaris
 ```
 
 The system unit is the one method with no stop between the swap and the start: the old daemon is still up for the second before systemd restarts it. The dashboard swap is harmless then, and a database restore goes in by a rename over the file, so the closing daemon's last checkpoint lands in the old file and not in the restored one.
+
+### Automatic updates
+
+Off until you install the scheduled updater, which runs `npm run cc -- update --auto` every five minutes, as you, outside the daemon (the design is docs/update-proposal.md, section 3). It installs only signed releases, never `main`, and only a version strictly newer than the one running: it checks for new tags once a day in the quiet window and installs what it finds then, picks up an Update now request from the dashboard within five minutes, backs off after a failure, and writes what it is doing to `data/update-status.json`, which the dashboard's update icon reads. Each run appends to `data/updater.log`.
+
+Windows, a scheduled task beside the logon task, run whether or not you are logged on:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ..\scripts\install-updater-task.ps1
+powershell -ExecutionPolicy Bypass -File ..\scripts\install-updater-task.ps1 -Uninstall
+```
+
+Linux, a systemd user service and timer in `~/.config/systemd/user/`, with lingering turned on so the timer runs with no session open:
+
+```sh
+../scripts/install-updater-systemd.sh
+../scripts/install-updater-systemd.sh --uninstall
+```
+
+When the daemon is a system unit (`systemctl is-active polaris`, or `--unit <name>`), the script prints the sudoers line above with your user and paths filled in, and `--sudoers` writes it to `/etc/sudoers.d/polaris-updater` after `visudo -cf` has accepted it.
 
 ## Safety model
 
