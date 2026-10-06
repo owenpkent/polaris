@@ -25,7 +25,9 @@
 //      restart belong to `cc update`, whose module the daemon's import graph never reaches; the
 //      request routes are the human actor's alone, a request names one release strictly newer
 //      than what runs, pickup moves only a pending row, and no agent, rule, or offline op can
-//      touch any of it (docs/update-proposal.md, section 8).
+//      touch any of it. The scheduled `--auto` run installs signed releases only, never main,
+//      the release check sends no credential, and the update path touches the data folder only
+//      through the backup code and its own files (docs/update-proposal.md, section 8).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -34,7 +36,7 @@ import { buildDigest } from './automation/digest.ts';
 import { nextOccurrence } from './automation/recurrence.ts';
 import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +48,9 @@ import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts'
 import { syncGithub } from './ingest/github/sync.ts';
 import { TOOL_CATALOG } from './mcp/catalog.ts';
 import { taskLine } from './mcp/format.ts';
-import { emptyUpdateStatus, writeUpdateStatus } from './update/status.ts';
+import { git } from './update/git.ts';
+import { RELEASE_SIGNERS_FILE } from './update/signers.ts';
+import { emptyUpdateStatus, UPDATE_STATUS_FILE, writeUpdateStatus } from './update/status.ts';
 
 const TODAY = '2026-09-18';
 const OWNER_SOURCE_TYPES = SOURCE_TYPES.filter((s) => !EXTERNAL_SOURCE_TYPES.includes(s));
@@ -1403,4 +1407,75 @@ test('11. nothing about an update reaches an agent, a rule, or the outbox: no MC
   const store = openStore(':memory:');
   store.createUpdateRequest('999.0.0', 'human');
   assert.equal(store.lastEventId(), 0);
+});
+
+// -------------------------------------------------------------------------------------
+// 11, continued (phase C). The scheduled updater: `cc update --auto` never installs main, the
+//     release check sends no credential, and the update path writes under command-center/data
+//     only through the backup code, the snapshot restore, and its own files (docs/update-proposal.md,
+//     sections 3, 7, and 8).
+// =====================================================================================
+
+const UPDATE = join(SRC, 'update');
+const stripComments = (text: string) => text.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+test('11. cc update --auto refuses main: the auto path only ever names a release, or one requested version, as its target', () => {
+  const auto = stripComments(readFileSync(join(UPDATE, 'auto.ts'), 'utf8'));
+  const targets = [...auto.matchAll(/kind: '([a-z_]+)'/g)].map((m) => m[1]);
+  assert.ok(targets.length >= 2, 'the targets were found');
+  assert.deepEqual([...new Set(targets)].sort(), ['release', 'to']);
+  assert.ok(!auto.includes("'main'"), 'auto.ts never names main');
+  assert.ok(/auto: true/.test(auto) && !/auto: false/.test(auto), 'every run through run.ts is marked as the updater');
+  assert.ok(!/confirm/.test(auto), 'nothing to ask with');
+  // In auto mode run.ts asks no question, and looks at main only when the target is main, which the updater never passes.
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  assert.match(run, /!opts\.yes && !opts\.auto && !\(await deps\.confirm/);
+  assert.match(run, /wantsRelease\s*\?\s*await considerRelease[\s\S]*?:\s*await considerMain/);
+});
+
+test('11. the release check sends no credential: a bare git fetch, and nothing under src/update reads the GitHub secrets', async () => {
+  const calls: string[][] = [];
+  const repo = git(async (cmd, args) => { calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, tmpdir());
+  await repo.fetchTags('origin');
+  await repo.fetch('origin');
+  assert.deepEqual(calls, [['git', 'fetch', '--prune', '--tags', 'origin'], ['git', 'fetch', '--prune', 'origin']]);
+  for (const line of calls) assert.ok(!line.some((a) => /token|authorization|credential|@|https?:/i.test(a)), line.join(' '));
+  // No module under src/update imports the GitHub code or the secret store, except run.ts for one key.
+  for (const name of readdirSync(UPDATE).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
+    const source = stripComments(readFileSync(join(UPDATE, name), 'utf8'));
+    assert.ok(!/from '\.\.\/ingest\/github\//.test(source), `${name} imports the GitHub code`);
+    assert.ok(!/github/i.test(source), `${name} mentions GitHub`);
+    if (name !== 'run.ts') assert.ok(!/from '\.\.\/ingest\//.test(source), `${name} imports the secret store`);
+  }
+  // run.ts reads the secret store for one thing: the backup passphrase, so the snapshot is encrypted like a backup is.
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  assert.deepEqual([...run.matchAll(/secrets\.get\(([^)]*)\)/g)].map((m) => m[1]), ['BACKUP_PASSPHRASE_KEY']);
+  assert.equal((run.match(/\bsecrets\b/g) ?? []).length, 4, 'the field, its default, the deps type, and the one read');
+});
+
+test('11. the update path writes under command-center/data only through the backup code, the snapshot restore, and its own log, status, and pinned-signers files', () => {
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  const auto = stripComments(readFileSync(join(UPDATE, 'auto.ts'), 'utf8'));
+  // auto.ts touches no file itself: the status file through status.ts, the log through run.ts.
+  assert.ok(!/from 'node:fs'/.test(auto), 'auto.ts imports node:fs');
+  assert.deepEqual([...auto.matchAll(/\b(writeUpdateStatus|readUpdateStatus)\(([^,)]*)/g)].map((m) => m[2].trim()).filter((a) => a !== 'opts.dbPath'), [], 'auto.ts reads and writes the status file next to the database only');
+  // Every filesystem write in run.ts names the log, the pinned-signers folder, or the dashboard
+  // folders (dist, dist.next, dist.prev), which are not under data.
+  const writes = [...run.matchAll(/\b(writeFileSync|appendFileSync|renameSync|rmSync|mkdirSync|copyFileSync|unlinkSync|rmdirSync|cpSync|createWriteStream|openSync)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2].trim()}`);
+  const allowed = new Set([
+    'appendFileSync(updateLogPath(opts.dbPath', 'appendFileSync(logFile', 'mkdirSync(dirname(logFile',
+    'mkdirSync(dirname(pinnedFile',
+    'rmSync(distNext', 'rmSync(prev', 'renameSync(dist', 'renameSync(next', 'rmSync(dist', 'renameSync(prev',
+  ]);
+  for (const w of writes) assert.ok(allowed.has(w), `run.ts writes somewhere new: ${w}`);
+  assert.ok(writes.length >= 8, 'the writes were found');
+  // The database and the backup folder are reached only through daemon/backup.ts, and the status
+  // and signers files through their own modules. No SQL of its own.
+  assert.match(run, /from '\.\.\/daemon\/backup\.ts'/);
+  assert.deepEqual([...new Set([...run.matchAll(/\b(snapshotDatabase|restoreDatabaseFile|writeUpdateStatus|pinSigners)\(/g)].map((m) => m[1]))].sort(), ['pinSigners', 'restoreDatabaseFile', 'snapshotDatabase', 'writeUpdateStatus']);
+  assert.ok(!run.includes('DatabaseSync') && !/\bdb\.(exec|run|prepare)\(/.test(run));
+  // The files it owns, by name.
+  assert.match(run, /^export const UPDATE_LOG_FILE = 'update\.log';$/m);
+  assert.equal(UPDATE_STATUS_FILE, 'update-status.json');
+  assert.equal(RELEASE_SIGNERS_FILE, 'release-signers');
 });

@@ -16,6 +16,9 @@ export interface Config {
   /** How `cc update` restarts the daemon (CC_UPDATE_RESTART): `task`, `systemd:<unit>`, `systemd-user:<unit>`,
    *  or `manual`. Unset, the command detects it. Only `cc update` reads it, so a bad value is reported there. */
   updateRestart?: string;
+  /** When the scheduled updater's daily check runs (CC_UPDATE_AT, "HH:MM" in `timezone`), the start of a
+   *  one-hour quiet window. Unset means 04:00. Only `cc update --auto` reads it, so a bad value is reported there. */
+  updateAt?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -26,6 +29,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     timezone: env.CC_TZ ? checkedTimezone(env.CC_TZ) : Intl.DateTimeFormat().resolvedOptions().timeZone,
     dashboardDir: resolve(env.CC_DASHBOARD_DIR ?? join(repoRoot, 'dist')),
     updateRestart: env.CC_UPDATE_RESTART?.trim() || undefined,
+    updateAt: env.CC_UPDATE_AT?.trim() || undefined,
   };
 }
 

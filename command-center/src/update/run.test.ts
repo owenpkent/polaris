@@ -450,6 +450,65 @@ test('a rollback that fails is loud and leaves the previous commit and the snaps
   assert.match(status.lastResult!.message, /and that failed/);
 });
 
+test('a systemd system unit is stopped and started through sudo, with the swap and the restore while nothing listens', async (t) => {
+  const h = harness(t, { fail: 'health-after-migration', changed: ['command-center/src/core/schema.ts'] });
+  const sudo = async (cmd: string, args: string[], o?: Parameters<Exec>[2]) => {
+    if (cmd === 'sudo') {
+      assert.equal(args[0], '-n', 'never a password prompt');
+      if (args[1] === '-l') return { code: 0, stdout: '', stderr: '' };
+      assert.equal(args[1], 'systemctl');
+      // The real stop and start, through the user-unit model of the harness.
+      return h.deps.exec('systemctl', ['--user', args[2], args[3]], o);
+    }
+    if (cmd === 'systemctl' && args[0] === 'show') return { code: 0, stdout: 'loaded\n', stderr: '' };
+    return h.deps.exec(cmd, args, o);
+  };
+  const seen: string[] = [];
+  const code = await runUpdate({
+    repoRoot: h.root, dbPath: h.dbPath, dashboardDir: h.dist, port: PORT, checkOnly: false, yes: true, restartSpec: 'systemd:polaris',
+    stdout: (l) => h.out.push(l), stderr: (l) => h.err.push(l),
+  }, { ...h.deps, exec: sudo, portListening: async () => { seen.push(h.state.listening ? 'up' : 'down'); return h.state.listening; } });
+  assert.equal(code, 1);
+  const lines = h.commandLines().filter((l) => l.startsWith('systemctl --user') && !l.includes('show'));
+  assert.deepEqual(lines, ['systemctl --user stop polaris', 'systemctl --user start polaris', 'systemctl --user stop polaris', 'systemctl --user start polaris'], 'stop, start; then the rollback: stop, start');
+  assert.ok(!h.commandLines().some((l) => l.includes('restart')), 'restart is never run');
+  assert.ok(seen.includes('down'), 'the port was seen free between the stop and the start');
+  assert.match(h.log(), /Restored the database from/);
+  assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length);
+  assert.equal(h.version(), '2.0.0');
+  assert.equal(h.distFile('dist'), 'old');
+  assert.equal(h.state.daemonVersion, '2.0.0');
+  assert.match(h.out.join('\n'), /Restart: the systemd unit polaris \(sudo -n systemctl stop polaris, then start\)/);
+});
+
+test('a failure after the target was chosen but before the checkout moved is recorded as a result', async (t) => {
+  const h = harness(t, {});
+  const code = await h.run({
+    exec: async (cmd, args, o) => (cmd === 'git' && args[0] === 'merge' ? { code: 1, stdout: '', stderr: 'fatal: Not possible to fast-forward' } : h.deps.exec(cmd, args, o)),
+  });
+  assert.equal(code, 1);
+  assert.match(h.err.join('\n'), /Failed before anything changed: git merge --ff-only origin\/main failed/);
+  const status = readUpdateStatus(h.dbPath);
+  assert.equal(status.lastResult?.ok, false);
+  assert.match(status.lastResult!.message, /^Failed before anything changed: git merge/);
+  assert.equal(status.running, '2.0.0');
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+});
+
+test('a run by hand clears the scheduled updater\'s failure count and backoff', async (t) => {
+  const h = harness(t, { yes: false, confirm: false });
+  writeUpdateStatus(h.dbPath, { ...emptyUpdateStatus(), updaterInstalled: true, failures: 2, backoffUntil: '2026-10-09T04:00:00.000Z' });
+  assert.equal(await h.run(), 0, 'declined at the question, which is after the count is cleared');
+  assert.equal(readUpdateStatus(h.dbPath).failures, 0);
+  assert.equal(readUpdateStatus(h.dbPath).backoffUntil, null);
+  assert.equal(readUpdateStatus(h.dbPath).updaterInstalled, true, 'the heartbeat is not touched by a declined run');
+  // --check is only a look: it clears nothing.
+  const check = harness(t, { checkOnly: true });
+  writeUpdateStatus(check.dbPath, { ...emptyUpdateStatus(), updaterInstalled: true, failures: 2, backoffUntil: '2026-10-09T04:00:00.000Z' });
+  assert.equal(await check.run(), 0);
+  assert.equal(readUpdateStatus(check.dbPath).failures, 2);
+});
+
 test('a restart that stops the daemon and cannot start it again still rolls back and tries the start once more', async (t) => {
   const h = harness(t, { });
   let starts = 0;

@@ -15,16 +15,18 @@ export interface UpdateArgs {
   target: UpdateArgsTarget;
   checkOnly: boolean;
   trustSigners: boolean;
+  /** The scheduled updater's mode (auto.ts): stands alone, with --port. */
+  auto: boolean;
   yes: boolean;
   port: number;
 }
 
-const OPTIONS = '--release, --to <vX.Y.Z>, --check, --trust-signers, --yes, --port <n>';
+const OPTIONS = '--release, --to <vX.Y.Z>, --check, --trust-signers, --auto, --yes, --port <n>';
 
-/** --release, --to <version>, --check, --trust-signers, --yes, --port <n>. Throws on anything else. */
+/** --release, --to <version>, --check, --trust-signers, --auto, --yes, --port <n>. Throws on anything else. */
 export function parseUpdateArgs(args: string[]): UpdateArgs {
   const flags = parseFlags(args);
-  const unknown = Object.keys(flags).filter((k) => !['_', 'release', 'to', 'check', 'trust-signers', 'yes', 'port'].includes(k));
+  const unknown = Object.keys(flags).filter((k) => !['_', 'release', 'to', 'check', 'trust-signers', 'auto', 'yes', 'port'].includes(k));
   if (unknown.length) throw new Error(`Unknown option --${unknown[0]}. Options: ${OPTIONS}.`);
   if (flags._.length) throw new Error(`cc update takes no arguments, got "${flags._[0]}". A release is named with --to ${flags._[0]}.`);
   let port = DEFAULT_PORT;
@@ -43,13 +45,15 @@ export function parseUpdateArgs(args: string[]): UpdateArgs {
   }
   const trustSigners = Boolean(flags['trust-signers']);
   if (trustSigners && (flags.check || target.kind !== 'main')) throw new Error('--trust-signers stands alone (with --yes to skip the question).');
-  return { target, checkOnly: Boolean(flags.check), trustSigners, yes: Boolean(flags.yes), port };
+  const auto = Boolean(flags.auto);
+  if (auto && (flags.check || flags.yes || trustSigners || target.kind !== 'main')) throw new Error('--auto stands alone (with --port): it decides for itself what to install, and never asks.');
+  return { target, checkOnly: Boolean(flags.check), trustSigners, auto, yes: Boolean(flags.yes), port };
 }
 
 const updateCommand: Command = {
   name: 'update',
-  summary: 'Update this install: snapshot the database, check out origin/main (or a signed release with --release or --to), npm ci, test, build, restart the daemon, health-check, and roll back on failure. --check only reports; --trust-signers reviews the pinned release keys.',
-  usage: 'update [--release | --to vX.Y.Z] [--check] [--trust-signers] [--yes] [--port 8788]    restart method from CC_UPDATE_RESTART (task, systemd:<unit>, systemd-user:<unit>, manual) or detected',
+  summary: 'Update this install: snapshot the database, check out origin/main (or a signed release with --release or --to), npm ci, test, build, restart the daemon, health-check, and roll back on failure. --check only reports; --trust-signers reviews the pinned release keys; --auto is the scheduled updater (signed releases only, the quiet window, the dashboard\'s requests).',
+  usage: 'update [--release | --to vX.Y.Z] [--check] [--trust-signers] [--auto] [--yes] [--port 8788]    restart method from CC_UPDATE_RESTART (task, systemd:<unit>, systemd-user:<unit>, manual) or detected; --auto checks daily at CC_UPDATE_AT (04:00)',
   async run(args, ctx) {
     let parsed: UpdateArgs;
     try {
@@ -60,6 +64,20 @@ const updateCommand: Command = {
     }
     const config = (ctx.config ?? loadConfig)();
     // Loaded here and not at the top: see the note at the top of this file and of run.ts.
+    if (parsed.auto) {
+      const auto = await import('./auto.ts');
+      return auto.runAuto({
+        repoRoot: config.repoRoot,
+        dbPath: config.dbPath,
+        dashboardDir: config.dashboardDir,
+        port: parsed.port,
+        timezone: config.timezone,
+        updateAt: config.updateAt,
+        restartSpec: config.updateRestart,
+        stdout: ctx.stdout,
+        stderr: ctx.stderr,
+      }, ctx.secrets ? { ...auto.defaultDeps(), secrets: ctx.secrets } : undefined);
+    }
     const run = await import('./run.ts');
     const deps = ctx.secrets ? { ...run.defaultDeps(), secrets: ctx.secrets } : undefined;
     if (parsed.trustSigners) {

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import { setImmediate as flushMacrotask } from 'node:timers/promises';
 import assert from 'node:assert/strict';
-import { createScheduler, msUntilDailyAt, type JobResult } from './scheduler.ts';
+import { createScheduler, lastDailyAt, msUntilDailyAt, type JobResult } from './scheduler.ts';
 
 /**
  * A fully controllable clock + timer pair. Nothing here uses real time, so the tests are
@@ -212,6 +212,17 @@ describe('msUntilDailyAt across a DST transition', () => {
   test('UTC is unaffected, and midnight resolves rather than landing a day out', () => {
     assert.equal(hoursUntil('2027-06-16T23:00:00Z', '00:00', 'UTC'), 1);
     assert.equal(hoursUntil('2027-06-16T00:30:00Z', '00:00', 'UTC'), 23.5);
+  });
+
+  test('lastDailyAt is the most recent instant at or before now, across the same transitions', () => {
+    assert.equal(lastDailyAt('04:00', 'UTC', new Date('2027-06-16T04:30:00Z')).toISOString(), '2027-06-16T04:00:00.000Z');
+    assert.equal(lastDailyAt('04:00', 'UTC', new Date('2027-06-16T04:00:00Z')).toISOString(), '2027-06-16T04:00:00.000Z', 'at the moment itself');
+    assert.equal(lastDailyAt('04:00', 'UTC', new Date('2027-06-16T03:59:00Z')).toISOString(), '2027-06-15T04:00:00.000Z', 'a minute before is yesterday');
+    // 07:00 EDT on 2027-03-14 is 11:00Z; from 12:00Z that day, the last 07:00 was an hour ago; the one before, 08:00Z on the 13th (EST).
+    assert.equal(lastDailyAt('07:00', NY, new Date('2027-03-14T12:00:00Z')).toISOString(), '2027-03-14T11:00:00.000Z');
+    assert.equal(lastDailyAt('07:00', NY, new Date('2027-03-14T10:00:00Z')).toISOString(), '2027-03-13T12:00:00.000Z');
+    assert.throws(() => lastDailyAt('4:00', 'UTC', new Date()), /expected 'HH:MM'/);
+    assert.throws(() => lastDailyAt('24:00', 'UTC', new Date()), /expected 'HH:MM'/);
   });
 
   test('a malformed time is still rejected', () => {

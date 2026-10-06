@@ -15,6 +15,7 @@ import { registerGithubRoutes } from './github-routes.ts';
 import { registerIdentityRoute } from './identity.ts';
 import { isTailscaleOwner } from './tailscale.ts';
 import { registerUpdateRoutes } from './update-routes.ts';
+import { readUpdateStatus } from '../update/status.ts';
 import { VERSION } from './version.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
@@ -464,7 +465,8 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
 
   router.add('GET', '/api/sync', (ctx) => {
     const jobs = opts.getJobStatus ? opts.getJobStatus() : {};
-    sendJson(ctx.res, 200, { jobs, warnings: jobWarnings(jobs) });
+    // The update status file is the updater's to write and the daemon's to read (update/status.ts).
+    sendJson(ctx.res, 200, { jobs, warnings: jobWarnings(jobs, new Date(), readUpdateStatus(app.config.dbPath)) });
   });
 
   router.add('POST', '/api/sync/:job', (ctx) => {

@@ -59,6 +59,25 @@ export interface UpdateStatus {
   lastResult: UpdateResult | null;
   /** After a failure in --auto mode: no automatic install before this time. */
   backoffUntil: string | null;
+  /** --auto only: how many installs in a row have failed. Cleared by a success, or by a `cc update`
+   *  run by hand. At UPDATER_STOPPED_AFTER the updater stops and `lastResult` says so (its message
+   *  starts with UPDATER_STOPPED_PREFIX). The daemon ignores the count. */
+  failures?: number;
+  /** --auto only: what stopped the last run before it could do anything, such as the daemon not
+   *  answering on its port; null once a run reaches the daemon again. The daemon ignores it. */
+  problem?: string | null;
+}
+
+/** How many failed installs in a row stop the scheduled updater. */
+export const UPDATER_STOPPED_AFTER = 3;
+
+/** The start of `lastResult.message` once the scheduled updater has stopped: the daemon turns
+ *  that, with `backoffUntil` null, into the "Automatic updates have stopped" warning. */
+export const UPDATER_STOPPED_PREFIX = 'Automatic updates have stopped';
+
+/** Whether the scheduled updater has stopped after too many failures and waits for the owner. */
+export function updaterStopped(status: UpdateStatus): boolean {
+  return status.backoffUntil === null && status.lastResult?.ok === false && status.lastResult.message.startsWith(UPDATER_STOPPED_PREFIX);
 }
 
 export function emptyUpdateStatus(): UpdateStatus {

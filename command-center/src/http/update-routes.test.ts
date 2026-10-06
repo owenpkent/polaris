@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { App } from '../app.ts';
-import { emptyUpdateStatus, writeUpdateStatus, type UpdateStatus } from '../update/status.ts';
+import { emptyUpdateStatus, UPDATER_STOPPED_PREFIX, updateStatusPath, writeUpdateStatus, type UpdateStatus } from '../update/status.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './test-support.ts';
 import { UPDATE_COMMAND, isNewerRelease } from './update-routes.ts';
 import { VERSION } from './version.ts';
@@ -246,6 +246,23 @@ test('a picked-up request whose outcome only reached the status file is reconcil
     const failed = (await api(base, 'GET', '/api/update')).json.request;
     assert.equal(failed.state, 'failed');
     assert.equal(failed.result, 'Rolled back: the build failed');
+  });
+});
+
+test('GET /api/sync carries a failed update, and a stopped updater, as warnings read from the status file', async (t) => {
+  const { app, dbPath } = scratchApp(t);
+  const jobs = { backup: { lastRunAt: NOW, lastError: null, running: false } };
+  await withServer(app, { getJobStatus: () => jobs }, async (base) => {
+    assert.deepEqual((await api(base, 'GET', '/api/sync')).json.warnings, [], 'no status file');
+    writeUpdateStatus(dbPath, installedStatus({ lastResult: { ok: true, message: 'Updated to 2.1.0', at: NOW, version: VERSION } }));
+    assert.deepEqual((await api(base, 'GET', '/api/sync')).json.warnings, []);
+    writeUpdateStatus(dbPath, installedStatus({ lastResult: { ok: false, message: 'Rolled back: the build failed', at: NOW, version: VERSION }, failures: 1, backoffUntil: NOW }));
+    assert.deepEqual((await api(base, 'GET', '/api/sync')).json.warnings, [{ job: 'update', message: 'The last update failed: Rolled back: the build failed' }]);
+    const stopped = `${UPDATER_STOPPED_PREFIX}: 3 updates in a row failed, the last one: Rolled back: the build failed. Run cc update --release by hand, which clears the count.`;
+    writeUpdateStatus(dbPath, installedStatus({ lastResult: { ok: false, message: stopped, at: NOW, version: VERSION }, failures: 3, backoffUntil: null }));
+    assert.deepEqual((await api(base, 'GET', '/api/sync')).json.warnings, [{ job: 'update', message: stopped }]);
+    // The daemon reads the file; it never writes it.
+    assert.equal(JSON.parse(readFileSync(updateStatusPath(dbPath), 'utf8')).failures, 3);
   });
 });
 

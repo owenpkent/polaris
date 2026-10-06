@@ -48,6 +48,10 @@ export interface UpdateOptions {
   checkOnly: boolean;
   /** Skip the confirmation. */
   yes: boolean;
+  /** Run by the scheduled updater (auto.ts): nothing is asked, the status file keeps
+   *  `updaterInstalled`, and a release target also records the check (`lastCheckAt`, `available`)
+   *  as `--check` does. The caller writes the request progress and the backoff around this. */
+  auto?: boolean;
   /** CC_UPDATE_RESTART, or undefined to detect the restart method. */
   restartSpec?: string;
   remote?: string;
@@ -91,7 +95,7 @@ class UpdateError extends Error {}
 /** A refusal: nothing has been changed, and the message says why. */
 class Refused extends Error {}
 
-type Log = (line: string, to?: 'stdout' | 'stderr') => void;
+export type Log = (line: string, to?: 'stdout' | 'stderr') => void;
 
 /** What an update would install, worked out before anything moves. */
 interface Plan {
@@ -115,9 +119,29 @@ interface Considered {
   nothingNewer?: boolean;
 }
 
+/** How a run ended, for the caller that has to act on it (auto.ts). `message` is the one line
+ *  that says what happened: the reason for a refusal, "Updated to 2.1.0", "Rolled back: ...". */
+export interface UpdateOutcome {
+  /** 0 done or nothing to do, 1 refused or rolled back, 2 rolled back and that failed too. */
+  code: 0 | 1 | 2;
+  kind: 'updated' | 'nothing_newer' | 'checked' | 'declined' | 'refused' | 'failed' | 'rolled_back' | 'rollback_failed';
+  message: string;
+  /** The version running afterwards, or null when that is not known (a failed rollback). */
+  version: string | null;
+  /** Whether an install was attempted: a target was chosen and the steps from the snapshot on
+   *  ran. False for a refusal, nothing newer, a check, a declined question, and a failure before
+   *  a target was chosen (a fetch that did not answer), none of which the updater counts. */
+  attempted: boolean;
+}
+
 /** Runs the update and returns the exit code: 0 done or nothing to do, 1 refused or rolled back,
  *  2 rolled back and that failed too. */
 export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultDeps()): Promise<number> {
+  return (await performUpdate(opts, deps)).code;
+}
+
+/** `runUpdate` with the outcome, for the scheduled updater. */
+export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultDeps()): Promise<UpdateOutcome> {
   const remote = opts.remote ?? 'origin';
   const branch = opts.branch ?? 'main';
   const branchRef = `${remote}/${branch}`;
@@ -187,36 +211,41 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultD
     }
 
     if (opts.checkOnly) {
-      // --check: what origin/main would give, then the releases, and the status file for the
-      // dashboard. Nothing is refused here: each channel reports its own answer.
-      if (startTag === null) {
-        const main = await considerMain(repo, branchRef, running, previousSha, log);
-        if (main.plan) log(`${main.plan.version} is available from ${branchRef}. Run cc update to install it.`);
-        else log(`${branchRef}: ${main.reason}`);
-      } else {
-        log(`${branchRef} is not a target from a release tag; cc update --release moves between releases.`);
+      // --check: what origin/main would give (not asked by the scheduled updater, which never
+      // installs main), then the releases, and the status file for the dashboard. Nothing is
+      // refused here: each channel reports its own answer.
+      if (!opts.auto) {
+        if (startTag === null) {
+          const main = await considerMain(repo, branchRef, running, previousSha, log);
+          if (main.plan) log(`${main.plan.version} is available from ${branchRef}. Run cc update to install it.`);
+          else log(`${branchRef}: ${main.reason}`);
+        } else {
+          log(`${branchRef} is not a target from a release tag; cc update --release moves between releases.`);
+        }
       }
       const release = await considerRelease(repo, opts, deps, { kind: 'release' }, running, startTag, remote, log);
       if (release.plan) log(`${release.plan.tag} is available. Run cc update --release to install it.`);
       else log(`Releases: ${release.reason}`, release.nothingNewer ? 'stdout' : 'stderr');
-      const at = deps.now().toISOString();
-      writeUpdateStatus(opts.dbPath, {
-        ...readUpdateStatus(opts.dbPath),
-        lastCheckAt: at,
-        available: release.plan ? { version: release.plan.version, notes: release.plan.notes ?? '', touchesSchema: release.plan.touchesSchema } : null,
-      });
-      return 0;
+      recordCheck(release.plan);
+      return { code: 0, kind: 'checked', message: release.plan ? `${release.plan.tag} is available` : release.reason ?? 'nothing newer', version: running, attempted: false };
     }
 
     const considered = wantsRelease
       ? await considerRelease(repo, opts, deps, target, running, startTag, remote, log)
       : await considerMain(repo, branchRef, running, previousSha, log);
+    // The updater's daily look at the releases is a check too: what it found goes to the status
+    // file whether or not it installs. A run by hand clears the updater's failure count (auto.ts).
+    if (opts.auto && target.kind === 'release') recordCheck(considered.plan);
+    if (!opts.auto) clearFailures();
     if (!considered.plan) {
-      if (considered.nothingNewer) { log(`${considered.reason} Nothing installed.`); return 0; }
+      if (considered.nothingNewer) { log(`${considered.reason} Nothing installed.`); return { code: 0, kind: 'nothing_newer', message: considered.reason ?? '', version: running, attempted: false }; }
       throw new Refused(considered.reason ?? 'nothing to install');
     }
     plan = considered.plan;
-    if (!opts.yes && !(await deps.confirm(`Update ${running} to ${plan.version}${plan.tag ? ` (${plan.tag})` : ''} and restart the daemon? [y/N] `))) { log('Not updating. Pass --yes to update without the question.'); return 0; }
+    if (!opts.yes && !opts.auto && !(await deps.confirm(`Update ${running} to ${plan.version}${plan.tag ? ` (${plan.tag})` : ''} and restart the daemon? [y/N] `))) {
+      log('Not updating. Pass --yes to update without the question.');
+      return { code: 0, kind: 'declined', message: 'Not updating', version: running, attempted: false };
+    }
 
     // 3. Snapshot, live, while the checkout is still on the old code.
     if (existsSync(opts.dbPath)) {
@@ -269,11 +298,15 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultD
     if (!health.ok) throw new UpdateError(`the health check failed: ${health.reason}`);
     log(`Updated to ${plan.version}${plan.tag ? ` (${plan.tag})` : ''}. The daemon is up on port ${opts.port}.`);
     recordResult(true, `Updated to ${plan.version}`, plan.version);
-    return 0;
+    return { code: 0, kind: 'updated', message: `Updated to ${plan.version}`, version: plan.version, attempted: true };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    if (e instanceof Refused || e instanceof SignersError) { log(`Refused: ${message}`, 'stderr'); return 1; }
-    if (!moved) { log(`Failed before anything changed: ${message}`, 'stderr'); return 1; }
+    if (e instanceof Refused || e instanceof SignersError) { log(`Refused: ${message}`, 'stderr'); return { code: 1, kind: 'refused', message, version: running || null, attempted: false }; }
+    if (!moved) {
+      log(`Failed before anything changed: ${message}`, 'stderr');
+      if (plan) recordResult(false, `Failed before anything changed: ${message}`, running);
+      return { code: 1, kind: 'failed', message: `Failed before anything changed: ${message}`, version: running || null, attempted: plan !== null };
+    }
 
     // 9. Roll back: the previous commit, its dependencies, the previous dashboard, and, when the
     // new code migrated the database, the snapshot.
@@ -317,14 +350,14 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultD
         log(`Rolled back. The daemon is up on port ${opts.port} running ${running}.`);
       }
       recordResult(false, `Rolled back: ${message}`, running);
-      return 1;
+      return { code: 1, kind: 'rolled_back', message: `Rolled back: ${message}`, version: running, attempted: true };
     } catch (e2) {
       const why = e2 instanceof Error ? e2.message : String(e2);
       log(`ROLLBACK FAILED: ${why}`, 'stderr');
       log(`The previous commit is ${previousSha}. ${snapshot ? `The database snapshot is ${snapshot}.` : 'There is no database snapshot.'}`, 'stderr');
       log(`To finish by hand: stop the daemon, git checkout --force ${startTag === null ? branch : `--detach ${previousSha}`} (at ${previousSha}), npm ci --ignore-scripts in both package folders, npm rebuild esbuild, put ${distPrev} back as ${opts.dashboardDir}${snapshot ? `, restore ${snapshot} over ${opts.dbPath} if the schema moved` : ''}, then start the daemon.`, 'stderr');
       recordResult(false, `Rolled back, and that failed: ${why}`, null);
-      return 2;
+      return { code: 2, kind: 'rollback_failed', message: `Rolled back, and that failed: ${why}`, version: null, attempted: true };
     }
   }
 
@@ -334,18 +367,33 @@ export async function runUpdate(opts: UpdateOptions, deps: UpdateDeps = defaultD
   function healthDeps() {
     return { fetch: deps.fetch, sleep: deps.sleep, now: () => deps.now().getTime() };
   }
-  /** The status file (status.ts): a manual run leaves `updaterInstalled` false; --auto (phase C)
-   *  sets it. A successful install clears `available`, which named what was just installed. */
+  /** The status file (status.ts): a manual run leaves `updaterInstalled` false, and --auto keeps
+   *  the heartbeat it wrote. A successful install clears `available`, which named what was just
+   *  installed. */
   function recordResult(ok: boolean, message: string, version: string | null): void {
     const at = deps.now().toISOString();
     const before = readUpdateStatus(opts.dbPath);
     writeUpdateStatus(opts.dbPath, {
       ...before,
-      updaterInstalled: false,
+      updaterInstalled: opts.auto ? before.updaterInstalled : false,
       running: version,
       available: ok ? null : before.available,
       lastResult: { ok, message, at, version: version ?? '' },
     });
+  }
+  /** What the releases look like right now, for the dashboard: `--check`, and every --auto look. */
+  function recordCheck(found: Plan | null): void {
+    writeUpdateStatus(opts.dbPath, {
+      ...readUpdateStatus(opts.dbPath),
+      lastCheckAt: deps.now().toISOString(),
+      available: found ? { version: found.version, notes: found.notes ?? '', touchesSchema: found.touchesSchema } : null,
+    });
+  }
+  /** A run by hand is the owner taking over from a stopped or backed-off updater (auto.ts). */
+  function clearFailures(): void {
+    const before = readUpdateStatus(opts.dbPath);
+    if (!before.failures && !before.backoffUntil) return;
+    writeUpdateStatus(opts.dbPath, { ...before, failures: 0, backoffUntil: null });
   }
 }
 
@@ -475,7 +523,8 @@ export async function runTrustSigners(opts: TrustSignersOptions, deps: UpdateDep
   }
 }
 
-function openLog(opts: Pick<UpdateOptions, 'dbPath' | 'stdout' | 'stderr'>, deps: Pick<UpdateDeps, 'now'>): Log {
+/** The log every run appends to: data/update.log, timestamped, echoed to the console. */
+export function openLog(opts: Pick<UpdateOptions, 'dbPath' | 'stdout' | 'stderr'>, deps: Pick<UpdateDeps, 'now'>): Log {
   const logFile = updateLogPath(opts.dbPath);
   mkdirSync(dirname(logFile), { recursive: true });
   return (line, to = 'stdout') => {

@@ -100,6 +100,26 @@ export function msUntilDailyAt(hhmm: string, timezone: string, now: Date): numbe
   return 24 * 60 * 60 * 1000;
 }
 
+/**
+ * The most recent instant, at or before `now`, at which it was `hhmm` in `timezone`: the start of
+ * the current daily slot. The counterpart of msUntilDailyAt, resolved the same way, so a DST day
+ * gives the right instant too. `cc update --auto` uses it for its quiet window.
+ */
+export function lastDailyAt(hhmm: string, timezone: string, now: Date): Date {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m) throw new Error(`invalid dailyAt '${hhmm}': expected 'HH:MM'`);
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) throw new Error(`invalid dailyAt '${hhmm}': expected 'HH:MM'`);
+  const from = now.getTime();
+  for (let dayOffset = 0; dayOffset >= -2; dayOffset--) {
+    const { y, mo, d } = zonedDatePlus(from, timezone, dayOffset);
+    const ts = zonedWallTimeToUtc(y, mo, d, hh, mm, timezone);
+    if (ts <= from) return new Date(ts);
+  }
+  return new Date(from - 24 * 60 * 60 * 1000);
+}
+
 
 export function createScheduler(opts: SchedulerOptions): Scheduler {
   for (const job of opts.jobs) {
