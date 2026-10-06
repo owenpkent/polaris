@@ -44,6 +44,29 @@ jobs:
       - run: npm run test:fast
       - run: npm run build
 
+  # A floor under the server suite's coverage (command-center/package.json, test:coverage). It
+  # reruns the suite, so it is its own job on Linux rather than a second pass in the Windows job
+  # above, and it runs on both events: it is cheap, and a push to a branch without a pull request
+  # should still see it. The floors sit a couple of points under what was measured on 2026-10-06
+  # (lines 96.3, branches 88.8, functions 94.0). If it fails, add the missing tests; raise the
+  # floors when coverage has risen, never lower them to get green. Not in the pre-push hook: it
+  # would run the whole server suite a second time.
+  coverage:
+    name: Server test coverage floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: command-center/package-lock.json
+      - run: npm ci
+        working-directory: command-center
+      - run: npm run test:coverage
+        working-directory: command-center
+
   ui:
     name: UI tests in Edge, part ${{ matrix.shard }} of 4
     if: github.event_name == 'pull_request'
@@ -141,7 +164,7 @@ jobs:
   # that only runs when `changes` says its paths were touched).
   tests:
     name: Tests
-    needs: [changes, fast, ui, ui-passed]
+    needs: [changes, fast, coverage, ui, ui-passed]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -163,6 +186,7 @@ jobs:
             bad=1
           }
           must_pass changes "${{ needs.changes.result }}"
+          must_pass coverage "${{ needs.coverage.result }}"
           must_pass ui "${{ needs.ui.result }}"
           must_pass ui-passed "${{ needs.ui-passed.result }}"
           # `fast` is skipped on pull requests by design (the push run covers the same commit),
