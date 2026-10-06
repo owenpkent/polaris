@@ -180,6 +180,36 @@ while (Get-NetTCPConnection -LocalPort 8788 -State Listen -ErrorAction SilentlyC
 Start-ScheduledTask 'Constellation Command Center'
 ```
 
+## Updating
+
+`npm run cc -- update` moves an install to the newest `origin/main`, the way the manual steps did, with a checked snapshot and a rollback (the design is docs/update-proposal.md; signed releases, the scheduled updater, and the dashboard's update icon are later phases). You run it; the daemon never does, and never starts a program.
+
+What it does, in order, logging each step to `data/update.log` and the outcome to `data/update-status.json`:
+
+1. Refuses when the working tree has uncommitted changes, is not on `main`, has local commits not on the remote, or when `origin/main`'s version (the root package.json) is not strictly newer than the running one. A deploy checkout carries no local work; keep development in a second clone.
+2. Fetches and shows the commits, whether `src/core/schema.ts` changes, and whether a lockfile changes. `--check` stops here. Otherwise it asks once; `--yes` skips the question.
+3. Snapshots the database through the backup code, live, as `constellation-pre-update-<version>-<moment>.db` (`.enc` when backup encryption is on) in the backup folder. The daily copy never replaces it; the newest three snapshots are kept.
+4. Checks out `origin/main`, runs `npm ci --ignore-scripts` here and at the root, then `npm rebuild esbuild` (the one install script the build needs; a test pins that list), `npm run test:fast`, and `vite build --outDir dist.next`. The live `dist/` is untouched until the restart.
+5. Restarts the daemon, swapping `dist.next` into `dist` and keeping the old one as `dist.prev`, then checks it: `GET /api/identity` must answer with the proof for this install's api token, and `GET /api/health` must say ok and report the new version, within 90 seconds. The token is read from the file next to the database and never printed. `--port` names the daemon's port (8788).
+6. On any failure after the checkout moved: back to the previous commit, `npm ci` again, `dist.prev` back, and, when the new code had migrated the database, the snapshot restored (with the daemon stopped, and the `-wal` and `-shm` files removed) before the restart. A failure before the restart leaves the daemon running the old code throughout. If the rollback fails too, the command says so, with the previous commit and the snapshot path.
+
+How the daemon is restarted comes from `CC_UPDATE_RESTART`, or is detected: the logon task on Windows, then `systemctl is-active polaris`, then the user unit, otherwise by hand.
+
+| Method | `CC_UPDATE_RESTART` | What happens |
+|---|---|---|
+| Windows logon task | `task` | `Stop-ScheduledTask`, wait for the port to free, swap, `Start-ScheduledTask` |
+| systemd system unit | `systemd:<unit>` | `sudo -n systemctl restart <unit>`, with the swap just before it. Needs one sudoers line (below) |
+| systemd user unit | `systemd-user:<unit>` | `systemctl --user stop`, swap, `systemctl --user start` |
+| A plain process | `manual` | Prints that you must stop the daemon, waits for the port to free, swaps, asks you to start it, waits, then health-checks. A rollback restores the code, `dist`, and the database and asks you to restart once more |
+
+For a system unit, add this line with `visudo`, naming your user and the unit: it allows that one command and nothing else.
+
+```
+owen ALL=(root) NOPASSWD: /usr/bin/systemctl restart polaris
+```
+
+The system unit is the one method with no stop between the swap and the start: the old daemon is still up for the second before systemd restarts it. The dashboard swap is harmless then, and a database restore goes in by a rename over the file, so the closing daemon's last checkpoint lands in the old file and not in the restored one.
+
 ## Safety model
 
 - **Propose, do not act.** Third-party input is inbox-only, and the store enforces it: an item from a third-party source (GitHub today; the list also still names gmail, gdrive, and gcal so their old tasks keep the marker) that asks for any starting status except `inbox` is refused, so a new ingest module cannot skip the inbox by mistake. Nothing writes to GitHub or Google. Nothing writes into tracked repos.
@@ -209,6 +239,7 @@ Start-ScheduledTask 'Constellation Command Center'
 | CC_CORS_ORIGINS | localhost:5173 | Dashboard origins allowed to call the API |
 | CC_TAILSCALE_LOGIN | unset | Your Tailscale login. A dashboard opened through `tailscale serve` on this machine then needs no token (docs/tailscale-identity.md). Never applies to MCP |
 | CC_DASHBOARD_DIR | repo root's dist/ | Built dashboard directory served at / |
+| CC_UPDATE_RESTART | detected | How `cc update` restarts the daemon: `task`, `systemd:<unit>`, `systemd-user:<unit>`, or `manual` (see Updating) |
 | GITHUB_WEBHOOK_SECRET | unset | Enables POST /webhooks/github |
 
 ## Layout
