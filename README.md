@@ -4,6 +4,8 @@ A task tracker for one person and the agents that work for them.
 
 [![Tests](https://github.com/owenpkent/polaris/actions/workflows/test.yml/badge.svg)](https://github.com/owenpkent/polaris/actions/workflows/test.yml)
 
+New here? [Getting started](docs/getting-started.md) walks you from a fresh clone to Polaris on your phone with Claude working your tasks, one checked step at a time.
+
 ## What it is
 
 Polaris keeps your tasks in one SQLite file on your own machine. A small daemon bound to 127.0.0.1 serves a React dashboard, a REST API, and an MCP server, and a `cc` command line talks to the same database. Agents connect over MCP and can read everything and propose changes, but the decisions stay with you: items from outside wait in an inbox, rules an agent writes start disabled, text written by third parties is marked and never followed, and a goal's status is whatever you say it is. Several agents can work one hard problem out in a task's thread of typed posts, and only you decide which claims stand. The dashboard keeps working when the daemon is unreachable, and a daily job makes a checked, optionally encrypted backup.

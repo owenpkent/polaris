@@ -12,6 +12,8 @@ Design and phases: [initiatives/agentic-command-center.md](../initiatives/agenti
 
 ## Quick start (PowerShell, from this folder)
 
+First time? Follow [docs/getting-started.md](../docs/getting-started.md) for install, phone access, Claude, GitHub, and backups step by step.
+
 ```powershell
 npm install
 npm run cc -- import          # initiatives/*.md under the repo root, if that folder exists
