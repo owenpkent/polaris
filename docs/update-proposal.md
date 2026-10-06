@@ -1,6 +1,6 @@
 # Safe updates: design
 
-Status: approved by the owner on 2026-10-06 and being built in phases (section 9). This revision folds in the review of the first draft: a named snapshot that survives the daily backup, a rollback that restores the database as well as the code, a build that never empties the live dashboard, a health check that can actually pass, a strict "newer only" rule for what gets installed, a stated owner for every row of the request table, and an update module the daemon's import graph never reaches. The rule changes in section 7 were approved together with "build it".
+Status: built, 2026-10-06. Approved by the owner on 2026-10-06 and built in the four phases of section 9. This revision folds in the review of the first draft: a named snapshot that survives the daily backup, a rollback that restores the database as well as the code, a build that never empties the live dashboard, a health check that can actually pass, a strict "newer only" rule for what gets installed, a stated owner for every row of the request table, and an update module the daemon's import graph never reaches. The rule changes in section 7 were approved together with "build it".
 
 This document describes how a Polaris install gets newer code: a `cc update` command the owner runs, signed releases, an opt-in scheduled updater, and an update icon on the dashboard that says when a newer release exists and can ask the updater to install it. Security is a requirement throughout, because an updater decides what code runs next to the owner's data on every install.
 
@@ -53,8 +53,8 @@ The command never touches `command-center/data` except through the backup code, 
 | Install | How `cc update` restarts it | Rollback can restart |
 |---|---|---|
 | Windows logon task (`task`) | Stop the task, wait until nothing listens on the port, swap `dist`, start the task (the README's loop) | Yes |
-| systemd system unit, GR9 (`systemd:<unit>`) | `sudo -n systemctl restart <unit>`, which needs the one-line sudoers rule below | Yes |
-| systemd user unit (`systemd-user:<unit>`) | `systemctl --user restart <unit>` | Yes |
+| systemd system unit, GR9 (`systemd:<unit>`) | `sudo -n systemctl stop <unit>`, wait until nothing listens on the port, swap, `sudo -n systemctl start <unit>`, which needs the one-line sudoers rule below | Yes |
+| systemd user unit (`systemd-user:<unit>`) | `systemctl --user stop <unit>`, wait for the port, swap, `systemctl --user start <unit>` | Yes |
 | Plain process (`manual`) | Prints that the owner must restart the daemon, waits for the port to drop and come back, then health-checks | No: a failed health check rolls the code, `dist`, and the database back and asks the owner to restart once more |
 
 The "never left broken" promise in section 5 holds for the three methods that can restart. On a plain process the command restores everything it can and tells the owner what to do.
@@ -65,7 +65,7 @@ For a systemd system unit the owner installs one sudoers line, which `scripts/in
 owen ALL=(root) NOPASSWD: /usr/bin/systemctl stop polaris, /usr/bin/systemctl start polaris, /usr/bin/systemctl restart polaris
 ```
 
-That names the one unit and three verbs, because an update stops the daemon, swaps the built dashboard (and restores the snapshot on a rollback) while nothing holds the port, then starts it, with restart for the simple case. The alternative, moving GR9 to a user unit with lingering, would avoid root but means redoing the NAS mount and Tailscale ordering at user level; the sudoers line is the default and the user unit stays supported.
+That names the one unit and three verbs, because an update stops the daemon, swaps the built dashboard (and restores the snapshot on a rollback) while nothing holds the port, then starts it; restart is kept on the line for the owner's own use and is one of the verbs the preflight `sudo -n -l` check asks about, so an older one-verb line is reported before anything moves. The alternative, moving GR9 to a user unit with lingering, would avoid root but means redoing the NAS mount and Tailscale ordering at user level; the sudoers line is the default and the user unit stays supported.
 
 ### 1B. Versions and "newer"
 
@@ -94,15 +94,15 @@ Off by default. An installer schedules `cc update --auto` with the operating sys
 - `scripts/install-updater-task.ps1` on Windows, a scheduled task beside the logon task (`-Uninstall` removes it),
 - `scripts/install-updater-systemd.sh` on Linux, a user service and timer (`--uninstall` removes them), which also prints the sudoers line when the daemon is a system unit.
 
-Each run is cheap when there is nothing to do. It runs outside the daemon, as the owner, and:
+Each run is cheap when there is nothing to do. It runs outside the daemon, as the owner, never asks a question, and (src/update/auto.ts):
 
-- installs **only signed releases**, never `main`, and only a version strictly newer than the running one,
-- checks for new tags once a day, in a quiet window the owner chooses (default 04:00, after the 03:15 backup), and installs what it finds then,
-- picks up an owner's update request from the dashboard (section 4B) on any run, at once,
-- backs off after a failure (one day, then three, then stops and waits for the owner),
+- installs **only signed releases**, never `main`, and only a version strictly newer than the running one; a request whose tag does not verify or whose version is not newer is finished as failed with the reason,
+- writes the heartbeat first, then asks the daemon over loopback, with the api token, for the owner's update request (section 4B) and picks a pending one up at once, on any run. A daemon that does not answer on its port ends the run with nothing installed (there is nothing to restart into) and the status file's `problem` says so,
+- checks for new tags once a day in a quiet window: one hour from `CC_UPDATE_AT` (default 04:00, after the 03:15 backup), in the daemon's timezone. The first run inside the window fetches the tags, records what it found, and installs the newest verified newer release at once; outside the window it only refreshes `available` when the last check is more than a day old, and installs nothing. "Once a day" is "once per window", not a 24-hour clock, so the moment never drifts out of the window,
+- backs off after a failed install: one day after the first failure in a row, three days after the second, and after the third it stops (`backoffUntil` null, `failures` 3, and a `lastResult` whose message says that automatic updates have stopped) and waits for the owner. Any `cc update` run by hand, other than `--check`, clears the count and the pause,
 - writes a heartbeat, its progress, and its result to `data/update-status.json`.
 
-The status file is the updater's alone to write. Its shape: `{ "version": 1, "updaterInstalled": true, "lastRunAt", "lastCheckAt", "running": "2.1.0" | null, "available": { "version", "notes", "touchesSchema" } | null, "request": { "id", "state", "message", "finishedAt" } | null, "lastResult": { "ok", "message", "at" } | null, "backoffUntil" }`. The daemon only reads it: a failed run becomes a job warning through src/http/warnings.ts, so the dashboard's red strip shows it, and a heartbeat within the last fifteen minutes is what "the updater is installed" means. The daemon runs nothing to do this; it reads a file.
+The status file is the updater's alone to write. Its shape: `{ "version": 1, "updaterInstalled": true, "lastRunAt", "lastCheckAt", "running": "2.1.0" | null, "available": { "version", "notes", "touchesSchema" } | null, "request": { "id", "state", "message", "finishedAt" } | null, "lastResult": { "ok", "message", "at", "version" } | null, "backoffUntil", "failures"?, "problem"? }`. The daemon only reads it: a failed result becomes a job warning through src/http/warnings.ts ("The last update failed: ...", or "Automatic updates have stopped: ..." once the updater has stopped), so the dashboard's red strip shows it, and a heartbeat within the last fifteen minutes is what "the updater is installed" means. The daemon ignores `failures` and `problem`, which are the updater's own bookkeeping. The daemon runs nothing to do this; it reads a file.
 
 ## 4. The update icon
 
@@ -198,7 +198,7 @@ A new group in command-center/src/invariants.test.ts (11, or 12 if the runner gr
 
 - **Phase A: `cc update`, manual.** Refuse, fetch, named snapshot, checkout, `npm ci --ignore-scripts`, test, staged build, restart, health check, rollback with snapshot restore, log and status file. Restart for the Windows task, both systemd forms, and a plain process. The update module behind a dynamic import, with the import-graph invariant.
 - **Phase B: releases.** The version rule (corrected: `main` needs new commits and a version that is not older; a release must be strictly newer), `release-signers`, pinning, `--release`, `--to`, `--check` (which reports `origin/main` and the releases, and writes `available` to the status file), `--trust-signers`, starting from a release tag, docs/releases.md with the key setup, a CHANGELOG, the version-equality test.
-- **Phase C: the scheduled updater.** `--auto`, the quiet window and backoff, the status file, the two installers and the sudoers line, the job warning.
+- **Phase C: the scheduled updater.** `--auto`, the quiet window and backoff, the status file, the two installers and the sudoers line, the job warning. Built last: it wires the other three together.
 - **Phase D: the update icon.** The icon and panel, `GET /api/update`, the request routes and table, the updater picking up requests, shots and axe coverage, the invariants group.
 
 ## Open questions

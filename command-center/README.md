@@ -182,7 +182,7 @@ Start-ScheduledTask 'Constellation Command Center'
 
 ## Updating
 
-`npm run cc -- update` moves an install to the newest `origin/main`, the way the manual steps did, with a checked snapshot and a rollback; `--release` and `--to` move it to a signed release instead (the design is docs/update-proposal.md; the release checklist and the key setup are docs/releases.md; the scheduled updater and the dashboard's update icon are later phases). You run it; the daemon never does, and never starts a program.
+`npm run cc -- update` moves an install to the newest `origin/main`, the way the manual steps did, with a checked snapshot and a rollback; `--release` and `--to` move it to a signed release instead (the design is docs/update-proposal.md; the release checklist and the key setup are docs/releases.md; the scheduled updater is `--auto` under Automatic updates below, and the dashboard's update icon asks it to install). You run it, or the OS scheduler runs `--auto` as you; the daemon never does, and never starts a program.
 
 What it does, in order, logging each step to `data/update.log` and the outcome to `data/update-status.json`:
 
@@ -213,7 +213,7 @@ How the daemon is restarted comes from `CC_UPDATE_RESTART`, or is detected: the 
 | Method | `CC_UPDATE_RESTART` | What happens |
 |---|---|---|
 | Windows logon task | `task` | `Stop-ScheduledTask`, wait for the port to free, swap, `Start-ScheduledTask` |
-| systemd system unit | `systemd:<unit>` | `sudo -n systemctl restart <unit>`, with the swap just before it. Needs one sudoers line (below) |
+| systemd system unit | `systemd:<unit>` | `sudo -n systemctl stop <unit>`, wait for the port to free, swap, `sudo -n systemctl start <unit>`. Needs one sudoers line (below) |
 | systemd user unit | `systemd-user:<unit>` | `systemctl --user stop`, swap, `systemctl --user start` |
 | A plain process | `manual` | Prints that you must stop the daemon, waits for the port to free, swaps, asks you to start it, waits, then health-checks. A rollback restores the code, `dist`, and the database and asks you to restart once more |
 
@@ -223,11 +223,18 @@ For a system unit, add this line with `visudo`, naming your user and the unit (`
 owen ALL=(root) NOPASSWD: /usr/bin/systemctl stop polaris, /usr/bin/systemctl start polaris, /usr/bin/systemctl restart polaris
 ```
 
-The system unit is the one method with no stop between the swap and the start: the old daemon is still up for the second before systemd restarts it. The dashboard swap is harmless then, and a database restore goes in by a rename over the file, so the closing daemon's last checkpoint lands in the old file and not in the restored one.
+Before anything moves, `cc update` asks `sudo -n -l` about all three verbs, so a missing or older sudoers line is reported while the daemon is still up and nothing has changed. The restart itself only ever runs stop and start.
 
 ### Automatic updates
 
-Off until you install the scheduled updater, which runs `npm run cc -- update --auto` every five minutes, as you, outside the daemon (the design is docs/update-proposal.md, section 3). It installs only signed releases, never `main`, and only a version strictly newer than the one running: it checks for new tags once a day in the quiet window and installs what it finds then, picks up an Update now request from the dashboard within five minutes, backs off after a failure, and writes what it is doing to `data/update-status.json`, which the dashboard's update icon reads. Each run appends to `data/updater.log`.
+Off until you install the scheduled updater, which runs `npm run cc -- update --auto` every five minutes, as you, outside the daemon (the design is docs/update-proposal.md, section 3). It installs only signed releases, never `main`, and only a version strictly newer than the one running, and it never asks a question. Each run appends to `data/updater.log` (its own output) and, when it does something, to `data/update.log` (the update steps), and writes what it is doing to `data/update-status.json`, which the dashboard's update icon and the warnings strip read. One run, in order:
+
+1. Writes the heartbeat (`updaterInstalled`, `lastRunAt`). A heartbeat within fifteen minutes is what makes the panel show its Update now button.
+2. Asks the daemon on its port for the current update request, with the api token from the file next to the database. A daemon that does not answer ends the run: nothing is installed when there is nothing to restart into, and the status file's `problem` says so until a run reaches the daemon again. A pending request (the dashboard's Update now) is picked up, re-verified against the pinned signers, required to be strictly newer, installed through the same path as `cc update --to` (snapshot, checkout, `npm ci`, tests, build, restart, health check, rollback), and finished as done or failed with the one-line reason. A request whose tag does not verify, or whose version is not newer, is finished as failed and nothing is installed. If the daemon cannot be reached after the restart, the status file's `request` entry carries the outcome and the daemon takes it from there.
+3. With no request, the daily check. The quiet window is one hour from `CC_UPDATE_AT` (04:00 by default, in the daemon's timezone, after the 03:15 backup). Inside it, the first run fetches the tags, writes what it found as `available` and `lastCheckAt`, and installs the newest verified newer release at once. Outside it, `available` is refreshed once a day and nothing is installed, so the icon still lights the morning after a release when the window was missed.
+4. After a failed install (a rollback, or a rollback that failed), the backoff ladder: no automatic install for one day after the first failure in a row, three days after the second, and after the third the updater stops and waits for you. The status file keeps the count (`failures`) and the pause (`backoffUntil`), and the dashboard shows "The last update failed: ..." while it backs off and "Automatic updates have stopped: ..." once it has stopped. A success clears the count.
+
+To restart a stopped updater, run `npm run cc -- update --release` by hand: any run by hand (not `--check`) clears the count and the pause, whatever its outcome, and the next scheduled run carries on. The failure itself is in `data/update.log`.
 
 Windows, a scheduled task beside the logon task, run whether or not you are logged on:
 
@@ -275,6 +282,7 @@ When the daemon is a system unit (`systemctl is-active polaris`, or `--unit <nam
 | CC_TAILSCALE_LOGIN | unset | Your Tailscale login. A dashboard opened through `tailscale serve` on this machine then needs no token (docs/tailscale-identity.md). Never applies to MCP |
 | CC_DASHBOARD_DIR | repo root's dist/ | Built dashboard directory served at / |
 | CC_UPDATE_RESTART | detected | How `cc update` restarts the daemon: `task`, `systemd:<unit>`, `systemd-user:<unit>`, or `manual` (see Updating) |
+| CC_UPDATE_AT | 04:00 | When the scheduled updater's daily check runs, the start of its one-hour quiet window, in CC_TZ (see Automatic updates). Read by `cc update --auto` only |
 | GITHUB_WEBHOOK_SECRET | unset | Enables POST /webhooks/github |
 
 ## Layout
@@ -290,6 +298,7 @@ src/
   http/        REST API (backup settings and job warnings included), MCP over Streamable HTTP, webhook receiver
   daemon/      job catalog, one-shot sync, long-running daemon, backups and their encryption
   tasks/       human CLI commands
+  update/      cc update: releases, signers, the install steps, the restart, the scheduled --auto run, and the status file the daemon reads
   dev/         demo and UI-test database seeders; both refuse to run against the real database
 ```
 
