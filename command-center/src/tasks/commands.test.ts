@@ -124,5 +124,12 @@ test('tasks import: dry run, real run, and a failing file from the command line'
   assert.equal(await cmd('tasks import').run([bad, '--format', 'csv'], ctx), 1);
   assert.match(err.at(-1)!, /^line 2: invalid due date/);
   assert.equal(app.store.countTasks({}), 2);
+
+  // A quote that never closes is an error on the line it opened, never a task holding the rest of the file.
+  const unterminated = join(dir, 'unterminated.csv');
+  writeFileSync(unterminated, 'title,notes\nFirst,"unterminated\nSecond,notes\n');
+  assert.equal(await cmd('tasks import').run([unterminated], ctx), 1);
+  assert.match(err.at(-1)!, /^line 2: a quoted field is never closed/);
+  assert.equal(app.store.countTasks({}), 2);
   assert.throws(() => cmd('tasks import').run([good, '--format', 'xml'], ctx), /--format must be/);
 });

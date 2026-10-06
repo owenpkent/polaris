@@ -85,6 +85,63 @@ describe('ImportTasks', () => {
     expect(screen.getByText(/Preview again to import it/)).toBeTruthy()
   })
 
+  test('a preview from one server does not import to another', async () => {
+    api.importTasks.mockResolvedValue(PREVIEW)
+    const apiB = {
+      listProjects: vi.fn().mockResolvedValue({ projects: [] }),
+      importTasks: vi.fn().mockResolvedValueOnce(PREVIEW).mockResolvedValueOnce({ count: 2 }),
+    }
+    const { rerender } = render(<ImportTasks />)
+    type('Book the venue')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByRole('button', { name: 'Import 2 tasks' })
+
+    // Test connection & save on the Connection card replaces the client while this card stays mounted.
+    connection.api = apiB
+    try {
+      rerender(<ImportTasks />)
+      const importButton = screen.getByRole('button', { name: 'Import' })
+      expect(importButton.disabled).toBe(true)
+      expect(screen.queryByRole('region', { name: 'Import preview' })).toBeNull()
+      expect(screen.getByText(/The server connection changed since the preview/)).toBeTruthy()
+      fireEvent.click(importButton)
+      expect(apiB.importTasks).not.toHaveBeenCalled()
+
+      // A new dry run on the new server is what makes Import available again.
+      fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+      await screen.findByRole('button', { name: 'Import 2 tasks' })
+      expect(apiB.importTasks).toHaveBeenCalledTimes(1)
+      expect(apiB.importTasks).toHaveBeenLastCalledWith({ text: 'Book the venue', format: 'auto', dryRun: true })
+      fireEvent.click(screen.getByRole('button', { name: 'Import 2 tasks' }))
+      await screen.findByText('Imported 2 tasks.')
+      expect(apiB.importTasks).toHaveBeenLastCalledWith({ text: 'Book the venue', format: 'auto', dryRun: false })
+      expect(api.importTasks).toHaveBeenCalledTimes(1)
+    } finally {
+      connection.api = api
+    }
+  })
+
+  test('a preview that answers after the server changed is dropped', async () => {
+    let answer
+    api.importTasks.mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    const apiB = { listProjects: vi.fn().mockResolvedValue({ projects: [] }), importTasks: vi.fn() }
+    const { rerender } = render(<ImportTasks />)
+    type('Book the venue')
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await waitFor(() => expect(api.importTasks).toHaveBeenCalledTimes(1))
+
+    connection.api = apiB
+    try {
+      rerender(<ImportTasks />)
+      answer(PREVIEW)
+      await waitFor(() => expect(screen.getByLabelText('Tasks to import').disabled).toBe(false))
+      expect(screen.queryByRole('region', { name: 'Import preview' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Import' }).disabled).toBe(true)
+    } finally {
+      connection.api = api
+    }
+  })
+
   test('a server error is shown and nothing is cleared', async () => {
     api.importTasks.mockRejectedValue(new Error('text is too long'))
     render(<ImportTasks />)

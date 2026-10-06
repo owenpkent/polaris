@@ -51,6 +51,26 @@ test('csv: bad values are row errors with line numbers, not throws', () => {
   assert.deepEqual(r.errors.filter((e) => e.line === 4).map((e) => e.message), ['title is empty']);
 });
 
+test('csv: an unterminated quoted field is an error on the line it opened, not a record', () => {
+  const text = 'title,notes\nFirst,"unterminated\nSecond,notes\n';
+  for (const format of ['csv', 'auto'] as const) {
+    const r = parseTaskText(text, format);
+    assert.equal(r.format, 'csv');
+    assert.deepEqual(r.rows, []);
+    assert.equal(r.errors.length, 1);
+    assert.equal(r.errors[0].line, 2);
+    assert.match(r.errors[0].message, /quoted field is never closed/);
+  }
+  // The line is where the quote opened, even when earlier fields spanned lines.
+  const later = parseTaskText('title,notes\n"a\nb",fine\nc,"open\nd,e', 'csv');
+  assert.deepEqual(later.rows, []);
+  assert.deepEqual(later.errors.map((e) => e.line), [4]);
+  // A closed quote at the end of the text is still a record.
+  const closed = parseTaskText('title,notes\nFirst,"two\nlines"', 'csv');
+  assert.deepEqual(closed.errors, []);
+  assert.equal(closed.rows[0].notes, 'two\nlines');
+});
+
 test('csv: a missing title column is an error', () => {
   const r = parseTaskText('foo,bar\n1,2', 'csv');
   assert.equal(r.rows.length, 0);

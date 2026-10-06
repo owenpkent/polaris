@@ -687,6 +687,26 @@ test('POST /api/tasks/import: a bad row creates nothing and reports its line', a
   });
 });
 
+test('POST /api/tasks/import: an unterminated quoted CSV field creates no tasks or sections', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const project = app.store.upsertProject({ slug: 'nimbus', name: 'Project Nimbus' });
+  await withServer(app, {}, async (base) => {
+    const text = 'title,notes,section\nFirst,"unterminated,Backlog\nSecond,notes,Review\n';
+    const dry = await api(base, 'POST', '/api/tasks/import', { text, project: 'nimbus', dryRun: true });
+    assert.equal(dry.status, 200);
+    assert.deepEqual(dry.json.rows, []);
+    assert.deepEqual(dry.json.errors.map((e: { line: number }) => e.line), [2]);
+    assert.match(dry.json.errors[0].message, /quoted field is never closed/);
+    const real = await api(base, 'POST', '/api/tasks/import', { text, project: 'nimbus' });
+    assert.equal(real.status, 400);
+    assert.equal(real.json.error.code, 'ValidationError');
+    assert.deepEqual(real.json.errors.map((e: { line: number }) => e.line), [2]);
+    assert.equal(app.store.countTasks({}), 0);
+    assert.equal(app.store.listSections(project.id).length, 0);
+  });
+});
+
 test('POST /api/tasks/import: an unknown project is a row error', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());

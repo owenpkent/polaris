@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { useOffline } from './offlineStatus'
 import { ErrorBanner, formatDate } from './shared'
@@ -48,9 +48,14 @@ export default function ImportTasks() {
   const [projects, setProjects] = useState([])
   const [preview, setPreview] = useState(null)
   const [previewKey, setPreviewKey] = useState(null)
+  // The client the preview came from. Test connection & save on the Connection card replaces
+  // `api` while this card stays mounted, and a dry run on one server says nothing about another.
+  const [previewApi, setPreviewApi] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const apiRef = useRef(api)
+  apiRef.current = api
 
   useEffect(() => {
     if (!connected) return undefined
@@ -71,7 +76,8 @@ export default function ImportTasks() {
   }
 
   const key = JSON.stringify([text, format, project])
-  const fresh = preview && previewKey === key
+  const sameServer = previewApi === api
+  const fresh = Boolean(preview) && previewKey === key && sameServer
   const rows = fresh ? preview.rows || [] : []
   const errors = fresh ? preview.errors || [] : []
   const canImport = fresh && rows.length > 0 && errors.length === 0 && !busy && !offline
@@ -89,11 +95,16 @@ export default function ImportTasks() {
       return
     }
     setBusy(true)
+    const client = api
     try {
-      const res = await api.importTasks(body(true))
+      const res = await client.importTasks(body(true))
+      // A preview that comes back after the connection changed belongs to the old server.
+      if (apiRef.current !== client) return
       setPreview(res)
       setPreviewKey(key)
+      setPreviewApi(client)
     } catch (err) {
+      if (apiRef.current !== client) return
       setPreview(null)
       setError(err.message || 'Could not read that text.')
     } finally {
@@ -111,6 +122,7 @@ export default function ImportTasks() {
       setText('')
       setPreview(null)
       setPreviewKey(null)
+      setPreviewApi(null)
     } catch (err) {
       setError(err.message || 'The import failed. Nothing was created.')
     } finally {
@@ -203,7 +215,9 @@ export default function ImportTasks() {
       {error && <ErrorBanner message={error} />}
       {done && <div role="status" className="import-done">{done}</div>}
       {preview && !fresh && !error && (
-        <p className="settings-hint">The text changed since the preview. Preview again to import it.</p>
+        <p className="settings-hint">
+          {sameServer ? 'The text changed since the preview.' : 'The server connection changed since the preview.'} Preview again to import it.
+        </p>
       )}
 
       {fresh && (

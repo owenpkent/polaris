@@ -81,12 +81,22 @@ function detectDelimiter(headerLine: string): string {
   return best;
 }
 
+interface CsvRecord { cells: string[]; line: number }
+
+interface SplitRecords {
+  records: CsvRecord[];
+  /** Set when the text ends inside a quoted field; the partial record is not in `records`. */
+  error: ImportError | null;
+}
+
 /** RFC 4180 records. `line` is the 1-based line each record starts on. */
-function splitRecords(text: string, delimiter: string): { cells: string[]; line: number }[] {
-  const records: { cells: string[]; line: number }[] = [];
+function splitRecords(text: string, delimiter: string): SplitRecords {
+  const records: CsvRecord[] = [];
   let cells: string[] = [];
   let field = '';
   let inQuotes = false;
+  // The line a quoted field opened on, for the error when it never closes.
+  let quoteLine = 1;
   let line = 1;
   let recordLine = 1;
   let i = 0;
@@ -111,7 +121,7 @@ function splitRecords(text: string, delimiter: string): { cells: string[]; line:
       i++;
       continue;
     }
-    if (ch === '"' && field === '') { inQuotes = true; i++; continue; }
+    if (ch === '"' && field === '') { inQuotes = true; quoteLine = line; i++; continue; }
     if (ch === delimiter) { cells.push(field); field = ''; i++; continue; }
     if (ch === '\r' || ch === '\n') {
       if (ch === '\r' && text[i + 1] === '\n') i++;
@@ -124,8 +134,12 @@ function splitRecords(text: string, delimiter: string): { cells: string[]; line:
     field += ch;
     i++;
   }
+  if (inQuotes) {
+    // Everything after the opening quote was swallowed into one field, so it is not a record.
+    return { records, error: { line: quoteLine, message: 'a quoted field is never closed (missing closing ")' } };
+  }
   if (field !== '' || cells.length > 0) endRecord();
-  return records;
+  return { records, error: null };
 }
 
 function parseStatus(raw: string): TaskStatus | null {
@@ -173,7 +187,8 @@ function resolveHeaders(cells: string[]): { fields: (Field | null)[]; ignored: s
 
 function parseCsv(text: string, delimiter: string): ParsedTaskText {
   const result: ParsedTaskText = { format: 'csv', rows: [], errors: [], ignoredColumns: [] };
-  const records = splitRecords(text, delimiter);
+  const { records, error: unterminated } = splitRecords(text, delimiter);
+  if (unterminated) { result.errors.push(unterminated); return result; }
   const headerAt = records.findIndex((r) => r.cells.some((c) => c.trim() !== ''));
   if (headerAt < 0) { result.errors.push({ line: 0, message: 'no header row found' }); return result; }
   const { fields, ignored } = resolveHeaders(records[headerAt].cells);
@@ -258,7 +273,7 @@ export function parseTaskText(text: string, format: ImportFormat = 'auto'): Pars
   const delimiter = detectDelimiter(firstLine);
   if (format === 'lines') return parseLines(body);
   if (format === 'csv') return parseCsv(body, delimiter);
-  const cells = splitRecords(firstLine, delimiter)[0]?.cells ?? [];
+  const cells = splitRecords(firstLine, delimiter).records[0]?.cells ?? [];
   const looksCsv = cells.length >= 2 && cells.some((c) => ALIASES[headerKey(c)] === 'title');
   return looksCsv ? parseCsv(body, delimiter) : parseLines(body);
 }
