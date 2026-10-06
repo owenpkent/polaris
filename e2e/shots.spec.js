@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { VIEWS, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
+import { UPDATE_INSTALLED, VIEWS, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -339,6 +339,14 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.getByRole('button', { name: 'Update available' }).click()
     await expect(page.getByRole('dialog', { name: 'Update available' })).toBeVisible()
     await shot(page, testInfo, 'update', 'panel')
+  })
+
+  test('update: updated', async ({ page }, testInfo) => {
+    await fakeUpdate(page, UPDATE_INSTALLED)
+    await openView(page)
+    await page.getByRole('button', { name: 'Update installed' }).click()
+    await expect(page.getByRole('dialog', { name: 'Update installed' })).toBeVisible()
+    await shot(page, testInfo, 'update', 'updated')
   })
 
   test('connection: page', async ({ page }, testInfo) => {

@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { MIN_TARGET, UPDATE_AVAILABLE, expectFocusRing, fakeUpdate, openView, smallTargets } from './support.js'
+import { MIN_TARGET, UPDATE_AVAILABLE, UPDATE_INSTALLED, expectFocusRing, fakeUpdate, openView, smallTargets } from './support.js'
 
 // The update icon and its panel (docs/update-proposal.md, section 4B). The test server has no
 // updater and no status file, so the icon is absent until GET /api/update is routed to say a
@@ -47,6 +47,33 @@ test.describe('update icon', { tag: ['@flow'] }, () => {
     await expect(dialog.getByRole('button', { name: 'Update now' })).toHaveCount(0)
     await expect(dialog.getByRole('textbox')).toHaveValue('npm run cc -- update --release')
     await expect(dialog.getByRole('button', { name: 'Copy' })).toBeVisible()
+  })
+
+  test('after the update went in, the icon shows the result once: the panel says only what happened, and Dismiss hides it for good', async ({ page }) => {
+    await fakeUpdate(page, UPDATE_INSTALLED)
+    await openView(page)
+    const button = page.getByRole('button', { name: 'Update installed' })
+    await expect(button).toBeVisible()
+    await expect(icon(page)).toHaveCount(0)
+    await button.click()
+    const dialog = page.getByRole('dialog', { name: 'Update installed' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('status')).toHaveText('Updated to v2.1.0')
+    await expect(dialog.getByRole('region', { name: 'Release notes' })).toHaveCount(0)
+    await expect(dialog.getByRole('button')).toHaveCount(2)
+    await expect(dialog.getByRole('button', { name: 'Close update panel' })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Update now' })).toHaveCount(0)
+    await expect(dialog.getByRole('textbox')).toHaveCount(0)
+    expect(await smallTargets(dialog)).toEqual([])
+
+    await dialog.getByRole('button', { name: 'Dismiss' }).click()
+    await expect(dialog).toHaveCount(0)
+    await expect(button).toHaveCount(0)
+
+    // The memory is per device: a reload with the same answer shows nothing.
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Theme' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Update installed' })).toHaveCount(0)
   })
 })
 

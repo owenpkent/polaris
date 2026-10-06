@@ -9,6 +9,8 @@ vi.mock('./command-center/ConnectionContext', () => ({ useConnection: () => conn
 const COMMAND = 'npm run cc -- update --release'
 const AVAILABLE = { version: '2.1.0', notes: 'Fixes the digest footer.\n\nAdds the update icon.', touchesSchema: false }
 const IDLE = { running: '2.0.0', updaterInstalled: true, available: AVAILABLE, request: null, lastResult: null, command: COMMAND }
+// After the update went in: nothing newer is named, and the status file carries the result.
+const UPDATED = { ...IDLE, running: '2.1.0', available: null, lastResult: { ok: true, message: 'Updated to v2.1.0', at: '2026-10-06T04:05:00.000Z', version: '2.1.0' } }
 
 function serve(update) {
   connection.api.getUpdate.mockResolvedValue(update)
@@ -85,6 +87,80 @@ describe('the update icon', () => {
     serve({ ...IDLE, available: { ...AVAILABLE, touchesSchema: true } })
     const { dialog } = await openPanel()
     expect(dialog.textContent).toContain('This update changes the database; a snapshot is taken first.')
+  })
+})
+
+describe('after an update went in', () => {
+  test('the icon shows once with the result, the panel says only what happened, and Dismiss hides the icon for good', async () => {
+    serve(UPDATED)
+    render(<UpdateButton />)
+    const icon = await screen.findByRole('button', { name: 'Update installed' })
+    expect(icon.className).toContain('icon-btn')
+    expect(screen.queryByRole('button', { name: 'Update available' })).toBeNull()
+    fireEvent.click(icon)
+    const dialog = screen.getByRole('dialog', { name: 'Update installed' })
+    expect(screen.getByRole('status').textContent).toBe('Updated to v2.1.0')
+    expect(screen.queryByRole('region', { name: 'Release notes' })).toBeNull()
+    expect(dialog.textContent).not.toContain('Running')
+    expect(screen.queryByRole('button', { name: 'Update now' })).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(Array.from(dialog.querySelectorAll('button')).map((b) => b.getAttribute('aria-label') || b.textContent)).toEqual(['Close update panel', 'Dismiss'])
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close update panel' })))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Update installed' })).toBeNull()
+    expect(JSON.parse(localStorage.getItem('cc.update.seenResult'))).toEqual([UPDATED.lastResult.at])
+
+    // A fresh mount reads the memory: the same result stays dismissed.
+    cleanup()
+    render(<UpdateButton />)
+    await waitFor(() => expect(connection.api.getUpdate).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('button', { name: 'Update installed' })).toBeNull()
+  })
+
+  test('a later result shows again, and Esc closes the panel', async () => {
+    localStorage.setItem('cc.update.seenResult', JSON.stringify([UPDATED.lastResult.at]))
+    serve({ ...UPDATED, lastResult: { ...UPDATED.lastResult, at: '2026-10-07T04:05:00.000Z', message: 'Updated to v2.2.0', version: '2.2.0' } })
+    render(<UpdateButton />)
+    const icon = await screen.findByRole('button', { name: 'Update installed' })
+    fireEvent.click(icon)
+    expect(screen.getByRole('status').textContent).toBe('Updated to v2.2.0')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(icon)
+  })
+
+  test('a failed last result shows no icon: the red strip carries it, and the version is used when the message is empty', async () => {
+    serve({ ...UPDATED, lastResult: { ...UPDATED.lastResult, ok: false, message: 'Rolled back: the build failed' } })
+    render(<UpdateButton />)
+    await waitFor(() => expect(connection.api.getUpdate).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: /Update/ })).toBeNull()
+    cleanup()
+
+    serve({ ...UPDATED, lastResult: { ...UPDATED.lastResult, message: '' } })
+    render(<UpdateButton />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update installed' }))
+    expect(screen.getByRole('status').textContent).toBe('Updated to v2.1.0')
+  })
+
+  test('a newer release named at the same time wins: the available panel, with the result as its finished state', async () => {
+    serve({ ...IDLE, lastResult: UPDATED.lastResult })
+    const { dialog } = await openPanel()
+    expect(dialog.textContent).toContain('2.1.0')
+    expect(screen.getByRole('region', { name: 'Release notes' })).not.toBeNull()
+    expect(screen.getByRole('status').textContent).toBe('Updated to v2.1.0')
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.getByRole('button', { name: 'Update now' })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Update available' })).not.toBeNull()
+  })
+
+  test('an id kept by the earlier single-string memory still counts as seen', async () => {
+    localStorage.setItem('cc.update.seenResult', UPDATED.lastResult.at)
+    serve(UPDATED)
+    render(<UpdateButton />)
+    await waitFor(() => expect(connection.api.getUpdate).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Update installed' })).toBeNull()
   })
 })
 
@@ -166,6 +242,18 @@ describe('the update panel', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(COMMAND))
     await screen.findByRole('button', { name: 'Copied' })
     expect(dialog.textContent).toContain('No scheduled updater is installed on the server.')
+  })
+
+  test('a request that finished while the daemon slept shows the status file result, once', async () => {
+    // The daemon reconciles a picked-up row from the status file, so the request is done and the
+    // result is there too: one run, one Dismiss, and nothing comes back after it.
+    serve({ ...IDLE, request: { id: 'up_1', version: '2.1.0', state: 'done', result: 'Updated to v2.1.0' }, lastResult: UPDATED.lastResult })
+    await openPanel()
+    expect(screen.getByRole('status').textContent).toBe('Updated to v2.1.0')
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Update now' })).not.toBeNull()
+    expect(JSON.parse(localStorage.getItem('cc.update.seenResult'))).toEqual(['up_1', UPDATED.lastResult.at])
   })
 
   test('the controls are 44px targets', async () => {

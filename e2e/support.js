@@ -422,6 +422,15 @@ export const UPDATE_AVAILABLE = {
   command: 'npm run cc -- update --release',
 }
 
+// What it says after that update went in: nothing newer is named, and the status file carries
+// the result, which the icon shows once until it is dismissed.
+export const UPDATE_INSTALLED = {
+  ...UPDATE_AVAILABLE,
+  running: '2.1.0',
+  available: null,
+  lastResult: { ok: true, message: 'Updated to v2.1.0', at: '2026-10-06T04:05:00.000Z', version: '2.1.0' },
+}
+
 // Answers GET /api/update with `body`. Other methods pass through to the real server.
 export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
   await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))

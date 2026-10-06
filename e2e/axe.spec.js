@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { readFileSync } from 'node:fs'
 import { test, expect } from './fixtures.js'
-import { fakeUpdate, openView, openTask, isPhone } from './support.js'
+import { UPDATE_INSTALLED, fakeUpdate, openView, openTask, isPhone } from './support.js'
 
 // The automated accessibility audit (initiatives/ui-ux-testing.md, phase 2): axe-core over every
 // view in its resting state and over the panels, drawer, menus, and forms that open on top of
@@ -138,6 +138,14 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await page.getByRole('button', { name: 'Update available' }).click()
     await expect(page.getByRole('dialog', { name: 'Update available' })).toBeVisible()
     await audit(page, testInfo, 'update panel open')
+  })
+
+  test('the update installed panel', async ({ page }, testInfo) => {
+    await fakeUpdate(page, UPDATE_INSTALLED)
+    await openView(page)
+    await page.getByRole('button', { name: 'Update installed' }).click()
+    await expect(page.getByRole('dialog', { name: 'Update installed' })).toBeVisible()
+    await audit(page, testInfo, 'update installed panel open')
   })
 
   test('the inbox accept form', async ({ page }, testInfo) => {

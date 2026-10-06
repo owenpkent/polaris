@@ -80,7 +80,7 @@ export default function TopBar({
         {title}
       </h1>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: 'auto' }}>
-        {/* Only while the server names a newer signed release (src/UpdateButton.jsx). */}
+        {/* Only while the server names a newer signed release, or once after one went in (src/UpdateButton.jsx). */}
         <UpdateButton />
         <button
           ref={themeButtonRef}
