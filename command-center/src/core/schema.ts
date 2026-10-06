@@ -276,4 +276,23 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE threads ADD COLUMN successor_thread_id TEXT;
   ALTER TABLE posts ADD COLUMN judged_at TEXT;
   `,
+  // 11: update requests (docs/update-proposal.md, section 4C). One row per time the owner pressed
+  // Update now in the dashboard, naming the exact release version. requested_by is always the
+  // human actor: there is no MCP tool, outbox op, or rule action that makes one. The daemon is
+  // the only writer, through its REST routes: the owner creates and cancels, the scheduled
+  // updater (running outside the daemon, with the api token) picks up and finishes, and the
+  // daemon expires a pending row older than an hour on any read. result is the updater's one-line
+  // outcome. No event is recorded: events are keyed to a task, and an update is not a task.
+  `
+  CREATE TABLE update_requests (
+    id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('pending','picked_up','done','failed','cancelled','expired')),
+    picked_up_at TEXT,
+    finished_at TEXT,
+    result TEXT
+  );
+  `,
 ];

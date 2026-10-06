@@ -2,9 +2,6 @@
 // mutations (MCP mutations go through createMcpServer with actor 'agent' instead). See
 // src/http/README.md for the endpoint table this file implements.
 import { jobWarnings } from './warnings.ts';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
 import {
   NotFoundError, POST_STATUSES, POST_TYPES, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
@@ -17,6 +14,8 @@ import { registerBackupRoutes } from './backup-routes.ts';
 import { registerGithubRoutes } from './github-routes.ts';
 import { registerIdentityRoute } from './identity.ts';
 import { isTailscaleOwner } from './tailscale.ts';
+import { registerUpdateRoutes } from './update-routes.ts';
+import { VERSION } from './version.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
@@ -27,11 +26,9 @@ import {
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
 
-const here = dirname(fileURLToPath(import.meta.url));
 
 /** kv key for the free-text vision statement shown above the goals. */
 const GOAL_VISION_KEY = 'goals.vision';
-const VERSION = (JSON.parse(readFileSync(join(here, '..', '..', 'package.json'), 'utf8')) as { version: string }).version;
 
 const NON_DROPPED_STATUSES = TASK_STATUSES.filter((s) => s !== 'dropped');
 
@@ -656,5 +653,6 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
 
   registerGithubRoutes(router, app, opts);
   registerBackupRoutes(router, app, opts);
+  registerUpdateRoutes(router, app);
   registerIdentityRoute(router, opts.tokens.api);
 }
