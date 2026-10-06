@@ -25,6 +25,7 @@ It also has the flags that lock a session down, which section 3 depends on:
 
 - `--restricted` removes Bash, PowerShell, the REPL, the other code-running tools, and WebFetch unless `--tools` names them; ignores the user, project, and local settings files; confines the file tools to the working directories; refuses `bypassPermissions`; and lets only a person or the configured permission handler approve writes to settings, git, and tool-configuration files.
 - `--bare` skips hooks, plugins, auto-memory, keychain reads, and CLAUDE.md discovery. Authentication is then only `ANTHROPIC_API_KEY` or an `apiKeyHelper` given through `--settings`, never the owner's own login.
+- `--safe-mode` turns off CLAUDE.md, skills, installed plugins, hooks, MCP servers, custom commands and agents, while authentication, model selection, built-in tools, and permissions work normally. This is the lockdown for a session that signs in with the owner's Claude plan, since `--bare` would refuse that login.
 - `--tools` names the built-in tools the session gets, and `--disallowedTools` denies more on top.
 
 Without these, a background session would load the owner's user settings: their allow rules (a rule such as `Bash(git *)` would let it push), their hooks, their plugins, and their git and `gh` credentials. The first draft of this proposal said pushing "is denied"; with the owner's settings loaded that depends on what the owner has allowed, so it was not true.
@@ -101,19 +102,30 @@ A run starts only from `POST /api/tasks/:id/dispatch` with a runner name, which 
    - the project is in this machine's config and its folder is a git repository owned by the expected user,
    - the machine's daily run count and spend are under the caps in its config.
 4. Claim: `POST /runner/runs/:id/claim` with the session id the runner minted. Polaris moves the run to `running`, sets the task to in progress, and returns a run token (section 5) that works for this run only.
-5. Start, in a fresh worktree of the project's folder:
+5. Start, in a fresh worktree of the project's folder. The machine's config picks how the session pays for Claude (see "How a session signs in" below), and that choice picks one of two fixed flag sets:
 
    ```sh
+   # plan (the default): the owner's Claude plan login
+   claude --bg -p --session-id <uuid> -w polaris-<task id> \
+     --safe-mode --restricted --tools Read,Edit,Write,Glob,Grep \
+     --disallowedTools Bash,WebFetch,WebSearch \
+     --permission-mode acceptEdits --permission-prompts none \
+     --mcp-config <0600 file: Polaris over https with the run token> --strict-mcp-config \
+     < <0600 file: the frozen brief>
+
+   # api: a separate Anthropic API key for runners
    claude --bg -p --session-id <uuid> -w polaris-<task id> \
      --bare --restricted --tools Read,Edit,Write,Glob,Grep \
      --disallowedTools Bash,WebFetch,WebSearch \
      --permission-mode acceptEdits --permission-prompts none \
-     --settings <0600 file: apiKeyHelper for the runner's own API key> \
+     --settings <0600 file: apiKeyHelper for the runner's API key> \
      --mcp-config <0600 file: Polaris over https with the run token> --strict-mcp-config \
      --max-budget-usd <cap from machine config> < <0600 file: the frozen brief>
    ```
 
-   The flag list is a constant in the runner's source, not something the config or Polaris can change. The runner refuses to start if it cannot confirm that its Claude Code version supports every one of these flags, so an older or changed Claude Code fails closed instead of running without them. Secrets and the brief go through 0600 files in a private temp folder, never on the command line, where any user on the machine could read them with `ps`. The files are deleted when the run ends.
+   Either way the runner also stops a session that passes the time limit in its config (60 minutes unless set), so a run has a ceiling even where a dollar cap does not apply.
+
+   Both flag sets are constants in the runner's source, not something the config or Polaris can change. The runner refuses to start if it cannot confirm that its Claude Code version supports every one of these flags, so an older or changed Claude Code fails closed instead of running without them. Secrets and the brief go through 0600 files in a private temp folder, never on the command line, where any user on the machine could read them with `ps`. The files are deleted when the run ends.
 6. Watch: the runner checks the session with `claude agents` on its own machine. When the session ends it posts the outcome to `POST /runner/runs/:id` (finished, failed, stopped, lost, and the spend if Claude Code reports it). The run token stops working at that moment. Polaris adds a comment on the task, written from facts the runner observed rather than from the agent: what ran, where, for how long, the branch and worktree folder, how many files changed, and `claude logs <id>` on which machine for the full transcript.
 7. Stuck: anything that would prompt is denied, so the agent cannot wait forever on an approval. Its instructions say to set the task to `waiting` with a comment saying what it needed. A run that hits the budget cap ends, and the comment says so.
 
@@ -125,11 +137,26 @@ The brief is built at dispatch from text the owner wrote: the task's title, desc
 
 - It can read, search, and edit files in its worktree, and read and comment on its one task through the run token.
 - It cannot run a command, so it cannot push, run `gh`, install a package, run the project's tests, or start a process. It has no WebFetch or WebSearch, so it cannot send data out or read a poisoned page. Its only network peers are Anthropic's API and Polaris.
-- It loads none of the owner's settings, hooks, plugins, memory, or CLAUDE.md files from outside the worktree, and never reads the owner's Claude login. It authenticates with an API key kept for runners, so its spend is visible and capped on its own and the key can be revoked without touching the owner's login.
+- It loads none of the owner's settings, hooks, plugins, memory, or CLAUDE.md files from outside the worktree.
+- With the plan login, Claude Code uses the owner's sign-in on that machine, but the session itself has no shell, no web tools, and file tools confined to the worktree, so it has no way to read the stored login or send it anywhere. With an API key, the session never touches the owner's login at all.
 - Its file tools are confined to the worktree. It cannot read `~/.ssh`, the secret store, other repos, or the Polaris data folder.
 - The work stays on a local branch in the worktree. The owner reads the diff, runs the tests, and pushes it themselves.
 
 Not running tests is the price of having no shell. Section 10 describes the only route to giving a session a shell, and it needs the owner's word.
+
+### How a session signs in
+
+Each runner machine's config sets `billing = "plan"` (the default) or `billing = "api"`.
+
+| | plan (default) | api |
+|---|---|---|
+| Cost | Included in the owner's Claude plan, counted against its usage limits | Billed per token on its own Anthropic account |
+| Spending control | The runner's time limit and daily run count, then the plan's own limits | The runner's caps, `--max-budget-usd` per run, and a hard spend limit set on the key in the Anthropic Console |
+| Effect on the owner's own work | A busy runner uses the same 5-hour allowance the owner codes with | None |
+| Revoking | Revoke the runner token; the owner's login is untouched | Delete the key; the owner's login is untouched |
+| Lockdown | `--safe-mode --restricted` | `--bare --restricted` |
+
+The security difference is small, because in both modes the session cannot run a command, reach the web, or read outside its worktree. The API key, when used, lives in that machine's secret store and reaches Claude Code through an `apiKeyHelper` in a 0600 settings file, never in Polaris and never on the command line.
 
 ## 4. The "Run on" menu
 
@@ -147,7 +174,7 @@ An additive migration with two new tables and no change to an existing column:
 - `runners`: name, a hash of its token, created at, last seen at, last reported version and project list, revoked at.
 - `runs`: task id, runner name, state (queued, running, stopping, finished, failed, stopped, lost), the frozen brief and its SHA-256, a hash of the run token, Claude Code session id, dispatched at and by, started at, ended at, outcome, spend in dollars when known.
 
-The machine's folders, budget, flags, and API key are not stored. A run with no heartbeat for 10 minutes is shown as "not heard from", not failed: a sleeping laptop is not a broken one.
+The machine's folders, budget, flags, billing choice, and API key are not stored. A run with no heartbeat for 10 minutes is shown as "not heard from", not failed: a sleeping laptop is not a broken one.
 
 **The run token** is minted at claim, stored only as a hash, and valid only while that run is `running`. It is accepted on the MCP endpoint for one task: it can read that task, add a comment, and set its status to in progress or waiting (or done, where the ticket kind lets an agent complete it). It cannot read or touch any other task, set an assignee, edit a title or description, create anything, or call any tool that is not on that short list. This is narrower than the owner's mcp token, which the session never receives.
 
@@ -221,7 +248,7 @@ Each is a separate yes or no.
 4. **Two new token kinds**: one runner token per machine (section 6) and a run token per run (section 5), each with the boundary stated there.
 5. **An additive migration**: the `runners` and `runs` tables. No existing column changes meaning; `assignee` stays a plain name.
 6. **No new offline op kind.** Dispatching, stopping, pausing, registering, revoking, and every `/runner` route are live-only.
-7. **A separate Anthropic API key for runners**, kept in each runner machine's secret store, never in Polaris.
+7. **How sessions pay for Claude**: the owner's plan login by default, or a separate Anthropic API key per machine, chosen in that machine's config. A key is kept in the machine's secret store, never in Polaris.
 8. **New "When to ask" lines**: removing any flag from the runner's fixed list, or adding a tool to it (above all Bash or a web tool); letting a session or runner push or open a PR; letting Polaris set a runner's folders, budget, flags, or key; letting the runner read anything outside its configured folders; letting anything but the owner's live click start a run; including agent or third-party text in a brief.
 
 ## 9. Invariants to add
@@ -236,7 +263,7 @@ A new group 11 in command-center/src/invariants.test.ts:
 - The runner token is refused on `/api`, `/mcp`, and `/mcp/readonly`, and the api, mcp, and read-only tokens are refused on `/runner`. Tailscale identity opens nothing under `/runner`. A runner's name comes from its token, never from the request.
 - A run token reaches only its own task, only the short tool list in section 5, and stops working when the run leaves `running`.
 - No `/runner` route or run token accepts or rejects an inbox item, creates or enables a rule, sets a goal's status, uses an owner thread control, edits a project, or changes an assignee.
-- The runner's Claude Code arguments always include `--bare`, `--restricted`, `--strict-mcp-config`, `--permission-prompts none`, and `--max-budget-usd`; its `--tools` list never includes Bash, PowerShell, WebFetch, WebSearch, or another code-running tool; and no config value or server response reaches the argument list except the session id, the worktree name, and the budget figure (a source check on the runner).
+- The runner's Claude Code arguments always include `--restricted` and one of `--bare` (api) or `--safe-mode` (plan), plus `--strict-mcp-config` and `--permission-prompts none`, and `--max-budget-usd` with an API key; the runner always enforces its time limit; its `--tools` list never includes Bash, PowerShell, WebFetch, WebSearch, or another code-running tool; and no config value or server response reaches the argument list except the session id, the worktree name, and the budget figure (a source check on the runner). An unknown billing value in the config means no run, never a third flag set.
 - The runner never passes a secret or the brief as a command-line argument.
 - The schema has no column for a runner's folders, budget, flags, or API key.
 - The daemon and the http server do not import `child_process` (a source check, as group 8 checks the fake GitHub).
@@ -257,8 +284,9 @@ A new group 11 in command-center/src/invariants.test.ts:
 - Installing the runner: a logon task on Windows (the daemon's installer in scripts/ is a model) and a systemd user unit on Linux. Does the owner's main development machine run Windows or Linux?
 - Does `--restricted` confine the file tools on Windows as it does on Linux? Phase A checks this on each platform before a runner is enabled there.
 - Transcripts. The outcome comment plus `claude logs <id>` on the named machine is the proposal. A long run may deserve a short summary the agent writes before it ends. A thread is for argument, not transcripts.
-- Spend. Does Claude Code report a background session's cost anywhere the runner can read after the fact? If not, Phase B records the cap instead of the actual spend. The runner API key's own spend limit in the Anthropic Console is the backstop either way.
+- Spend. Does Claude Code report a background session's cost anywhere the runner can read after the fact? If not, Phase B records the cap instead of the actual spend. With an API key, the key's spend limit in the Anthropic Console is the backstop. On the plan, `--max-budget-usd` may not apply at all, which is why the runner keeps its own time limit.
 - Sleep. GR9 does not sleep; laptops do. A background session on a sleeping laptop pauses and resumes. How long before an open run is shown as "not heard from" (10 minutes is the guess), and should a run be stopped after a day with no heartbeat?
 - Should GR9 itself run a runner? It holds no working clones today, only the deploy checkout, which must never be worked in. Recommended: no.
 - How `--bg` takes its prompt. The plan is standard input or a prompt file, so the brief never appears in a process's arguments. Phase A confirms which one works before anything else is built on it.
+- Does `--safe-mode` also turn off the Polaris server given with `--mcp-config`? Its help says it turns off MCP servers. If it does, a plan session cannot comment or set `waiting` itself, and the runner writes those from the session's result instead. Phase A tests this first.
 - Worktree cleanup: Claude Code removes a `-w` worktree when that is safe. A run that made changes leaves its worktree and branch for the owner, and the outcome comment names both.
