@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Exec, ExecResult } from './exec.ts';
-import { canRestart, describeRestart, detectRestart, parseRestartSpec, restartDaemon, restartProblem, waitForPort, WINDOWS_TASK, type RestartMethod } from './restart.ts';
+import { canRestart, describeRestart, detectRestart, parseRestartSpec, restartDaemon, restartProblem, sudoersLine, waitForPort, WINDOWS_TASK, type RestartMethod } from './restart.ts';
 
 const ok = (stdout = ''): ExecResult => ({ code: 0, stdout, stderr: '' });
 const no = (code = 1): ExecResult => ({ code, stdout: '', stderr: '' });
@@ -27,7 +27,8 @@ test('CC_UPDATE_RESTART names one of the four methods, and a unit name is checke
   }
   assert.equal(canRestart({ kind: 'manual' }), false);
   assert.equal(canRestart({ kind: 'systemd', unit: 'polaris' }), true);
-  assert.match(describeRestart({ kind: 'systemd', unit: 'polaris' }), /sudo -n systemctl restart polaris/);
+  assert.match(describeRestart({ kind: 'systemd', unit: 'polaris' }), /sudo -n systemctl stop polaris, then start/);
+  assert.equal(sudoersLine('polaris', 'owen'), 'owen ALL=(root) NOPASSWD: /usr/bin/systemctl stop polaris, /usr/bin/systemctl start polaris, /usr/bin/systemctl restart polaris');
 });
 
 test('detection: the logon task on Windows, then the system unit, then the user unit, otherwise manual', async () => {
@@ -54,10 +55,14 @@ test('restartProblem: a missing task or unit, and a system unit without the sudo
   assert.match((await restartProblem({ kind: 'task', task: WINDOWS_TASK }, missingTask.exec))!, /no scheduled task named/);
   const noUnit = scripted((line) => (line.startsWith('systemctl show') ? ok('not-found\n') : undefined));
   assert.match((await restartProblem({ kind: 'systemd', unit: 'polaris' }, noUnit.exec))!, /no unit named polaris/);
-  const noSudo = scripted((line) => (line.startsWith('systemctl show') ? ok('loaded\n') : line.startsWith('sudo -n -l systemctl restart polaris') ? no() : undefined));
-  assert.match((await restartProblem({ kind: 'systemd', unit: 'polaris' }, noSudo.exec))!, /sudoers line .*NOPASSWD: \/usr\/bin\/systemctl restart polaris/);
+  // The old one-verb line (restart only) is not enough: the restart stops and starts.
+  const oneVerb = scripted((line) => (line.startsWith('systemctl show') ? ok('loaded\n') : line === 'sudo -n -l systemctl restart polaris' ? ok() : no()));
+  assert.match((await restartProblem({ kind: 'systemd', unit: 'polaris' }, oneVerb.exec))!, /sudo cannot run "systemctl stop polaris" without a password.*NOPASSWD: \/usr\/bin\/systemctl stop polaris, \/usr\/bin\/systemctl start polaris, \/usr\/bin\/systemctl restart polaris/);
+  const noStart = scripted((line) => (line.startsWith('systemctl show') ? ok('loaded\n') : line === 'sudo -n -l systemctl start polaris' ? no() : ok()));
+  assert.match((await restartProblem({ kind: 'systemd', unit: 'polaris' }, noStart.exec))!, /sudo cannot run "systemctl start polaris"/);
   const fine = scripted((line) => (line.startsWith('systemctl show') ? ok('loaded\n') : ok()));
   assert.equal(await restartProblem({ kind: 'systemd', unit: 'polaris' }, fine.exec), null);
+  assert.deepEqual(fine.calls.filter((l) => l.startsWith('sudo')), ['sudo -n -l systemctl stop polaris', 'sudo -n -l systemctl start polaris', 'sudo -n -l systemctl restart polaris'], 'all three verbs are asked about, and sudo is only ever asked, never run');
   const userFine = scripted((line) => (line === 'systemctl --user show -p LoadState --value polaris' ? ok('loaded\n') : undefined));
   assert.equal(await restartProblem({ kind: 'systemd-user', unit: 'polaris' }, userFine.exec), null);
   assert.equal(await restartProblem({ kind: 'manual' }, scripted(() => no()).exec), null);
@@ -92,10 +97,14 @@ test('the Windows task and the user unit are stopped, the swap runs while nothin
   assert.deepEqual(user.state.events, ['systemctl --user stop polaris', 'between (listening: false)', 'systemctl --user start polaris']);
 });
 
-test('a system unit gets one verb through sudo, with the swap just before it', async () => {
-  const d = daemon('never', 'sudo -n systemctl restart polaris');
+test('a system unit is stopped and started through sudo, with the swap while nothing listens, and restart is never run', async () => {
+  const d = daemon('sudo -n systemctl stop polaris', 'sudo -n systemctl start polaris');
   await restartDaemon({ kind: 'systemd', unit: 'polaris' }, { port: 8788, between: d.between }, d.deps);
-  assert.deepEqual(d.state.events, ['between (listening: true)', 'sudo -n systemctl restart polaris']);
+  assert.deepEqual(d.state.events, ['sudo -n systemctl stop polaris', 'between (listening: false)', 'sudo -n systemctl start polaris']);
+  assert.ok(d.state.events.every((e) => !e.includes('restart')));
+  const stopRefused = daemon('never', 'sudo -n systemctl start polaris');
+  await assert.rejects(restartDaemon({ kind: 'systemd', unit: 'polaris' }, { port: 8788, between: stopRefused.between }, stopRefused.deps), /sudo -n systemctl stop polaris failed/);
+  assert.ok(!stopRefused.state.events.some((e) => e.startsWith('between')), 'the swap did not run');
 });
 
 test('the manual method tells the owner what to do and waits for the port to drop and come back', async () => {

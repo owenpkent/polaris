@@ -186,13 +186,12 @@ export function snapshotDatabase(store: Store, dir: string, name: string, opts: 
 }
 
 /** Put a backup or snapshot in place of the live database at `dbPath`: for the rollback in
- *  `cc update`. The copy is decrypted (if it is encrypted) and checked on the local disk first, so
- *  a bad copy never replaces the database. The `-wal`, `-shm`, and `-journal` files beside the
- *  database belong to the file being replaced and are removed, and the restored copy then goes in
- *  by a rename over `dbPath`, never by writing into it: a daemon that is about to be stopped (a
- *  systemd system unit allows `cc update` one verb, restart, so the swap runs while the old daemon
- *  is still up) keeps its handles on the old inode, and the checkpoint it makes as it closes lands
- *  there and not in the restored file. */
+ *  `cc update`, with the daemon stopped. The copy is decrypted (if it is encrypted) and checked on
+ *  the local disk first, so a bad copy never replaces the database. The `-wal`, `-shm`, and
+ *  `-journal` files beside the database belong to the file being replaced and are removed, and the
+ *  restored copy is staged beside `dbPath` and goes in by one rename, never by writing into the
+ *  live file: a copy that fails halfway leaves the database as it was, and nothing ever sees a
+ *  half-written one. */
 export function restoreDatabaseFile(file: string, dbPath: string, passphrase?: string): void {
   const local = mkdtempSync(join(tmpdir(), 'cc-restore-'));
   const incoming = `${dbPath}.${process.pid}.${randomBytes(6).toString('hex')}.restore`;

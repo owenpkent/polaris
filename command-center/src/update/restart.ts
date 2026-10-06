@@ -1,11 +1,10 @@
 // How `cc update` restarts the daemon (docs/update-proposal.md, section 1A): the Windows logon
 // task, a systemd system unit through one sudoers line, a systemd user unit, or the owner by hand.
-// Each one gets a moment with the daemon stopped for the dist swap and, in a rollback, the
-// database restore. The system unit is the exception: the sudoers line allows `systemctl restart
-// <unit>` and nothing else, so that moment is the instant before the restart is asked for, while
-// the old daemon is still up. The swap is harmless then (the old daemon serves the new static
-// files for a second), and the database restore is made safe by how restoreDatabaseFile replaces
-// the file (daemon/backup.ts).
+// Each one is a stop, a moment with nothing on the port for the dist swap and, in a rollback, the
+// database restore, then a start. For the system unit the sudoers line allows `systemctl` with
+// stop, start, and restart on that one unit and nothing else (scripts/install-updater-systemd.sh
+// prints and writes it); restart is the verb the preflight check asks sudo about along with the
+// two the restart itself uses.
 //
 // Every program runs through the Exec seam with an argument array. A unit name or a task name is
 // never pasted into a command line.
@@ -25,6 +24,14 @@ export class RestartError extends Error {}
 
 const UNIT_RE = /^[A-Za-z0-9_.@:-]+$/;
 
+/** The verbs the sudoers line for a system unit allows: the two a restart uses, and restart itself. */
+export const SYSTEMD_VERBS = ['stop', 'start', 'restart'] as const;
+
+/** The one sudoers line a system unit needs, as scripts/install-updater-systemd.sh writes it. */
+export function sudoersLine(unit: string, user = process.env.USER ?? '<you>'): string {
+  return `${user} ALL=(root) NOPASSWD: ${SYSTEMD_VERBS.map((verb) => `/usr/bin/systemctl ${verb} ${unit}`).join(', ')}`;
+}
+
 /** CC_UPDATE_RESTART: `task`, `systemd:<unit>`, `systemd-user:<unit>`, or `manual`. */
 export function parseRestartSpec(spec: string): RestartMethod {
   const text = spec.trim();
@@ -38,7 +45,7 @@ export function parseRestartSpec(spec: string): RestartMethod {
 export function describeRestart(method: RestartMethod): string {
   switch (method.kind) {
     case 'task': return `the Windows scheduled task "${method.task}"`;
-    case 'systemd': return `the systemd unit ${method.unit} (sudo -n systemctl restart ${method.unit})`;
+    case 'systemd': return `the systemd unit ${method.unit} (sudo -n systemctl stop ${method.unit}, then start)`;
     case 'systemd-user': return `the systemd user unit ${method.unit}`;
     case 'manual': return 'by hand: you stop and start the daemon when asked';
   }
@@ -74,8 +81,10 @@ export async function restartProblem(method: RestartMethod, exec: Exec): Promise
     case 'systemd': {
       const loaded = await exec('systemctl', ['show', '-p', 'LoadState', '--value', method.unit]);
       if (loaded.code !== 0 || loaded.stdout.trim() !== 'loaded') return `systemd has no unit named ${method.unit}`;
-      const allowed = await exec('sudo', ['-n', '-l', 'systemctl', 'restart', method.unit]);
-      if (allowed.code !== 0) return `sudo cannot run "systemctl restart ${method.unit}" without a password. Add this sudoers line (visudo): ${process.env.USER ?? '<you>'} ALL=(root) NOPASSWD: /usr/bin/systemctl restart ${method.unit}`;
+      for (const verb of SYSTEMD_VERBS) {
+        const allowed = await exec('sudo', ['-n', '-l', 'systemctl', verb, method.unit]);
+        if (allowed.code !== 0) return `sudo cannot run "systemctl ${verb} ${method.unit}" without a password. Add this sudoers line (visudo), or run scripts/install-updater-systemd.sh --sudoers: ${sudoersLine(method.unit)}`;
+      }
       return null;
     }
     case 'systemd-user': {
@@ -98,8 +107,8 @@ export interface RestartDeps {
 
 export interface RestartOptions {
   port: number;
-  /** Runs once nothing listens on the port (or, for a system unit, just before the restart):
-   *  the dist swap, and in a rollback the database restore. */
+  /** Runs once the daemon is stopped and nothing listens on the port: the dist swap, and in a
+   *  rollback the database restore. */
   between: () => void;
   /** How long to wait for the daemon to let go of the port, and to take it again. */
   stopTimeoutMs?: number;
@@ -131,8 +140,10 @@ export async function restartDaemon(method: RestartMethod, opts: RestartOptions,
       await must(`systemctl --user start ${method.unit}`, 'systemctl', ['--user', 'start', method.unit]);
       break;
     case 'systemd':
+      await must(`sudo -n systemctl stop ${method.unit}`, 'sudo', ['-n', 'systemctl', 'stop', method.unit]);
+      await waitForPort(false, opts.port, stopTimeout, deps);
       opts.between();
-      await must(`sudo -n systemctl restart ${method.unit}`, 'sudo', ['-n', 'systemctl', 'restart', method.unit]);
+      await must(`sudo -n systemctl start ${method.unit}`, 'sudo', ['-n', 'systemctl', 'start', method.unit]);
       break;
     case 'manual':
       deps.say(`Stop the daemon now (the process listening on port ${opts.port}). Waiting up to ${Math.round(stopTimeout / 60_000)} minutes.`);
