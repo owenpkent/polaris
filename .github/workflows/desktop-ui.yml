@@ -1,0 +1,55 @@
+# UI tests for the real desktop app (desktop/e2e): the debug build of the Tauri shell is started
+# against scratch data on its own port, and Playwright attaches to its WebView2 over CDP. They run
+# only on pull requests into main that touch the shell, the script that builds it, the identity
+# route it depends on, or this file, because the Rust build is the slow part.
+#
+# Not in weekly.yml: nothing here drifts with time (no screenshot baseline, no timings), and a
+# weekly run with no change to the shell would only repeat the last pull request's result.
+name: Desktop UI tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'scripts/desktop.mjs'
+      - 'command-center/src/http/identity.ts'
+      - '.github/workflows/desktop-ui.yml'
+
+concurrency:
+  group: desktop-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-ui:
+    name: Desktop app UI tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+      # windows-latest ships stable Rust with the MSVC toolchain and the WebView2 runtime.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      # Builds the dashboard and the debug app (no installer, no signing), then runs the tests.
+      - run: npm run test:desktop:ui
+      - name: Keep traces, logs, and screenshots from failed desktop UI tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-ui-output
+          path: .playwright-desktop/
+          retention-days: 7

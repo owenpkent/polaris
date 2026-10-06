@@ -19,6 +19,7 @@
     "test:all": "npm run test:fast && npm run test:ui",
     "desktop": "node scripts/desktop.mjs",
     "test:desktop": "node scripts/desktop.mjs test",
+    "test:desktop:ui": "node scripts/desktop.mjs test-ui",
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {

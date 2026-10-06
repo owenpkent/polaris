@@ -47,6 +47,7 @@ npm test                 # dashboard unit tests only (Vitest + jsdom)
 npm run build            # dashboard; the daemon then serves dist/ at http://127.0.0.1:8788/
 npm run mockup           # dashboard on a scratch database with demo data (-- --fresh to rebuild)
 npm run test:desktop     # the desktop shell's Rust tests (cargo test); needs Rust (MSVC)
+npm run test:desktop:ui  # builds the debug desktop app, then drives its real window (desktop/e2e); close Constellation first
 ```
 
 Use a scratch database for manual runs: set `CC_DB` to a temp file, and `CC_BACKUP_DIR` and `CC_SECRETS_DIR` to scratch folders, because the daemon's backup job replaces that day's copy at start. Never point experiments at command-center/data. Never link node_modules into a temporary git worktree: removing the worktree deletes through the link.
