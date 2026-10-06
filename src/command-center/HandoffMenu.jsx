@@ -3,7 +3,8 @@ import { ChevronDown } from 'lucide-react'
 import { Popover, useRovingFocus } from './Menu'
 
 // "Hand off to Claude Code" header menu: builds a prompt for a coding agent
-// working in the task's project repo, links to the repo on GitHub when the
+// working in the task's project repo (with the task id, so an agent connected to
+// Polaris over MCP can report back on the task), links to the repo on GitHub when the
 // project has one, and opens VS Code at the line for a task that still carries
 // a vscode:// source from the removed code TODO scan. Shown for every task.
 // Nothing here writes anywhere -- Polaris never writes to a repo or GitHub.
@@ -63,6 +64,21 @@ export function buildPrompt(task, project) {
   if (task.sourceUrl) lines.push(`Source: ${task.sourceUrl}`)
 
   lines.push('Please complete this task in that repo, and if it came from a TODO.md checkbox, check that box when done.')
+
+  // The session may run anywhere (a terminal, Remote Control from a phone), so
+  // the task id travels with the prompt and the agent reports back over MCP.
+  if (task.id) {
+    lines.push(
+      '',
+      `Polaris task: ${task.id}`,
+      'If the Polaris MCP server is connected, keep this task up to date there:',
+      `- Read it in full with get_task (task_id "${task.id}").`,
+      '- Claim it: update_task with assignee set to your agent name and status in_progress.',
+      '- Write what you did or found as a comment (update_task with add_comment).',
+      '- When it is done, complete_task. If you need my decision, set status waiting with a comment that asks the question.',
+      '- Work you find that is out of scope goes in a new task (create_task in the same project), not into this change.',
+    )
+  }
 
   return lines.join('\n')
 }
