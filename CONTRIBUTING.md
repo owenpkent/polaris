@@ -11,7 +11,7 @@ git clone https://github.com/owenpkent/polaris.git
 cd polaris
 npm install
 npm --prefix command-center install
-git config core.hooksPath .githooks   # runs the fast tests before every push
+# npm install also turned on the pre-push hook (fast tests and build, see Gates below)
 npm run mockup                        # the dashboard on a scratch database with demo data
 ```
 
@@ -68,6 +68,24 @@ cd command-center && npm test && npm run typecheck
 - **CI** (`.github/workflows/test.yml`) runs the fast layers on every push and the UI tests on pull requests into `main`. `weekly.yml` runs every UI project and the screenshot gallery against last week's baseline on Mondays.
 
 Never push with `--no-verify` to get around a failing test.
+
+## Gates
+
+Every check that can stop a change, what triggers it, and what to do when it fails.
+
+| Gate | Runs | When it fails |
+| --- | --- | --- |
+| Pre-push hook (`.githooks/pre-push`) | Before each `git push`: `npm run test:fast`, then `npm run build`, the same as the CI fast job. `npm install` turns it on. | Read the tail it prints (full log in `.git/pre-push.log`), fix the cause, push again. Never `--no-verify`. |
+| `Tests` (`test.yml`) | Every pull request into `main`. One required check that needs every job below and fails if any failed or was cancelled. | Open the job that is red in the run. A path-gated job may be skipped only when `changes` says its paths were untouched. |
+| Server tests, typecheck, dashboard unit tests, build | Every push (the pull request run reuses the push run). | Same as the hook: reproduce with `npm run test:fast` and `npm run build`. |
+| UI tests in Edge, 4 parts | Pull requests into `main`. | Download the `playwright-output-N` artifact (traces and screenshots), or run `npm run test:ui`. |
+| Server test coverage floor | Every push and pull request. `npm --prefix command-center run test:coverage` fails under the line, branch, or function floor in `command-center/package.json`. | Add tests for the code you changed. Raise the floors when coverage rises; never lower them to get green. |
+| Vulnerabilities (`osv.yml`) | Pull requests into `main` fail only on advisories the pull request introduces. A full scan runs Mondays and on demand and fails on every known one. | Update the package named in the log (Dependabot opens most of these). If there is no fix or it does not apply, say why in the pull request. The weekly scan stays red until existing findings are cleared. |
+| Property tests (`command-center/src/**/*.property.test.ts`) | In the normal suite with a fixed seed. `nightly-properties.yml` runs them every night with a random seed and many more runs. | Fix the bug, then add the shrunk input from the log as a named regression test next to the code. Do not loosen the property. Replay with `CC_PROPERTY_SEED` and `CC_PROPERTY_PATH`. |
+| Weekly UI matrix (`weekly.yml`) | Mondays: every UI project, screenshots against last week's baseline, report-only timings. | Not a pull request check. Read the gallery artifact and fix what regressed. |
+| Dependabot (`dependabot.yml`) | Weekly pull requests for npm, cargo, and GitHub Actions, minor and patch bumps grouped. | Review and merge like any pull request. There is no auto-merge. Gradle is left out because Capacitor pins the Android versions. |
+
+Branch protection should require `Tests`. Until it does, the two older check names (`Server tests, typecheck, dashboard unit tests, build` and `UI tests in Edge at desktop and phone widths`) keep working.
 
 ## Visual system (`src/index.css`)
 
