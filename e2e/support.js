@@ -405,3 +405,24 @@ export async function emptyRequest(page, request, body) {
 }
 
 export const failureBanner = (page) => page.getByRole('alert').filter({ hasText: FAILURE.error.message })
+
+// What GET /api/update says when the scheduled updater has reported a newer signed release
+// (command-center/src/http/update-routes.ts). The real test server has no status file, so it
+// never shows the icon; a test that wants it routes the answer with fakeUpdate.
+export const UPDATE_AVAILABLE = {
+  running: '2.0.0',
+  updaterInstalled: true,
+  available: {
+    version: '2.1.0',
+    notes: 'Adds the update icon to the dashboard.\n\nThe digest footer no longer repeats the date.\nBackups older than the keep count are listed before they go.',
+    touchesSchema: true,
+  },
+  request: null,
+  lastResult: null,
+  command: 'npm run cc -- update --release',
+}
+
+// Answers GET /api/update with `body`. Other methods pass through to the real server.
+export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
+  await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))
+}
