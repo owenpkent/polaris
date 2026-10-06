@@ -21,8 +21,11 @@
 //      owner, and a fork leaves the original task alone except for its new subtask.
 //  10. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
 //      API, and only from the proxy on this machine. MCP keeps its tokens.
-//  11. The daemon never runs a program: git, npm, the build, and a restart belong to `cc update`,
-//      whose module the daemon's import graph never reaches (docs/update-proposal.md, section 8).
+//  11. An update is the owner's request, never the daemon's act: git, npm, the build, and a
+//      restart belong to `cc update`, whose module the daemon's import graph never reaches; the
+//      request routes are the human actor's alone, a request names one release strictly newer
+//      than what runs, pickup moves only a pending row, and no agent, rule, or offline op can
+//      touch any of it (docs/update-proposal.md, section 8).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -31,16 +34,19 @@ import { buildDigest } from './automation/digest.ts';
 import { nextOccurrence } from './automation/recurrence.ts';
 import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
+import { VERSION } from './http/version.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
 import { syncGithub } from './ingest/github/sync.ts';
 import { TOOL_CATALOG } from './mcp/catalog.ts';
 import { taskLine } from './mcp/format.ts';
+import { emptyUpdateStatus, writeUpdateStatus } from './update/status.ts';
 
 const TODAY = '2026-09-18';
 const OWNER_SOURCE_TYPES = SOURCE_TYPES.filter((s) => !EXTERNAL_SOURCE_TYPES.includes(s));
@@ -1285,4 +1291,116 @@ test('11. src/update/run.ts is reached only by a dynamic import, from the update
   assert.ok(!importsChildProcess(join(SRC, 'update', 'commands.ts')));
   // And run.ts itself takes nothing lazily: the process must keep running the old code after the checkout moves.
   assert.ok(!readFileSync(run, 'utf8').replace(/\/\/.*$/gm, '').includes('import('), 'run.ts has a dynamic import');
+});
+
+// -------------------------------------------------------------------------------------
+// 11, continued. An update is the owner's request, never the daemon's act (docs/update-proposal.md,
+//     sections 4C, 6, and 8). The request routes are the human actor's alone, on /api only;
+//     a request names one release version that is strictly newer than what runs; pickup moves
+//     only a pending row; and nothing about an update reaches an agent, a rule, or the outbox.
+// =====================================================================================
+
+function updateScratch(t: { after(fn: () => void): void }): { app: ReturnType<typeof fakeApp>; newer: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-invariants-update-'));
+  const app = fakeApp();
+  app.config.dbPath = join(dir, 'constellation.db');
+  const [major, minor, patch] = VERSION.split('.').map(Number);
+  const newer = `${major}.${minor}.${patch + 1}`;
+  writeUpdateStatus(app.config.dbPath, {
+    ...emptyUpdateStatus(), updaterInstalled: true, lastRunAt: new Date().toISOString(), running: VERSION,
+    available: { version: newer, notes: '', touchesSchema: false },
+  });
+  t.after(() => { app.close(); rmSync(dir, { recursive: true, force: true }); });
+  return { app, newer };
+}
+
+test('11. the update request routes require the human actor: the mcp and read-only tokens are refused on every one', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    const routes: [string, string, unknown?][] = [
+      ['GET', '/api/update'],
+      ['POST', '/api/update/requests', { version: newer }],
+      ['POST', '/api/update/requests/up_0000000000/cancel'],
+      ['POST', '/api/update/requests/up_0000000000/pickup'],
+      ['POST', '/api/update/requests/up_0000000000/finish', { ok: true, message: 'x' }],
+    ];
+    for (const token of [TEST_TOKENS.mcp, TEST_TOKENS.mcpReadonly]) {
+      for (const [method, path, body] of routes) {
+        const res = await fetch(`${base}${path}`, {
+          method, headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+        });
+        assert.equal(res.status, 401, `${method} ${path}`);
+      }
+    }
+    assert.equal(app.store.currentUpdateRequest(), null, 'nothing was written');
+    // The store itself refuses every actor but the human, whatever route or tool might call it.
+    for (const actor of ['agent', 'system', 'rule'] as const) {
+      assert.throws(() => app.store.createUpdateRequest(newer, actor), /only the owner/);
+    }
+    const request = app.store.createUpdateRequest(newer, 'human');
+    assert.equal(request.requestedBy, 'human');
+    assert.throws(() => app.store.cancelUpdateRequest(request.id, 'agent'), /only the owner/);
+  });
+});
+
+test('11. a request must name a release version strictly newer than the running one, and the one the updater reported', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    assert.equal((await api(base, 'POST', '/api/update/requests', {})).status, 400, 'no version');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: VERSION })).status, 400, 'the running version');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: '0.0.0' })).status, 400, 'older');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: 'main' })).status, 400, 'a branch is not a release');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: `v${newer}` })).status, 400, 'a tag name is not a version');
+    const [major] = VERSION.split('.').map(Number);
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: `${major + 1}.0.0` })).status, 400, 'newer, but not what the updater reported');
+    assert.equal(app.store.currentUpdateRequest(), null);
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: newer })).status, 201);
+  });
+});
+
+test('11. pickup moves only a pending row: a second pickup, or a pickup of an expired or cancelled row, is refused', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    const pickup = (id: string) => api(base, 'POST', `/api/update/requests/${id}/pickup`);
+    const first = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    assert.equal((await pickup(first.id)).status, 200);
+    assert.equal((await pickup(first.id)).status, 409, 'a second pickup');
+    await api(base, 'POST', `/api/update/requests/${first.id}/finish`, { ok: false, message: 'Rolled back: the build failed' });
+
+    const cancelled = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    await api(base, 'POST', `/api/update/requests/${cancelled.id}/cancel`);
+    assert.equal((await pickup(cancelled.id)).status, 409, 'a cancelled row');
+
+    const stale = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    // Backdated against the store's own clock, which the fake app pins.
+    app.store.db.run('UPDATE update_requests SET requested_at = ? WHERE id = ?', [new Date(Date.parse(stale.requestedAt) - 2 * 60 * 60_000).toISOString(), stale.id]);
+    assert.equal((await pickup(stale.id)).status, 409, 'an expired row');
+    assert.equal(app.store.getUpdateRequest(stale.id)?.state, 'expired');
+  });
+});
+
+test('11. nothing about an update reaches an agent, a rule, or the outbox: no MCP tool, no op kind, no rule action, no event kind', () => {
+  // No tool checks for, requests, or installs an update. update_task and update_goal edit a task
+  // or a goal, which is what their names say; nothing else carries the word.
+  for (const tool of TOOL_CATALOG) {
+    assert.ok(!/\bupdates?\b/i.test(tool.name.replace(/^update_(task|goal)$/, '')), `tool ${tool.name}`);
+    assert.ok(!/\b(release|updater|install)\b/i.test(tool.description), `tool ${tool.name} description: ${tool.description}`);
+  }
+  for (const kind of OUTBOX_OP_KINDS) assert.ok(!/update_request|release|install/.test(kind), kind);
+  for (const action of [
+    { type: 'request_update', version: '9.9.9' },
+    { type: 'update', version: '9.9.9' },
+    { type: 'install_update' },
+  ] as Record<string, Json>[]) {
+    assert.equal(validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [action] }).ok, false, JSON.stringify(action));
+  }
+  for (const kind of ['update.requested', 'update.picked_up', 'update.finished']) {
+    assert.equal(validateRuleDefinition({ trigger: { type: 'event', kinds: [kind] }, conditions: [], actions: [{ type: 'notify', message: 'x' }] }).ok, false, kind);
+  }
+  const types = readFileSync(new URL('./core/types.ts', import.meta.url), 'utf8');
+  assert.ok(!/'update\.[a-z_]+'/.test(types), 'no event kind starts with update.');
+  // And a request records no event at all.
+  const store = openStore(':memory:');
+  store.createUpdateRequest('999.0.0', 'human');
+  assert.equal(store.lastEventId(), 0);
 });

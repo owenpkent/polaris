@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Menu as MenuIcon, MessageSquare, Monitor, Moon, Sun } from 'lucide-react'
 import { Menu } from './command-center/Menu'
+import UpdateButton from './UpdateButton'
 
 // The theme control is a menu rather than a two-state toggle so "System" stays
 // reachable: a toggle can only ever leave the choice pinned to one theme.
@@ -79,6 +80,8 @@ export default function TopBar({
         {title}
       </h1>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: 'auto' }}>
+        {/* Only while the server names a newer signed release (src/UpdateButton.jsx). */}
+        <UpdateButton />
         <button
           ref={themeButtonRef}
           type="button"

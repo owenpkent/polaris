@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import TopBar from './TopBar'
 
+// The update icon asks the server through the connection; it has its own tests in UpdateButton.test.jsx.
+vi.mock('./UpdateButton', () => ({ default: () => null }))
+
 afterEach(() => {
   cleanup()
 })

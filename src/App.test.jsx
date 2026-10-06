@@ -17,6 +17,7 @@ vi.mock('./command-center/DigestTab', () => ({ default: () => <div data-testid="
 vi.mock('./command-center/GithubTab', () => ({ default: () => <div data-testid="tab-github" /> }))
 vi.mock('./OfflineBanner', () => ({ default: () => <div data-testid="offline-banner" /> }))
 vi.mock('./JobWarningsBanner', () => ({ default: () => null }))
+vi.mock('./UpdateButton', () => ({ default: () => null }))
 vi.mock('./command-center/AgentSettings', () => ({ default: () => null }))
 vi.mock('./command-center/BackupSettings', () => ({ default: () => null }))
 vi.mock('./NavDrawer', () => ({ default: () => <div data-testid="nav-drawer" /> }))

@@ -178,6 +178,11 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | POST | `/api/backup/encryption` | Body `{ passphrase, replace? }`. Turns backup encryption on by storing the passphrase in the secret store; `409` when it is already on and `replace` is not true. Returns the status. The passphrase is never returned or logged. |
 | DELETE | `/api/backup/encryption` | Turns backup encryption off. Copies already encrypted still need their passphrase. Returns the status. |
 | POST | `/api/backup/check` | The restore drill on the newest copy, with the stored passphrase: `{ checked: true, ok, name, encrypted, problems, counts?, schemaVersion? }`, or `{ checked: false, message }` when there is no copy yet. |
+| GET | `/api/update` | The update icon's state (docs/update-proposal.md, section 4): `{ running, updaterInstalled, available, request, lastResult, command }`. `running` is the version `/api/health` reports; `updaterInstalled` is a heartbeat in `data/update-status.json` within fifteen minutes; `available` is the newer signed release the updater reported, or null; `request` the newest row of `update_requests` after a pending row older than an hour is expired and a picked-up row is reconciled with the status file; `command` the `cc update --release` line to copy when no updater is installed. The daemon reads a file here and runs nothing. |
+| POST | `/api/update/requests` | Body `{ version }`. The owner asks the scheduled updater to install that release: `201 { request }`. `400` when the version is not `MAJOR.MINOR.PATCH`, not strictly newer than `running`, or not the one `available` names; `409` while a request is pending or picked up. Live only, with no outbox op kind and no MCP tool. |
+| POST | `/api/update/requests/:id/cancel` | The owner takes a pending request back. `{ request }`; `409` once it is picked up or finished. |
+| POST | `/api/update/requests/:id/pickup` | The updater claims a pending request, atomically: `{ request }`, or `409` when the row has already moved (picked up, expired, cancelled). |
+| POST | `/api/update/requests/:id/finish` | Body `{ ok, message }`. The updater's outcome for a picked-up request: `{ request }` in state `done` or `failed`; `409` unless it was picked up. |
 | GET | `/api/sync` | `{ jobs: getJobStatus() ?? {}, warnings }` |
 | POST | `/api/sync/:job` | Starts `opts.jobs[job]()` in the background. `202 { started: true }`. `404` for an unknown job, `409` if `getJobStatus()` already reports it running. |
 
@@ -248,6 +253,8 @@ configured at all.
 - `rest.ts` -- REST route handlers, other than GitHub (registers `github-routes.ts` at the end).
 - `github-routes.ts` -- GitHub App setup, sign-in, status, and the per-repo routes (`/api/github/*`).
 - `backup-routes.ts` -- backup status, encryption on and off, and the restore drill (`/api/backup*`).
+- `update-routes.ts` -- the update icon's state and the update request table (`/api/update*`): reads the updater's status file, never runs anything.
+- `version.ts` -- the running version, from command-center/package.json.
 - `warnings.ts` -- the `warnings` on `GET /api/sync`: a failing job or a stale backup, shown as a banner by the dashboard.
 - `schemas.ts` -- zod request-body schemas.
 - `mcp.ts` -- mounts `createMcpServer` on Streamable HTTP in stateless mode.

@@ -11,8 +11,9 @@ import { notifyTaskChanges } from './taskChanges'
 const DEV_SERVER_DEFAULT = 'http://127.0.0.1:8788'
 
 // Answers that must describe the server as it is right now, so they are never kept or replayed:
-// health is the connection test, and events is the change detector.
-const NEVER_CACHED = ['/api/health', '/api/events']
+// health is the connection test, events is the change detector, and update says whether a newer
+// release exists and what the updater is doing, which a saved copy would misreport.
+const NEVER_CACHED = ['/api/health', '/api/events', '/api/update']
 
 // A proxy in front of a stopped daemon (tailscale serve) answers for it with one of these, so
 // they mean "unreachable" just as a failed fetch does.
@@ -257,6 +258,13 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     setBackupEncryption: (passphrase, replace = false) => call('/api/backup/encryption', { method: 'POST', body: replace ? { passphrase, replace: true } : { passphrase } }),
     disableBackupEncryption: () => call('/api/backup/encryption', { method: 'DELETE' }),
     checkBackup: () => call('/api/backup/check', { method: 'POST' }),
+
+    // The update icon (docs/update-proposal.md, section 4B). A request names the release version
+    // the server reported and nothing else. None of these has an `offline` kind: a request is a
+    // live click, and the status is never served from a copy (NEVER_CACHED).
+    getUpdate: () => call('/api/update'),
+    requestUpdate: (version) => call('/api/update/requests', { method: 'POST', body: { version } }),
+    cancelUpdateRequest: (id) => call(`/api/update/requests/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
 
     // The owner's default agent name (command-center/src/http/rest.ts): who "Assign to AI" claims a task for,
     // and the name history lines show next to "agent" (docs/assign-to-ai-options.md, stage 5B).

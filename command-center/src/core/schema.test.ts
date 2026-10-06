@@ -10,7 +10,7 @@ import { MIGRATIONS } from './schema.ts';
 // an AUTOINCREMENT primary key.
 const EXPECTED_TABLES = [
   'applied_ops', 'comments', 'dependencies', 'events', 'goal_links', 'goals', 'kv', 'links', 'posts', 'projects',
-  'rules', 'schema_version', 'sections', 'source_items', 'sqlite_sequence', 'sync_cursors', 'tasks', 'threads', 'views',
+  'rules', 'schema_version', 'sections', 'source_items', 'sqlite_sequence', 'sync_cursors', 'tasks', 'threads', 'update_requests', 'views',
 ];
 
 function tableNames(db: SqlDriver): string[] {
@@ -239,6 +239,7 @@ test('migration 3 backfills untrusted_text from source_type on a database that p
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [2]);
@@ -323,6 +324,7 @@ test('migration 7 adds events.actor_name and comments.author_name to a database 
   try {
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [6]);
@@ -359,6 +361,7 @@ test('migration 6 adds tasks.assignee to a database that predates it and leaves 
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
     db.run('UPDATE schema_version SET version = ?', [5]);

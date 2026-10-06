@@ -1,7 +1,7 @@
 // Zod request-body schemas for the REST API. Enum value lists are imported from mcp/shared.ts so
 // the REST and MCP surfaces can never drift apart on what a valid status/priority/source type is.
 import { z } from 'zod';
-import { CONFIDENCES, OUTBOX_OP_KINDS, POST_STATUSES, POST_TYPES, ValidationError } from '../core/index.ts';
+import { CONFIDENCES, OUTBOX_OP_KINDS, POST_STATUSES, POST_TYPES, RELEASE_VERSION_PATTERN, ValidationError } from '../core/index.ts';
 import { PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES } from '../mcp/shared.ts';
 
 const customFieldValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -211,3 +211,18 @@ export const postStatusBodySchema = z.object({ status: z.enum(POST_STATUSES) }).
 
 // Shape only; normalizeAgentName (core/agentName.ts) is what actually accepts or rejects the value.
 export const agentSettingsBodySchema = z.object({ defaultAgentName: z.string() }).strict();
+
+// ---- update requests (docs/update-proposal.md, section 4C) ----
+
+// A request names a release version and nothing else: no path, no URL, no branch. The route
+// checks it is the version the updater reported and strictly newer than what runs. Live-only,
+// with no op identity: there is no update op kind in the outbox.
+export const updateRequestBodySchema = z.object({
+  version: z.string().regex(RELEASE_VERSION_PATTERN, 'must be a release version, MAJOR.MINOR.PATCH'),
+}).strict();
+
+/** The updater's outcome for a picked-up request: the one line the panel shows. */
+export const updateFinishBodySchema = z.object({
+  ok: z.boolean(),
+  message: z.string().max(4000),
+}).strict();
