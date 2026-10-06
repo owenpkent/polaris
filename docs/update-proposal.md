@@ -62,10 +62,10 @@ The "never left broken" promise in section 5 holds for the three methods that ca
 For a systemd system unit the owner installs one sudoers line, which `scripts/install-updater-systemd.sh` prints and offers to write:
 
 ```
-owen ALL=(root) NOPASSWD: /usr/bin/systemctl restart polaris
+owen ALL=(root) NOPASSWD: /usr/bin/systemctl stop polaris, /usr/bin/systemctl start polaris, /usr/bin/systemctl restart polaris
 ```
 
-That names the one unit and the one verb. The alternative, moving GR9 to a user unit with lingering, would avoid root but means redoing the NAS mount and Tailscale ordering at user level; the sudoers line is the default and the user unit stays supported.
+That names the one unit and three verbs, because an update stops the daemon, swaps the built dashboard (and restores the snapshot on a rollback) while nothing holds the port, then starts it, with restart for the simple case. The alternative, moving GR9 to a user unit with lingering, would avoid root but means redoing the NAS mount and Tailscale ordering at user level; the sudoers line is the default and the user unit stays supported.
 
 ### 1B. Versions and "newer"
 
@@ -171,7 +171,7 @@ Nothing. There is no MCP tool, no read-only MCP tool, and no runner route (the p
 2. **Signed releases** with a committed `release-signers` file, pinned on each install.
 3. **An OS-scheduled job**, opt-in, that runs `cc update --auto` outside the daemon.
 4. **A credential-free `git fetch --tags` from `origin`**, from the updater and `cc update --check` only, never from the daemon. No GitHub API call and no token.
-5. **Restarting a systemd system unit** through a sudoers line naming only `systemctl restart polaris`, with a user unit as the supported alternative.
+5. **Restarting a systemd system unit** through a sudoers line naming only `systemctl` with stop, start, and restart on the `polaris` unit (section 1A), with a user unit as the supported alternative.
 6. **Update request routes**: owner only, REST only, live only, naming a version, with an additive `update_requests` table whose every transition is in the table in section 4C.
 7. **The update icon and panel** in the dashboard header, with no button unless the scheduled updater is installed.
 8. **Nothing for agents or offline**: no MCP tool, no runner route, no REST route that installs anything, no outbox op kind, no rule action.
