@@ -1,0 +1,69 @@
+# Known-vulnerability gate, using Google's OSV-Scanner reusable workflows.
+#
+# On a pull request into main, only a vulnerability the pull request introduces fails the check:
+# the scanner runs on the base and on the head and compares them, so an advisory that is already
+# in main never blocks an unrelated change. Weekly (and on demand) the whole tree is scanned and
+# fails on anything known, which is how an advisory published after a dependency landed gets
+# noticed. Expect that run to be red until the existing findings are fixed or accepted.
+#
+# What is scanned: the three npm lockfiles (dashboard, command-center, mobile) and the desktop
+# shell's Cargo.lock. Gradle is not scanned; Capacitor pins the Android versions.
+#
+# Permissions: the reusable workflows declare `security-events: write` on their job (for the SARIF
+# upload to Code Scanning), and a caller must grant at least what a called job asks for, even
+# with the upload off. So that one permission is granted on the scan jobs only, the upload is
+# switched off (`upload-sarif: false`), and the findings are read from the job log. Nothing else
+# is widened, and the workflow default stays read-only.
+#
+# When this fails: read the log for the package and the fixed version, update the lockfile
+# (Dependabot opens most of these), and re-run. A finding with no fix, or one that does not apply,
+# is the owner's call: say why in the pull request.
+name: Vulnerabilities
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 7 * * 1'  # Mondays 07:00 UTC, after the weekly UI matrix
+  workflow_dispatch:
+
+# A newer push to the same branch makes the older scan pointless.
+concurrency:
+  group: osv-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pull-request:
+    name: New vulnerabilities in this pull request
+    if: github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write  # required by the reusable workflow's job, unused with upload-sarif off
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.6.0
+    with:
+      upload-sarif: false
+      scan-args: |-
+        --lockfile=package-lock.json
+        --lockfile=command-center/package-lock.json
+        --lockfile=mobile/package-lock.json
+        --lockfile=desktop/src-tauri/Cargo.lock
+
+  full:
+    name: Every known vulnerability in the tree
+    if: github.event_name != 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write  # required by the reusable workflow's job, unused with upload-sarif off
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
+    with:
+      upload-sarif: false
+      scan-args: |-
+        --lockfile=package-lock.json
+        --lockfile=command-center/package-lock.json
+        --lockfile=mobile/package-lock.json
+        --lockfile=desktop/src-tauri/Cargo.lock
