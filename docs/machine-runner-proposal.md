@@ -278,7 +278,7 @@ A new group 11 in command-center/src/invariants.test.ts:
 - The runner never passes a secret or the brief as a command-line argument.
 - The runner reports itself healthy only after the launch compatibility check in section 3 has passed for the complete argument combination of its flag set, and a Claude Code that refuses that combination means no heartbeat and no claim.
 - The schema has no column for a runner's folders, budget, flags, or API key.
-- The daemon and the http server do not import `child_process` (a source check, as group 8 checks the fake GitHub).
+- Nothing the daemon or the http server loads imports `child_process`, except `src/ingest/secrets.ts`, which runs PowerShell on Windows to unlock the secret store (a source check with that one file allowed, as group 8 checks the fake GitHub; docs/update-proposal.md proposes the same check).
 - The `runner` command never opens a store.
 - Run events are not rule triggers, and rules have no run action.
 - The outbox has no runner or run op kind.
