@@ -85,6 +85,35 @@ test('the git wrappers read a real repository', async (t) => {
   assert.equal(await git(realExec(), r.seed).tagAtHead(), 'v2.1.0');
   sh(r.seed, ['tag', '-d', 'v2.1.0']);
   assert.equal(await git(realExec(), r.seed).tagAtHead(), null, 'a tag that is not vX.Y.Z is not a release');
+
+  // Tags: fetched with the branches, listed, their notes read without the signature block, and
+  // verified (here: refused, since nothing is signed) against one named signers file.
+  rmSync(join(r.clone, 'untracked.txt'));
+  sh(r.seed, ['tag', '-a', 'v2.1.0', '-m', 'Release 2.1.0\n\nSecond paragraph.']);
+  sh(r.seed, ['push', '-q', 'origin', '--tags']);
+  await g.fetchTags('origin');
+  assert.deepEqual((await g.tags()).sort(), ['not-a-release', 'v2.1.0']);
+  assert.equal((await g.tagNotes('v2.1.0')).trim(), 'Release 2.1.0\n\nSecond paragraph.');
+  assert.equal((await g.tagNotes('not-a-release')).trim(), '', 'a lightweight tag has no notes of its own');
+  const signers = join(r.base, 'signers');
+  writeFileSync(signers, '# no keys\n');
+  const unsigned = await g.verifyTag('v2.1.0', signers);
+  assert.equal(unsigned.ok, false);
+  assert.match((unsigned as { reason: string }).reason, /no signature found/);
+  const lightweight = await g.verifyTag('not-a-release', signers);
+  assert.equal(lightweight.ok, false);
+  assert.match((lightweight as { reason: string }).reason, /cannot verify a non-tag object/);
+
+  await g.checkout('v2.1.0', { detach: true });
+  assert.equal(await g.branch(), null, 'detached on the tag');
+  assert.equal(await g.tagAtHead(), 'v2.1.0');
+  assert.equal(await g.revParse('HEAD'), target);
+  await g.checkout('main', { detach: false, force: true });
+  assert.equal(await g.branch(), 'main');
+  assert.equal(await g.revParse('HEAD'), head, 'main never moved');
+  await g.checkout(head, { detach: true, force: true });
+  assert.equal(await g.branch(), null);
+  await g.checkout('main', { detach: false });
 });
 
 test('a git failure is reported with the command and the reason', async () => {
@@ -133,12 +162,24 @@ test('with the real git, each refusal stops before any other program runs', asyn
   assert.match(result.text, /1 local commit is not on origin\/main/);
   sh(r.clone, ['reset', '-q', '--hard', 'origin/main']);
 
-  // Behind, but origin's version is not newer.
-  r.commit(r.seed, 'chore: no bump', { 'README.md': 'same version' });
+  // Behind, but origin's version is older than the running one.
+  r.commit(r.seed, 'chore: wrong way', { 'package.json': JSON.stringify({ version: '1.9.9' }) });
   sh(r.seed, ['push', '-q', 'origin', 'main']);
   result = await run();
   assert.equal(result.code, 1);
-  assert.match(result.text, /origin\/main is 2\.0\.0, which is not newer than the running 2\.0\.0/);
+  assert.match(result.text, /origin\/main is 1\.9\.9, which is older than the running 2\.0\.0/);
+
+  // Behind, same version: that would install, so --check only. It reports main and the releases.
+  const checked = await (async () => {
+    const out: string[] = [];
+    const code = await runUpdate({ repoRoot: r.clone, dbPath, dashboardDir: join(r.clone, 'dist'), port: 8790, checkOnly: true, yes: true, restartSpec: 'manual', stdout: (l) => out.push(l), stderr: (l) => out.push(l) }, {
+      exec, fetch, now: () => new Date(), sleep: async () => {}, portListening: async () => true, platform: 'linux', env: {}, secrets: memorySecretStore(), confirm: async () => true,
+    });
+    return { code, text: out.join('\n') };
+  })();
+  assert.equal(checked.code, 0);
+  assert.match(checked.text, /origin\/main: origin\/main is 1\.9\.9, which is older/);
+  assert.match(checked.text, /there is no release-signers file in the checkout and none is pinned/);
 
   assert.deepEqual([...new Set(programs)], ['git'], 'git was the only program run');
   assert.equal(sh(r.clone, ['rev-parse', 'HEAD']), sh(r.clone, ['rev-parse', 'origin/main~1']), 'the checkout never moved');

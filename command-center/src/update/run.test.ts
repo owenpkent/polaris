@@ -4,7 +4,7 @@
 // programs would move the real one, so the order of steps and every rollback can be checked.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,14 +15,25 @@ import { listSnapshots } from '../daemon/backup.ts';
 import { identityProof } from '../http/identity.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import type { Exec, ExecResult } from './exec.ts';
-import { runUpdate, updateLogPath, type UpdateDeps } from './run.ts';
-import { readUpdateStatus, updateStatusPath } from './status.ts';
+import { runTrustSigners, runUpdate, updateLogPath, type UpdateDeps, type UpdateTarget } from './run.ts';
+import { pinnedSignersPath } from './signers.ts';
+import { emptyUpdateStatus, readUpdateStatus, updateStatusPath, writeUpdateStatus } from './status.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PREVIOUS = 'a'.repeat(40);
 const TARGET = 'b'.repeat(40);
 const TOKEN = 'test-api-token';
 const PORT = 8790;
+const KEY_A = 'AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const KEY_B = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const SIGNERS_A = `# release keys\npolaris-release namespaces="git" ssh-ed25519 ${KEY_A}\n`;
+const SIGNERS_B = `polaris-release namespaces="git" ssh-ed25519 ${KEY_B}\n`;
+const SIGNERS_NONE = '# no keys yet\n';
+const FINGERPRINT = 'SHA256:7XkuoKngBtHFlb11TNVHq4BN7kSlZDld0g0xBo6AAos';
+
+/** A tag on the fake origin: whether `git verify-tag` passes against the pinned file, what the
+ *  package.json at the tag says (default: the tag's own version), and the annotation. */
+interface FakeTag { tag: string; verifies?: boolean; version?: string; notes?: string }
 
 interface Scenario {
   dirty?: string[];
@@ -38,6 +49,16 @@ interface Scenario {
   yes?: boolean;
   confirm?: boolean;
   passphrase?: string;
+  /** The target: origin/main unless set. */
+  mode?: 'release' | 'to';
+  to?: string;
+  tags?: FakeTag[];
+  /** Whether the release tag at HEAD (`tag`) verifies. */
+  startVerifies?: boolean;
+  /** The committed release-signers text; null for no file. Default: one key. */
+  committed?: string | null;
+  /** The pinned data/release-signers text; absent unless set. */
+  pinned?: string;
 }
 
 interface Call { cmd: string; args: string[]; cwd?: string }
@@ -59,8 +80,14 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   writeFileSync(join(dist, 'index.html'), 'old');
   const writeVersion = (v: string) => writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'polaris', version: v }));
   writeVersion(running);
+  const committed = s.committed === undefined ? SIGNERS_A : s.committed;
+  if (committed !== null) writeFileSync(join(root, 'release-signers'), committed);
+  const pinnedFile = pinnedSignersPath(dbPath);
+  if (s.pinned !== undefined) writeFileSync(pinnedFile, s.pinned, { mode: 0o600 });
+  const tags = s.tags ?? [];
+  const tagVersion = (tag: string) => tags.find((x) => x.tag === tag)?.version ?? tag.replace(/^v/, '');
 
-  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1 };
+  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1, verifiedAgainst: [] as string[] };
   const calls: Call[] = [];
   const out: string[] = [];
   const err: string[] = [];
@@ -76,8 +103,21 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
         case 'status': return ok((s.dirty ?? []).map((p) => ` M ${p}`).join('\n'));
         case 'rev-parse':
           if (args[1] === '--abbrev-ref') return ok(`${s.branch === undefined ? 'main' : s.branch ?? 'HEAD'}\n`);
-          return ok(`${args[2] === 'origin/main^{commit}' ? TARGET : sha()}\n`);
-        case 'tag': return ok(s.tag ? `${s.tag}\n` : '');
+          return ok(`${args[2] === 'HEAD^{commit}' ? sha() : TARGET}\n`);
+        case 'tag':
+          if (args[1] === '--points-at') return ok(s.tag ? `${s.tag}\n` : '');
+          if (args[1] === '--list') return ok(tags.map((x) => x.tag).join('\n'));
+          if (args[1] === '-l') return ok(`tag\n${tags.find((x) => x.tag === args[3])?.notes ?? ''}\n`);
+          return fail(`unexpected ${line}`);
+        case '-c': {
+          // git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=<pinned> verify-tag <tag>
+          assert.deepEqual(args.slice(0, 5), ['-c', 'gpg.format=ssh', '-c', args[3], 'verify-tag']);
+          assert.ok(args[3].startsWith('gpg.ssh.allowedSignersFile='));
+          state.verifiedAgainst.push(args[3].slice('gpg.ssh.allowedSignersFile='.length));
+          const tag = args[5];
+          const verifies = tag === s.tag && s.startVerifies !== undefined ? s.startVerifies : tags.find((x) => x.tag === tag)?.verifies ?? true;
+          return verifies ? ok() : fail(`Good "git" signature with ED25519 key SHA256:other\nNo principal matched.`);
+        }
         case 'fetch': return ok();
         case 'rev-list': return ok(`${s.ahead ?? 0}\t${s.behind ?? 1}\n`);
         case 'log': return ok('bbbbbbb feat: the newer thing\n');
@@ -86,10 +126,17 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
         case 'merge':
           state.snapshotsAtCheckout = listSnapshots(join(dataDir, 'backups')).length;
           state.head = 'target'; writeVersion(target); return ok();
+        case 'checkout': {
+          const ref = args[args.length - 1];
+          if (/^v\d/.test(ref)) { state.snapshotsAtCheckout = listSnapshots(join(dataDir, 'backups')).length; state.head = 'target'; writeVersion(tagVersion(ref)); return ok(); }
+          if (ref === 'main' || ref === PREVIOUS) { state.head = 'previous'; writeVersion(running); return ok(); }
+          return fail(`unexpected ${line}`);
+        }
         case 'reset': state.head = 'previous'; writeVersion(running); return ok();
         default: return fail(`unexpected ${line}`);
       }
     }
+    if (cmd === 'ssh-keygen') return ok(`256 ${FINGERPRINT} no comment (ED25519)\n`);
     if (cmd === 'npm') {
       if (args[0] === 'ci' && s.fail === 'npm-ci' && state.head === 'target') return fail('npm ERR! lockfile out of sync');
       if (args[0] === 'run' && s.fail === 'test' && state.head === 'target') return fail('1 failing');
@@ -108,7 +155,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
       if (args[1] === 'start') {
         state.listening = true;
         if (state.head === 'target') {
-          state.daemonVersion = s.fail === 'health' || s.fail === 'health-after-migration' ? 'broken' : target;
+          state.daemonVersion = s.fail === 'health' || s.fail === 'health-after-migration' ? 'broken' : version();
           if (s.fail === 'health-after-migration') {
             // The new code's first start migrated the live database past what the old code knows.
             const db = new DatabaseSync(dbPath);
@@ -150,16 +197,19 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
     secrets: memorySecretStore(s.passphrase ? { 'backup-passphrase': s.passphrase } : {}),
     confirm: async () => s.confirm ?? true,
   };
+  const updateTarget: UpdateTarget = s.mode === 'release' ? { kind: 'release' } : s.mode === 'to' ? { kind: 'to', version: s.to! } : { kind: 'main' };
   const run = (overrides: Partial<UpdateDeps> = {}) => runUpdate({
-    repoRoot: root, dbPath, dashboardDir: dist, port: PORT,
+    repoRoot: root, dbPath, dashboardDir: dist, port: PORT, target: updateTarget,
     checkOnly: s.checkOnly ?? false, yes: s.yes ?? true, restartSpec: 'systemd-user:polaris',
     stdout: (l) => out.push(l), stderr: (l) => err.push(l),
   }, { ...deps, ...overrides });
+  const trust = (overrides: Partial<UpdateDeps> = {}) => runTrustSigners({ repoRoot: root, dbPath, yes: s.yes ?? false, stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, { ...deps, ...overrides });
   const commandLines = () => calls.map((c) => `${c.cmd} ${c.args.join(' ')}`);
   const version = () => JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version as string;
+  const pinned = () => (existsSync(pinnedFile) ? readFileSync(pinnedFile, 'utf8') : null);
   const distFile = (name: string) => (existsSync(join(root, name, 'index.html')) ? readFileSync(join(root, name, 'index.html'), 'utf8') : null);
   const tasks = () => { const st = openStore(dbPath); try { return st.searchAllTasks().map((x) => x.title); } finally { st.db.close(); } };
-  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, commandLines, version, distFile, tasks, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
+  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
 }
 
 const npmAndRestartCalls = (lines: string[]) => lines.filter((l) => l.startsWith('npm ') || l.startsWith('npx ') || / (stop|start) /.test(l));
@@ -202,17 +252,23 @@ test('refuses local commits that are not on the remote', async (t) => {
   assert.equal(h.version(), '2.0.0');
 });
 
-test('refuses a target that is not strictly newer, and a target with no version', async (t) => {
-  const same = harness(t, { target: '2.0.0' });
-  assert.equal(await same.run(), 1);
-  assert.match(same.err.join('\n'), /2\.0\.0, which is not newer than the running 2\.0\.0/);
+test('origin/main with new commits and the same version installs: a merge need not bump the version', async (t) => {
+  const h = harness(t, { target: '2.0.0', behind: 3 });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.match(h.out.join('\n'), /origin\/main is 2\.0\.0 at bbbbbbb, 3 commits ahead/);
+  assert.ok(h.commandLines().includes('git merge --ff-only origin/main'));
+  assert.equal(h.state.daemonVersion, '2.0.0');
+  assert.match(h.out.join('\n'), /Updated to 2\.0\.0/);
+});
+
+test('refuses origin/main when its version is older than the running one, or has no version', async (t) => {
   const older = harness(t, { target: '1.9.9' });
   assert.equal(await older.run(), 1);
-  assert.match(older.err.join('\n'), /not newer/);
+  assert.match(older.err.join('\n'), /origin\/main is 1\.9\.9, which is older than the running 2\.0\.0/);
   const malformed = harness(t, { target: 'v2.1.0' });
   assert.equal(await malformed.run(), 1);
   assert.match(malformed.err.join('\n'), /no MAJOR\.MINOR\.PATCH version/);
-  for (const h of [same, older, malformed]) {
+  for (const h of [older, malformed]) {
     assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
     assert.equal(h.version(), '2.0.0');
     assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), [], 'no snapshot for a refused update');
@@ -235,7 +291,7 @@ test('a bad CC_UPDATE_RESTART stops the run before anything moves', async (t) =>
   assert.match(h.err.join('\n'), /CC_UPDATE_RESTART is "cron"/);
 });
 
-test('--check fetches and reports what would change and installs nothing', async (t) => {
+test('--check fetches and reports what origin/main would change and installs nothing', async (t) => {
   const h = harness(t, { checkOnly: true, changed: ['command-center/src/core/schema.ts', 'package-lock.json'] });
   assert.equal(await h.run(), 0);
   const text = h.out.join('\n');
@@ -243,12 +299,13 @@ test('--check fetches and reports what would change and installs nothing', async
   assert.match(text, /feat: the newer thing/);
   assert.match(text, /The schema changes/);
   assert.match(text, /package-lock\.json/);
-  assert.match(text, /2\.1\.0 is available/);
-  assert.ok(h.commandLines().some((l) => l.startsWith('git fetch')));
+  assert.match(text, /2\.1\.0 is available from origin\/main/);
+  assert.match(text, /No release is newer than the running 2\.0\.0/);
+  assert.ok(h.commandLines().includes('git fetch --prune --tags origin'), 'one fetch, with the tags');
   assert.ok(!h.commandLines().some((l) => l.startsWith('git merge')));
   assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
   assert.equal(h.version(), '2.0.0');
-  assert.equal(existsSync(updateStatusPath(h.dbPath)), false);
+  assert.equal(readUpdateStatus(h.dbPath).available, null);
 });
 
 test('nothing to do when the checkout is at origin/main', async (t) => {
@@ -408,4 +465,277 @@ test('a restart that stops the daemon and cannot start it again still rolls back
   assert.equal(h.state.listening, true, 'the daemon is back');
   assert.equal(h.state.daemonVersion, '2.0.0');
   assert.match(h.err.join('\n'), /systemctl --user start polaris failed/);
+});
+
+// -------------------------------------------------------------------------------------
+// Phase B: releases (docs/update-proposal.md, section 2). The fake origin carries tags; the fake
+// `git verify-tag` answers from the scenario and records which signers file it was given.
+// -------------------------------------------------------------------------------------
+
+test('--release installs the newest verified release: pinned on first use, verified against the pinned copy, checked out detached', async (t) => {
+  const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0', notes: 'Release 2.1.0\n\nNotes line two' }, { tag: 'v2.0.0' }, { tag: 'not-a-release' }], changed: ['command-center/src/core/schema.ts'] });
+  assert.equal(h.pinned(), null, 'nothing pinned before the first run');
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.equal(h.pinned(), SIGNERS_A, 'the committed file was pinned, comments and all');
+  if (process.platform !== 'win32') assert.equal(statSync(h.pinnedFile).mode & 0o777, 0o600);
+  assert.deepEqual(h.state.verifiedAgainst, [h.pinnedFile], 'one tag verified, against the pinned copy');
+  const lines = h.commandLines();
+  assert.ok(lines.includes('git fetch --prune --tags origin'));
+  assert.ok(lines.includes('git checkout -q --detach v2.1.0'), 'a release is checked out detached');
+  assert.ok(!lines.some((l) => l.startsWith('git merge')));
+  assert.equal(h.state.snapshotsAtCheckout, 1, 'the snapshot was taken before the checkout moved');
+  assert.ok(lines.indexOf('git checkout -q --detach v2.1.0') < lines.indexOf('npm ci --ignore-scripts'));
+  assert.equal(h.version(), '2.1.0');
+  assert.equal(h.state.daemonVersion, '2.1.0');
+  const text = h.out.join('\n');
+  assert.match(text, /Pinned release-signers \(1 key\)/);
+  assert.match(text, /v2\.1\.0 \(2\.1\.0\) at bbbbbbb verifies/);
+  assert.match(text, /Release notes:\n  Release 2\.1\.0\n  \n  Notes line two/);
+  assert.match(text, /The schema changes/);
+  assert.match(text, /Updated to 2\.1\.0 \(v2\.1\.0\)/);
+  const status = readUpdateStatus(h.dbPath);
+  assert.equal(status.running, '2.1.0');
+  assert.equal(status.available, null);
+  assert.equal(status.lastResult?.ok, true);
+});
+
+test('--release with no release newer than the running version does nothing, with exit 0', async (t) => {
+  const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.0.0' }, { tag: 'v1.9.0' }] });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.match(h.out.join('\n'), /No release is newer than the running 2\.0\.0\. Nothing installed/);
+  assert.deepEqual(h.state.verifiedAgainst, [], 'an older tag is never even verified');
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+  const none = harness(t, { mode: 'release', tags: [] });
+  assert.equal(await none.run(), 0);
+  assert.match(none.out.join('\n'), /0 release tags from origin/);
+});
+
+test('--release skips a tag that does not verify, reports it, and never installs it', async (t) => {
+  const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.3.0', verifies: false }, { tag: 'v2.2.0', verifies: false }, { tag: 'v2.1.0' }] });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.deepEqual(h.err, ['Skipped v2.3.0: No principal matched', 'Skipped v2.2.0: No principal matched']);
+  assert.equal(h.state.verifiedAgainst.length, 3, 'newest first, stopping at the first that verifies');
+  assert.equal(h.version(), '2.1.0');
+  assert.ok(h.commandLines().includes('git checkout -q --detach v2.1.0'));
+  assert.ok(!h.commandLines().some((l) => l.includes('v2.3.0') && l.startsWith('git checkout')));
+
+  const allBad = harness(t, { mode: 'release', tags: [{ tag: 'v2.3.0', verifies: false }, { tag: 'v2.2.0', verifies: false }, { tag: 'v2.0.0', verifies: false }] });
+  assert.equal(await allBad.run(), 1);
+  assert.match(allBad.err.join('\n'), /no release newer than 2\.0\.0 verifies against the pinned signers \(2 skipped\)/);
+  assert.deepEqual(npmAndRestartCalls(allBad.commandLines()), []);
+  assert.equal(allBad.version(), '2.0.0');
+  assert.deepEqual(listSnapshots(join(allBad.dataDir, 'backups')), []);
+});
+
+test('a pinned signers file with no keys means no release can verify', async (t) => {
+  const h = harness(t, { mode: 'release', pinned: SIGNERS_NONE, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await h.run(), 1);
+  assert.match(h.err.join('\n'), /no release can verify: the pinned signers file .* has no keys.*cc update --trust-signers/);
+  assert.deepEqual(h.state.verifiedAgainst, [], 'no tag is verified against an empty file');
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+  assert.equal(h.pinned(), SIGNERS_NONE, 'the committed file (which has a key) did not replace the pinned one');
+  // The committed file has no keys either, and nothing is pinned: pinning it is still "no keys".
+  const fresh = harness(t, { mode: 'release', committed: SIGNERS_NONE, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await fresh.run(), 1);
+  assert.match(fresh.err.join('\n'), /has no keys/);
+  assert.equal(fresh.pinned(), SIGNERS_NONE);
+  // No file anywhere.
+  const nothing = harness(t, { mode: 'release', committed: null, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await nothing.run(), 1);
+  assert.match(nothing.err.join('\n'), /there is no release-signers file in the checkout and none is pinned/);
+  assert.equal(nothing.pinned(), null);
+});
+
+test('a committed signers file that differs from the pinned one is reported, and verification stays with the pinned copy', async (t) => {
+  const h = harness(t, { mode: 'release', pinned: SIGNERS_A, committed: SIGNERS_B, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.match(h.err.join('\n'), /The signers file changed; run cc update --trust-signers to review it/);
+  assert.equal(h.pinned(), SIGNERS_A, 'the pinned copy is untouched');
+  assert.deepEqual(h.state.verifiedAgainst, [h.pinnedFile]);
+  assert.equal(h.version(), '2.1.0');
+  // A comment-only difference is not a change.
+  const comments = harness(t, { mode: 'release', pinned: SIGNERS_A, committed: `# reworded comment\npolaris-release namespaces="git" ssh-ed25519 ${KEY_A} laptop\n`, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await comments.run(), 0, comments.err.join('\n'));
+  assert.ok(!comments.err.join('\n').includes('signers file changed'));
+  // The checkout lost the file: still the pinned copy.
+  const gone = harness(t, { mode: 'release', pinned: SIGNERS_A, committed: null, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await gone.run(), 0, gone.err.join('\n'));
+  assert.match(gone.err.join('\n'), /The checkout has no release-signers file; verifying against the pinned copy/);
+});
+
+test('a pinned signers file other users can write is refused', { skip: process.platform === 'win32' ? 'POSIX mode bits' : false }, async (t) => {
+  const h = harness(t, { mode: 'release', pinned: SIGNERS_A, tags: [{ tag: 'v2.1.0' }] });
+  chmodSync(h.pinnedFile, 0o666);
+  assert.equal(await h.run(), 1);
+  assert.match(h.err.join('\n'), /can be written by other users.*chmod 600/);
+  assert.deepEqual(h.state.verifiedAgainst, []);
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+});
+
+test('--to installs the named release, even when newer ones exist, and refuses an older, missing, or unverified one', async (t) => {
+  const named = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.2.0' }, { tag: 'v2.1.0' }] });
+  assert.equal(await named.run(), 0, named.err.join('\n'));
+  assert.ok(named.commandLines().includes('git checkout -q --detach v2.1.0'));
+  assert.equal(named.version(), '2.1.0');
+  assert.deepEqual(named.state.verifiedAgainst, [named.pinnedFile], 'only the named tag is verified');
+
+  const older = harness(t, { mode: 'to', to: '1.9.0', tags: [{ tag: 'v2.1.0' }, { tag: 'v1.9.0' }] });
+  assert.equal(await older.run(), 1);
+  assert.match(older.err.join('\n'), /v1\.9\.0 is not newer than the running 2\.0\.0\. Moving back is a deliberate git checkout/);
+  assert.deepEqual(older.state.verifiedAgainst, [], 'not even verified');
+  const same = harness(t, { mode: 'to', to: '2.0.0', tags: [{ tag: 'v2.0.0' }] });
+  assert.equal(await same.run(), 1);
+  assert.match(same.err.join('\n'), /not newer/);
+
+  const missing = harness(t, { mode: 'to', to: '2.5.0', tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await missing.run(), 1);
+  assert.match(missing.err.join('\n'), /there is no release tag v2\.5\.0 \(the newest is v2\.1\.0\)/);
+
+  const unverified = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.1.0', verifies: false }] });
+  assert.equal(await unverified.run(), 1);
+  assert.match(unverified.err.join('\n'), /v2\.1\.0 does not verify against the pinned signers: No principal matched\. Nothing installed/);
+  for (const h of [older, same, missing, unverified]) {
+    assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+    assert.equal(h.version(), '2.0.0');
+    assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), []);
+  }
+});
+
+test('a release whose package.json is not the tag version is rolled back before npm ci runs', async (t) => {
+  const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0', version: '2.0.5' }] });
+  assert.equal(await h.run(), 1);
+  assert.match(h.err.join('\n'), /the release v2\.1\.0 says version 2\.0\.5 in its package\.json, not 2\.1\.0/);
+  const lines = h.commandLines();
+  assert.ok(lines.includes('git checkout -q --detach v2.1.0'));
+  assert.ok(lines.includes('git checkout -q --force main'), 'back on the branch it started from');
+  assert.deepEqual(npmAndRestartCalls(lines), [], 'npm never ran on the mislabelled release, and the daemon was never touched');
+  assert.equal(h.version(), '2.0.0');
+  assert.equal(h.distFile('dist'), 'old');
+  assert.match(h.out.join('\n'), /was not restarted and runs 2\.0\.0 as before/);
+  const status = readUpdateStatus(h.dbPath);
+  assert.equal(status.lastResult?.ok, false);
+  assert.match(status.lastResult!.message, /Rolled back: the release v2\.1\.0 says version 2\.0\.5/);
+  assert.equal(status.running, '2.0.0');
+  assert.equal(listSnapshots(join(h.dataDir, 'backups')).length, 1, 'the snapshot was taken (and kept)');
+});
+
+test('a release update that fails its health check rolls back to the branch and the old version', async (t) => {
+  const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0' }], fail: 'health' });
+  assert.equal(await h.run(), 1);
+  assert.ok(h.commandLines().includes('git checkout -q --force main'));
+  assert.equal(h.version(), '2.0.0');
+  assert.equal(h.state.daemonVersion, '2.0.0');
+  assert.equal(h.distFile('dist'), 'old');
+  assert.match(h.out.join('\n'), /Rolled back\. The daemon is up on port 8790 running 2\.0\.0/);
+});
+
+test('--check reports the newest verified release, the skipped tags, and writes it to the status file', async (t) => {
+  const h = harness(t, { checkOnly: true, tags: [{ tag: 'v2.3.0', verifies: false }, { tag: 'v2.2.0', notes: 'Two point two\u0001\n\nAdds a migration.' }, { tag: 'v2.1.0' }], changed: ['command-center/src/core/schema.ts'] });
+  writeUpdateStatus(h.dbPath, { ...emptyUpdateStatus(), updaterInstalled: true, lastRunAt: '2026-10-06T03:59:00.000Z', running: '2.0.0' });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  const text = h.out.join('\n');
+  assert.match(text, /v2\.2\.0 \(2\.2\.0\) at bbbbbbb verifies/);
+  assert.match(text, /Release notes:\n  Two point two\n  \n  Adds a migration\./);
+  assert.match(text, /v2\.2\.0 is available\. Run cc update --release to install it/);
+  assert.deepEqual(h.err, ['Skipped v2.3.0: No principal matched']);
+  assert.deepEqual(h.state.verifiedAgainst, [h.pinnedFile, h.pinnedFile], 'v2.3.0 and v2.2.0; v2.1.0 is not looked at');
+  assert.equal(h.pinned(), SIGNERS_A, '--check pins on first use too');
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+  assert.ok(!h.commandLines().some((l) => l.startsWith('git checkout') || l.startsWith('git merge')));
+  assert.equal(h.version(), '2.0.0');
+  const status = readUpdateStatus(h.dbPath);
+  assert.deepEqual(status.available, { version: '2.2.0', notes: 'Two point two\n\nAdds a migration.', touchesSchema: true });
+  assert.match(status.lastCheckAt ?? '', /^2026-10-06T04:00:\d\d\.000Z$/, 'the moment of the check');
+  assert.equal(status.updaterInstalled, true, 'left as it was');
+  assert.equal(status.lastRunAt, '2026-10-06T03:59:00.000Z');
+  assert.equal(status.lastResult, null);
+});
+
+test('--check with nothing newer, or an empty pinned file, writes available: null and still exits 0', async (t) => {
+  const nothing = harness(t, { checkOnly: true, tags: [{ tag: 'v2.0.0' }] });
+  writeUpdateStatus(nothing.dbPath, { ...emptyUpdateStatus(), available: { version: '2.0.0', notes: '', touchesSchema: false } });
+  assert.equal(await nothing.run(), 0);
+  assert.equal(readUpdateStatus(nothing.dbPath).available, null, 'a stale entry is cleared');
+  assert.ok(readUpdateStatus(nothing.dbPath).lastCheckAt);
+  const empty = harness(t, { checkOnly: true, pinned: SIGNERS_NONE, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await empty.run(), 0);
+  assert.match(empty.err.join('\n'), /Releases: no release can verify: the pinned signers file .* has no keys/);
+  assert.equal(readUpdateStatus(empty.dbPath).available, null);
+  assert.ok(readUpdateStatus(empty.dbPath).lastCheckAt);
+});
+
+test('from a release tag, --release moves to the next verified release and a rollback returns to that commit', async (t) => {
+  const h = harness(t, { mode: 'release', branch: null, tag: 'v2.0.0', tags: [{ tag: 'v2.1.0' }, { tag: 'v2.0.0' }] });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.match(h.out.join('\n'), /Running 2\.0\.0 on the release tag v2\.0\.0/);
+  assert.deepEqual(h.state.verifiedAgainst, [h.pinnedFile, h.pinnedFile], 'the tag at HEAD and the target');
+  assert.ok(!h.commandLines().some((l) => l.startsWith('git rev-list')), 'no branch to compare against');
+  assert.equal(h.version(), '2.1.0');
+
+  const rolled = harness(t, { mode: 'release', branch: null, tag: 'v2.0.0', tags: [{ tag: 'v2.1.0' }, { tag: 'v2.0.0' }], fail: 'build' });
+  assert.equal(await rolled.run(), 1);
+  assert.ok(rolled.commandLines().includes(`git checkout -q --force --detach ${PREVIOUS}`));
+  assert.equal(rolled.version(), '2.0.0');
+
+  const unverifiedStart = harness(t, { mode: 'release', branch: null, tag: 'v2.0.0', startVerifies: false, tags: [{ tag: 'v2.1.0' }, { tag: 'v2.0.0' }] });
+  assert.equal(await unverifiedStart.run(), 1);
+  assert.match(unverifiedStart.err.join('\n'), /the checkout is on v2\.0\.0, which does not verify against the pinned signers/);
+  assert.deepEqual(npmAndRestartCalls(unverifiedStart.commandLines()), []);
+
+  const toMain = harness(t, { branch: null, tag: 'v2.0.0' });
+  assert.equal(await toMain.run(), 1, 'plain cc update from a tag is still refused');
+  assert.match(toMain.err.join('\n'), /cc update --release moves between releases/);
+});
+
+test('--trust-signers shows both files with fingerprints, asks, and replaces the pinned copy', async (t) => {
+  const first = harness(t, { yes: false });
+  let asked = 0;
+  assert.equal(await first.trust({ confirm: async () => { asked++; return true; } }), 0, first.err.join('\n'));
+  assert.equal(asked, 1);
+  const text = first.out.join('\n');
+  assert.match(text, /Pinned \(.*release-signers\): nothing pinned yet/);
+  assert.match(text, new RegExp(`Committed \\(.*release-signers\\):\\n  polaris-release  ssh-ed25519  ${FINGERPRINT.replace(/\+/g, '\\+')}`));
+  assert.match(text, /Pinned 1 key to .*release-signers\. Releases verify against that copy from now on/);
+  assert.equal(first.pinned(), SIGNERS_A);
+  if (process.platform !== 'win32') assert.equal(statSync(first.pinnedFile).mode & 0o777, 0o600);
+  assert.ok(first.commandLines().every((l) => l.startsWith('ssh-keygen -lf')), 'ssh-keygen is the only program');
+
+  const same = harness(t, { yes: false, pinned: SIGNERS_A });
+  assert.equal(await same.trust({ confirm: async () => { throw new Error('must not ask'); } }), 0);
+  assert.match(same.out.join('\n'), /already allows the same keys\. Nothing changed/);
+
+  const declined = harness(t, { yes: false, pinned: SIGNERS_A, committed: SIGNERS_B });
+  assert.equal(await declined.trust({ confirm: async () => false }), 0);
+  assert.match(declined.out.join('\n'), /Not changed\. Pass --yes/);
+  assert.equal(declined.pinned(), SIGNERS_A);
+  assert.match(declined.out.join('\n'), /Pinned \(.*\):\n  polaris-release  ssh-ed25519  SHA256:/);
+
+  const replaced = harness(t, { yes: true, pinned: SIGNERS_A, committed: SIGNERS_B });
+  assert.equal(await replaced.trust({ confirm: async () => { throw new Error('--yes asks nothing'); } }), 0);
+  assert.equal(replaced.pinned(), SIGNERS_B);
+
+  const emptied = harness(t, { yes: true, pinned: SIGNERS_A, committed: SIGNERS_NONE });
+  assert.equal(await emptied.trust(), 0);
+  assert.match(emptied.err.join('\n'), /The committed file has no keys: once pinned, no release can verify/);
+  assert.equal(emptied.pinned(), SIGNERS_NONE);
+
+  const noFile = harness(t, { yes: true, committed: null });
+  assert.equal(await noFile.trust(), 1);
+  assert.match(noFile.err.join('\n'), /there is no release-signers file at/);
+
+  const noKeygen = harness(t, { yes: true });
+  assert.equal(await noKeygen.trust({ exec: async () => ({ code: -1, stdout: '', stderr: 'ENOENT' }) }), 0);
+  assert.match(noKeygen.out.join('\n'), /\(ssh-keygen is not installed\)/);
+  assert.equal(noKeygen.pinned(), SIGNERS_A);
+});
+
+test('--trust-signers refuses a malformed committed file and a pinned file other users can write', { skip: process.platform === 'win32' ? 'POSIX mode bits' : false }, async (t) => {
+  const malformed = harness(t, { yes: true, pinned: SIGNERS_A, committed: 'this is not a key line\n' });
+  assert.equal(await malformed.trust(), 1);
+  assert.match(malformed.err.join('\n'), /line 1 of the signers file/);
+  assert.equal(malformed.pinned(), SIGNERS_A);
+  const loose = harness(t, { yes: true, pinned: SIGNERS_A, committed: SIGNERS_B });
+  chmodSync(loose.pinnedFile, 0o666);
+  assert.equal(await loose.trust(), 1);
+  assert.match(loose.err.join('\n'), /can be written by other users/);
 });

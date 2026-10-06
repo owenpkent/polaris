@@ -182,16 +182,31 @@ Start-ScheduledTask 'Constellation Command Center'
 
 ## Updating
 
-`npm run cc -- update` moves an install to the newest `origin/main`, the way the manual steps did, with a checked snapshot and a rollback (the design is docs/update-proposal.md; signed releases, the scheduled updater, and the dashboard's update icon are later phases). You run it; the daemon never does, and never starts a program.
+`npm run cc -- update` moves an install to the newest `origin/main`, the way the manual steps did, with a checked snapshot and a rollback; `--release` and `--to` move it to a signed release instead (the design is docs/update-proposal.md; the release checklist and the key setup are docs/releases.md; the scheduled updater and the dashboard's update icon are later phases). You run it; the daemon never does, and never starts a program.
 
 What it does, in order, logging each step to `data/update.log` and the outcome to `data/update-status.json`:
 
-1. Refuses when the working tree has uncommitted changes, is not on `main`, has local commits not on the remote, or when `origin/main`'s version (the root package.json) is not strictly newer than the running one. A deploy checkout carries no local work; keep development in a second clone.
-2. Fetches and shows the commits, whether `src/core/schema.ts` changes, and whether a lockfile changes. `--check` stops here. Otherwise it asks once; `--yes` skips the question.
+1. Refuses when the working tree has uncommitted changes, is on a branch other than `main`, or has local commits not on the remote. A deploy checkout carries no local work; keep development in a second clone. The target must be newer (below), else nothing is installed.
+2. Fetches (with the tags) and shows the commits, whether `src/core/schema.ts` changes, whether a lockfile changes, and for a release its notes. `--check` stops here. Otherwise it asks once; `--yes` skips the question.
 3. Snapshots the database through the backup code, live, as `constellation-pre-update-<version>-<moment>.db` (`.enc` when backup encryption is on) in the backup folder. The daily copy never replaces it; the newest three snapshots are kept.
-4. Checks out `origin/main`, runs `npm ci --ignore-scripts` here and at the root, then `npm rebuild esbuild` (the one install script the build needs; a test pins that list), `npm run test:fast`, and `vite build --outDir dist.next`. The live `dist/` is untouched until the restart.
+4. Checks out the target (`origin/main` fast-forwarded, or the release tag with HEAD detached) and reads its package.json, which must say the version that was chosen, else the checkout is put back and nothing else runs. Then `npm ci --ignore-scripts` here and at the root, `npm rebuild esbuild` (the one install script the build needs; a test pins that list), `npm run test:fast`, and `vite build --outDir dist.next`. The live `dist/` is untouched until the restart.
 5. Restarts the daemon, swapping `dist.next` into `dist` and keeping the old one as `dist.prev`, then checks it: `GET /api/identity` must answer with the proof for this install's api token, and `GET /api/health` must say ok and report the new version, within 90 seconds. The token is read from the file next to the database and never printed. `--port` names the daemon's port (8788).
-6. On any failure after the checkout moved: back to the previous commit, `npm ci` again, `dist.prev` back, and, when the new code had migrated the database, the snapshot restored (with the daemon stopped, and the `-wal` and `-shm` files removed) before the restart. A failure before the restart leaves the daemon running the old code throughout. If the rollback fails too, the command says so, with the previous commit and the snapshot path.
+6. On any failure after the checkout moved: back to the previous commit (the branch, or the release tag it started on), `npm ci` again if it had run, `dist.prev` back, and, when the new code had migrated the database, the snapshot restored (with the daemon stopped, and the `-wal` and `-shm` files removed) before the restart. A failure before the restart leaves the daemon running the old code throughout. If the rollback fails too, the command says so, with the previous commit and the snapshot path.
+
+What counts as newer. The running version is the checkout's root package.json. `origin/main` is a target when it is strictly ahead of HEAD (a fast-forward with at least one commit) and its version is not older than the running one, so a merge need not bump the version. A release is a target only when its version is strictly newer than the running one.
+
+### Releases
+
+A release is a tag `vX.Y.Z` (nothing after the patch) signed with the owner's SSH key; docs/releases.md has the key setup and the checklist. The command never trusts the signature by itself: it trusts the keys the install has pinned.
+
+| Command | What it does |
+|---|---|
+| `cc update --release` | Fetches the tags from `origin` (credential-free, the same remote `git pull` uses), takes the newest release strictly newer than the running version that `git verify-tag` accepts against the pinned keys, and installs it as above. A tag that does not verify is skipped and reported, never installed. Starting from a release tag (a detached HEAD on a verified `vX.Y.Z`) is fine |
+| `cc update --to v2.1.0` | That release, verified and strictly newer, else refused. Moving back to an older release is a deliberate `git checkout` by you |
+| `cc update --check` | Fetches, reports what `origin/main` would change (when on `main`) and the newest verified newer release (version, notes, whether the schema changes, and which tags were skipped and why), installs nothing, and writes the release it found into `data/update-status.json` as `available` for the dashboard |
+| `cc update --trust-signers` | Shows the pinned keys and the committed keys side by side (principal, key type, SHA256 fingerprint from `ssh-keygen -lf`), asks, and replaces the pinned copy. `--yes` skips the question; without a terminal and without `--yes` nothing changes |
+
+The pinned signers file. `release-signers` at the repo root lists the keys allowed to sign a release, in OpenSSH allowed_signers format. The first `--release`, `--to`, or `--check` copies it to `data/release-signers` (owner-only), and every verification from then on is `git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=data/release-signers verify-tag <tag>`. Nothing but `--trust-signers` changes that copy: a commit that changes the committed file is reported as "the signers file changed; run cc update --trust-signers to review it", and verification carries on against the pinned copy. A pinned file with no keys means no release can verify, which `--release` and `--to` refuse on and `--check` reports. A pinned file that other users can write is refused, as the secret store refuses one they can read.
 
 How the daemon is restarted comes from `CC_UPDATE_RESTART`, or is detected: the logon task on Windows, then `systemctl is-active polaris`, then the user unit, otherwise by hand.
 
