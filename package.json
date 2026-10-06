@@ -8,6 +8,7 @@
   },
   "type": "module",
   "scripts": {
+    "prepare": "node scripts/setup-hooks.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

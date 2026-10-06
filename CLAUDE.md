@@ -65,7 +65,7 @@ Use a scratch database for manual runs: set `CC_DB` to a temp file, and `CC_BACK
 - Dashboard data refreshes by polling `/api/events` (src/command-center/useEvents.js). New views that show server data call `useEventRefresh`.
 - Responsive: one breakpoint at 640px. Static layout differences go in src/index.css media queries; JavaScript-computed layout uses `useNarrowBreakpoints` in src/command-center/columnsState.js. No Tailwind breakpoint classes.
 - Conventional commits (feat, fix, docs, chore). No AI co-author trailers.
-- A pre-push hook in .githooks/ runs `npm run test:fast`. Enable it once per clone with `git config core.hooksPath .githooks`. Never push with `--no-verify` to get around a failing test.
+- A pre-push hook in .githooks/ runs `npm run test:fast` then `npm run build`, the same as the CI fast job. `npm install` enables it (root `prepare` script, skipped in CI); by hand: `git config core.hooksPath .githooks`. Never push with `--no-verify` to get around a failing test.
 
 ## When to ask
 
