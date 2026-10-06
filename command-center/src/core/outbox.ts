@@ -150,6 +150,9 @@ function mergeFields(store: Store, task: Task, op: OutboxOp, editedAt: string, w
 }
 
 function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutboxOptions): { task: Task | null; conflicts: OutboxConflict[]; held: string[] } {
+  // The op kinds are a closed list. The HTTP schema checks it too, but the core must not rely on
+  // that: the update branch below would otherwise read any unknown kind as an edit.
+  if (!(OUTBOX_OP_KINDS as readonly string[]).includes(op.kind)) throw new ValidationError(`unknown op kind: ${String(op.kind)}`);
   if (op.kind === 'create_task') {
     const existing = store.getTask(op.taskId);
     if (existing) return { task: existing, conflicts: [], held: [] };

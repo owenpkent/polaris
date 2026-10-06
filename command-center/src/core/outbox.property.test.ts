@@ -172,13 +172,10 @@ test('property: the HTTP schema refuses any op kind outside the closed list', ()
 
 // A kind outside the list that reaches the core anyway (the type says it cannot, but a caller that
 // skips the schema, or a future second entry point, is not stopped by the type) must be refused
-// and leave the task alone, not be read as an update.
-//
-// FINDING, left failing on purpose (todo): applyOne() ends with an `else` that treats every kind it
-// does not know as update_task, so { kind: 'delete_task', body: { title: 'x' } } renames the task and
-// reports 'applied'. Only the zod schema in http/schemas.ts keeps such a kind out today. The
-// owner decides the fix (reject unknown kinds in applyOutbox); then remove `todo` below.
-test('property: the core refuses an op kind outside the closed list and leaves the task alone', { todo: 'applyOne treats an unknown kind as update_task; only the HTTP schema stops it' }, () => {
+// and leave the task alone, not be read as an update. This property found that applyOne() read
+// { kind: 'delete_task', body: { title: 'x' } } as an update, renamed the task, and reported
+// 'applied'; the regression test below pins that input.
+test('property: the core refuses an op kind outside the closed list and leaves the task alone', () => {
   const kind = fc.oneof(
     fc.constantFrom('delete_task', 'accept_inbox', 'drop_task', 'reject_inbox', 'create_rule', 'update_goal', 'update_project'),
     fc.string({ maxLength: 12 }),
@@ -191,6 +188,15 @@ test('property: the core refuses an op kind outside the closed list and leaves t
     assert.equal(r.status, 'rejected', `kind ${JSON.stringify(k)} was ${r.status}`);
     assert.equal(store.requireTask(taskId).title, before.title);
   });
+});
+
+test('regression: a delete_task op does not rename the task', () => {
+  const { store, setNow, taskId, base } = scenario();
+  setNow(700);
+  const before = store.requireTask(taskId);
+  const [r] = applyOutbox(store, [{ opId: 'op_00000001', deviceId: 'device-phone', kind: 'delete_task' as OutboxOp['kind'], taskId, at: at(10), base, body: { title: 'x' } }]);
+  assert.equal(r.status, 'rejected');
+  assert.equal(store.requireTask(taskId).title, before.title);
 });
 
 // 6. An inbox suggestion is never touched by an offline op.
