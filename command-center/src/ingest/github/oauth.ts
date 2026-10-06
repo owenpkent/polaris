@@ -21,7 +21,6 @@ function ghHeaders(extra: Record<string, string> = {}): Record<string, string> {
 export interface GithubManifest {
   name: string;
   url: string;
-  hook_attributes: { url: string; active: boolean };
   redirect_url: string;
   callback_urls: string[];
   public: boolean;
@@ -30,12 +29,15 @@ export interface GithubManifest {
   default_events: string[];
 }
 
-/** `port` is the local HTTP server's actual listening port, read from the incoming request. */
+/**
+ * `port` is the local HTTP server's actual listening port, read from the incoming request.
+ * No `hook_attributes`: GitHub rejects a manifest whose hook url is not publicly reachable,
+ * even with the hook inactive, and Polaris receives no webhooks from the App.
+ */
 export function buildManifest(port: number): GithubManifest {
   return {
     name: 'Polaris Command Center',
     url: 'https://github.com/owenpkent/constellation',
-    hook_attributes: { url: 'http://127.0.0.1/unused', active: false },
     redirect_url: `http://127.0.0.1:${port}/api/github/app/callback`,
     callback_urls: ['http://127.0.0.1/api/github/callback'],
     public: true,
