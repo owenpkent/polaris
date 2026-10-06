@@ -99,3 +99,74 @@ jobs:
         run: |
           echo "UI test parts: ${{ needs.ui.result }}"
           [ "${{ needs.ui.result }}" = "success" ] || exit 1
+
+  # Which parts of the tree a pull request touches, for jobs that only matter when they change.
+  # Nothing uses these outputs yet: .github/workflows/android.yml and desktop-ui.yml are
+  # path-filtered at the workflow level on their open pull requests, and are meant to become jobs
+  # here gated with `if: needs.changes.outputs.android == 'true'`. Keep these lists in step with
+  # the paths those workflows use. Pull requests only, because a push run has no base to compare.
+  changes:
+    name: Which paths changed
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - 'mobile/**'
+              - 'src/**'
+              - 'public/**'
+              - 'package.json'
+              - 'package-lock.json'
+            desktop:
+              - 'desktop/**'
+              - 'scripts/desktop.mjs'
+              - 'command-center/src/http/identity.ts'
+
+  # The one check branch protection should require. The owner switches protection to `Tests`
+  # (Settings, Branches) after this has run green on a pull request or two; until then the two
+  # older names above keep working unchanged, so nothing blocks during the switch. A job that
+  # was cancelled or skipped is not a failure to GitHub, so this job reads every result itself and
+  # fails on anything but success. To add a job to the gate: add the job, add it to `needs`, and
+  # add one line to the check below (`must_pass` for a job that always runs, `gated` for a job
+  # that only runs when `changes` says its paths were touched).
+  tests:
+    name: Tests
+    needs: [changes, fast, ui, ui-passed]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check that nothing failed, was cancelled, or was skipped by mistake
+        run: |
+          bad=0
+          must_pass() {
+            echo "$1: $2"
+            [ "$2" = "success" ] || bad=1
+          }
+          # A path-gated job may be skipped, but only when `changes` said its paths were not
+          # touched. If `changes` itself failed, its output is empty and a skip is a failure.
+          # Example: gated android "${{ needs.android.result }}" "${{ needs.changes.outputs.android }}"
+          gated() {
+            echo "$1: $2 (needed: $3)"
+            if [ "$2" = "success" ]; then return; fi
+            if [ "$2" = "skipped" ] && [ "$3" = "false" ]; then return; fi
+            bad=1
+          }
+          must_pass changes "${{ needs.changes.result }}"
+          must_pass ui "${{ needs.ui.result }}"
+          must_pass ui-passed "${{ needs.ui-passed.result }}"
+          # `fast` is skipped on pull requests by design (the push run covers the same commit),
+          # so a skip is fine but a failure or cancel is not.
+          echo "fast: ${{ needs.fast.result }}"
+          case "${{ needs.fast.result }}" in success|skipped) ;; *) bad=1 ;; esac
+          exit $bad
