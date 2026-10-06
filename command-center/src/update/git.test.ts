@@ -1,0 +1,145 @@
+// The git wrappers against a real repository in a temp folder, with a bare "origin" beside it,
+// and the refusals of `cc update` run end to end with the real git: each one stops before npm,
+// so nothing but git is ever run. Commits are made with explicit identity and signing off, so
+// the owner's git config plays no part.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { memorySecretStore } from '../ingest/secrets.ts';
+import { realExec, type Exec } from './exec.ts';
+import { git, LOCKFILES, SCHEMA_FILE } from './git.ts';
+import { runUpdate } from './run.ts';
+
+const GIT_IDENTITY = ['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false'];
+
+function sh(cwd: string, args: string[]): string {
+  const r = spawnSync('git', [...GIT_IDENTITY, ...args], { cwd, encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
+  return r.stdout.trim();
+}
+
+/** A bare origin with `main` at version 2.0.0, and a clone of it. */
+function repos(t: { after(fn: () => void): void }) {
+  const base = mkdtempSync(join(tmpdir(), 'cc-update-git-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const origin = join(base, 'origin.git');
+  const seed = join(base, 'seed');
+  mkdirSync(seed);
+  sh(seed, ['init', '-q', '-b', 'main']);
+  mkdirSync(join(seed, 'command-center', 'src', 'core'), { recursive: true });
+  const commit = (dir: string, message: string, files: Record<string, string>) => {
+    for (const [name, text] of Object.entries(files)) {
+      mkdirSync(join(dir, name, '..'), { recursive: true });
+      writeFileSync(join(dir, name), text);
+    }
+    sh(dir, ['add', '-A']);
+    sh(dir, ['commit', '-q', '-m', message]);
+    return sh(dir, ['rev-parse', 'HEAD']);
+  };
+  commit(seed, 'v2.0.0', { 'package.json': JSON.stringify({ version: '2.0.0' }), [SCHEMA_FILE]: 'export const MIGRATIONS = [];\n', 'package-lock.json': '{}' });
+  sh(base, ['init', '-q', '--bare', '-b', 'main', origin]);
+  sh(seed, ['remote', 'add', 'origin', origin]);
+  sh(seed, ['push', '-q', 'origin', 'main']);
+  const clone = join(base, 'clone');
+  sh(base, ['clone', '-q', origin, clone]);
+  return { base, origin, seed, clone, commit };
+}
+
+test('the git wrappers read a real repository', async (t) => {
+  const r = repos(t);
+  const g = git(realExec(), r.clone);
+  assert.deepEqual(await g.statusLines(), []);
+  assert.equal(await g.branch(), 'main');
+  assert.equal(await g.tagAtHead(), null);
+  assert.deepEqual(await g.aheadBehind('origin/main'), { ahead: 0, behind: 0 });
+  const head = await g.revParse('HEAD');
+  assert.match(head, /^[0-9a-f]{40}$/);
+  assert.equal(await g.showFile('origin/main', 'package.json'), JSON.stringify({ version: '2.0.0' }));
+  assert.equal(await g.showFile('origin/main', 'missing.json'), null);
+
+  // Two commits land on origin: one touches the schema and a lockfile and bumps the version.
+  r.commit(r.seed, 'feat: one', { 'README.md': 'hello' });
+  const target = r.commit(r.seed, 'feat: two', { 'package.json': JSON.stringify({ version: '2.1.0' }), [SCHEMA_FILE]: 'export const MIGRATIONS = ["x"];\n', [LOCKFILES[0]]: '{"changed":1}' });
+  sh(r.seed, ['push', '-q', 'origin', 'main']);
+  await g.fetch('origin');
+  assert.deepEqual(await g.aheadBehind('origin/main'), { ahead: 0, behind: 2 });
+  assert.equal(await g.revParse('origin/main'), target);
+  assert.deepEqual((await g.logLines('HEAD', 'origin/main')).map((l) => l.replace(/^\w+ /, '')), ['feat: two', 'feat: one']);
+  assert.deepEqual((await g.changedFiles('HEAD', 'origin/main', [SCHEMA_FILE, ...LOCKFILES])).sort(), [SCHEMA_FILE, LOCKFILES[0]].sort());
+
+  await g.fastForward('origin/main');
+  assert.equal(await g.revParse('HEAD'), target);
+  assert.equal(await g.branch(), 'main', 'still on main after the fast-forward');
+  await g.resetHard(head);
+  assert.equal(await g.revParse('HEAD'), head);
+  assert.deepEqual(await g.statusLines(), []);
+
+  writeFileSync(join(r.clone, 'untracked.txt'), 'x');
+  assert.deepEqual(await g.statusLines(), ['?? untracked.txt'], 'an untracked file counts');
+
+  sh(r.seed, ['tag', 'v2.1.0']);
+  sh(r.seed, ['tag', 'not-a-release']);
+  assert.equal(await git(realExec(), r.seed).tagAtHead(), 'v2.1.0');
+  sh(r.seed, ['tag', '-d', 'v2.1.0']);
+  assert.equal(await git(realExec(), r.seed).tagAtHead(), null, 'a tag that is not vX.Y.Z is not a release');
+});
+
+test('a git failure is reported with the command and the reason', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-update-nogit-'));
+  try {
+    await assert.rejects(git(realExec(), dir).statusLines(), /git status --porcelain failed .*not a git repository/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('with the real git, each refusal stops before any other program runs', async (t) => {
+  const r = repos(t);
+  const programs: string[] = [];
+  const real = realExec();
+  const exec: Exec = (cmd, args, opts) => { programs.push(cmd); return real(cmd, args, opts); };
+  const dbPath = join(r.base, 'data', 'constellation.db');
+  const run = async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runUpdate({ repoRoot: r.clone, dbPath, dashboardDir: join(r.clone, 'dist'), port: 8790, checkOnly: false, yes: true, restartSpec: 'manual', stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, {
+      exec, fetch, now: () => new Date(), sleep: async () => {}, portListening: async () => true, platform: 'linux', env: {}, secrets: memorySecretStore(), confirm: async () => true,
+    });
+    return { code, text: [...out, ...err].join('\n') };
+  };
+
+  // Dirty tree.
+  writeFileSync(join(r.clone, 'scratch.txt'), 'work in progress');
+  let result = await run();
+  assert.equal(result.code, 1);
+  assert.match(result.text, /uncommitted changes/);
+  rmSync(join(r.clone, 'scratch.txt'));
+
+  // Not on main.
+  sh(r.clone, ['checkout', '-q', '-b', 'feat/x']);
+  result = await run();
+  assert.equal(result.code, 1);
+  assert.match(result.text, /on feat\/x, not main/);
+  sh(r.clone, ['checkout', '-q', 'main']);
+  sh(r.clone, ['branch', '-q', '-D', 'feat/x']);
+
+  // Local commits ahead of origin.
+  r.commit(r.clone, 'local work', { 'local.txt': 'x' });
+  result = await run();
+  assert.equal(result.code, 1);
+  assert.match(result.text, /1 local commit is not on origin\/main/);
+  sh(r.clone, ['reset', '-q', '--hard', 'origin/main']);
+
+  // Behind, but origin's version is not newer.
+  r.commit(r.seed, 'chore: no bump', { 'README.md': 'same version' });
+  sh(r.seed, ['push', '-q', 'origin', 'main']);
+  result = await run();
+  assert.equal(result.code, 1);
+  assert.match(result.text, /origin\/main is 2\.0\.0, which is not newer than the running 2\.0\.0/);
+
+  assert.deepEqual([...new Set(programs)], ['git'], 'git was the only program run');
+  assert.equal(sh(r.clone, ['rev-parse', 'HEAD']), sh(r.clone, ['rev-parse', 'origin/main~1']), 'the checkout never moved');
+});

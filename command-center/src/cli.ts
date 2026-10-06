@@ -9,8 +9,9 @@ import { commands as automation } from './automation/commands.ts';
 import { commands as tasks } from './tasks/commands.ts';
 import { commands as http } from './http/commands.ts';
 import { commands as daemon } from './daemon/commands.ts';
+import { commands as update } from './update/commands.ts';
 
-const all: Command[] = [...tasks, ...importer, ...daemon, ...github, ...automation, ...http, ...mcp];
+const all: Command[] = [...tasks, ...importer, ...daemon, ...update, ...github, ...automation, ...http, ...mcp];
 
 function help(): string {
   const w = Math.max(...all.map((c) => c.name.length));

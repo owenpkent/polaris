@@ -21,6 +21,8 @@
 //      owner, and a fork leaves the original task alone except for its new subtask.
 //  10. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
 //      API, and only from the proxy on this machine. MCP keeps its tokens.
+//  11. The daemon never runs a program: git, npm, the build, and a restart belong to `cc update`,
+//      whose module the daemon's import graph never reaches (docs/update-proposal.md, section 8).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -29,7 +31,9 @@ import { buildDigest } from './automation/digest.ts';
 import { nextOccurrence } from './automation/recurrence.ts';
 import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
@@ -1220,4 +1224,65 @@ test('10. with a login named, identity is the owner on REST only, from a loopbac
   const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
   assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
   assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
+});
+
+// =====================================================================================
+// 11. The daemon never runs a program. Updating (git, npm ci, the tests, the build, a restart)
+//    is `cc update`, run by the owner, and the module that does it is reached only through a
+//    dynamic import in the update command (docs/update-proposal.md, sections 7 and 8)
+// =====================================================================================
+
+const SRC = dirname(fileURLToPath(import.meta.url));
+
+/** The relative .ts modules a file loads at run time: `import ... from`, `export ... from`, and
+ *  bare `import '...'` lines. `import type` and `export type` lines are erased before Node runs
+ *  the file, so they load nothing and are not followed. */
+function staticImports(file: string): string[] {
+  const source = readFileSync(file, 'utf8');
+  const found: string[] = [];
+  for (const m of source.matchAll(/^(?:import|export)\b(?!\s+type\b)[^'"\n]*?\bfrom\s+['"]([^'"]+)['"]/gm)) found.push(m[1]);
+  for (const m of source.matchAll(/^import\s+['"]([^'"]+)['"]/gm)) found.push(m[1]);
+  return found.filter((spec) => spec.startsWith('.')).map((spec) => resolve(dirname(file), spec));
+}
+
+/** Every module reached from `roots` by static imports, including the roots. */
+function reachable(roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...roots];
+  while (queue.length) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    assert.ok(existsSync(file), `${file} is imported but does not exist`);
+    seen.add(file);
+    queue.push(...staticImports(file));
+  }
+  return seen;
+}
+
+const importsChildProcess = (file: string) => /from\s+['"](node:)?child_process['"]|require\(['"](node:)?child_process['"]\)/.test(readFileSync(file, 'utf8'));
+
+test('11. the daemon and the http server reach no module that starts a program, except the secret store for DPAPI', () => {
+  const roots = [join(SRC, 'daemon', 'daemon.ts'), join(SRC, 'http', 'server.ts'), join(SRC, 'cli.ts')];
+  const graph = reachable(roots);
+  assert.ok(graph.size > 20, 'the walk followed the imports');
+  const secrets = join(SRC, 'ingest', 'secrets.ts');
+  assert.ok(graph.has(secrets), 'the one allowed program (PowerShell for DPAPI) is in the graph, so the exception is real');
+  assert.ok(importsChildProcess(secrets));
+  const offenders = [...graph].filter((f) => f !== secrets && importsChildProcess(f)).map((f) => f.slice(SRC.length + 1));
+  assert.deepEqual(offenders, [], 'a module the daemon loads imports child_process');
+  for (const name of ['run.ts', 'exec.ts', 'git.ts', 'restart.ts', 'health.ts']) {
+    assert.ok(!graph.has(join(SRC, 'update', name)), `src/update/${name} is in the daemon's import graph`);
+  }
+});
+
+test('11. src/update/run.ts is reached only by a dynamic import, from the update command', () => {
+  const run = join(SRC, 'update', 'run.ts');
+  const sources = [...reachable([join(SRC, 'cli.ts'), join(SRC, 'update', 'commands.ts')])];
+  const staticImporters = sources.filter((f) => f !== run && staticImports(f).includes(run)).map((f) => f.slice(SRC.length + 1));
+  assert.deepEqual(staticImporters, [], 'run.ts must not be a static import of anything the CLI loads');
+  const commands = readFileSync(join(SRC, 'update', 'commands.ts'), 'utf8');
+  assert.match(commands, /await import\('\.\/run\.ts'\)/, 'the update command loads run.ts when it runs');
+  assert.ok(!importsChildProcess(join(SRC, 'update', 'commands.ts')));
+  // And run.ts itself takes nothing lazily: the process must keep running the old code after the checkout moves.
+  assert.ok(!readFileSync(run, 'utf8').replace(/\/\/.*$/gm, '').includes('import('), 'run.ts has a dynamic import');
 });

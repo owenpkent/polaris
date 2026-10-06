@@ -186,11 +186,16 @@ export function snapshotDatabase(store: Store, dir: string, name: string, opts: 
 }
 
 /** Put a backup or snapshot in place of the live database at `dbPath`: for the rollback in
- *  `cc update`, with the daemon stopped. The copy is decrypted (if it is encrypted) and checked on
- *  the local disk first, so a bad copy never replaces the database. The `-wal`, `-shm`, and
- *  `-journal` files beside the database belong to the file being replaced and are removed. */
+ *  `cc update`. The copy is decrypted (if it is encrypted) and checked on the local disk first, so
+ *  a bad copy never replaces the database. The `-wal`, `-shm`, and `-journal` files beside the
+ *  database belong to the file being replaced and are removed, and the restored copy then goes in
+ *  by a rename over `dbPath`, never by writing into it: a daemon that is about to be stopped (a
+ *  systemd system unit allows `cc update` one verb, restart, so the swap runs while the old daemon
+ *  is still up) keeps its handles on the old inode, and the checkpoint it makes as it closes lands
+ *  there and not in the restored file. */
 export function restoreDatabaseFile(file: string, dbPath: string, passphrase?: string): void {
   const local = mkdtempSync(join(tmpdir(), 'cc-restore-'));
+  const incoming = `${dbPath}.${process.pid}.${randomBytes(6).toString('hex')}.restore`;
   try {
     let plain = file;
     if (isEncryptedBackup(file)) {
@@ -200,10 +205,14 @@ export function restoreDatabaseFile(file: string, dbPath: string, passphrase?: s
     }
     const problems = soundnessProblems(inspectDatabaseFile(plain));
     if (problems.length) throw new Error(`restore: ${file} is not a sound database: ${problems.join('; ')}`);
+    copyFileSync(plain, incoming);
     for (const suffix of ['-wal', '-shm', '-journal']) {
       try { unlinkSync(dbPath + suffix); } catch { /* there was none */ }
     }
-    copyFileSync(plain, dbPath);
+    renameSync(incoming, dbPath);
+  } catch (e) {
+    try { unlinkSync(incoming); } catch { /* never created, or already renamed */ }
+    throw e;
   } finally {
     rmSync(local, { recursive: true, force: true });
   }
