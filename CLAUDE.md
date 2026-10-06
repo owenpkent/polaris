@@ -46,6 +46,7 @@ npm run shots            # builds, then screenshots every view and state at both
 npm test                 # dashboard unit tests only (Vitest + jsdom)
 npm run build            # dashboard; the daemon then serves dist/ at http://127.0.0.1:8788/
 npm run mockup           # dashboard on a scratch database with demo data (-- --fresh to rebuild)
+npm run test:android     # Android app instrumented tests on a running emulator (mobile/README.md, Testing)
 npm run test:desktop     # the desktop shell's Rust tests (cargo test); needs Rust (MSVC)
 ```
 

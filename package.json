@@ -18,6 +18,7 @@
     "test:ui": "vite build && playwright test --project desktop --project phone --project desktop-light --project phone-light --project desktop-hc --project phone-landscape --project phone-320",
     "test:all": "npm run test:fast && npm run test:ui",
     "desktop": "node scripts/desktop.mjs",
+    "test:android": "npm --prefix mobile run test:device --",
     "test:desktop": "node scripts/desktop.mjs test",
     "shots": "node scripts/shots.mjs"
   },

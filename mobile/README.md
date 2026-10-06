@@ -56,6 +56,23 @@ Off until the owner turns them on in the Reminders card on the Settings page, wh
 
 Everything happens on the phone through the Capacitor LocalNotifications plugin (`@capacitor/local-notifications`), called over the bridge by name from src/command-center/nativeApp.js. Nothing is sent to any push service, which is why the project rule about writes to external services does not apply. The plugin's own manifest declares `POST_NOTIFICATIONS` (asked for when the owner enables reminders) and `SCHEDULE_EXACT_ALARM`; reminders are scheduled inexact (`isExactNotification: false`, since the plugin defaults to exact) with `allowWhileIdle`, so they may arrive a few minutes late and never need the exact-alarm setting.
 
+## Testing
+
+The tests are instrumented tests in `android/app/src/androidTest/java/com/okstudio/polaris`. They need an emulator (API 33 or later, so `POST_NOTIFICATIONS` exists; CI uses API 35 with Google APIs) that is already running. A physical phone is never picked automatically.
+
+```sh
+npm run test:android                  # repo root; same as npm --prefix mobile run test:device
+npm run test:android -- --skip-build  # reuse dist/ from the last npm run build
+npm run test:android -- -Pandroid.testInstrumentationRunnerArguments.class=com.okstudio.polaris.ShareRewriteTest
+```
+
+`scripts/test.mjs` builds the dashboard, runs `cap sync`, starts a scratch daemon on a free port (its own database, secret store, and backup folder in a temp directory, `CC_CORS_ORIGINS=https://localhost`), forwards the port with `adb reverse`, runs `connectedDebugAndroidTest`, and always removes the daemon, the forward, and the temp folder. It never touches `command-center/data` or a daemon on the default port. Reports land in `android/app/build/reports/androidTests/connected`.
+
+- `ShareRewriteTest` calls `MainActivity.rewriteShare` directly: String and styled (`Spanned`) extras, subject and text, empty or missing text, characters that need URL encoding, and intents that must be left alone. It needs no server.
+- `AppEndToEndTest` drives the dashboard in the app's WebView against the scratch daemon: the connect form, a share opening the new-task sheet prefilled, a second share reseeding the open sheet, and reminders being scheduled (and then cleared) as local notifications. `WebAppDriver` finds elements by role and accessible name through `evaluateJavascript` on the Capacitor bridge's WebView. `POST_NOTIFICATIONS` is granted with a `GrantPermissionRule`. Without the `serverUrl` and `apiToken` arguments the script passes, these tests are skipped.
+
+CI runs the same command on an emulator for pull requests that touch `mobile/`, `src/`, or `public/` (.github/workflows/android.yml). To start an emulator locally: `emulator -avd <name>`, and wait for it to boot.
+
 ## Icons
 
 `assets/` holds the sources, copied from public/icons (`icon-only.png` for older launchers, `icon-foreground.png` for adaptive ones). The adaptive background is the colour in `android/app/src/main/res/values/ic_launcher_background.xml`, the dashboard's dark background. To regenerate after changing them:

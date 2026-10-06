@@ -1,0 +1,86 @@
+# Instrumented tests for the Android app (mobile/), on an emulator. They are a separate workflow
+# from test.yml because they need Linux with KVM and a path filter: a change that touches neither
+# the app nor the dashboard it bundles has nothing here to check. They run on pull requests into
+# main only, like the UI tests, because an emulator boot is the slow part.
+#
+# The tests are mobile/android/app/src/androidTest: the share rewrite on the bare framework, and
+# the dashboard inside the real app against a scratch daemon (mobile/scripts/test.mjs starts it
+# and forwards its port with adb reverse). The weekly run does not repeat them: weekly.yml is
+# Windows and Edge, and these tests have no browser matrix or baseline to refresh, so the pull
+# request run is the whole coverage.
+name: Android tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'src/**'
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android.yml'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android app tests on an emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      # The emulator needs hardware acceleration. ubuntu-latest exposes /dev/kvm, but the runner
+      # user may not be allowed to use it until this udev rule is in place.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+      - run: npm ci
+        working-directory: mobile
+      # Gradle needs a JDK with a compiler (the Android Gradle plugin here wants 17 or newer).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      # API 35 with Google APIs matches the image the tests were written against. Running the
+      # tests on the emulator is the script's job, so the whole thing is one command here and
+      # locally; the runner only boots the emulator around it. --skip-build is not used: the
+      # script builds dist/ itself.
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          # No window, no sound, no animations: the tests drive the page, not the screen.
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: npm run test:android
+      - name: Keep the test reports from a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            mobile/android/app/build/reports/androidTests/
+            mobile/android/app/build/outputs/androidTest-results/
+          retention-days: 7

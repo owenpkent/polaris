@@ -6,7 +6,8 @@
   "scripts": {
     "sync": "cap sync android",
     "open": "cap open android",
-    "apk": "node scripts/apk.mjs"
+    "apk": "node scripts/apk.mjs",
+    "test:device": "node scripts/test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
