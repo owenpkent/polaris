@@ -64,7 +64,7 @@ npm run mockup
 
 It builds a scratch database with demo tasks in your temp folder and opens the dashboard already connected. Close it with Ctrl+C. Your real data, which you create next, is untouched.
 
-If you ever run the daemon by hand for an experiment, point it at scratch locations so it cannot touch your real files:
+If you ever run the daemon by hand for an experiment, point it at scratch locations so it cannot touch your real files. Do it in a separate terminal window and close that window when you are done:
 
 ```sh
 # Linux and macOS
@@ -75,6 +75,12 @@ CC_DB=/tmp/polaris-try/polaris.db CC_BACKUP_DIR=/tmp/polaris-try/backups CC_SECR
 # Windows PowerShell
 $env:CC_DB="$env:TEMP\polaris-try\polaris.db"; $env:CC_BACKUP_DIR="$env:TEMP\polaris-try\backups"; $env:CC_SECRETS_DIR="$env:TEMP\polaris-try\secrets"
 npm run cc -- daemon
+```
+
+The Linux and macOS line sets the variables for that one command only. The PowerShell lines set them for the whole window, so after Ctrl+C every `npm run cc` in that window would still use the scratch database. If you want to carry on in the same window, clear them first:
+
+```powershell
+Remove-Item Env:CC_DB, Env:CC_BACKUP_DIR, Env:CC_SECRETS_DIR
 ```
 
 ### Step 3: Add a task from the command line
@@ -117,7 +123,7 @@ Each token works on its own routes only. That separation is what stops an agent 
 
 ### Step 6: Open the dashboard
 
-Open http://127.0.0.1:8788/ in your browser. The connect form shows **Server URL** already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**.
+Open http://127.0.0.1:8788/ in your browser. It opens on My tasks, empty, with a blue strip that says **Not connected yet**. Click **Connect** in that strip (or open http://127.0.0.1:8788/?view=connection) to reach the **Connection** view, where **Server URL** is already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**. Then open the menu at the top left and go back to **My tasks**.
 
 **You should now see** My tasks, with the task you added in step 3.
 
@@ -278,10 +284,10 @@ On each computer where you use Claude Code, add Polaris once at user scope, so e
 ```sh
 claude mcp add --scope user --transport http polaris https://<host>.<tailnet>.ts.net/mcp \
   --header "Authorization: Bearer <mcp-token>" \
-  --header "X-Agent-Name: claude@laptop"
+  --header "X-Agent-Name: claude-laptop"
 ```
 
-`X-Agent-Name` is the name recorded beside everything that session writes, so a task's history says which computer did what. It is self-declared, 1 to 40 letters, digits, spaces, hyphens, underscores, or periods, starting with a letter or digit.
+`X-Agent-Name` is the name recorded beside everything that session writes, so a task's history says which computer did what. It is self-declared, 1 to 40 letters, digits, spaces, hyphens, underscores, or periods, starting with a letter or digit. Any other character (an `@`, for example) makes the daemon drop the name without an error, and that session's writes are recorded with no name.
 
 For an agent that should only read, use `/mcp/readonly` with `mcp-readonly-token` instead.
 
@@ -303,11 +309,11 @@ Open a task and use **Hand off to Claude Code**, then **Copy prompt for Claude C
 
 Text from a third party is wrapped in a warning inside the prompt, so the agent treats it as data.
 
-**You should now see** the agent's comments and status changes on the task, under the name you gave it in step 1.
+**You should now see** the agent's comments and status changes on the task, under the name you gave it in step 1 (`claude-laptop` in the example).
 
 ### Step 4: Assign to AI
 
-The task panel's **Assign to <name>** button sets the task's assignee to your default agent name in one click, and **Take back** clears it. It starts nothing by itself: an agent connected under that name finds the task when it looks for its work. Set the default name in the **Agents** card on the **Connection** tab.
+The task panel's **Assign to <name>** button sets the task's assignee to your default agent name in one click, and **Take back** clears it. It starts nothing by itself: an agent connected under that name finds the task when it looks for its work. Set the default name in the **Agents** card on the **Connection** tab. It starts as `claude-code`; to match the computer you set up in step 1, make it the same `X-Agent-Name` (`claude-laptop` in the example). The same character rules apply.
 
 ### Step 5: Work from your phone with Remote Control
 
@@ -318,7 +324,7 @@ cd /path/to/your/project
 claude remote-control --spawn worktree
 ```
 
-`--spawn worktree` gives each session its own git worktree. Then, on your phone: copy a task's prompt in Polaris, open the Claude app, pick that computer, and paste. Because Polaris is set up at user scope on that computer (step 1), the session reports back on the task as above.
+Remote Control pre-creates one session in the project folder itself when it starts, so you have somewhere to type right away. `--spawn worktree` gives each further session you start from your phone its own git worktree. Then, on your phone: copy a task's prompt in Polaris, open the Claude app, pick that computer, start a new session rather than the pre-created one, and paste. Because Polaris is set up at user scope on that computer (step 1), the session reports back on the task as above.
 
 ### Threads
 
@@ -417,7 +423,7 @@ Then restart: `sudo systemctl restart polaris` on Linux, or stop and start the l
 | The daemon exits with `EADDRINUSE` | An old daemon still holds the port | Wait for it to stop, then start again. |
 | The service will not start at boot | Usually something it depends on is not ready yet, such as a network share for backups | Read `journalctl -u polaris -b`. Do not make the service require a network mount: a failed mount should fail the backup job, not Polaris. |
 | "Offline. Showing data from ..." | The dashboard cannot reach the daemon | Check the daemon is running and, from another device, that `tailscale serve status` still shows the proxy. Your task edits are queued meanwhile. |
-| The connect form keeps coming back | The token was refused | Paste the current `api-token`, or check `CC_TAILSCALE_LOGIN` matches your Tailscale login exactly. |
+| **Connect** fails on the Connection view, or the "Not connected yet" strip stays | The token was refused | Paste the current `api-token`, or check `CC_TAILSCALE_LOGIN` matches your Tailscale login exactly. |
 | An empty Polaris on a second computer | The desktop app, `npm run cc`, or stdio MCP was run there and made its own database | Use the browser and MCP over HTTPS on that computer instead. See the second-database trap in section 4. |
 | The Android app cannot connect | The daemon does not allow the app's origin | Set `CC_CORS_ORIGINS=https://localhost` and restart. Use the HTTPS tailnet address. |
 
