@@ -34,7 +34,7 @@ export default function SettingsForm() {
           type="text"
           value={formBaseUrl}
           onChange={(e) => setFormBaseUrl(e.target.value)}
-          placeholder={DEFAULT_BASE_URL}
+          placeholder={DEFAULT_BASE_URL || 'https://your-server'}
         />
       </div>
 

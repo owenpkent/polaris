@@ -77,6 +77,37 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(created.projectId).toBeTruthy()
   })
 
+  // Quick add from a share: the web app manifest's share_target and the Android app both open the
+  // dashboard with these parameters (src/command-center/shareIntake.js).
+  test('a share in the URL opens the sheet prefilled, strips the parameters, and creates with the link', async ({ page, request }, testInfo) => {
+    const title = `UI test share ${testInfo.project.name}`
+    await openView(page, 'mytasks', `share-text=${encodeURIComponent(`${title} https://example.com/shared/page`)}`)
+    const sheet = page.getByRole('dialog', { name: 'New task' })
+    await expect(sheet).toBeVisible()
+    await expect(sheet.getByRole('textbox', { name: 'New task name' })).toHaveValue(title)
+    await expect(sheet.getByText('Link: example.com/shared/page')).toBeVisible()
+    expect(new URL(page.url()).searchParams.has('share-text')).toBe(false)
+    await sheet.getByRole('button', { name: 'Create' }).click()
+    await expect(sheet).toHaveCount(0)
+    await expect(page.getByText(title).first()).toBeVisible()
+    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const created = (await res.json()).tasks.find((t) => t.title === title)
+    expect(created.sourceUrl).toBe('https://example.com/shared/page')
+    expect(created.untrustedText).toBe(false)
+  })
+
+  // A reminder tap in the Android app, and ?task=<id> in the URL, open that task's panel.
+  test('a task link in the URL opens that task and strips the parameter', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'task link')
+    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const id = (await res.json()).tasks.find((t) => t.title === title).id
+    await openView(page, 'mytasks', `task=${id}`)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(title)
+    expect(new URL(page.url()).searchParams.has('task')).toBe(false)
+  })
+
   test('on a phone, a task created with the default No date, or a date in Later, is shown', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     // Both groups start collapsed (DEFAULT_COLLAPSED in MyTasksTab.jsx): the new task's group

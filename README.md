@@ -17,7 +17,7 @@ Polaris keeps your tasks in one SQLite file on your own machine. A small daemon 
 ## Who it is not for
 
 - Teams. There is one owner, one database, and no accounts or permissions beyond three bearer tokens.
-- Anyone who needs a hosted service, a native phone app, or sync between several servers.
+- Anyone who needs a hosted service or sync between several servers.
 - Anyone who wants an agent to close, assign, or reprioritize work on its own.
 
 ## It's working if...
@@ -127,7 +127,7 @@ The full guide, with the MCP calls and the ticket flavours, is in [docs/decision
 - One user. There are no accounts, roles, or sharing.
 - One server. The dashboard can talk to one daemon at a time, and two daemons do not sync with each other.
 - No sync service and no cloud copy. Your data is the SQLite file and the backups you configure.
-- No native mobile app. The dashboard installs as a web app from the browser at phone width.
+- No phone app in a store. The dashboard installs as a web app from the browser at phone width, and [mobile/](mobile/README.md) builds an Android app around the same dashboard for the owner's own phone. Either one needs a server the phone can reach, which the app never provides itself.
 - No Linux or macOS desktop shell yet. The Tauri shell targets Windows; on other platforms you run the daemon and open a browser.
 
 ## Known failures and limitations

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsForm from './command-center/SettingsForm'
 import AgentSettings from './command-center/AgentSettings'
@@ -20,6 +20,11 @@ import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
 import { useTheme } from './theme'
+import { parseShareParams, stripShareParams } from './command-center/shareIntake'
+import { subscribeNativeShares, subscribeNotificationTaps } from './command-center/nativeApp'
+import { parseTaskParam, stripTaskParam } from './command-center/reminders'
+import ReminderSettings from './command-center/ReminderSettings'
+import ReminderScheduler from './command-center/ReminderScheduler'
 
 const PRIMARY_ITEMS = [
   { id: 'mytasks', label: 'My tasks' },
@@ -69,7 +74,29 @@ function readChatMockup() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState(readInitialTab)
+  // A share that arrived in the URL is read at startup and its parameters removed on mount, so a
+  // reload does not open the sheet again. The read is in the initialiser and the strip in an
+  // effect because StrictMode runs initialisers twice, both before any effect.
+  const [pendingShare, setPendingShare] = useState(() => parseShareParams(window.location.search))
+  useEffect(() => { stripShareParams() }, [])
+  // A share at startup always lands on My tasks, whatever ?view= says.
+  // A task link (?task=<id>, or a tapped reminder) opens that task's panel on My tasks, same pattern.
+  const [pendingTaskId, setPendingTaskId] = useState(() => parseTaskParam(window.location.search))
+  useEffect(() => { stripTaskParam() }, [])
+  const [tab, setTab] = useState(() => (pendingShare || pendingTaskId ? DEFAULT_TAB : readInitialTab()))
+  const consumeFocusTask = useCallback(() => setPendingTaskId(null), [])
+  // Drops a share only if it is still the pending one: a newer share that arrived meanwhile stays.
+  const consumeShare = useCallback((done) => setPendingShare((cur) => (cur === done ? null : cur)), [])
+
+  // The Android shell delivers shares as a native event instead of a URL load.
+  useEffect(() => subscribeNativeShares((share) => {
+    setPendingShare(share)
+    setTab(DEFAULT_TAB)
+  }), [])
+  useEffect(() => subscribeNotificationTaps((taskId) => {
+    setPendingTaskId(taskId)
+    setTab(DEFAULT_TAB)
+  }), [])
   const [drawerOpen, setDrawerOpen] = useState(false)
   const menuButtonRef = useRef(null)
   // Whichever control opened the drawer (the top bar's menu button, or More in the phone's tab
@@ -130,6 +157,7 @@ export default function App() {
           onThemeChange={setTheme}
         />
         <OfflineBanner onConnect={() => setTab('connection')} />
+        <ReminderScheduler />
         <JobWarningsBanner />
         <NavDrawer
           open={drawerOpen}
@@ -148,7 +176,14 @@ export default function App() {
           {tab === 'goals' && <GoalsTab />}
           {tab === 'projects' && <ProjectsTab />}
           {tab === 'inbox' && <InboxTab />}
-          {tab === 'mytasks' && <MyTasksTab />}
+          {tab === 'mytasks' && (
+            <MyTasksTab
+              share={pendingShare}
+              onShareConsumed={consumeShare}
+              focusTaskId={pendingTaskId}
+              onFocusTaskConsumed={consumeFocusTask}
+            />
+          )}
           {tab === 'board' && <BoardTab />}
           {tab === 'threads' && <ThreadsTab />}
           {tab === 'rules' && <RulesTab />}
@@ -158,6 +193,7 @@ export default function App() {
             <div style={{ maxWidth: 480, margin: '2rem auto' }}>
               <SettingsForm />
               <AgentSettings />
+              <ReminderSettings />
               <BackupSettings />
             </div>
           )}

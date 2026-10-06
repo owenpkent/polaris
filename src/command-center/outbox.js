@@ -18,6 +18,7 @@
 
 import { cacheGet, cachePatchAll, cachePut, indexedDbBackend, memoryBackend } from './offlineCache'
 import { setPending, setLastSync } from './offlineStatus'
+import { notifyTaskChanges } from './taskChanges'
 
 const DEVICE_KEY = 'cc-device-id-v1'
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
@@ -25,7 +26,7 @@ const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 // (http/server.ts). The byte budget leaves room for the envelope around the ops.
 const MAX_BATCH_OPS = 500
 const MAX_BATCH_BYTES = 900 * 1024
-const CREATE_FIELDS = ['title', 'notes', 'projectId', 'sectionId', 'parentId', 'priority', 'dueAt', 'startAt', 'recurrence', 'assignee']
+const CREATE_FIELDS = ['title', 'notes', 'projectId', 'sectionId', 'parentId', 'priority', 'dueAt', 'startAt', 'recurrence', 'assignee', 'sourceUrl']
 
 /** The stamp on edits made before this device was ever connected. Never a fetchable address. */
 export const LOCAL_ORIGIN = 'local:'
@@ -165,10 +166,11 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     const task = {
       notes: '', priority: 'none', dueAt: null, startAt: null, projectId: null, sectionId: null, parentId: null,
       recurrence: null, assignee: null, ...opBody,
-      id: taskId, status: 'open', sourceType: null, sourceUrl: null, untrustedText: false, customFields: {},
+      id: taskId, status: 'open', sourceType: null, sourceUrl: opBody.sourceUrl ?? null, untrustedText: false, customFields: {},
       createdAt: at, updatedAt: at, completedAt: null, offlineCreated: true,
     }
     await addCreatedTask(baseUrl, myTasksUrl, task)
+    notifyTaskChanges()
     return { task }
   }
 
@@ -190,6 +192,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     if (body.section === null || /^s_[0-9a-z]+$/.test(String(body.section))) fields = { sectionId: body.section }
   }
   await patchTaskEverywhere(taskId, fields)
+  notifyTaskChanges()
   const task = { ...(existing || { id: taskId }), ...fields }
   return kind === 'complete_task' ? { task, next: null } : { task }
 }

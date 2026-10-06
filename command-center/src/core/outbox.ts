@@ -166,6 +166,9 @@ function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutbo
       startAt: (b.startAt as string | null | undefined) ?? null,
       recurrence: (b.recurrence as string | null | undefined) ?? null,
       assignee: (b.assignee as string | null | undefined) ?? null,
+      // A link saved with a share (quick add from the share sheet). Only the URL: no sourceType,
+      // so an offline create can never look like it came from an external source.
+      sourceUrl: typeof b.sourceUrl === 'string' && b.sourceUrl ? b.sourceUrl : null,
     }, 'human', { id: op.taskId });
     return { task, conflicts: [], held: [] };
   }

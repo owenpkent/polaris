@@ -56,6 +56,32 @@ describe('App default tab', () => {
   })
 })
 
+describe('App share intake', () => {
+  test('a share starts on My tasks despite ?view= and its parameters are stripped', () => {
+    setLocation('view=board&share-text=Hello&share-url=https%3A%2F%2Fa.test&x=1', '#h')
+    const { container } = render(<App />)
+    expect(container.querySelector('[data-testid="tab-mytasks"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="tab-board"]')).toBeNull()
+    // The tab mirror then clears ?view= for the default tab; other params and the hash stay.
+    expect(window.location.search).toBe('?x=1')
+    expect(window.location.hash).toBe('#h')
+  })
+
+  test('a task link starts on My tasks despite ?view= and ?task= is stripped', () => {
+    setLocation('view=board&task=t_abc123def4&x=1', '#h')
+    const { container } = render(<App />)
+    expect(container.querySelector('[data-testid="tab-mytasks"]')).not.toBeNull()
+    expect(window.location.search).toBe('?x=1')
+    expect(window.location.hash).toBe('#h')
+  })
+
+  test('without a share ?view= still applies', () => {
+    setLocation('view=board')
+    const { container } = render(<App />)
+    expect(container.querySelector('[data-testid="tab-board"]')).not.toBeNull()
+  })
+})
+
 const VALID_VIEWS = [
   ['inbox', 'tab-inbox'],
   ['board', 'tab-board'],

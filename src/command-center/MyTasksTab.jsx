@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import { MY_TASKS_QUERY } from './api'
+import { shareToTaskFields } from './shareIntake'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
@@ -62,7 +63,13 @@ function groupIdFor(task, mode, dueBounds) {
   return null
 }
 
-export default function MyTasksTab() {
+// `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
+// new-task sheet prefilled, and `onShareConsumed(share)` tells App to drop that share once the
+// sheet is done. A share that arrives while the sheet is open starts the draft again from it, and
+// closing consumes only the share the draft was made from, so a newer one is never dropped unseen.
+// `focusTaskId` is a task id handed in by App (a reminder tap, or ?task=): it opens that task's
+// panel, and `onFocusTaskConsumed` tells App to drop it.
+export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId = null, onFocusTaskConsumed }) {
   const { connected, local, api } = useConnection()
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
@@ -82,7 +89,29 @@ export default function MyTasksTab() {
   // The phone tier creates tasks through a sheet opened by the floating Add task button; the
   // toolbar's inline row is desktop only (index.css hides it under 640px).
   const [sheetOpen, setSheetOpen] = useState(false)
+  // `seq` numbers each share the sheet is seeded from, so a second share while it is open reseeds
+  // the draft; `share` is the one the draft belongs to, and the only one closing consumes.
+  const [sheetSeed, setSheetSeed] = useState({ seq: 0, initial: null, share: null })
   const fabRef = useRef(null)
+
+  useEffect(() => {
+    if (!share) return
+    setSheetSeed((prev) => ({ seq: prev.seq + 1, initial: shareToTaskFields(share), share }))
+    setSheetOpen(true)
+  }, [share])
+
+  useEffect(() => {
+    if (!focusTaskId) return
+    setDetailTaskId(focusTaskId)
+    onFocusTaskConsumed?.()
+  }, [focusTaskId, onFocusTaskConsumed])
+
+  const closeSheet = useCallback(() => {
+    const consumed = sheetSeed.share
+    setSheetOpen(false)
+    setSheetSeed((prev) => ({ seq: prev.seq, initial: null, share: null }))
+    if (consumed) onShareConsumed?.(consumed)
+  }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
   const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
@@ -528,8 +557,10 @@ export default function MyTasksTab() {
           the 640px breakpoint while it is open. index.css centres it like a modal above 640px. */}
       <NewTaskSheet
         open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
+        onClose={closeSheet}
         onCreate={submitSheet}
+        initial={sheetSeed.initial}
+        seed={sheetSeed.seq}
         projects={projectOptions}
         openButtonRef={fabRef}
       />
