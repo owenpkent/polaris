@@ -20,7 +20,12 @@ export const BACKUP_PASSPHRASE_KEY = 'backup-passphrase';
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest();
 
 const BACKUP_FILE = /^constellation-\d{4}-\d{2}-\d{2}\.db(\.enc)?$/;
-const PARTIAL_FILE = /^constellation-\d{4}-\d{2}-\d{2}\.db(\.enc)?\..+\.partial$/;
+/** A dated copy's or a snapshot's staging file. */
+const PARTIAL_FILE = /^constellation-.+\.db(\.enc)?\..+\.partial$/;
+/** A pre-update snapshot (`cc update`). Its name is not a date, so the daily copy never replaces it
+ *  and the daily retention never counts it; it has its own retention (SNAPSHOT_KEEP). */
+const SNAPSHOT_FILE = /^constellation-pre-update-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.db(\.enc)?$/;
+export const SNAPSHOT_KEEP = 3;
 /** A staging file this old belongs to an attempt that died: a copy takes seconds. A younger one may still be in use. */
 const ABANDONED_PARTIAL_MS = 24 * 60 * 60_000;
 
@@ -70,25 +75,7 @@ export function backupDatabase(store: Store, dir: string, today: string, keep: n
   // backup` in another process can overlap, and a fixed name would let one delete or publish the
   // other's copy. A half-written file never carries a dated name.
   const partial = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.partial`;
-  try {
-    const plain = join(local, plainName);
-    const before = store.backupFingerprint();
-    store.backupTo(plain);
-    const problems = verifyBackup(plain, before, store.backupFingerprint());
-    if (problems.length) throw new Error(`backup: the copy failed its check and was deleted: ${problems.join('; ')}`);
-
-    if (opts.passphrase) encryptFile(plain, partial, opts.passphrase, { logN: opts.logN });
-    else copyFileSync(plain, partial);
-    // Read back what actually landed, through the passphrase if there is one: a share that
-    // truncated the file, or a key that cannot open it, must fail here and not on restore day.
-    const landed = opts.passphrase ? decryptBuffer(partial, opts.passphrase) : readFileSync(partial);
-    if (!sha256(landed).equals(sha256(readFileSync(plain)))) throw new Error('backup: the published copy does not match the checked one and was deleted');
-  } catch (e) {
-    try { unlinkSync(partial); } catch { /* never created */ }
-    rmSync(local, { recursive: true, force: true });
-    throw e;
-  }
-  rmSync(local, { recursive: true, force: true });
+  stageCheckedCopy(store, local, plainName, partial, opts);
 
   // Publication is one step under a lock shared by both formats of the day: the rename, the
   // removal of the other format's copy of the same day, and retention. Two attempts (the daemon and
@@ -113,6 +100,113 @@ export function backupDatabase(store: Store, dir: string, today: string, keep: n
     throw e;
   }
   return { file, removed };
+}
+
+/** Copy the live database into `local` (a temp folder on this machine), check the copy, and write
+ *  it to `partial`, encrypted when there is a passphrase, then read `partial` back and compare.
+ *  On any failure both files are gone and the error carries why. `local` is removed either way. */
+function stageCheckedCopy(store: Store, local: string, plainName: string, partial: string, opts: BackupOptions): void {
+  try {
+    const plain = join(local, plainName);
+    const before = store.backupFingerprint();
+    store.backupTo(plain);
+    const problems = verifyBackup(plain, before, store.backupFingerprint());
+    if (problems.length) throw new Error(`backup: the copy failed its check and was deleted: ${problems.join('; ')}`);
+
+    if (opts.passphrase) encryptFile(plain, partial, opts.passphrase, { logN: opts.logN });
+    else copyFileSync(plain, partial);
+    // Read back what actually landed, through the passphrase if there is one: a share that
+    // truncated the file, or a key that cannot open it, must fail here and not on restore day.
+    const landed = opts.passphrase ? decryptBuffer(partial, opts.passphrase) : readFileSync(partial);
+    if (!sha256(landed).equals(sha256(readFileSync(plain)))) throw new Error('backup: the published copy does not match the checked one and was deleted');
+  } catch (e) {
+    try { unlinkSync(partial); } catch { /* never created */ }
+    rmSync(local, { recursive: true, force: true });
+    throw e;
+  }
+  rmSync(local, { recursive: true, force: true });
+}
+
+/** The name of the snapshot `cc update` takes before it moves the checkout: the version that is
+ *  running and the moment, so the daily copy (named by date alone) never replaces it. */
+export function snapshotName(version: string, at: Date): string {
+  const stamp = at.toISOString().slice(0, 19).replace(/:/g, '-');
+  return `constellation-pre-update-${version}-${stamp}.db`;
+}
+
+export function isSnapshotFile(name: string): boolean {
+  return SNAPSHOT_FILE.test(name);
+}
+
+/** Every pre-update snapshot in `dir`, oldest first by the moment in its name. */
+export function listSnapshots(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const stamp = (name: string) => SNAPSHOT_FILE.exec(name)![2];
+  return readdirSync(dir)
+    .filter((f) => SNAPSHOT_FILE.test(f))
+    .sort((a, b) => stamp(a).localeCompare(stamp(b)) || a.localeCompare(b))
+    .map((f) => join(dir, f));
+}
+
+export interface SnapshotOptions extends BackupOptions {
+  /** How many pre-update snapshots to keep, newest first. */
+  keep?: number;
+}
+
+/** A named copy of the live database, made and checked the way a daily backup is (staged on the
+ *  local disk, verified, encrypted when there is a passphrase, read back), under `name` from
+ *  `snapshotName`. Only the newest `keep` snapshots stay. The dated copies and their retention are
+ *  never touched: this is what `cc update` falls back to when an update has to be undone, and the
+ *  daily job must not be able to replace or age it out. */
+export function snapshotDatabase(store: Store, dir: string, name: string, opts: SnapshotOptions = {}): BackupResult {
+  const keep = opts.keep ?? SNAPSHOT_KEEP;
+  if (!Number.isInteger(keep) || keep < 1) throw new Error(`snapshot: keep must be a whole number of 1 or more, got ${keep}`);
+  if (!SNAPSHOT_FILE.test(name) || name.endsWith(ENCRYPTED_SUFFIX)) throw new Error(`snapshot: ${name} is not a snapshot name (see snapshotName)`);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, opts.passphrase ? name + ENCRYPTED_SUFFIX : name);
+  const local = mkdtempSync(join(tmpdir(), 'cc-snapshot-'));
+  const partial = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.partial`;
+  stageCheckedCopy(store, local, name, partial, opts);
+
+  const lockFile = join(dir, 'constellation-pre-update.lock');
+  let removed: string[];
+  try {
+    removed = withFileLockSync(lockFile, () => {
+      renameSync(partial, file);
+      const snapshots = listSnapshots(dir).map((f) => f.slice(dir.length + 1));
+      const old = snapshots.slice(0, Math.max(0, snapshots.length - keep));
+      for (const f of old) unlinkSync(join(dir, f));
+      return old;
+    }, { timeoutMs: opts.lockTimeoutMs ?? 30_000, staleMs: 60_000, what: `The backup folder ${dir}` });
+  } catch (e) {
+    try { unlinkSync(partial); } catch { /* already published, or never created */ }
+    throw e;
+  }
+  return { file, removed };
+}
+
+/** Put a backup or snapshot in place of the live database at `dbPath`: for the rollback in
+ *  `cc update`, with the daemon stopped. The copy is decrypted (if it is encrypted) and checked on
+ *  the local disk first, so a bad copy never replaces the database. The `-wal`, `-shm`, and
+ *  `-journal` files beside the database belong to the file being replaced and are removed. */
+export function restoreDatabaseFile(file: string, dbPath: string, passphrase?: string): void {
+  const local = mkdtempSync(join(tmpdir(), 'cc-restore-'));
+  try {
+    let plain = file;
+    if (isEncryptedBackup(file)) {
+      if (!passphrase) throw new Error(`${file} is encrypted and no passphrase was given`);
+      plain = join(local, 'restore.db');
+      decryptFile(file, plain, passphrase);
+    }
+    const problems = soundnessProblems(inspectDatabaseFile(plain));
+    if (problems.length) throw new Error(`restore: ${file} is not a sound database: ${problems.join('; ')}`);
+    for (const suffix of ['-wal', '-shm', '-journal']) {
+      try { unlinkSync(dbPath + suffix); } catch { /* there was none */ }
+    }
+    copyFileSync(plain, dbPath);
+  } finally {
+    rmSync(local, { recursive: true, force: true });
+  }
 }
 
 /** What is wrong with a database file in itself, whatever it is a copy of. */

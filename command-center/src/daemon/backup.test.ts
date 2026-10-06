@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/index.ts';
 import { windowsDpapiSecretStore } from '../ingest/secrets.ts';
-import { backupDatabase, backupDir, inspectBackup, newestBackup, verifyBackup } from './backup.ts';
+import { backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
 import { decryptBuffer, isEncryptedBackup } from './backupCrypto.ts';
 
 function tempDir(): string {
@@ -391,5 +391,142 @@ test('a passphrase with spaces at the ends survives the real Windows secret stor
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
     rmSync(secretsDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------- pre-update snapshots
+
+test('snapshotName carries the running version and the moment, and snapshotDatabase writes a copy that opens', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    const name = snapshotName('2.0.0', new Date('2026-10-06T04:05:06.789Z'));
+    assert.equal(name, 'constellation-pre-update-2.0.0-2026-10-06T04-05-06.db');
+    assert.equal(isSnapshotFile(name), true);
+    const project = store.createProject({ name: 'Snapshot test' });
+    store.createTask({ title: 'Survives the update', projectId: project.id });
+    const { file, removed } = snapshotDatabase(store, dir, name);
+    assert.equal(file, join(dir, name));
+    assert.deepEqual(removed, []);
+    assert.deepEqual(readdirSync(dir), [name], 'no staging file or lock left behind');
+    const copy = openStore(file);
+    try {
+      assert.deepEqual(copy.searchAllTasks().map((t) => t.title), ['Survives the update']);
+    } finally {
+      copy.db.close();
+    }
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a snapshot needs a snapshot name', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    assert.throws(() => snapshotDatabase(store, dir, 'constellation-2026-10-06.db'), /not a snapshot name/);
+    assert.throws(() => snapshotDatabase(store, dir, 'constellation-pre-update-2.0.0-2026-10-06T04-05-06.db.enc'), /not a snapshot name/);
+    assert.throws(() => snapshotDatabase(store, dir, snapshotName('2.0.0', new Date()), { keep: 0 }), /keep must be/);
+    assert.deepEqual(readdirSync(dir), []);
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('only the newest three snapshots stay, by the moment in the name and not by version text', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    const at = (h: number) => new Date(Date.UTC(2026, 9, 6, h, 0, 0));
+    // 2.9.0 is older than 2.10.0, and "2.9" sorts after "2.10" as text: the moment decides.
+    const names = [
+      snapshotName('2.9.0', at(1)),
+      snapshotName('2.10.0', at(2)),
+      snapshotName('2.10.1', at(3)),
+      snapshotName('2.11.0', at(4)),
+    ];
+    const results = names.map((name) => snapshotDatabase(store, dir, name));
+    assert.deepEqual(results[3].removed, [names[0]], 'the oldest went when the fourth arrived');
+    assert.deepEqual(readdirSync(dir).sort(), names.slice(1).sort());
+    assert.deepEqual(listSnapshots(dir), names.slice(1).map((n) => join(dir, n)), 'oldest first');
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the daily backup never counts, replaces, or removes a snapshot, and newestBackup never returns one', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    const snapshot = snapshotDatabase(store, dir, snapshotName('2.0.0', new Date('2026-10-06T04:00:00Z'))).file;
+    assert.equal(newestBackup(dir), undefined, 'a snapshot is not a dated copy');
+    backupDatabase(store, dir, '2026-10-05', 1);
+    const { file, removed } = backupDatabase(store, dir, '2026-10-06', 1);
+    assert.deepEqual(removed, [`constellation-2026-10-05.db`], 'retention saw only the dated copies');
+    assert.equal(newestBackup(dir), file);
+    assert.ok(existsSync(snapshot), 'the snapshot is still there');
+    // And a snapshot's own retention leaves the dated copies alone.
+    for (let i = 0; i < 4; i++) snapshotDatabase(store, dir, snapshotName('2.0.0', new Date(Date.UTC(2026, 9, 7, i))));
+    assert.ok(existsSync(file));
+    assert.equal(listSnapshots(dir).length, 3);
+  } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('with a passphrase the snapshot is encrypted and restoreDatabaseFile puts it back in place', () => {
+  const dir = tempDir();
+  const live = join(dir, 'live.db');
+  const store = openStore(live);
+  try {
+    const project = store.createProject({ name: 'P' });
+    store.createTask({ title: 'before', projectId: project.id });
+    const { file } = snapshotDatabase(store, dir, snapshotName('2.0.0', new Date('2026-10-06T04:00:00Z')), ENC);
+    assert.ok(isEncryptedBackup(file));
+    assert.ok(file.endsWith('.db.enc'));
+    assert.equal(inspectBackup(file, ENC.passphrase).counts.tasks, 1);
+    store.createTask({ title: 'after', projectId: project.id });
+    assert.ok(existsSync(`${live}-wal`), 'the live database is in WAL mode');
+    store.db.close();
+
+    assert.throws(() => restoreDatabaseFile(file, live), /no passphrase/);
+    restoreDatabaseFile(file, live, ENC.passphrase);
+    assert.equal(existsSync(`${live}-wal`), false);
+    assert.equal(existsSync(`${live}-shm`), false);
+    const restored = openStore(live);
+    try {
+      assert.deepEqual(restored.searchAllTasks().map((t) => t.title), ['before']);
+    } finally {
+      restored.db.close();
+    }
+  } finally {
+    try { store.db.close(); } catch { /* closed above */ }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('restoreDatabaseFile refuses a file that is not a sound database and leaves the live one alone', () => {
+  const dir = tempDir();
+  const live = join(dir, 'live.db');
+  const store = openStore(live);
+  try {
+    store.createTask({ title: 'kept' });
+    store.db.close();
+    const bad = join(dir, 'bad.db');
+    writeFileSync(bad, 'not a database');
+    assert.throws(() => restoreDatabaseFile(bad, live), /cannot be opened|not a sound database|not a database/);
+    const again = openStore(live);
+    try {
+      assert.deepEqual(again.searchAllTasks().map((t) => t.title), ['kept']);
+    } finally {
+      again.db.close();
+    }
+  } finally {
+    try { store.db.close(); } catch { /* closed above */ }
+    rmSync(dir, { recursive: true, force: true });
   }
 });
