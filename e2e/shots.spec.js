@@ -324,17 +324,17 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     }
   })
 
-  test('connection: page', async ({ page }, testInfo) => {
-    await openView(page, 'connection')
+  test('settings: page', async ({ page }, testInfo) => {
+    await openView(page, 'settings')
     // The backup folder is a scratch directory with a random name, and the newest copy carries
     // the time the test server started.
     const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
-    await shot(page, testInfo, 'connection', 'page', [values])
+    await shot(page, testInfo, 'settings', 'page', [values])
   })
 
   // The Reminders card only exists inside the Android app, so a stand-in for its bridge is
   // installed before the page loads.
-  test('connection: reminders', async ({ page }, testInfo) => {
+  test('settings: reminders', async ({ page }, testInfo) => {
     await page.addInitScript(() => {
       window.Capacitor = {
         isNativePlatform: () => true,
@@ -342,7 +342,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
         addListener: () => ({ remove() {} }),
       }
     })
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     const card = page.getByRole('region', { name: 'Reminders' })
     await expect(card).toBeVisible()
     // Turned on, so the time field is live too; the stand-in grants the permission at once.
@@ -355,6 +355,22 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       window.scrollBy(0, -72)
     })
     const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
-    await shot(page, testInfo, 'connection', 'reminders', [values])
+    await shot(page, testInfo, 'settings', 'reminders', [values])
+  })
+
+  // A preview with one problem, so both the task list and the problem list are in the shot.
+  test('settings: import preview', async ({ page }, testInfo) => {
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Import tasks' }).click()
+    const card = page.getByRole('region', { name: 'Import tasks' })
+    await card.getByLabel('Tasks to import').fill('title,priority,due,notes\nWater the beds,high,2026-11-01,\nOrder seed catalogue,low,,Spring list\nFix the gate,soonish,,')
+    await card.getByRole('button', { name: 'Preview' }).click()
+    await expect(card.getByRole('list', { name: 'Problems' })).toBeVisible()
+    // Scrolled to the buttons, so the preview under them is in the shot.
+    await card.getByRole('button', { name: 'Preview' }).evaluate((el) => {
+      el.scrollIntoView({ block: 'start' })
+      window.scrollBy(0, -72)
+    })
+    await shot(page, testInfo, 'settings', 'import-preview')
   })
 })

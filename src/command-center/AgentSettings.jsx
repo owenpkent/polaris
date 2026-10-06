@@ -6,7 +6,7 @@ import { rememberDefaultAgentName } from './defaultAgentName'
 
 // The owner's default agent name (command-center/src/http/rest.ts): what "Assign to AI" claims a task with,
 // and the name history lines show next to "agent" (docs/assign-to-ai-options.md, stage 5B).
-// Shown on the Connection tab next to Backups. Saves on blur or Enter; the PATCH is live-only
+// Shown on the Settings tab next to Backups. Saves on blur or Enter; the PATCH is live-only
 // (api.js has no `offline` kind for it), so it is off whenever the server cannot be reached.
 export default function AgentSettings() {
   const { connected, api } = useConnection()
@@ -67,7 +67,7 @@ export default function AgentSettings() {
   }
 
   return (
-    <section className="card" aria-labelledby="cc-agents-heading" style={{ marginTop: '1.5rem' }}>
+    <section className="card" aria-labelledby="cc-agents-heading">
       <div className="section-header" id="cc-agents-heading">Agents</div>
 
       <div className="field" style={{ marginBottom: error ? '0.75rem' : 0 }}>

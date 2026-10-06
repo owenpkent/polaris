@@ -12,6 +12,7 @@ import {
 } from '../core/index.ts';
 import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
 import { ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES, resolveProject, resolveSectionWrite } from '../mcp/shared.ts';
+import { importTasks } from '../importer/taskImport.ts';
 import { HttpError, sendJson, sendNoContent } from './errors.ts';
 import { registerBackupRoutes } from './backup-routes.ts';
 import { registerGithubRoutes } from './github-routes.ts';
@@ -20,7 +21,7 @@ import { isTailscaleOwner } from './tailscale.ts';
 import {
   agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
-  moveTaskBodySchema, newTaskBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
+  moveTaskBodySchema, newTaskBodySchema, taskImportBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
   postStatusBodySchema, restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema, threadForkBodySchema, threadPatchBodySchema,
 } from './schemas.ts';
@@ -242,6 +243,23 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
       // entry has nothing to put back. The task panel shows it before anyone clicks.
       history: store.taskHistory(task.id).map((e) => ({ ...e, restore: restorePatch(e) })),
     });
+  });
+
+  // Live-only (no outbox op kind). Registered ahead of the /api/tasks/:id routes.
+  router.add('POST', '/api/tasks/import', (ctx) => {
+    const body = parseBody(taskImportBodySchema, ctx.body);
+    const result = importTasks(store, body.text, { format: body.format, project: body.project, dryRun: body.dryRun }, 'human');
+    if (body.dryRun) {
+      sendJson(ctx.res, 200, { dryRun: true, format: result.format, rows: result.rows, count: result.rows.length, errors: result.errors, ignoredColumns: result.ignoredColumns });
+      return;
+    }
+    if (result.errors.length > 0) {
+      const first = result.errors[0];
+      const message = `import failed, nothing was created: ${first.line > 0 ? `line ${first.line}: ` : ''}${first.message}${result.errors.length > 1 ? ` (and ${result.errors.length - 1} more)` : ''}`;
+      sendJson(ctx.res, 400, { error: { code: 'ValidationError', message }, errors: result.errors, format: result.format, ignoredColumns: result.ignoredColumns });
+      return;
+    }
+    sendJson(ctx.res, 201, { format: result.format, created: result.created, count: result.created.length, ignoredColumns: result.ignoredColumns });
   });
 
   router.add('POST', '/api/tasks', (ctx) => {

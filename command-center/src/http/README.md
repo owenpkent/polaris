@@ -126,6 +126,7 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | GET | `/api/tasks` | Query: `text, status, project, section, priority, dueBefore, dueAfter, sourceType, blocked, assignee, unassigned, orderBy, limit, offset`. `assignee` is an exact match and `unassigned=true` keeps only tasks with none. `{ tasks, total }` |
 | GET | `/api/tasks/:id` | `{ task, subtasks, blockers, blocking, comments, links, history }` |
 | POST | `/api/tasks` | Body: `NewTask` fields plus `project` (ref), `section` (name, created if missing), `blockedBy: string[]`. The dashboard also sends `id`, `opId`, and `deviceId`: the identity the same create would carry through `/api/outbox`, so a create whose answer was lost is not made again by the replay. `201 { task }` |
+| POST | `/api/tasks/import` | Bulk import from pasted text or CSV. Body: `{ text, format?: auto|csv|lines, project?, dryRun? }`. Dry run `200 { dryRun, format, rows, count, errors, ignoredColumns }`; success `201 { format, created, count, ignoredColumns }`; any row error `400 { error, errors: [{ line, message }] }` and nothing is created. Live-only |
 | PATCH | `/api/tasks/:id` | Body: `TaskPatch` fields (status included). `{ task }` |
 | POST | `/api/tasks/:id/complete` | `{ task, next }` |
 | POST | `/api/tasks/:id/reopen` | `{ task }` |
