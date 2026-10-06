@@ -2,9 +2,11 @@
 #
 # On a pull request into main, only a vulnerability the pull request introduces fails the check:
 # the scanner runs on the base and on the head and compares them, so an advisory that is already
-# in main never blocks an unrelated change. Weekly (and on demand) the whole tree is scanned and
-# fails on anything known, which is how an advisory published after a dependency landed gets
-# noticed. Expect that run to be red until the existing findings are fixed or accepted.
+# in main never blocks an unrelated change. Weekly (and on demand) the whole tree is scanned,
+# which is how an advisory published after a dependency landed gets noticed. That run reports
+# without failing (`fail-on-vuln: false`, chosen 2026-10-06): main carried 36 known findings when
+# this gate was added, and a run that is always red stops being read. Switch it back to failing
+# once those are cleared.
 #
 # What is scanned: the three npm lockfiles (dashboard, command-center, mobile) and the desktop
 # shell's Cargo.lock. Gradle is not scanned; Capacitor pins the Android versions.
@@ -62,6 +64,7 @@ jobs:
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
     with:
       upload-sarif: false
+      fail-on-vuln: false  # report-only until the existing findings are cleared (see the top)
       scan-args: |-
         --lockfile=package-lock.json
         --lockfile=command-center/package-lock.json
