@@ -1,6 +1,6 @@
 # Dependency updates, weekly, with minor and patch bumps grouped into one pull request per
-# ecosystem so the queue stays short. A major bump gets its own pull request. The OSV check
-# (workflows/osv.yml) and the Tests check run on each one; merging is the owner's call, and there
+# ecosystem so the queue stays short. A major bump gets its own pull request. The Tests check
+# (workflows/test.yml, with its OSV job) runs on each one; merging is the owner's call, and there
 # is deliberately no auto-merge workflow.
 #
 # Gradle is left out on purpose: Capacitor pins the Android library versions in
