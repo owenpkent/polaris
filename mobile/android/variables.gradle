@@ -14,4 +14,6 @@ ext {
     androidxEspressoCoreVersion = '3.7.0'
     androidxTestRulesVersion = '1.7.0'
     cordovaAndroidVersion = '14.0.1'
+    // The kotlin-stdlib version the AndroidX libraries above resolve to; see build.gradle.
+    kotlinStdlibVersion = '1.8.22'
 }

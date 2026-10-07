@@ -22,6 +22,25 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Keep the Kotlin standard library in one piece. Since Kotlin 1.8 the jdk7 and jdk8 classes
+    // live in kotlin-stdlib itself and the kotlin-stdlib-jdk7 and kotlin-stdlib-jdk8 artifacts are
+    // empty shells, but older AndroidX libraries still ask for the 1.6 shells, which carry their
+    // own copies of those classes. appcompat 1.7.1 does, through activity 1.8.0, lifecycle-common
+    // 2.6.2, and kotlinx-coroutines 1.6.4, and the generated capacitor-cordova-android-plugins
+    // module depends on nothing newer, so its androidTest classpath ends up with kotlin-stdlib
+    // 1.8.22 next to kotlin-stdlib-jdk8 1.6.21 and checkDebugAndroidTestDuplicateClasses fails.
+    // That module is rewritten by `cap sync`, so the alignment lives here, for every module.
+    configurations.configureEach {
+        resolutionStrategy.eachDependency { details ->
+            def requested = details.requested
+            if (requested.group == 'org.jetbrains.kotlin'
+                && (requested.name == 'kotlin-stdlib-jdk7' || requested.name == 'kotlin-stdlib-jdk8')) {
+                details.useVersion rootProject.ext.kotlinStdlibVersion
+                details.because 'kotlin-stdlib 1.8 and newer already contains the jdk7 and jdk8 classes'
+            }
+        }
+    }
 }
 
 task clean(type: Delete) {
