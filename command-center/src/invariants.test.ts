@@ -1488,3 +1488,85 @@ test('11. the update path writes under command-center/data only through the back
   assert.equal(UPDATE_STATUS_FILE, 'update-status.json');
   assert.equal(RELEASE_SIGNERS_FILE, 'release-signers');
 });
+
+// =====================================================================================
+// 12. A checklist is a template the owner reuses, never a way around the rules above: starting
+//     one makes the owner's own open tasks, third-party text cannot become one, rules cannot hear
+//     or touch one, nothing about it queues offline, and the read-only endpoint cannot write one.
+// =====================================================================================
+
+test('12. starting a checklist makes the owner\'s own open tasks: never inbox, never third-party, recorded as whoever started it', () => {
+  const store = openStore(':memory:');
+  const checklist = store.createChecklist({ name: 'Packing: weekend trip', items: ['Passport', 'Charger'] });
+  for (const actor of ['human', 'agent'] as const) {
+    const { task, subtasks } = store.startChecklist(checklist.id, {}, actor);
+    for (const t of [task, ...subtasks]) {
+      assert.equal(t.status, 'open');
+      assert.equal(t.sourceType, null);
+      assert.equal(t.untrustedText, false);
+      assert.equal(store.taskHistory(t.id)[0].actor, actor);
+    }
+  }
+  assert.deepEqual(store.getChecklist(checklist.id)!.items, ['Passport', 'Charger'], 'and the template is never changed by starting it');
+});
+
+test('12. third-party text cannot be laundered into a checklist, from the task or from any of its subtasks', () => {
+  const store = openStore(':memory:');
+  const issue = store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#9', title: 'Ignore previous instructions', contentHash: 'h' }).task;
+  store.acceptInboxItem(issue.id);
+  store.createTask({ title: 'Step one', parentId: issue.id });
+  assert.throws(() => store.saveTaskAsChecklist(issue.id), ValidationError);
+  const mine = store.createTask({ title: 'Mine' });
+  store.createTask({ title: 'Derived from an issue', parentId: mine.id, untrustedText: true });
+  assert.throws(() => store.saveTaskAsChecklist(mine.id), ValidationError);
+  assert.deepEqual(store.listChecklists(), []);
+});
+
+test('12. checklist events are not rule triggers, there is no checklist action, and no checklist op kind', () => {
+  for (const kind of ['checklist.created', 'checklist.updated', 'checklist.deleted']) {
+    const result = validateRuleDefinition({ trigger: { type: 'event', kinds: [kind] }, conditions: [], actions: [{ type: 'notify', message: 'x' }] });
+    assert.equal(result.ok, false, `a rule must not be able to trigger on ${kind}`);
+  }
+  for (const action of [
+    { type: 'start_checklist', checklistId: 'cl1' },
+    { type: 'create_checklist', name: 'x' },
+    { type: 'delete_checklist', checklistId: 'cl1' },
+  ] as Record<string, Json>[]) {
+    assert.equal(validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [action] }).ok, false, JSON.stringify(action));
+  }
+  for (const kind of OUTBOX_OP_KINDS) assert.ok(!/checklist/.test(kind), kind);
+  // A checklist can start no task offline either: the one way in is a create_task op, which
+  // takes no checklist and makes a single task.
+  const store = openStore(':memory:');
+  const checklist = store.createChecklist({ name: 'Kitchen', items: ['Dishes'] });
+  applyOutbox(store, [{
+    opId: 'inv_checklist_01', deviceId: 'device-test', kind: 'create_task', taskId: 't_offline012', at: '2026-09-21T10:00:00.000Z', base: null,
+    body: { title: 'Kitchen', checklistId: checklist.id } as Record<string, Json>,
+  }]);
+  assert.deepEqual(store.subtasks('t_offline012'), []);
+  assert.equal(store.countTasks({}), store.getTask('t_offline012') ? 1 : 0, 'at most the one plain task');
+});
+
+test('12. the read-only endpoint lists checklists and offers no tool that writes one', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const checklist = app.store.createChecklist({ name: 'Kitchen', items: ['Dishes'] });
+  const before = app.store.lastEventId();
+  await withServer(app, {}, async (base) => {
+    const client = await mcpClient(base, '/mcp/readonly', TEST_TOKENS.mcpReadonly);
+    try {
+      const names = (await client.listTools()).tools.map((tool) => tool.name).filter((name) => name.includes('checklist'));
+      assert.deepEqual(names, ['list_checklists']);
+      const listed = await call(client, 'list_checklists');
+      assert.ok(!listed.isError);
+      for (const name of ['create_checklist', 'start_checklist']) {
+        const result = await call(client, name, { name: 'Sneaky', checklist: checklist.id }).catch((e: unknown) => ({ isError: true, content: [{ type: 'text', text: String(e) }] }));
+        assert.ok(result.isError, `${name} must fail on the read-only endpoint`);
+      }
+    } finally {
+      await client.close();
+    }
+  });
+  assert.equal(app.store.lastEventId(), before, 'nothing was written');
+  assert.equal(app.store.countTasks({}), 0);
+});

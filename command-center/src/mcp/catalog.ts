@@ -56,6 +56,11 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: 'Search posts across every thread by type, status, task, and body text, newest first: the library of what was argued before. Filter type result with status accepted to find what the owner has accepted, and cite a hit by its post id.',
   },
   {
+    name: 'list_checklists',
+    readonly: true,
+    description: 'List the owner\'s reusable checklists (for example a packing list or a cleaning routine), each with its items in order. Starting one makes a new task with one subtask per item.',
+  },
+  {
     name: 'create_task',
     readonly: false,
     description: 'Create a task. Accepts a project and section by id, slug, or name (a named section is created if it does not exist), and a list of task ids that block this one. '

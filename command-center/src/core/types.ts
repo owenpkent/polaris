@@ -231,7 +231,50 @@ export type EventKind =
   | 'goal.updated'
   | 'goal.deleted'
   | 'goal.linked'
-  | 'goal.unlinked';
+  | 'goal.unlinked'
+  | 'checklist.created'
+  | 'checklist.updated'
+  | 'checklist.deleted';
+
+// ---- checklists ----
+
+/** The most items one checklist holds. */
+export const CHECKLIST_MAX_ITEMS = 200;
+/** The longest a checklist name or one item may be, in characters. */
+export const CHECKLIST_MAX_NAME = 200;
+export const CHECKLIST_MAX_ITEM = 500;
+
+/**
+ * A reusable list: starting it creates a fresh open task whose subtasks are the items, in order.
+ * The template is never changed by starting it, and deleting it never touches the tasks started
+ * from it. Its text is the owner's (or an agent's) own: a task marked untrustedText cannot be
+ * saved as one.
+ */
+export interface Checklist {
+  id: string;
+  name: string;
+  notes: string;
+  /** Item titles, in order. */
+  items: string[];
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NewChecklist {
+  name: string;
+  notes?: string;
+  items?: string[];
+}
+
+export type ChecklistPatch = Partial<NewChecklist>;
+
+/** What starting a checklist may set on the new task. The title defaults to the checklist's name. */
+export interface ChecklistStart {
+  title?: string | null;
+  projectId?: string | null;
+  dueAt?: string | null;
+}
 
 // ---- update requests (docs/update-proposal.md, section 4C) ----
 

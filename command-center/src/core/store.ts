@@ -4,8 +4,8 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
-  type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
+  ACTIVE_STATUSES, CHECKLIST_MAX_ITEM, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_NAME, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
+  type Actor, type ActorInput, type AppliedOp, type CcEvent, type Checklist, type ChecklistPatch, type ChecklistStart, type NewChecklist, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
   type NewProject, type NewTask, type Post, type PostSearch, type PostSearchHit, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
   type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadOptions, type ThreadSummary, type UpdateRequest, type UpdateRequestState, type UpsertResult,
@@ -197,6 +197,40 @@ function rowToGoal(r: Row): Goal {
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
   };
+}
+
+function rowToChecklist(r: Row): Checklist {
+  const items = parseJson<unknown>(r.items, []);
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    notes: r.notes as string,
+    items: Array.isArray(items) ? items.filter((i): i is string => typeof i === 'string') : [],
+    position: r.position as number,
+    createdAt: r.created_at as string,
+    updatedAt: r.updated_at as string,
+  };
+}
+
+/** Trimmed item titles with the blank ones dropped, checked against the caps. */
+function cleanChecklistItems(items: readonly unknown[]): string[] {
+  const out: string[] = [];
+  for (const raw of items) {
+    if (typeof raw !== 'string') throw new ValidationError('checklist items must be text');
+    const item = raw.replace(/\s+/g, ' ').trim();
+    if (!item) continue;
+    if (item.length > CHECKLIST_MAX_ITEM) throw new ValidationError(`a checklist item must be ${CHECKLIST_MAX_ITEM} characters or fewer`);
+    out.push(item);
+  }
+  if (out.length > CHECKLIST_MAX_ITEMS) throw new ValidationError(`a checklist holds at most ${CHECKLIST_MAX_ITEMS} items`);
+  return out;
+}
+
+function cleanChecklistName(raw: unknown): string {
+  if (typeof raw !== 'string' || !raw.trim()) throw new ValidationError('checklist name is required');
+  const name = raw.replace(/\s+/g, ' ').trim();
+  if (name.length > CHECKLIST_MAX_NAME) throw new ValidationError(`a checklist name must be ${CHECKLIST_MAX_NAME} characters or fewer`);
+  return name;
 }
 
 function rowToGoalLink(r: Row): GoalLink {
@@ -1333,6 +1367,115 @@ export class Store {
   /** Every goal (open ones unless includeClosed) with its progress, for the Goals view and the digest. */
   listGoalDetails(opts: { includeClosed?: boolean } = {}): GoalDetail[] {
     return this.listGoals(opts).map((g) => this.goalDetail(g.id));
+  }
+
+  // ------------------------------------------------------------ checklists
+  // A checklist is a template. Starting one makes an ordinary open task, the owner's own, whose
+  // subtasks are the items in order; the template is left as it was so it can be started again.
+  // Ticking an item is completing a subtask, so nothing here has to know about it. The events are
+  // for the dashboard's change poll and the audit trail: rules cannot listen for them.
+
+  getChecklist(id: string): Checklist | undefined {
+    const r = this.db.get<Row>('SELECT * FROM checklists WHERE id = ?', [id]);
+    return r ? rowToChecklist(r) : undefined;
+  }
+
+  requireChecklist(id: string): Checklist {
+    const c = this.getChecklist(id);
+    if (!c) throw new NotFoundError(`checklist not found: ${id}`);
+    return c;
+  }
+
+  /** By id, or by name without regard to case. */
+  findChecklist(ref: string): Checklist | undefined {
+    const byId = this.getChecklist(ref);
+    if (byId) return byId;
+    const r = this.db.get<Row>('SELECT * FROM checklists WHERE lower(name) = lower(?) ORDER BY position, created_at LIMIT 1', [ref.trim()]);
+    return r ? rowToChecklist(r) : undefined;
+  }
+
+  listChecklists(): Checklist[] {
+    return this.db.all<Row>('SELECT * FROM checklists ORDER BY position, created_at, id').map(rowToChecklist);
+  }
+
+  createChecklist(input: NewChecklist, actor: ActorInput = 'human'): Checklist {
+    const name = cleanChecklistName(input.name);
+    const items = cleanChecklistItems(input.items ?? []);
+    const notes = typeof input.notes === 'string' ? input.notes : '';
+    const now = this.now();
+    const id = newId('cl');
+    return this.db.transaction(() => {
+      const position = (this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM checklists')?.p ?? 0) + 1;
+      this.db.run('INSERT INTO checklists (id, name, notes, items, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [id, name, notes, JSON.stringify(items), position, now, now]);
+      this.emit('checklist.created', null, actor, { checklistId: id, name, items: items.length });
+      return this.requireChecklist(id);
+    });
+  }
+
+  /** A field left out is untouched; `items` replaces the whole list. */
+  updateChecklist(id: string, patch: ChecklistPatch, actor: ActorInput = 'human'): Checklist {
+    return this.db.transaction(() => {
+      const before = this.requireChecklist(id);
+      const name = patch.name !== undefined ? cleanChecklistName(patch.name) : before.name;
+      const notes = patch.notes !== undefined ? patch.notes : before.notes;
+      const items = patch.items !== undefined ? cleanChecklistItems(patch.items) : before.items;
+      const changed: string[] = [];
+      if (name !== before.name) changed.push('name');
+      if (notes !== before.notes) changed.push('notes');
+      if (JSON.stringify(items) !== JSON.stringify(before.items)) changed.push('items');
+      if (!changed.length) return before;
+      this.db.run('UPDATE checklists SET name = ?, notes = ?, items = ?, updated_at = ? WHERE id = ?',
+        [name, notes, JSON.stringify(items), this.now(), id]);
+      this.emit('checklist.updated', null, actor, { checklistId: id, name, changed });
+      return this.requireChecklist(id);
+    });
+  }
+
+  /** Deletes the template only. Tasks started from it are ordinary tasks and stay as they are. */
+  deleteChecklist(id: string, actor: ActorInput = 'human'): boolean {
+    return this.db.transaction(() => {
+      const c = this.getChecklist(id);
+      if (!c) return false;
+      this.db.run('DELETE FROM checklists WHERE id = ?', [id]);
+      this.emit('checklist.deleted', null, actor, { checklistId: id, name: c.name });
+      return true;
+    });
+  }
+
+  /**
+   * Makes a fresh open task from the template, with one subtask per item in order, in one
+   * transaction. The task's notes are the template's, and its custom field `checklistId` names the
+   * template it came from. Each task fires the usual task.created event.
+   */
+  startChecklist(id: string, opts: ChecklistStart = {}, actor: ActorInput = 'human'): { task: Task; subtasks: Task[] } {
+    return this.db.transaction(() => {
+      const checklist = this.requireChecklist(id);
+      if (!checklist.items.length) throw new ValidationError('this checklist has no items yet');
+      const title = opts.title != null && opts.title.trim() ? opts.title : checklist.name;
+      const task = this.createTask({
+        title, notes: checklist.notes, status: 'open', projectId: opts.projectId ?? null, dueAt: opts.dueAt ?? null,
+        customFields: { checklistId: checklist.id },
+      }, actor);
+      const subtasks = checklist.items.map((item) => this.createTask({ title: item, parentId: task.id, status: 'open' }, actor));
+      return { task, subtasks };
+    });
+  }
+
+  /**
+   * A new template from a task: its notes, and the titles of its subtasks in order (dropped ones
+   * left out). The name defaults to the task's title. Refused for a task whose text, or any of
+   * whose subtasks' text, was written by a third party: starting the template would otherwise
+   * turn that text into the owner's own, unmarked.
+   */
+  saveTaskAsChecklist(taskId: string, name: string | null = null, actor: ActorInput = 'human'): Checklist {
+    const task = this.requireTask(taskId);
+    const subtasks = this.subtasks(task.id).filter((s) => s.status !== 'dropped');
+    if (task.untrustedText || subtasks.some((s) => s.untrustedText)) {
+      throw new ValidationError('this task holds text written by a third party, so it cannot become a checklist');
+    }
+    if (!subtasks.length) throw new ValidationError('this task has no subtasks to make a checklist from');
+    return this.createChecklist({ name: name != null && name.trim() ? name : task.title, notes: task.notes, items: subtasks.map((s) => s.title) }, actor);
   }
 
   // --------------------------------------------------------------- threads
