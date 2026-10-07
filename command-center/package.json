@@ -1,6 +1,6 @@
 {
   "name": "polaris-command-center",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -18,12 +18,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "rrule": "^2.8.1",
-    "zod": "^4.6.4"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^26.6.4",
     "fast-check": "^4.10.2",
     "typescript": "^7.0.2"
   }

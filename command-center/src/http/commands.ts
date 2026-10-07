@@ -97,6 +97,8 @@ const serveCommand: Command = {
   name: 'serve',
   summary: 'Run the local HTTP server: REST API, MCP over Streamable HTTP, and the GitHub webhook receiver.',
   usage: 'serve [--port 8788] [--host 127.0.0.1] [--readonly-mcp] [--show-token]',
+  // A server an update restarts: it refuses writes itself while the write barrier stands.
+  runsDuringUpdate: true,
   async run(args, { openApp, stdout, stderr }) {
     const flags = parseFlags(args);
     const port = Number(flags.port ?? 8788);

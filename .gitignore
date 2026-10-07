@@ -9,6 +9,9 @@ yarn-error.log*
 # Vite / Build
 dist/
 dist-protected/
+# cc update stages the next dashboard build here and keeps the previous one for a rollback
+dist.next/
+dist.prev/
 .vite/
 *.local
 

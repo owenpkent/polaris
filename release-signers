@@ -1,0 +1,24 @@
+# The keys allowed to sign a Polaris release (docs/releases.md, docs/update-proposal.md section 2).
+#
+# Format: OpenSSH allowed_signers, one key per line:
+#
+#   <principal> namespaces="git" <keytype> <key>
+#
+# for example
+#
+#   polaris-release namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...
+#
+# `cc update --release`, `--to`, and `--check` verify a release tag with `git verify-tag` against
+# a pinned copy of this file (command-center/data/release-signers), taken from this file the first
+# time one of them runs. A change to this file widens nothing on an install until its owner has
+# reviewed it with `cc update --trust-signers`. With no key here, no release can verify.
+#
+# One-time setup, done once by the owner of the repository (not by an installer):
+#
+#   ssh-keygen -t ed25519 -f ~/.ssh/polaris-release -C polaris-release
+#   git config gpg.format ssh
+#   git config user.signingkey ~/.ssh/polaris-release.pub
+#
+# then add the public key as a line here, in the form above, with ~/.ssh/polaris-release.pub's key
+# type and key (the second and third fields of that file), and commit it. A fork keeps its own key
+# and its own copy of this file. Lines starting with # are comments.

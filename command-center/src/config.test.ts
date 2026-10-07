@@ -13,3 +13,9 @@ test('without CC_TZ the timezone is the machine\'s own', () => {
 test('a CC_TZ the machine does not know stops the start and names the variable', () => {
   assert.throws(() => loadConfig({ CC_TZ: 'America/Chicgo' }), /CC_TZ.*America\/Chicgo/);
 });
+
+test('CC_UPDATE_RESTART is carried as typed, trimmed, and unset when empty', () => {
+  assert.equal(loadConfig({ CC_UPDATE_RESTART: ' systemd:polaris ' }).updateRestart, 'systemd:polaris');
+  assert.equal(loadConfig({ CC_UPDATE_RESTART: '' }).updateRestart, undefined);
+  assert.equal(loadConfig({}).updateRestart, undefined);
+});
