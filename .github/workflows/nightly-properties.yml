@@ -1,0 +1,49 @@
+# The property tests (command-center/src/core/outbox.property.test.ts) with a fresh random seed and
+# a large run count every night. The normal suite runs the same tests with a fixed seed and 60
+# runs, so a push is repeatable; this run is where new inputs get explored.
+#
+# THE RULE when this fails: fix the bug, then add the shrunk input from the log as a named
+# regression test (a plain example in the matching *.test.ts, so it runs on every push). Do not
+# loosen the property, and do not just rerun until it goes green. The log prints the seed and the
+# path; to replay it locally:
+#   CC_PROPERTY_SEED=<seed> CC_PROPERTY_PATH=<path> node --test command-center/src/core/outbox.property.test.ts
+#
+# Ubuntu, because the server suite passes there (#31) and Linux minutes cost half of Windows.
+# Nothing here is a pull request check.
+name: Nightly property tests
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # every day 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per property
+        default: '20000'
+
+permissions:
+  contents: read
+
+jobs:
+  properties:
+    name: Property tests, random seed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: command-center/package-lock.json
+      - run: npm ci
+        working-directory: command-center
+      - name: Pick a seed
+        run: echo "CC_PROPERTY_SEED=$(( (RANDOM << 15) | RANDOM ))" >> "$GITHUB_ENV"
+      - name: Property tests
+        working-directory: command-center
+        env:
+          CC_PROPERTY_RUNS: ${{ inputs.runs || '20000' }}
+        run: |
+          echo "seed: $CC_PROPERTY_SEED, runs per property: $CC_PROPERTY_RUNS"
+          node --test --test-reporter=spec "src/**/*.property.test.ts"

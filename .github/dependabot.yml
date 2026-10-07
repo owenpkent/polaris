@@ -1,0 +1,54 @@
+# Dependency updates, weekly, with minor and patch bumps grouped into one pull request per
+# ecosystem so the queue stays short. A major bump gets its own pull request. The Tests check
+# (workflows/test.yml, with its OSV job) runs on each one; merging is the owner's call, and there
+# is deliberately no auto-merge workflow.
+#
+# Gradle is left out on purpose: Capacitor pins the Android library versions in
+# mobile/android/variables.gradle, and bumping them by hand-picked pull request breaks the shell.
+# They move when @capacitor/android does, which the npm entry for /mobile covers.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-root-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /command-center
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-command-center-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-mobile-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /desktop/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

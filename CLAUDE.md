@@ -40,6 +40,7 @@ Polaris is a single-user task tracker that the owner fills by hand or through an
 npm install; npm --prefix command-center install
 npm run cc -- <command>  # CLI; run with no command for the list
 npm run test:fast        # server tests, typecheck, dashboard unit tests (what the pre-push hook and CI run)
+npm --prefix command-center run test:coverage  # server suite with the coverage floor (CI job; not in the hook)
 npm run test:ui          # builds, then Playwright UI tests at 1280px and 390px; CC_UI_BROWSER=chromium where Edge is missing
 npm run test:all         # test:fast, then build and UI tests
 npm run shots            # builds, then screenshots every view and state at both widths in both themes; -- --accept makes them the baseline
@@ -49,6 +50,8 @@ npm run mockup           # dashboard on a scratch database with demo data (-- --
 npm run test:android     # Android app instrumented tests on a running emulator (mobile/README.md, Testing)
 npm run test:desktop     # the desktop shell's Rust tests (cargo test); needs Rust (MSVC)
 ```
+
+`*.property.test.ts` files use fast-check with a fixed seed; the nightly run randomizes it. When one fails, fix the bug and add the shrunk input as a named regression test. See "Gates" in CONTRIBUTING.md for every check and what to do when it fails.
 
 Use a scratch database for manual runs: set `CC_DB` to a temp file, and `CC_BACKUP_DIR` and `CC_SECRETS_DIR` to scratch folders, because the daemon's backup job replaces that day's copy at start. Never point experiments at command-center/data. Never link node_modules into a temporary git worktree: removing the worktree deletes through the link.
 
@@ -66,7 +69,7 @@ Use a scratch database for manual runs: set `CC_DB` to a temp file, and `CC_BACK
 - Dashboard data refreshes by polling `/api/events` (src/command-center/useEvents.js). New views that show server data call `useEventRefresh`.
 - Responsive: one breakpoint at 640px. Static layout differences go in src/index.css media queries; JavaScript-computed layout uses `useNarrowBreakpoints` in src/command-center/columnsState.js. No Tailwind breakpoint classes.
 - Conventional commits (feat, fix, docs, chore). No AI co-author trailers.
-- A pre-push hook in .githooks/ runs `npm run test:fast`. Enable it once per clone with `git config core.hooksPath .githooks`. Never push with `--no-verify` to get around a failing test.
+- A pre-push hook in .githooks/ runs `npm run test:fast` then `npm run build`, the same as the CI fast job. `npm install` enables it (root `prepare` script, skipped in CI); by hand: `git config core.hooksPath .githooks`. Never push with `--no-verify` to get around a failing test.
 
 ## When to ask
 

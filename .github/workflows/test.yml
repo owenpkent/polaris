@@ -1,11 +1,12 @@
 # Automated tests. See initiatives/automated-testing.md, Phase 3 (option A, chosen 2026-09-18):
-# the fast layers run on every push, and the browser UI tests run only on pull requests into
-# main, because they are the slow part.
+# the fast layers run on every push and every pull request, and the browser UI tests run only on
+# pull requests into main, because they are the slow part. The vulnerability gate for pull
+# requests is here too (the `osv` job), so that the one `Tests` check covers it.
 #
-# Both jobs run on Windows: the UI tests need Edge, and the fast job keeps to the machine the
-# daemon runs on. Since 2026-09-26 the server suite also passes on Ubuntu (#31), so a Linux leg of
-# the fast job is possible; it is the owner's call. The whole browser matrix, the screenshot gallery,
-# and the report-only timings run weekly in weekly.yml.
+# The fast and UI jobs run on Windows: the UI tests need Edge, and the fast job keeps to the
+# machine the daemon runs on. Since 2026-09-26 the server suite also passes on Ubuntu (#31), so a
+# Linux leg of the fast job is possible; it is the owner's call. The whole browser matrix, the
+# screenshot gallery, and the report-only timings run weekly in weekly.yml.
 name: Tests
 
 on:
@@ -24,9 +25,11 @@ permissions:
 jobs:
   fast:
     name: Server tests, typecheck, dashboard unit tests, build
-    # A push to a branch with an open pull request fires both events. The push run already
-    # reports on the same commit, so the pull request run skips this job.
-    if: github.event_name == 'push'
+    # Runs on both events. A push to a branch with an open pull request fires both, so the same
+    # commit is tested twice; that is accepted (changed 2026-10-06) because the `Tests` check
+    # below can only require what runs in its own pull request run. When this job was skipped on
+    # pull requests, a failing unit test or typecheck on the push run could sit next to a green
+    # `Tests`, since the aggregate had to let the skip through.
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -43,6 +46,29 @@ jobs:
         working-directory: command-center
       - run: npm run test:fast
       - run: npm run build
+
+  # A floor under the server suite's coverage (command-center/package.json, test:coverage). It
+  # reruns the suite, so it is its own job on Linux rather than a second pass in the Windows job
+  # above, and it runs on both events: it is cheap, and a push to a branch without a pull request
+  # should still see it. The floors sit a couple of points under what was measured on 2026-10-06
+  # (lines 96.3, branches 88.8, functions 94.0). If it fails, add the missing tests; raise the
+  # floors when coverage has risen, never lower them to get green. Not in the pre-push hook: it
+  # would run the whole server suite a second time.
+  coverage:
+    name: Server test coverage floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: command-center/package-lock.json
+      - run: npm ci
+        working-directory: command-center
+      - run: npm run test:coverage
+        working-directory: command-center
 
   ui:
     name: UI tests in Edge, part ${{ matrix.shard }} of 4
@@ -99,3 +125,190 @@ jobs:
         run: |
           echo "UI test parts: ${{ needs.ui.result }}"
           [ "${{ needs.ui.result }}" = "success" ] || exit 1
+
+  # Which parts of the tree a pull request touches, for jobs that only matter when they change.
+  # Nothing uses these outputs yet: .github/workflows/android.yml and desktop-ui.yml are
+  # path-filtered at the workflow level on their open pull requests, and are meant to become jobs
+  # here gated with `if: needs.changes.outputs.android == 'true'`. Keep these lists in step with
+  # the paths those workflows use. Pull requests only, because a push run has no base to compare.
+  changes:
+    name: Which paths changed
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            android:
+              - 'mobile/**'
+              - 'src/**'
+              - 'public/**'
+              - 'package.json'
+              - 'package-lock.json'
+            desktop:
+              - 'desktop/**'
+              - 'scripts/desktop.mjs'
+              - 'command-center/src/http/identity.ts'
+
+  # Known-vulnerability gate for pull requests: fails only on an advisory the pull request
+  # introduces. The scanner (Google's OSV-Scanner, pinned to the same version osv.yml uses for the
+  # weekly full scan) runs on the merge base and on the pull request head, and the reporter
+  # compares the two, so a finding that is already in main never blocks an unrelated change, and
+  # one that main fixed after this branch was cut is not charged to it either. What is scanned:
+  # the three npm lockfiles (dashboard, command-center, mobile) and the desktop shell's
+  # Cargo.lock. Gradle is not scanned; Capacitor pins the Android versions.
+  #
+  # This is the scan sequence of google/osv-scanner-action's reusable pull request workflow,
+  # written out here instead of called, for one reason: that workflow writes both result files
+  # inside the checkout, between its two checkouts. A pull request that adds a symlink
+  # `new-results.json -> old-results.json` makes the second scan overwrite the first, and the
+  # diff then reports nothing new. Here the results live outside the checkout, in a folder under
+  # $RUNNER_TEMP that the tree cannot reach. The scanner and the reporter are Docker container
+  # actions, and the runner mounts exactly one folder under $RUNNER_TEMP into such a container:
+  # $RUNNER_TEMP/_github_home, as /github/home (the container's HOME). The scanner writes there
+  # by the container path, and the check after the scans looks for the files by the runner path,
+  # so if a runner change ever broke that mapping the job would fail rather than compare the
+  # wrong files. The second checkout is a fresh actions/checkout, which cleans the tree
+  # (git clean -ffdx, reset --hard) before the head is scanned. No SARIF upload, so no
+  # security-events permission; the findings are read from the job log and the annotations on
+  # the pull request.
+  #
+  # When this fails: read the log for the package and the fixed version, update the lockfile
+  # (Dependabot opens most of these), and re-run. A finding with no fix, or one that does not
+  # apply, is the owner's call: say why in the pull request.
+  osv:
+    name: New vulnerabilities in this pull request
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Check out the merge base with main
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          base="$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")"
+          echo "merge base: $base"
+          git checkout --detach "$base"
+      # RESULTS_DIR is the one folder under $RUNNER_TEMP that a Docker container action can see,
+      # as /github/home. Set here from the shell's $RUNNER_TEMP (the `runner` context is not
+      # allowed in a job-level `env`) for the steps that follow.
+      - name: Keep the result files outside the checkout
+        run: |
+          RESULTS_DIR="$RUNNER_TEMP/_github_home"
+          case "$RESULTS_DIR" in
+            "$GITHUB_WORKSPACE"/*) echo "::error::$RESULTS_DIR is inside the checkout"; exit 1 ;;
+          esac
+          mkdir -p "$RESULTS_DIR"
+          rm -f "$RESULTS_DIR/old-results.json" "$RESULTS_DIR/new-results.json" "$RESULTS_DIR/results.sarif"
+          echo "RESULTS_DIR=$RESULTS_DIR" >> "$GITHUB_ENV"
+      - name: Scan the merge base
+        id: scan-old
+        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output=/github/home/old-results.json
+            --lockfile=package-lock.json
+            --lockfile=command-center/package-lock.json
+            --lockfile=mobile/package-lock.json
+            --lockfile=desktop/src-tauri/Cargo.lock
+      - name: Check out the pull request head with a clean tree
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          clean: true
+      - name: Scan the pull request head
+        id: scan-new
+        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output=/github/home/new-results.json
+            --lockfile=package-lock.json
+            --lockfile=command-center/package-lock.json
+            --lockfile=mobile/package-lock.json
+            --lockfile=desktop/src-tauri/Cargo.lock
+      # The scanner exits non-zero both when it finds something (the reporter's job to judge) and
+      # when the scan itself breaks, so continue-on-error cannot tell them apart. A broken scan
+      # writes no file, and the reporter reads a missing --new file as "nothing new". So both
+      # files must exist, be regular files, and be where the step above said they would be, or
+      # the job fails rather than reporting a clean diff.
+      - name: Check that both scans wrote their results outside the checkout
+        env:
+          OLD_OUTCOME: ${{ steps.scan-old.outcome }}
+          NEW_OUTCOME: ${{ steps.scan-new.outcome }}
+        run: |
+          status=0
+          for name in old new; do
+            f="$RESULTS_DIR/$name-results.json"
+            if [ -L "$f" ] || [ ! -f "$f" ] || [ ! -s "$f" ]; then
+              echo "::error::The $name scan did not write $f. Outcomes: old $OLD_OUTCOME, new $NEW_OUTCOME. See the scan steps for the cause."
+              status=1
+            fi
+          done
+          exit "$status"
+      - name: Report what the pull request introduces
+        uses: google/osv-scanner-action/osv-reporter-action@v2.6.0
+        with:
+          scan-args: |-
+            --output=/github/home/results.sarif
+            --old=/github/home/old-results.json
+            --new=/github/home/new-results.json
+            --gh-annotations=true
+            --fail-on-vuln=true
+
+  # The one check branch protection should require: it needs every job in this workflow that
+  # runs on a pull request, including the fast checks and the vulnerability gate, and fails if
+  # any of them did not succeed. The owner switches protection to `Tests` (Settings, Branches)
+  # after this has run green on a pull request or two; until then the two older names above keep
+  # working unchanged, so nothing blocks during the switch. A job that was cancelled or skipped
+  # is not a failure to GitHub, so this job reads every result itself and fails on anything but
+  # success. Every job here runs on every pull request, so none may be skipped: there is no
+  # exception for skips, and this job itself only runs on pull requests. To add a job to the gate:
+  # add the job, add it to `needs`, and add one line to the check below (`must_pass` for a job
+  # that always runs, `gated` for a job that only runs when `changes` says its paths were touched).
+  tests:
+    name: Tests
+    needs: [changes, fast, coverage, ui, ui-passed, osv]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check that nothing failed, was cancelled, or was skipped by mistake
+        run: |
+          bad=0
+          must_pass() {
+            echo "$1: $2"
+            [ "$2" = "success" ] || bad=1
+          }
+          # A path-gated job may be skipped, but only when `changes` said its paths were not
+          # touched. If `changes` itself failed, its output is empty and a skip is a failure.
+          # Example: gated android "${{ needs.android.result }}" "${{ needs.changes.outputs.android }}"
+          gated() {
+            echo "$1: $2 (needed: $3)"
+            if [ "$2" = "success" ]; then return; fi
+            if [ "$2" = "skipped" ] && [ "$3" = "false" ]; then return; fi
+            bad=1
+          }
+          must_pass changes "${{ needs.changes.result }}"
+          must_pass fast "${{ needs.fast.result }}"
+          must_pass coverage "${{ needs.coverage.result }}"
+          must_pass ui "${{ needs.ui.result }}"
+          must_pass ui-passed "${{ needs.ui-passed.result }}"
+          must_pass osv "${{ needs.osv.result }}"
+          exit $bad
