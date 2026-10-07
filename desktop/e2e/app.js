@@ -102,8 +102,12 @@ function killTree(pid) {
 }
 
 // Asks the app's window to close, as the X button does (WM_CLOSE). The windows are found by the
-// owning process id, never by title or name. Close answers with the count it asked, then every
-// top-level window of the process as class|title|visible or hidden|asked, separated by ";".
+// owning process id, never by title or name, and only one with a title bar (WS_CAPTION) is asked:
+// the process also owns helper windows that count as visible (tao's thread event target, which
+// carries the event loop's own messages, and the single-instance plugin's), and WM_CLOSE to those
+// destroys them, after which the close of the real window can never complete and the app lives
+// on with no window. Walk answers with the count it asked, then every top-level window of the
+// process as class|title|visible or hidden|caption or plain|asked, separated by ";".
 const WINDOWS = `
 Add-Type @"
 using System; using System.Text; using System.Runtime.InteropServices;
@@ -115,6 +119,7 @@ public static class W {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);
   public static string Walk(uint target, bool close) {
     int n = 0; var seen = new StringBuilder();
     EnumWindows((h, l) => {
@@ -123,9 +128,10 @@ public static class W {
       var cls = new StringBuilder(256); GetClassName(h, cls, 256);
       var title = new StringBuilder(256); GetWindowText(h, title, 256);
       bool visible = IsWindowVisible(h);
-      bool ask = close && visible && cls.ToString() != "ConsoleWindowClass";
+      bool caption = (GetWindowLong(h, -16) & 0x00C00000) == 0x00C00000;
+      bool ask = close && visible && caption && cls.ToString() != "ConsoleWindowClass";
       if (ask) { PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero); n++; }
-      seen.Append(';').Append(cls).Append('|').Append(title).Append('|').Append(visible ? "visible" : "hidden").Append(ask ? "|asked" : "");
+      seen.Append(';').Append(cls).Append('|').Append(title).Append('|').Append(visible ? "visible" : "hidden").Append(caption ? "|caption" : "|plain").Append(ask ? "|asked" : "");
       return true;
     }, IntPtr.Zero);
     return n + seen.ToString();
@@ -141,7 +147,7 @@ function walkWindows(pid, close) {
   return { count: Number(count) || 0, windows }
 }
 
-/** The top-level windows of a process, as "class|title|visible or hidden". */
+/** The top-level windows of a process, as "class|title|visible or hidden|caption or plain". */
 export function windowsOf(pid) {
   return walkWindows(pid, false).windows
 }
