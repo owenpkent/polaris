@@ -33,6 +33,11 @@ import { compareVersions, isNewerVersion, isVersion, packageVersion, parseVersio
 export const UPDATE_LOG_FILE = 'update.log';
 const HEALTH_TIMEOUT_MS = 90_000;
 
+/** Why the scheduled updater refuses to install on a plain-process daemon (section 1A): it cannot
+ *  restart one, so a full install would wait for a stop nobody gives, roll back, and count a
+ *  failure. A run by hand can still update such an install. */
+export const NO_RESTART_METHOD = 'no restart method: the updater needs the logon task or a systemd unit, or CC_UPDATE_RESTART naming one. Run cc update --release by hand, which can wait for you to restart the daemon.';
+
 /** What `cc update` moves to: `origin/main`, the newest verified release, or one named release. */
 export type UpdateTarget = { kind: 'main' } | { kind: 'release' } | { kind: 'to'; version: string };
 
@@ -242,6 +247,10 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
       throw new Refused(considered.reason ?? 'nothing to install');
     }
     plan = considered.plan;
+    // The scheduled updater needs a restart it can perform (section 1A): with none, refuse here,
+    // after the check is recorded (so the dashboard still names the release and the owner's
+    // request comes back with this reason) and before the snapshot, the first thing that changes.
+    if (opts.auto && method.kind === 'manual') throw new Refused(NO_RESTART_METHOD);
     if (!opts.yes && !opts.auto && !(await deps.confirm(`Update ${running} to ${plan.version}${plan.tag ? ` (${plan.tag})` : ''} and restart the daemon? [y/N] `))) {
       log('Not updating. Pass --yes to update without the question.');
       return { code: 0, kind: 'declined', message: 'Not updating', version: running, attempted: false };

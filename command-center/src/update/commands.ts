@@ -31,8 +31,10 @@ export function parseUpdateArgs(args: string[]): UpdateArgs {
   if (flags._.length) throw new Error(`cc update takes no arguments, got "${flags._[0]}". A release is named with --to ${flags._[0]}.`);
   let port = DEFAULT_PORT;
   if (flags.port !== undefined) {
+    // A bare --port parses as `true`, and Number(true) is 1: a value is required, as a string.
+    if (typeof flags.port !== 'string') throw new Error('--port needs a port number, like --port 8788.');
     port = Number(flags.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`--port must be a port number, got "${String(flags.port)}".`);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`--port must be a port number, got "${flags.port}".`);
   }
   let target: UpdateArgsTarget = { kind: 'main' };
   if (flags.to !== undefined) {

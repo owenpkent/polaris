@@ -2,12 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { App } from '../app.ts';
+import { STALE_PICKUP_RESULT, UPDATE_REQUEST_STALE_MS } from '../core/index.ts';
 import { emptyUpdateStatus, UPDATER_STOPPED_PREFIX, updateStatusPath, writeUpdateStatus, type UpdateStatus } from '../update/status.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './test-support.ts';
-import { UPDATE_COMMAND, isNewerRelease } from './update-routes.ts';
+import { UPDATE_COMMAND } from './update-routes.ts';
 import { VERSION } from './version.ts';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 // The status file lives next to the database. The fake app's database is in memory, so its
 // config is pointed at a scratch folder, where the tests write the file the updater would.
@@ -40,16 +44,13 @@ function installedStatus(extra: Partial<UpdateStatus> = {}): UpdateStatus {
   };
 }
 
-test('isNewerRelease: strictly newer by the MAJOR.MINOR.PATCH rule, and a malformed version never is', () => {
-  assert.equal(isNewerRelease('2.1.0', '2.0.0'), true);
-  assert.equal(isNewerRelease('2.0.1', '2.0.0'), true);
-  assert.equal(isNewerRelease('3.0.0', '2.9.9'), true);
-  assert.equal(isNewerRelease('2.10.0', '2.9.0'), true, 'numeric, not lexical');
-  assert.equal(isNewerRelease('2.0.0', '2.0.0'), false);
-  assert.equal(isNewerRelease('1.9.9', '2.0.0'), false);
-  assert.equal(isNewerRelease('v2.1.0', '2.0.0'), false);
-  assert.equal(isNewerRelease('2.1.0-rc1', '2.0.0'), false);
-  assert.equal(isNewerRelease('2.1.0', 'main'), false);
+test('the routes compare versions with update/version.ts and keep no copy of the rule or the pattern', () => {
+  const source = readFileSync(join(here, 'update-routes.ts'), 'utf8');
+  assert.match(source, /^import \{ isNewerVersion \} from '\.\.\/update\/version\.ts';$/m);
+  assert.ok(!/\/\^\\d\+/.test(source), 'no version regex of its own');
+  assert.ok(!/split\('\.'\)/.test(source), 'no comparison of its own');
+  const types = readFileSync(join(here, '..', 'core', 'types.ts'), 'utf8');
+  assert.match(types, /^export \{ VERSION_RE as RELEASE_VERSION_PATTERN \} from '\.\.\/update\/version\.ts';$/m, 'the store uses the same pattern under its own name');
 });
 
 test('GET /api/update: no status file means no updater, nothing available, and the command to copy', async (t) => {
@@ -246,6 +247,59 @@ test('a picked-up request whose outcome only reached the status file is reconcil
     const failed = (await api(base, 'GET', '/api/update')).json.request;
     assert.equal(failed.state, 'failed');
     assert.equal(failed.result, 'Rolled back: the build failed');
+  });
+});
+
+test('a picked-up request with no outcome two hours after its pickup is expired on the next read, and the owner can ask again', async (t) => {
+  const { app, dbPath } = scratchApp(t);
+  writeUpdateStatus(dbPath, installedStatus());
+  await withServer(app, {}, async (base) => {
+    const request = (await api(base, 'POST', '/api/update/requests', { version: NEWER })).json.request;
+    const picked = (await api(base, 'POST', `/api/update/requests/${request.id}/pickup`)).json.request;
+    // The updater wrote Updating and was then killed: the file never says done or failed.
+    writeUpdateStatus(dbPath, installedStatus({ request: { id: request.id, state: 'picked_up', message: 'Updating', finishedAt: null } }));
+    const backdate = (ms: number) => app.store.db.run('UPDATE update_requests SET picked_up_at = ? WHERE id = ?', [new Date(Date.parse(picked.pickedUpAt) - ms).toISOString(), request.id]);
+    backdate(UPDATE_REQUEST_STALE_MS - 5 * 60_000);
+    assert.equal((await api(base, 'GET', '/api/update')).json.request.state, 'picked_up', 'an install may still be running');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: NEWER })).status, 409);
+    assert.equal((await api(base, 'POST', `/api/update/requests/${request.id}/cancel`)).status, 409, 'a fresh pickup is the updater\'s');
+    backdate(UPDATE_REQUEST_STALE_MS + 60_000);
+    const read = (await api(base, 'GET', '/api/update')).json.request;
+    assert.equal(read.id, request.id);
+    assert.equal(read.state, 'expired');
+    assert.equal(read.result, STALE_PICKUP_RESULT);
+    assert.equal((await api(base, 'POST', `/api/update/requests/${request.id}/finish`, { ok: true, message: 'late' })).status, 409, 'a late outcome does not reopen it');
+    const again = await api(base, 'POST', '/api/update/requests', { version: NEWER });
+    assert.equal(again.status, 201, 'the table is free again');
+    assert.notEqual(again.json.request.id, request.id);
+  });
+});
+
+test('cancel: the owner takes back a stale picked-up request, and an outcome that reached the file wins over both the cancel and the expiry', async (t) => {
+  const { app, dbPath } = scratchApp(t);
+  writeUpdateStatus(dbPath, installedStatus());
+  await withServer(app, {}, async (base) => {
+    const stale = (await api(base, 'POST', '/api/update/requests', { version: NEWER })).json.request;
+    const picked = (await api(base, 'POST', `/api/update/requests/${stale.id}/pickup`)).json.request;
+    app.store.db.run('UPDATE update_requests SET picked_up_at = ? WHERE id = ?', [new Date(Date.parse(picked.pickedUpAt) - UPDATE_REQUEST_STALE_MS - 60_000).toISOString(), stale.id]);
+    const cancelled = await api(base, 'POST', `/api/update/requests/${stale.id}/cancel`);
+    assert.equal(cancelled.status, 200);
+    assert.equal(cancelled.json.request.state, 'cancelled', 'the owner\'s cancel, not the sweep, is what the row records');
+    assert.equal(cancelled.json.request.result, STALE_PICKUP_RESULT);
+    assert.equal((await api(base, 'GET', '/api/update')).json.request.state, 'cancelled');
+
+    // The same age, but the status file carries the outcome: the daemon was down when the run
+    // ended, and the outcome, not an expiry or a cancel, is what the row takes.
+    const finished = (await api(base, 'POST', '/api/update/requests', { version: NEWER })).json.request;
+    const taken = (await api(base, 'POST', `/api/update/requests/${finished.id}/pickup`)).json.request;
+    app.store.db.run('UPDATE update_requests SET picked_up_at = ? WHERE id = ?', [new Date(Date.parse(taken.pickedUpAt) - UPDATE_REQUEST_STALE_MS - 60_000).toISOString(), finished.id]);
+    writeUpdateStatus(dbPath, installedStatus({ request: { id: finished.id, state: 'done', message: `Updated to v${NEWER}`, finishedAt: NOW } }));
+    const refused = await api(base, 'POST', `/api/update/requests/${finished.id}/cancel`);
+    assert.equal(refused.status, 409);
+    assert.match(refused.json.error.message, /done; it must be pending/);
+    const read = (await api(base, 'GET', '/api/update')).json.request;
+    assert.equal(read.state, 'done');
+    assert.equal(read.result, `Updated to v${NEWER}`);
   });
 });
 

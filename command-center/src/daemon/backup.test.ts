@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/index.ts';
@@ -452,6 +452,33 @@ test('only the newest three snapshots stay, by the moment in the name and not by
     assert.deepEqual(readdirSync(dir).sort(), names.slice(1).sort());
     assert.deepEqual(listSnapshots(dir), names.slice(1).map((n) => join(dir, n)), 'oldest first');
   } finally {
+    store.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('snapshot retention works with a trailing slash or a relative backup folder: names come from the path, not from a prefix length', () => {
+  const dir = realpathSync(tempDir());
+  const store = openStore(':memory:');
+  const cwd = process.cwd();
+  try {
+    const at = (h: number) => new Date(Date.UTC(2026, 9, 6, h, 0, 0));
+    // CC_BACKUP_DIR as the owner may type it: with a trailing slash. Four snapshots: the fourth
+    // has to remove the first, which is the step that used to throw inside the lock.
+    const slashed = `${dir}/`;
+    const names = [1, 2, 3, 4].map((h) => snapshotName('2.0.0', at(h)));
+    const results = names.map((name) => snapshotDatabase(store, slashed, name));
+    assert.equal(results[0].file, join(dir, names[0]), 'the file path is the resolved folder plus the name');
+    assert.deepEqual(results[3].removed, [names[0]]);
+    assert.deepEqual(readdirSync(dir).sort(), names.slice(1).sort(), 'the oldest is gone and nothing else is');
+    // And a relative folder, resolved against the working directory.
+    process.chdir(dir);
+    const fifth = snapshotDatabase(store, './', snapshotName('2.0.0', at(5)));
+    assert.equal(fifth.file, join(dir, snapshotName('2.0.0', at(5))));
+    assert.deepEqual(fifth.removed, [names[1]]);
+    assert.deepEqual(readdirSync(dir).sort(), [...names.slice(2), snapshotName('2.0.0', at(5))].sort());
+  } finally {
+    process.chdir(cwd);
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }

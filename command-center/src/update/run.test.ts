@@ -15,7 +15,7 @@ import { listSnapshots } from '../daemon/backup.ts';
 import { identityProof } from '../http/identity.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import type { Exec, ExecResult } from './exec.ts';
-import { runTrustSigners, runUpdate, updateLogPath, type UpdateDeps, type UpdateTarget } from './run.ts';
+import { NO_RESTART_METHOD, performUpdate, runTrustSigners, runUpdate, updateLogPath, type UpdateDeps, type UpdateTarget } from './run.ts';
 import { pinnedSignersPath } from './signers.ts';
 import { emptyUpdateStatus, readUpdateStatus, updateStatusPath, writeUpdateStatus } from './status.ts';
 
@@ -507,6 +507,29 @@ test('a run by hand clears the scheduled updater\'s failure count and backoff', 
   writeUpdateStatus(check.dbPath, { ...emptyUpdateStatus(), updaterInstalled: true, failures: 2, backoffUntil: '2026-10-09T04:00:00.000Z' });
   assert.equal(await check.run(), 0);
   assert.equal(readUpdateStatus(check.dbPath).failures, 2);
+});
+
+test('in auto mode the manual restart method is refused once the target is known, before the snapshot; a run by hand is not', async (t) => {
+  const h = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.1.0' }], yes: false, confirm: false });
+  const options = (auto: boolean) => ({
+    repoRoot: h.root, dbPath: h.dbPath, dashboardDir: h.dist, port: PORT, target: { kind: 'to', version: '2.1.0' } as UpdateTarget,
+    checkOnly: false, yes: false, auto, restartSpec: 'manual', stdout: (l: string) => h.out.push(l), stderr: (l: string) => h.err.push(l),
+  });
+  const refused = await performUpdate(options(true), h.deps);
+  assert.deepEqual(refused, { code: 1, kind: 'refused', message: NO_RESTART_METHOD, version: '2.0.0', attempted: false });
+  assert.match(h.err.join('\n'), /^Refused: no restart method: the updater needs the logon task or a systemd unit, or CC_UPDATE_RESTART/m);
+  assert.ok(h.commandLines().includes('git fetch --prune --tags origin'), 'the tags were read, so the check is on record');
+  assert.deepEqual(npmAndRestartCalls(h.commandLines()), []);
+  assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), [], 'nothing changed: no snapshot');
+  assert.equal(h.version(), '2.0.0');
+  assert.equal(readUpdateStatus(h.dbPath).lastResult, null, 'a refusal is not a failed install');
+
+  // By hand, the same install on a plain process gets as far as the question: the owner can restart the daemon.
+  h.out.length = 0; h.err.length = 0;
+  const byHand = await performUpdate(options(false), h.deps);
+  assert.equal(byHand.kind, 'declined');
+  assert.ok(!h.err.join('\n').includes('no restart method'));
+  assert.match(h.out.join('\n'), /Restart: by hand/);
 });
 
 test('a restart that stops the daemon and cannot start it again still rolls back and tries the start once more', async (t) => {

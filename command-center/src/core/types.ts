@@ -238,11 +238,17 @@ export type EventKind =
 export const UPDATE_REQUEST_STATES = ['pending', 'picked_up', 'done', 'failed', 'cancelled', 'expired'] as const;
 export type UpdateRequestState = typeof UPDATE_REQUEST_STATES[number];
 
-/** A release version: MAJOR.MINOR.PATCH with nothing after the patch. Anything else is not a release. */
-export const RELEASE_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+/** A release version: MAJOR.MINOR.PATCH with nothing after the patch. Anything else is not a
+ *  release. The one definition is update/version.ts (which imports nothing); this is its name here. */
+export { VERSION_RE as RELEASE_VERSION_PATTERN } from '../update/version.ts';
 
 /** A pending request the updater has not picked up within this long is expired by the daemon. */
 export const UPDATE_REQUEST_TTL_MS = 60 * 60_000;
+
+/** A picked-up request with no outcome this long after its pickup is expired by the daemon: the
+ *  updater was stopped or killed mid-run (its execution limit is one hour, so this leaves a margin),
+ *  and the owner can cancel such a row or ask again. */
+export const UPDATE_REQUEST_STALE_MS = 2 * 60 * 60_000;
 
 /**
  * The owner asking the scheduled updater to install one release. Written only by the daemon's

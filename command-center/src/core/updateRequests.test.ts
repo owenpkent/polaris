@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openStore } from './index.ts';
-import { NotFoundError, ValidationError } from './store.ts';
+import { openStore, UPDATE_REQUEST_STALE_MS } from './index.ts';
+import { isStalePickup, NotFoundError, STALE_PICKUP_RESULT, ValidationError } from './store.ts';
 
 // A clock the test can move: each call is one second later, and `advance` jumps it forward.
 function fresh() {
@@ -67,11 +67,29 @@ test('cancelUpdateRequest: the owner takes a pending request back, and no one el
   assert.equal(store.createUpdateRequest('2.1.0', 'human').state, 'pending');
 });
 
-test('cancelUpdateRequest: once the updater has it, the owner cannot take it back', () => {
-  const { store } = fresh();
+test('cancelUpdateRequest: once the updater has it, the owner cannot take it back until the pickup is stale', () => {
+  const { store, advance } = fresh();
   const r = store.createUpdateRequest('2.1.0', 'human');
-  store.pickUpUpdateRequest(r.id);
-  assert.throws(() => store.cancelUpdateRequest(r.id, 'human'), /picked_up; it must be pending/);
+  const picked = store.pickUpUpdateRequest(r.id);
+  assert.throws(() => store.cancelUpdateRequest(r.id, 'human'), /being installed \(picked up at 2026-10-06T12:00:01\.000Z\)/);
+  advance(UPDATE_REQUEST_STALE_MS - 60_000);
+  assert.throws(() => store.cancelUpdateRequest(r.id, 'human'), /being installed/, 'not stale yet');
+  assert.equal(isStalePickup(picked, new Date(Date.parse(picked.pickedUpAt!) + UPDATE_REQUEST_STALE_MS - 1000).toISOString()), false);
+  assert.equal(store.getUpdateRequest(r.id)?.state, 'picked_up');
+  assert.throws(() => store.createUpdateRequest('2.1.0', 'human'), /being installed/);
+
+  // Two hours after the pickup with no outcome, the updater is gone: the owner can take it back.
+  advance(2 * 60_000);
+  assert.equal(isStalePickup(picked, new Date(Date.parse(picked.pickedUpAt!) + UPDATE_REQUEST_STALE_MS).toISOString()), true);
+  const cancelled = store.cancelUpdateRequest(r.id, 'human');
+  assert.equal(cancelled.state, 'cancelled');
+  assert.equal(cancelled.pickedUpAt, picked.pickedUpAt);
+  assert.equal(cancelled.result, STALE_PICKUP_RESULT);
+  assert.ok(cancelled.finishedAt);
+  assert.throws(() => store.cancelUpdateRequest(r.id, 'human'), /cancelled; it must be pending/);
+  assert.throws(() => store.finishUpdateRequest(r.id, true, 'late'), /cancelled; it must be picked_up/, 'a late outcome from the dead run is refused');
+  assert.throws(() => store.cancelUpdateRequest(r.id, 'agent'), /only the owner/);
+  assert.equal(store.createUpdateRequest('2.1.0', 'human').state, 'pending', 'the owner can ask again');
 });
 
 test('pickUpUpdateRequest: moves only a pending row, once', () => {
@@ -122,9 +140,32 @@ test('expireUpdateRequests: a pending row older than an hour expires, a younger 
 
   const working = store.createUpdateRequest('2.1.0', 'human');
   store.pickUpUpdateRequest(working.id);
-  advance(2 * HOUR);
-  assert.equal(store.expireUpdateRequests(), 0, 'a picked-up request is the updater\'s however long it takes');
+  advance(HOUR + 30 * 60_000);
+  assert.equal(store.expireUpdateRequests(), 0, 'a picked-up request is the updater\'s while an install can still be running');
   assert.equal(store.getUpdateRequest(working.id)?.state, 'picked_up');
+  store.finishUpdateRequest(working.id, true, 'Updated to v2.1.0');
+});
+
+test('expireUpdateRequests: a picked-up row with no outcome two hours after its pickup expires, so a killed updater never wedges the table', () => {
+  assert.equal(UPDATE_REQUEST_STALE_MS, 2 * HOUR, 'the updater\'s execution limit is one hour; this leaves a margin');
+  const { store, advance } = fresh();
+  const r = store.createUpdateRequest('2.1.0', 'human');
+  store.pickUpUpdateRequest(r.id);
+  advance(UPDATE_REQUEST_STALE_MS - 60_000);
+  assert.equal(store.expireUpdateRequests(), 0, 'not yet');
+  advance(2 * 60_000);
+  assert.equal(store.expireUpdateRequests(), 1);
+  const expired = store.getUpdateRequest(r.id)!;
+  assert.equal(expired.state, 'expired');
+  assert.equal(expired.result, STALE_PICKUP_RESULT, 'the row says why');
+  assert.ok(expired.finishedAt);
+  assert.ok(expired.pickedUpAt, 'the pickup stays on the record');
+  assert.equal(store.expireUpdateRequests(), 0, 'once');
+  assert.throws(() => store.finishUpdateRequest(r.id, true, 'late'), /expired; it must be picked_up/, 'the dead run\'s outcome, if it ever comes, does not reopen it');
+  // The table is free again.
+  const next = store.createUpdateRequest('2.1.0', 'human');
+  assert.equal(next.state, 'pending');
+  assert.equal(store.currentUpdateRequest()?.id, next.id);
 });
 
 test('a pickup and an expiry cannot both win: whichever moves the row first is the one that counts', () => {

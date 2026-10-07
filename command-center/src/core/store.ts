@@ -4,7 +4,7 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_TTL_MS,
+  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
   type NewProject, type NewTask, type Post, type PostSearch, type PostSearchHit, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
@@ -96,6 +96,14 @@ function rowToThread(r: Row): Thread {
     successorThreadId: (r.successor_thread_id as string | null) ?? null,
     createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
   };
+}
+
+/** What a picked-up request that never reported an outcome says once the daemon gives up on it. */
+export const STALE_PICKUP_RESULT = 'The updater did not report an outcome: it was stopped or killed mid-run. See data/update.log.';
+
+/** A picked-up row the updater has held past UPDATE_REQUEST_STALE_MS with no outcome. */
+export function isStalePickup(row: UpdateRequest, now: string): boolean {
+  return row.state === 'picked_up' && row.pickedUpAt !== null && Date.parse(now) - Date.parse(row.pickedUpAt) >= UPDATE_REQUEST_STALE_MS;
 }
 
 function rowToUpdateRequest(r: Row): UpdateRequest {
@@ -1648,10 +1656,23 @@ export class Store {
     });
   }
 
-  /** The owner takes a request back, while it is still pending. Once picked up it is the updater's. */
+  /**
+   * The owner takes a request back: a pending one, or a picked-up one the updater has held for
+   * longer than UPDATE_REQUEST_STALE_MS with no outcome, which means the updater was stopped or
+   * killed mid-run. A fresh picked-up row is mid-install and stays the updater's.
+   */
   cancelUpdateRequest(id: string, actor: ActorInput): UpdateRequest {
     this.ownerOnly(actor, 'cancel an update request');
-    return this.moveUpdateRequest(id, 'pending', { state: 'cancelled', finished_at: this.now() }, 'cancel');
+    const now = this.now();
+    return this.db.transaction(() => {
+      const row = this.getUpdateRequest(id);
+      if (!row) throw new NotFoundError(`update request not found: ${id}`);
+      if (row.state === 'picked_up' && isStalePickup(row, now)) {
+        return this.moveUpdateRequest(id, 'picked_up', { state: 'cancelled', finished_at: now, result: STALE_PICKUP_RESULT }, 'cancel');
+      }
+      if (row.state === 'picked_up') throw new ValidationError(`cannot cancel an update request that is being installed (picked up at ${row.pickedUpAt})`);
+      return this.moveUpdateRequest(id, 'pending', { state: 'cancelled', finished_at: now }, 'cancel');
+    });
   }
 
   /**
@@ -1668,13 +1689,27 @@ export class Store {
     return this.moveUpdateRequest(id, 'picked_up', { state: ok ? 'done' : 'failed', finished_at: this.now(), result: message }, 'finish');
   }
 
-  /** A pending request the updater has not picked up within an hour is expired. Returns how many were. */
+  /**
+   * A pending request the updater has not picked up within an hour is expired, and so is a
+   * picked-up one with no outcome UPDATE_REQUEST_STALE_MS after its pickup: the updater was
+   * stopped or killed, and a row that could only leave through finish would hold the table
+   * forever. The caller reconciles a picked-up row with the status file first (http/update-routes.ts),
+   * so an outcome that reached the file wins over the expiry. Returns how many rows moved.
+   */
   expireUpdateRequests(now = this.now()): number {
-    const cutoff = new Date(Date.parse(now) - UPDATE_REQUEST_TTL_MS).toISOString();
-    return this.db.run(
-      "UPDATE update_requests SET state = 'expired', finished_at = ? WHERE state = 'pending' AND requested_at < ?",
-      [now, cutoff],
-    ).changes;
+    const pendingCutoff = new Date(Date.parse(now) - UPDATE_REQUEST_TTL_MS).toISOString();
+    const pickedUpCutoff = new Date(Date.parse(now) - UPDATE_REQUEST_STALE_MS).toISOString();
+    return this.db.transaction(() => {
+      const pending = this.db.run(
+        "UPDATE update_requests SET state = 'expired', finished_at = ? WHERE state = 'pending' AND requested_at < ?",
+        [now, pendingCutoff],
+      ).changes;
+      const stale = this.db.run(
+        "UPDATE update_requests SET state = 'expired', finished_at = ?, result = ? WHERE state = 'picked_up' AND picked_up_at <= ?",
+        [now, STALE_PICKUP_RESULT, pickedUpCutoff],
+      ).changes;
+      return pending + stale;
+    });
   }
 
   getUpdateRequest(id: string): UpdateRequest | null {

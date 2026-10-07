@@ -7,8 +7,9 @@
 // an mcp or read-only token gets 401 like everywhere else on /api. There is no MCP tool, no
 // outbox op kind, and no rule action for any of this, and no update event exists.
 import type { App } from '../app.ts';
-import { RELEASE_VERSION_PATTERN, ValidationError, type UpdateRequest } from '../core/index.ts';
+import { ValidationError, type UpdateRequest } from '../core/index.ts';
 import { readUpdateStatus, updaterInstalled, type UpdateStatus } from '../update/status.ts';
+import { isNewerVersion } from '../update/version.ts';
 import { HttpError, sendJson } from './errors.ts';
 import type { Router } from './router.ts';
 import { parseBody, updateFinishBodySchema, updateRequestBodySchema } from './schemas.ts';
@@ -17,31 +18,30 @@ import { VERSION } from './version.ts';
 /** What the panel shows to copy when no scheduled updater is installed. */
 export const UPDATE_COMMAND = 'npm run cc -- update --release';
 
-/** Strictly newer by the release rule (section 1B). A malformed version on either side is never newer. */
-export function isNewerRelease(candidate: string, running: string): boolean {
-  if (!RELEASE_VERSION_PATTERN.test(candidate) || !RELEASE_VERSION_PATTERN.test(running)) return false;
-  const a = candidate.split('.').map(Number);
-  const b = running.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i] > b[i];
-  }
-  return false;
-}
-
 export function registerUpdateRoutes(router: Router, app: App): void {
   const store = app.store;
   const status = (): UpdateStatus => readUpdateStatus(app.config.dbPath);
 
-  // The current request after the daemon's two reconciliations: a pending row older than an hour
-  // expires, and a picked-up row whose outcome reached the status file while the daemon was down
-  // takes that outcome. Both are the daemon's own transitions (section 4C).
-  function currentRequest(file: UpdateStatus): UpdateRequest | null {
-    store.expireUpdateRequests();
+  // The daemon's own transitions (section 4C), in this order: a picked-up row whose outcome
+  // reached the status file while the daemon was down takes that outcome; then a pending row
+  // older than an hour expires, and so does a picked-up row the updater has held for two hours
+  // with no outcome (it was stopped or killed), so a dead updater never wedges the table. The
+  // file is read before the sweep, so an outcome that did arrive wins over the expiry.
+  function takeFileOutcome(file: UpdateStatus): void {
     const row = store.currentUpdateRequest();
     if (row?.state === 'picked_up' && file.request?.id === row.id && (file.request.state === 'done' || file.request.state === 'failed')) {
-      return store.finishUpdateRequest(row.id, file.request.state === 'done', file.request.message);
+      store.finishUpdateRequest(row.id, file.request.state === 'done', file.request.message);
     }
-    return row;
+  }
+
+  function reconcile(file: UpdateStatus): void {
+    takeFileOutcome(file);
+    store.expireUpdateRequests();
+  }
+
+  function currentRequest(file: UpdateStatus): UpdateRequest | null {
+    reconcile(file);
+    return store.currentUpdateRequest();
   }
 
   function payload(file: UpdateStatus) {
@@ -50,7 +50,7 @@ export function registerUpdateRoutes(router: Router, app: App): void {
       updaterInstalled: updaterInstalled(file),
       // Only a release strictly newer than what runs lights the icon. After an update the file
       // may still name the version just installed until the updater runs again.
-      available: file.available && isNewerRelease(file.available.version, VERSION) ? file.available : null,
+      available: file.available && isNewerVersion(file.available.version, VERSION) ? file.available : null,
       request: currentRequest(file),
       lastResult: file.lastResult,
       command: UPDATE_COMMAND,
@@ -67,7 +67,7 @@ export function registerUpdateRoutes(router: Router, app: App): void {
   router.add('POST', '/api/update/requests', (ctx) => {
     const body = parseBody(updateRequestBodySchema, ctx.body);
     const file = status();
-    if (!isNewerRelease(body.version, VERSION)) throw new ValidationError(`${body.version} is not newer than the running version ${VERSION}`);
+    if (!isNewerVersion(body.version, VERSION)) throw new ValidationError(`${body.version} is not newer than the running version ${VERSION}`);
     if (!file.available || file.available.version !== body.version) throw new ValidationError(`${body.version} is not the release the updater reported as available`);
     const open = currentRequest(file);
     if (open && (open.state === 'pending' || open.state === 'picked_up')) {
@@ -77,15 +77,19 @@ export function registerUpdateRoutes(router: Router, app: App): void {
     sendJson(ctx.res, 201, { request });
   });
 
+  // The owner takes a request back: a pending one, or a picked-up one the updater has held past
+  // the stale limit with no outcome. The file is read first, so a request whose outcome arrived
+  // there is finished with that outcome and not cancelled; the expiry sweep is not run here, so
+  // the owner's cancel, not the sweep, is what the row records.
   router.add('POST', '/api/update/requests/:id/cancel', (ctx) => {
-    store.expireUpdateRequests();
+    takeFileOutcome(status());
     sendJson(ctx.res, 200, { request: move(() => store.cancelUpdateRequest(ctx.params.id, 'human')) });
   });
 
   // The updater's two routes. Pickup is one guarded UPDATE in the store, so a pickup and an expiry
   // of the same row cannot both win.
   router.add('POST', '/api/update/requests/:id/pickup', (ctx) => {
-    store.expireUpdateRequests();
+    reconcile(status());
     sendJson(ctx.res, 200, { request: move(() => store.pickUpUpdateRequest(ctx.params.id)) });
   });
 

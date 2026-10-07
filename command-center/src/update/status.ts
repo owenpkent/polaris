@@ -63,8 +63,10 @@ export interface UpdateStatus {
    *  run by hand. At UPDATER_STOPPED_AFTER the updater stops and `lastResult` says so (its message
    *  starts with UPDATER_STOPPED_PREFIX). The daemon ignores the count. */
   failures?: number;
-  /** --auto only: what stopped the last run before it could do anything, such as the daemon not
-   *  answering on its port; null once a run reaches the daemon again. The daemon ignores it. */
+  /** --auto only: what stopped the last run before it could do anything. The daemon not answering
+   *  on its port is cleared by the next run that reaches it; a check or install that was refused
+   *  ("Refused: ...") or failed before a target was chosen stays until the next check, which the
+   *  throttle on `lastCheckAt` times (auto.ts, CHECK_PROBLEM_PREFIX). The daemon ignores it. */
   problem?: string | null;
 }
 

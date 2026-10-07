@@ -8,7 +8,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { decryptBuffer, decryptFile, encryptFile, ENCRYPTED_SUFFIX, isEncryptedBackup } from './backupCrypto.ts';
 import { withFileLockSync } from '../core/fileLock.ts';
 import { inspectDatabaseFile, type DatabaseCounts, type DatabaseInspection, type Store } from '../core/index.ts';
@@ -159,6 +159,9 @@ export interface SnapshotOptions extends BackupOptions {
  *  never touched: this is what `cc update` falls back to when an update has to be undone, and the
  *  daily job must not be able to replace or age it out. */
 export function snapshotDatabase(store: Store, dir: string, name: string, opts: SnapshotOptions = {}): BackupResult {
+  // Resolved once: CC_BACKUP_DIR may be relative or carry a trailing slash, and every path below
+  // (the copy, the lock, and the retention sweep) is built from this one form.
+  dir = resolve(dir);
   const keep = opts.keep ?? SNAPSHOT_KEEP;
   if (!Number.isInteger(keep) || keep < 1) throw new Error(`snapshot: keep must be a whole number of 1 or more, got ${keep}`);
   if (!SNAPSHOT_FILE.test(name) || name.endsWith(ENCRYPTED_SUFFIX)) throw new Error(`snapshot: ${name} is not a snapshot name (see snapshotName)`);
@@ -173,7 +176,7 @@ export function snapshotDatabase(store: Store, dir: string, name: string, opts: 
   try {
     removed = withFileLockSync(lockFile, () => {
       renameSync(partial, file);
-      const snapshots = listSnapshots(dir).map((f) => f.slice(dir.length + 1));
+      const snapshots = listSnapshots(dir).map((f) => basename(f));
       const old = snapshots.slice(0, Math.max(0, snapshots.length - keep));
       for (const f of old) unlinkSync(join(dir, f));
       return old;

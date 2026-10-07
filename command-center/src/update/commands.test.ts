@@ -32,6 +32,9 @@ test('flags: --release, --to, --check, --trust-signers, --auto, --yes, --port, a
   assert.deepEqual(parseUpdateArgs(['--trust-signers']), { ...plain, trustSigners: true });
   assert.deepEqual(parseUpdateArgs(['--trust-signers', '--yes']).trustSigners, true);
   assert.throws(() => parseUpdateArgs(['--port', 'eighty']), /--port must be a port number/);
+  assert.throws(() => parseUpdateArgs(['--port']), /--port needs a port number/, 'a bare --port is not port 1');
+  assert.throws(() => parseUpdateArgs(['--auto', '--port']), /--port needs a port number/);
+  assert.throws(() => parseUpdateArgs(['--port', '--auto']), /--port needs a port number/);
   assert.throws(() => parseUpdateArgs(['--port', '0']), /--port must be a port number/);
   assert.throws(() => parseUpdateArgs(['--port', '70000']), /--port must be a port number/);
   assert.throws(() => parseUpdateArgs(['--to']), /--to needs a release version like v2\.1\.0/);
@@ -50,6 +53,9 @@ test('a bad flag is reported and nothing runs', async () => {
   const code = await update.run(['--port', 'x'], { openApp: () => { throw new Error('must not open the store'); }, stdout: () => {}, stderr: (l) => err.push(l) });
   assert.equal(code, 1);
   assert.match(err.join('\n'), /--port must be a port number/);
+  err.length = 0;
+  assert.equal(await update.run(['--auto', '--port'], { openApp: () => { throw new Error('must not open the store'); }, stdout: () => {}, stderr: (l) => err.push(l) }), 1);
+  assert.match(err.join('\n'), /--port needs a port number/);
 });
 
 test('commands.ts starts no program itself: no child_process, and run.ts and auto.ts behind a dynamic import only', () => {

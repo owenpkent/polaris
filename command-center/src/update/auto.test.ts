@@ -10,9 +10,10 @@ import { openStore } from '../core/index.ts';
 import { listSnapshots } from '../daemon/backup.ts';
 import { identityProof } from '../http/identity.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
-import { BACKOFF_MS, QUIET_WINDOW_MS, quietWindow, runAuto, type AutoOptions } from './auto.ts';
+import { STALE_PICKUP_RESULT } from '../core/store.ts';
+import { BACKOFF_MS, CHECK_PROBLEM_PREFIX, QUIET_WINDOW_MS, quietWindow, runAuto, type AutoOptions } from './auto.ts';
 import type { Exec, ExecResult } from './exec.ts';
-import { runUpdate, updateLogPath, type UpdateDeps } from './run.ts';
+import { NO_RESTART_METHOD, runUpdate, updateLogPath, type UpdateDeps } from './run.ts';
 import { pinnedSignersPath } from './signers.ts';
 import { emptyUpdateStatus, readUpdateStatus, UPDATER_STOPPED_PREFIX, updaterStopped, writeUpdateStatus, type UpdateStatus } from './status.ts';
 
@@ -26,7 +27,7 @@ const IN_WINDOW = '2026-10-06T04:30:00.000Z';
 const OUTSIDE = '2026-10-06T12:00:00.000Z';
 
 interface FakeTag { tag: string; verifies?: boolean }
-interface FakeRequest { id: string; version: string; state: string; result?: string | null }
+interface FakeRequest { id: string; version: string; state: string; result?: string | null; finishedAt?: string | null }
 
 interface Scenario {
   running?: string;
@@ -216,20 +217,23 @@ test('quietWindow: one hour from CC_UPDATE_AT in the given zone', () => {
   assert.throws(() => quietWindow('4am', 'UTC', new Date()), /HH:MM/);
 });
 
-test('every run writes the heartbeat first, and a backed-off or stopped updater goes no further', async (t) => {
+const STOPPED = { ok: false, message: `${UPDATER_STOPPED_PREFIX}: 3 updates in a row failed`, at: OUTSIDE, version: '2.0.0' };
+
+test('every run writes the heartbeat first, and a backed-off or stopped updater asks the daemon for a request and does nothing else', async (t) => {
   const paused = harness(t, { status: { updaterInstalled: true, failures: 1, backoffUntil: '2026-10-07T12:00:00.000Z' }, tags: [{ tag: 'v2.1.0' }] });
   assert.equal(await paused.run(), 0);
   assert.equal(paused.status().updaterInstalled, true);
   assert.match(paused.status().lastRunAt ?? '', /^2026-10-06T12:00:/);
   assert.equal(paused.status().backoffUntil, '2026-10-07T12:00:00.000Z', 'left as it was');
-  assert.deepEqual(paused.calls, [], 'no program ran');
-  assert.deepEqual(paused.state.http, [], 'the daemon was not even asked');
+  assert.deepEqual(paused.calls, [], 'no program ran: the daily check respects the pause');
+  assert.deepEqual(paused.state.http, ['GET /api/update'], 'the daemon is asked for the owner\'s request on every run');
   assert.deepEqual([paused.out, paused.err], [[], []], 'quiet: the file says why');
+  assert.equal(paused.status().lastCheckAt, null);
 
-  const stopped = harness(t, { status: { updaterInstalled: true, failures: 3, backoffUntil: null, lastResult: { ok: false, message: `${UPDATER_STOPPED_PREFIX}: 3 updates in a row failed`, at: OUTSIDE, version: '2.0.0' } }, tags: [{ tag: 'v2.1.0' }] });
+  const stopped = harness(t, { status: { updaterInstalled: true, failures: 3, backoffUntil: null, lastResult: STOPPED }, tags: [{ tag: 'v2.1.0' }] });
   assert.equal(await stopped.run(), 0);
   assert.deepEqual(stopped.calls, []);
-  assert.deepEqual(stopped.state.http, []);
+  assert.deepEqual(stopped.state.http, ['GET /api/update']);
   assert.equal(updaterStopped(stopped.status()), true);
 
   // A backoff that has passed is over.
@@ -429,12 +433,12 @@ test('the backoff ladder: a day, three days, then the updater stops and waits, a
   assert.equal(status.lastResult?.message, `${UPDATER_STOPPED_PREFIX}: 3 updates in a row failed, the last one: Rolled back: vite build failed (exit 1); the full output is in ${updateLogPath(h.dbPath)}. Run cc update --release by hand, which clears the count.`);
   assert.equal(status.updaterInstalled, true);
 
-  // From now on every run is a heartbeat and nothing else.
+  // From now on every run is a heartbeat and a look for the owner's request, nothing else.
   h.reset();
   h.setClock('2026-10-11T04:30:00.000Z');
   assert.equal(await h.run(), 0);
   assert.deepEqual(h.calls, []);
-  assert.deepEqual(h.state.http, []);
+  assert.deepEqual(h.state.http, ['GET /api/update']);
   assert.match(h.status().lastRunAt ?? '', /^2026-10-11T04:30/);
 
   // The owner runs cc update --release by hand: the count is cleared whatever the outcome.
@@ -464,6 +468,175 @@ test('a rollback after a failed health check counts as one failure and leaves th
   assert.equal(h.state.request?.state, 'failed');
   assert.equal(h.status().failures, 1);
   assert.match(h.status().backoffUntil ?? '', /^2026-10-07T12:0/);
+});
+
+test('the owner\'s request goes through a backoff: it is picked up and installed, and a success clears the ladder', async (t) => {
+  const h = harness(t, { status: { updaterInstalled: true, failures: 2, backoffUntil: '2026-10-09T12:00:00.000Z' }, request: { id: 'up_0000000010', version: '2.1.0', state: 'pending' }, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.deepEqual(h.state.http.slice(0, 2), ['GET /api/update', 'POST /api/update/requests/up_0000000010/pickup']);
+  assert.deepEqual(h.state.finishBodies, [{ ok: true, message: 'Updated to v2.1.0' }]);
+  assert.equal(h.version(), '2.1.0');
+  assert.equal(h.status().failures, 0);
+  assert.equal(h.status().backoffUntil, null);
+  assert.match(h.log(), /picked up the request up_0000000010 for v2\.1\.0 \(the owner's request goes through the pause\)/);
+});
+
+test('the owner\'s request during a backoff that fails leaves the ladder where it is', async (t) => {
+  const h = harness(t, { status: { updaterInstalled: true, failures: 1, backoffUntil: '2026-10-07T12:00:00.000Z' }, request: { id: 'up_0000000011', version: '2.1.0', state: 'pending' }, tags: [{ tag: 'v2.1.0' }], fail: 'build' });
+  assert.equal(await h.run(), 1);
+  assert.equal(h.state.finishBodies[0].ok, false);
+  assert.match(h.state.finishBodies[0].message, /^Rolled back: vite build failed/);
+  assert.equal(h.state.request?.state, 'failed');
+  assert.equal(h.version(), '2.0.0');
+  const status = h.status();
+  assert.equal(status.failures, 1, 'not climbed');
+  assert.equal(status.backoffUntil, '2026-10-07T12:00:00.000Z', 'not moved');
+  assert.equal(status.lastResult?.ok, false);
+  assert.match(h.err.join('\n'), /the request failed during the pause: the ladder stays at 1 failure in a row, no automatic install before 2026-10-07T12:00:00\.000Z/);
+  assert.equal(h.commandLines().filter((l) => l.startsWith('git fetch')).length, 1, 'one fetch for the request, no daily check after it');
+});
+
+test('the owner\'s request goes through a stopped updater too: a failure keeps it stopped, a success starts it again', async (t) => {
+  const failing = harness(t, { status: { updaterInstalled: true, failures: 3, backoffUntil: null, lastResult: STOPPED }, request: { id: 'up_0000000012', version: '2.1.0', state: 'pending' }, tags: [{ tag: 'v2.1.0' }], fail: 'build' });
+  assert.equal(await failing.run(), 1);
+  assert.equal(failing.state.request?.state, 'failed');
+  let status = failing.status();
+  assert.equal(status.failures, 3);
+  assert.equal(status.backoffUntil, null);
+  assert.equal(updaterStopped(status), true, 'still stopped');
+  assert.match(status.lastResult?.message ?? '', /^Automatic updates have stopped: 3 updates in a row failed, the last one: Rolled back: vite build failed/);
+  assert.match(failing.err.join('\n'), /the ladder stays at 3 failures in a row, and automatic updates stay stopped/);
+
+  const working = harness(t, { status: { updaterInstalled: true, failures: 3, backoffUntil: null, lastResult: STOPPED }, request: { id: 'up_0000000013', version: '2.1.0', state: 'pending' }, tags: [{ tag: 'v2.1.0' }] });
+  assert.equal(await working.run(), 0, working.err.join('\n'));
+  assert.equal(working.state.request?.state, 'done');
+  assert.equal(working.version(), '2.1.0');
+  status = working.status();
+  assert.equal(status.failures, 0);
+  assert.equal(updaterStopped(status), false);
+  assert.equal(status.lastResult?.ok, true);
+});
+
+test('a request an earlier run picked up and never finished is taken as the daemon reports it, and the run goes on', async (t) => {
+  // The earlier run wrote Updating and was killed; two hours on, the daemon expired the row.
+  const h = harness(t, {
+    status: { updaterInstalled: true, request: { id: 'up_0000000014', state: 'picked_up', message: 'Updating', finishedAt: null } },
+    request: { id: 'up_0000000014', version: '2.1.0', state: 'expired', result: STALE_PICKUP_RESULT, finishedAt: '2026-10-06T11:50:00.000Z' },
+    tags: [{ tag: 'v2.1.0' }],
+  });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.deepEqual(h.state.http, ['GET /api/update'], 'nothing to pick up or finish');
+  assert.deepEqual(h.status().request, { id: 'up_0000000014', state: 'expired', message: STALE_PICKUP_RESULT, finishedAt: '2026-10-06T11:50:00.000Z' }, 'the file no longer says Updating');
+  assert.match(h.err.join('\n'), /the request up_0000000014, picked up by an earlier run that did not finish, is expired/);
+  assert.ok(h.commandLines().includes('git fetch --prune --tags origin'), 'the daily refresh ran');
+  assert.equal(h.version(), '2.0.0');
+
+  // The owner asked again: the new request is what counts, and the stale entry is replaced.
+  const again = harness(t, {
+    status: { updaterInstalled: true, request: { id: 'up_0000000014', state: 'picked_up', message: 'Updating', finishedAt: null } },
+    request: { id: 'up_0000000015', version: '2.1.0', state: 'pending' },
+    tags: [{ tag: 'v2.1.0' }],
+  });
+  assert.equal(await again.run(), 0, again.err.join('\n'));
+  assert.equal(again.state.request?.state, 'done');
+  assert.equal(again.status().request?.id, 'up_0000000015');
+  assert.equal(again.version(), '2.1.0');
+});
+
+test('with no restart method the updater refuses before anything changes: the request fails with the reason and no backoff is counted', async (t) => {
+  for (const spec of ['manual', undefined]) {
+    const h = harness(t, { request: { id: 'up_0000000016', version: '2.1.0', state: 'pending' }, tags: [{ tag: 'v2.1.0' }] });
+    h.opts.restartSpec = spec;
+    assert.equal(await h.run(), 1, `restartSpec ${spec}`);
+    assert.equal(h.state.finishBodies.length, 1);
+    assert.equal(h.state.finishBodies[0].ok, false);
+    assert.equal(h.state.finishBodies[0].message, NO_RESTART_METHOD);
+    assert.match(NO_RESTART_METHOD, /^no restart method: the updater needs the logon task or a systemd unit, or CC_UPDATE_RESTART/);
+    assert.equal(h.state.request?.state, 'failed');
+    assert.deepEqual(h.gitAndMore(), ['git fetch --prune --tags origin'], 'fetched and verified, then refused: no snapshot, checkout, install, or restart');
+    assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), []);
+    assert.equal(h.version(), '2.0.0');
+    const status = h.status();
+    assert.equal(status.request?.message, NO_RESTART_METHOD);
+    assert.equal(status.problem, `Refused: ${NO_RESTART_METHOD}`);
+    assert.equal(status.failures, undefined, 'not a failed install');
+    assert.equal(status.backoffUntil, null);
+    assert.equal(status.lastResult, null);
+    if (spec === undefined) assert.ok(h.commandLines().includes('systemctl is-active --quiet polaris'), 'the method was detected');
+  }
+
+  // The daily check inside the window: refused the same way, after the check is recorded, so the
+  // dashboard still names the release; and the refresh outside the window, which restarts nothing, is not refused.
+  const daily = harness(t, { tags: [{ tag: 'v2.1.0' }] }, IN_WINDOW);
+  daily.opts.restartSpec = 'manual';
+  assert.equal(await daily.run(), 1);
+  assert.equal(daily.version(), '2.0.0');
+  assert.deepEqual(daily.status().available, { version: '2.1.0', notes: 'Notes for the release', touchesSchema: false });
+  assert.match(daily.status().lastCheckAt ?? '', /^2026-10-06T04:30:/);
+  assert.equal(daily.status().problem, `Refused: ${NO_RESTART_METHOD}`);
+  assert.equal(daily.status().failures, undefined);
+  const refresh = harness(t, { tags: [{ tag: 'v2.1.0' }] }, OUTSIDE);
+  refresh.opts.restartSpec = 'manual';
+  assert.equal(await refresh.run(), 0, refresh.err.join('\n'));
+  assert.equal(refresh.status().available?.version, '2.1.0');
+  assert.equal(refresh.status().problem ?? null, null);
+});
+
+test('a refusal records the check too, so the throttle holds: no fetch every five minutes, and a refusal inside the window is that window\'s try', async (t) => {
+  const dirty: Partial<UpdateDeps> = { exec: async (cmd, args, o) => (cmd === 'git' && args[0] === 'status' ? { code: 0, stdout: ' M src/x.js\n', stderr: '' } : h.deps.exec(cmd, args, o)) };
+  const h = harness(t, { tags: [{ tag: 'v2.1.0' }] }, IN_WINDOW);
+  assert.equal(await h.run(dirty), 1);
+  assert.match(h.err.join('\n'), /Refused: the working tree has uncommitted changes/);
+  let status = h.status();
+  assert.match(status.lastCheckAt ?? '', /^2026-10-06T04:30:/, 'the refusal is the check');
+  assert.equal(status.problem, 'Refused: the working tree has uncommitted changes (1 path; see git status). Commit or stash them, or update a deploy checkout.');
+  assert.equal(status.failures, undefined);
+  assert.equal(status.lastResult, null);
+  assert.ok(!h.commandLines().some((l) => l.startsWith('git fetch')), 'refused before the fetch');
+
+  // Five minutes later, still inside the window: nothing runs, and the problem is still on file.
+  h.reset();
+  h.setClock('2026-10-06T04:35:00.000Z');
+  assert.equal(await h.run(dirty), 0);
+  assert.deepEqual(h.calls, [], 'checked already in this window');
+  assert.deepEqual(h.state.http, ['GET /api/update']);
+  assert.equal(h.status().problem, status.problem, 'a check problem is not cleared by the daemon answering');
+
+  // Outside the window, hours later: not due either.
+  h.reset();
+  h.setClock('2026-10-06T12:00:00.000Z');
+  assert.equal(await h.run(dirty), 0);
+  assert.deepEqual(h.calls, []);
+
+  // The next window, tree clean: the check runs, installs, and the problem clears.
+  h.reset();
+  h.setClock('2026-10-07T04:10:00.000Z');
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  assert.equal(h.version(), '2.1.0');
+  status = h.status();
+  assert.equal(status.problem, null);
+  assert.match(status.lastCheckAt ?? '', /^2026-10-07T04:10:/);
+
+  // A fetch that does not answer is recorded the same way, so it is not retried twelve times inside the window.
+  const offline = harness(t, { tags: [{ tag: 'v2.1.0' }] }, IN_WINDOW);
+  const noFetch: Partial<UpdateDeps> = { exec: async (cmd, args, o) => (cmd === 'git' && args[0] === 'fetch' ? { code: 128, stdout: '', stderr: 'fatal: unable to access origin' } : offline.deps.exec(cmd, args, o)) };
+  assert.equal(await offline.run(noFetch), 1);
+  assert.match(offline.status().lastCheckAt ?? '', /^2026-10-06T04:30:/);
+  assert.match(offline.status().problem ?? '', /^Failed before anything changed: git fetch/);
+  assert.ok(CHECK_PROBLEM_PREFIX.test(offline.status().problem ?? ''));
+  assert.equal(offline.status().failures, undefined);
+  offline.reset();
+  offline.setClock('2026-10-06T04:40:00.000Z');
+  assert.equal(await offline.run(noFetch), 0);
+  assert.deepEqual(offline.calls, []);
+
+  // A daemon problem, by contrast, is cleared the moment the daemon answers again.
+  const down = harness(t, { daemonDown: true, tags: [{ tag: 'v2.1.0' }] }, IN_WINDOW);
+  assert.equal(await down.run(), 0);
+  assert.ok(!CHECK_PROBLEM_PREFIX.test(down.status().problem ?? ''));
+  down.state.listening = true;
+  assert.equal(await down.run(), 0, down.err.join('\n'));
+  assert.equal(down.status().problem, null);
 });
 
 test('--auto never installs main: commits on origin/main with no release tag install nothing', async (t) => {
