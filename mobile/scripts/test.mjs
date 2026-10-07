@@ -152,17 +152,29 @@ try {
   run(adb, ['-s', serial, 'reverse', `tcp:${port}`, `tcp:${port}`])
   forwarded = true
 
-  const result = spawnSync(
-    gradlew,
-    [
-      'connectedDebugAndroidTest',
-      `-Pandroid.testInstrumentationRunnerArguments.serverUrl=${serverUrl}`,
-      `-Pandroid.testInstrumentationRunnerArguments.apiToken=${token}`,
-      ...gradleArgs,
-    ],
-    { cwd: androidDir, stdio: 'inherit', shell: win, env: { ...process.env, JAVA_HOME: jdk, ANDROID_HOME: sdk } },
-  )
-  status = result.status ?? 1
+  // On POSIX go through sh, so a checkout that lost the wrapper's executable bit still works.
+  const gradleArguments = [
+    'connectedDebugAndroidTest',
+    `-Pandroid.testInstrumentationRunnerArguments.serverUrl=${serverUrl}`,
+    `-Pandroid.testInstrumentationRunnerArguments.apiToken=${token}`,
+    ...gradleArgs,
+  ]
+  const result = spawnSync(win ? gradlew : 'sh', win ? gradleArguments : [gradlew, ...gradleArguments], {
+    cwd: androidDir,
+    stdio: 'inherit',
+    shell: win,
+    env: { ...process.env, JAVA_HOME: jdk, ANDROID_HOME: sdk },
+  })
+  if (result.error) {
+    console.error(`Could not start Gradle (${gradlew}): ${result.error.message}`)
+    status = 127
+  } else if (result.status === null) {
+    console.error(`Gradle was stopped by signal ${result.signal}.`)
+    status = 1
+  } else {
+    status = result.status
+    if (status !== 0) console.error(`Gradle ran and the Android tests failed (exit code ${status}).`)
+  }
 } catch (err) {
   console.error(err.message)
 } finally {

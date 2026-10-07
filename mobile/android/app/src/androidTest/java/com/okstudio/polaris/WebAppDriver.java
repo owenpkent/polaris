@@ -17,7 +17,9 @@ import java.util.concurrent.atomic.AtomicReference;
 // Drives the dashboard inside the app's WebView from a test. Everything goes through
 // evaluateJavascript on the Capacitor bridge's own WebView, so the page is exactly the one the
 // owner sees. Elements are found the way the dashboard's Playwright tests find them, by role and
-// accessible name (an aria-label, an associated label, or the visible text), never by CSS class.
+// accessible name (an aria-label, an associated label, or the visible text with a space between
+// child nodes), never by CSS class. A name matches exactly first, then as a case-insensitive
+// substring, as Playwright's getByRole does.
 // The finders below are a small subset of that: enough for the controls these tests touch.
 final class WebAppDriver {
     private static final long POLL_MS = 250;
@@ -27,15 +29,19 @@ final class WebAppDriver {
     private static final String FINDERS =
         "(function(){if(window.__pt)return;"
             + "const norm=s=>(s||'').replace(/\\s+/g,' ').trim();"
+            + "const text=n=>n.nodeType===3?n.textContent:n.nodeType===1&&n.getAttribute('aria-hidden')!=='true'?Array.from(n.childNodes).map(text).join(' '):'';"
             + "const name=el=>{const a=el.getAttribute('aria-label');if(a)return norm(a);"
             + "const by=el.getAttribute('aria-labelledby');"
             + "if(by){const t=by.split(' ').map(i=>document.getElementById(i)).filter(Boolean).map(n=>n.textContent).join(' ');if(t)return norm(t);}"
             + "if(el.id){const l=document.querySelector('label[for=\"'+el.id+'\"]');if(l)return norm(l.textContent);}"
             + "const w=el.closest('label');if(w)return norm(w.textContent);"
-            + "return norm(el.textContent);};"
+            + "return norm(text(el));};"
             + "const visible=el=>el.getClientRects().length>0;"
             + "const sel={button:'button,[role=button]',checkbox:'input[type=checkbox]',textbox:'input:not([type=checkbox]):not([type=date]):not([type=time]),textarea',dialog:'[role=dialog]'};"
-            + "window.__pt={find:(role,n)=>Array.from(document.querySelectorAll(sel[role])).filter(visible).find(el=>name(el)===n)||null,"
+            + "const find=(role,n)=>{const c=Array.from(document.querySelectorAll(sel[role])).filter(visible);"
+            + "const lower=n.toLowerCase();"
+            + "return c.find(el=>name(el)===n)||c.find(el=>name(el).toLowerCase().includes(lower))||null;};"
+            + "window.__pt={find,"
             + "set:(el,v)=>{const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;"
             + "Object.getOwnPropertyDescriptor(proto,'value').set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}));}};"
             + "})();";
