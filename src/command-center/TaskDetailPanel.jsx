@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { X, Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
-import { Loading, ErrorBanner, StatusChip, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
+import { Loading, ErrorBanner, StatusChip, ProjectChip, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
 import { SOURCE_LABELS } from './TaskRow'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
@@ -604,8 +604,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
               <button
                 type="button"
+                className="hover-surface"
                 onClick={handleCompleteToggle}
-                style={{ ...headerBtnStyle, color: done ? 'var(--green)' : 'var(--t1)', fontWeight: done ? 600 : 400 }}
+                style={{
+                  ...headerBtnStyle,
+                  borderRadius: 22,
+                  background: done ? 'var(--green-soft)' : 'transparent',
+                  borderColor: done ? 'var(--green)' : 'var(--bd-strong)',
+                  color: done ? 'var(--green)' : 'var(--t1)',
+                  fontWeight: done ? 600 : 500,
+                }}
               >
                 <Check size={16} strokeWidth={2.5} aria-hidden="true" />
                 <span>{done ? 'Completed' : 'Mark complete'}</span>
@@ -681,7 +689,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               boxShadow: 'none',
               color: 'var(--t1)',
               font: 'inherit',
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: 600,
               lineHeight: 1.3,
               padding: 0,
@@ -704,7 +712,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               />
             </FieldRow>
             <FieldRow label="Project">
-              <span style={{ color: projectName ? 'var(--t1)' : 'var(--t2)' }}>{projectName || 'None'}</span>
+              {projectName ? (
+                <ProjectChip name={projectName} />
+              ) : (
+                <span style={{ color: 'var(--t2)' }}>None</span>
+              )}
             </FieldRow>
             <FieldRow label="Section">
               <span style={{ color: sectionName ? 'var(--t1)' : 'var(--t2)' }}>{sectionName || 'None'}</span>

@@ -4,7 +4,7 @@ import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import { useOffline } from './offlineStatus'
 import NotConnected from './NotConnected'
-import { EmptyState, ErrorBanner, Loading } from './shared'
+import { EmptyState, ErrorBanner, Loading, ProjectAvatar } from './shared'
 import { useRequestGuard } from './useRequestGuard'
 
 // Projects are made by hand in this tab, or created from a tracked GitHub repo on the dashboard's
@@ -25,6 +25,22 @@ function githubOwnerRepo(github) {
 function openTasksLabel(counts) {
   const n = counts?.open ?? 0
   return `${n} open ${n === 1 ? 'task' : 'tasks'}`
+}
+
+// A type the badge classes in index.css know (software, media, ...) gets its tint; any other
+// text, which the owner can type freely, gets the neutral one.
+const TYPE_BADGES = ['software', 'media', 'hardware', 'business', 'planning']
+function typeBadgeClass(type) {
+  const key = String(type || '').trim().split(/[\s/]+/)[0].toLowerCase()
+  return TYPE_BADGES.includes(key) ? `badge badge-${key}` : 'badge badge-neutral'
+}
+
+// The status dot: green for an active project, yellow while it is being set up, grey otherwise.
+function statusDotClass(status) {
+  const key = String(status || '').trim().toLowerCase()
+  if (key === 'active' || key === 'stable') return 'status-dot dot-active'
+  if (key === 'development' || key === 'planning') return `status-dot dot-${key}`
+  return 'status-dot'
 }
 
 // Compares a draft field to the project's current value and, only if it changed, adds it to
@@ -176,28 +192,32 @@ function ProjectForm({ project, onSave, onArchive, onCancel }) {
   )
 }
 
-function ProjectRow({ project, index, onEdit }) {
+function ProjectRow({ project, onEdit }) {
   const offline = useOffline()
+  const status = fieldText(project.status, '')
   return (
-    <article
-      className={`project-row hover-surface${index % 2 === 1 ? ' is-striped' : ''}`}
-      aria-label={project.name}
-    >
+    <article className="project-row" aria-label={project.name}>
       <div className="project-name">
+        <ProjectAvatar name={project.name} />
         <span>{project.name}</span>
-        {project.archived && (
-          <span className="badge" style={{ background: 'var(--neutral-soft)', color: 'var(--t2)' }}>Archived</span>
-        )}
+        {project.archived && <span className="badge badge-neutral">Archived</span>}
       </div>
       <div className="project-meta">
-        <span className="project-cell">{fieldText(project.type, 'No type')}</span>
-        <span className="project-cell">{fieldText(project.status, 'No status')}</span>
+        {project.type && String(project.type).trim() ? (
+          <span className={typeBadgeClass(project.type)}>{project.type}</span>
+        ) : (
+          <span className="project-cell">No type</span>
+        )}
+        <span className="project-cell project-status">
+          <span className={statusDotClass(status)} style={status ? undefined : { background: 'var(--bd-strong)' }} aria-hidden="true" />
+          {status || 'No status'}
+        </span>
         <span className="project-cell">{githubOwnerRepo(project.github) || 'No repo'}</span>
         <span className="project-cell">{openTasksLabel(project.counts)}</span>
       </div>
       <button
         type="button"
-        className="btn"
+        className="btn-ghost"
         aria-label={`Edit ${project.name}`}
         disabled={offline}
         onClick={(e) => onEdit(project, e)}
@@ -309,9 +329,9 @@ export default function ProjectsTab() {
         <EmptyState icon={Folder} title="No projects yet" hint="Add one to start filing tasks under it." />
       ) : (
         <div className="surface flush-last project-list">
-          {projects.map((project, index) => (
+          {projects.map((project) => (
             <Fragment key={project.id}>
-              <ProjectRow project={project} index={index} onEdit={openEdit} />
+              <ProjectRow project={project} onEdit={openEdit} />
               {editing && editing !== 'new' && editing.id === project.id && (
                 <ProjectForm
                   project={project}

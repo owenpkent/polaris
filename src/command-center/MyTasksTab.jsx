@@ -448,12 +448,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } else {
       // 'none': a flat, ungrouped list.
       content = (
-        <div className="surface flush-last" style={{ overflow: 'hidden' }}>
-          {sortedTasks.map((task, index) => (
+        <div className="flush-last">
+          {sortedTasks.map((task) => (
             <TaskRow
               key={task.id}
               task={task}
-              striped={index % 2 === 1}
               projectName={projectNameById.get(task.projectId)}
               projectOptions={projectOptions}
               visibleColumns={visibleColumns}
@@ -495,22 +494,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           onRetry={error ? fetchTasks : goalFilterError ? fetchGoals : stateFilterError ? fetchStates : undefined}
         />
 
-        {/* Column header bar, then each group as its own panel with a gap between. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* The page-colored band keeps scrolled panels from peeking out
-              around the header's rounded corners while it is stuck. */}
-          <div style={{ position: 'sticky', top: 56, zIndex: 10, background: 'var(--bg)', padding: '8px 0', margin: '-8px 0' }}>
-            <div
-              className="mytasks-grid surface"
-              style={{
-                background: 'var(--bg3)',
-                minHeight: 44,
-                alignItems: 'stretch',
-                fontSize: 13,
-                color: 'var(--t2)',
-                gridTemplateColumns,
-              }}
-            >
+        {/* A flat column header stuck under the top bar, then the list: one panel holding every
+            group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'sticky', top: 56, zIndex: 10, background: 'var(--bg)' }}>
+            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
               <div />
               {visibleColumns.map((col) => (
                 <ColumnHeader
@@ -527,13 +515,18 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             </div>
           </div>
 
-          {inlineAdd?.groupId === null && (
-            <div className="surface" style={{ overflow: 'hidden' }}>
-              <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} />
+          {listLoading ? (
+            <div style={{ paddingTop: 16 }}>
+              <Loading label="Loading tasks…" />
+            </div>
+          ) : (
+            <div className="surface mytasks-list" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: 'none' }}>
+              {inlineAdd?.groupId === null && (
+                <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} />
+              )}
+              {content}
             </div>
           )}
-
-          {listLoading ? <Loading label="Loading tasks…" /> : content}
         </div>
       </div>
 

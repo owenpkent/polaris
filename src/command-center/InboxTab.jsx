@@ -5,7 +5,7 @@ import { useEventRefresh } from './useEvents'
 import { useOffline } from './offlineStatus'
 import NotConnected from './NotConnected'
 import { isSafeHref } from './SafeMarkdown'
-import { Loading, ErrorBanner, Kbd } from './shared'
+import { Loading, ErrorBanner, Kbd, ProjectChip } from './shared'
 import { useNarrowBreakpoints } from './columnsState'
 import { useRequestGuard } from './useRequestGuard'
 
@@ -362,7 +362,7 @@ function InboxRow({ item, selected, striped, stacked, expandedType, onExpand, pr
         )}
       </div>
       <div role="cell" style={{ fontSize: 14, color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 16 }}>
-        {projectName || ''}
+        {projectName ? <ProjectChip name={projectName} /> : ''}
       </div>
       <div role="cell" style={{ fontSize: 14, color: 'var(--t2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 16 }}>
         {sourceLabel(item.sourceType)}

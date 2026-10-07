@@ -2,7 +2,9 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import TaskRow from './TaskRow'
 import InlineTaskInput from './InlineTaskInput'
 
-// One collapsible group of the My Tasks list (Overdue, Today, Tomorrow, ...).
+// One collapsible group of the My Tasks list (Overdue, Today, Tomorrow, ...): a header row with
+// the title and count, then its rows. The groups sit one after another inside the list's single
+// panel (MyTasksTab), so a section has no surface of its own.
 // `addRow`, when present, describes the trailing "Add task" row for this
 // group ({ dueAt }); `inlineAdd`, when present, is this group's own active
 // inline input ({ position: 'top' | 'bottom' }) -- already filtered to this
@@ -30,38 +32,20 @@ export default function TaskGroupSection({
   onCancelInlineAdd,
 }) {
   return (
-    <section className="surface" style={{ overflow: 'hidden' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          minHeight: 52,
-          borderBottom: collapsed ? 'none' : '1px solid var(--bd-surface)',
-        }}
-      >
+    <section className="mytasks-section">
+      <div className={collapsed ? 'mytasks-section-header is-collapsed' : 'mytasks-section-header'}>
         <button
           type="button"
           onClick={onToggleCollapse}
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-          style={{
-            width: 44,
-            height: 44,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'transparent',
-            border: 'none',
-            borderRadius: 8,
-            color: 'var(--t1)',
-            flexShrink: 0,
-          }}
+          className="icon-btn"
+          style={{ color: 'var(--t2)' }}
         >
-          {collapsed ? <ChevronRight size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+          {collapsed ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
         </button>
-        <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--t1)' }}>{title}</span>
-        <span style={{ fontSize: 13, color: 'var(--t3)', marginLeft: 6 }}>{tasks.length}</span>
+        <span className="mytasks-section-title">{title}</span>
+        <span className="mytasks-section-count">{tasks.length}</span>
       </div>
 
       {!collapsed && (
@@ -70,11 +54,10 @@ export default function TaskGroupSection({
             <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} />
           )}
 
-          {tasks.map((task, index) => (
+          {tasks.map((task) => (
             <TaskRow
               key={task.id}
               task={task}
-              striped={index % 2 === 1}
               projectName={projectNameById.get(task.projectId)}
               projectOptions={projectOptions}
               visibleColumns={visibleColumns}
@@ -94,24 +77,7 @@ export default function TaskGroupSection({
           )}
 
           {addRow && !inlineAdd && (
-            <button
-              type="button"
-              onClick={() => onOpenInlineAdd('bottom')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                width: '100%',
-                minHeight: 44,
-                paddingLeft: 14,
-                background: 'transparent',
-                border: 'none',
-                borderBottom: '1px solid var(--bd)',
-                color: 'var(--t2)',
-                textAlign: 'left',
-                fontSize: 14,
-              }}
-            >
+            <button type="button" className="mytasks-add-row" onClick={() => onOpenInlineAdd('bottom')}>
               <Plus size={16} aria-hidden="true" /> Add task
             </button>
           )}

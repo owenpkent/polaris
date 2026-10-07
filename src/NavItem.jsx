@@ -1,30 +1,22 @@
-// One view in the navigation: a full-width 44px row, marked aria-current when it is the open view.
-// Shared by the desktop sidebar (src/Sidebar.jsx) and the phone drawer (src/NavDrawer.jsx).
+// One view in the navigation: a 44px row with the view's icon and label, marked aria-current when
+// it is the open view. Shared by the desktop sidebar (src/Sidebar.jsx) and the phone drawer
+// (src/NavDrawer.jsx). The look lives in .nav-item (index.css).
 export default function NavItem({ item, active, onSelect, indent = false, trailing = null, ariaLabel }) {
+  const Icon = item.icon
   return (
     <button
       type="button"
       aria-label={ariaLabel}
       aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(item.id)}
-      className="nav-item"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        width: '100%',
-        minHeight: 44,
-        padding: indent ? '0 20px 0 36px' : '0 20px',
-        border: 'none',
-        borderLeft: active ? '3px solid var(--blue)' : '3px solid transparent',
-        color: active ? 'var(--t1)' : 'var(--t2)',
-        fontWeight: active ? 600 : 400,
-        fontSize: 15,
-        textAlign: 'left',
-        cursor: 'pointer',
-      }}
+      className={indent ? 'nav-item is-indented' : 'nav-item'}
     >
-      <span>{item.label}</span>
+      {Icon && (
+        <span className="nav-item-icon">
+          <Icon size={18} aria-hidden="true" />
+        </span>
+      )}
+      <span className="nav-item-label">{item.label}</span>
       {trailing}
     </button>
   )

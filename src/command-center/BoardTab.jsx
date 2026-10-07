@@ -124,26 +124,10 @@ function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu,
   const priority = PRIORITY_META[task.priority]
   const hasMeta = Boolean(task.dueAt || priority)
   const anchorRef = useRef(null)
-  const [hovered, setHovered] = useState(false)
 
   return (
     <div style={{ position: 'relative' }}>
-      <div
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) 44px',
-          alignItems: 'start',
-          gap: 4,
-          padding: '12px 6px 12px 14px',
-          background: hovered ? 'var(--bg3)' : 'var(--bg2)',
-          border: `1px solid ${menuOpen ? 'var(--blue)' : 'var(--bd-surface)'}`,
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: hovered ? 'var(--shadow-2)' : 'var(--shadow-1)',
-          transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
-        }}
-      >
+      <div className={menuOpen ? 'board-card is-menu-open' : 'board-card'}>
         <button
           type="button"
           onClick={() => onOpen(task.id)}
@@ -216,23 +200,10 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
 
   // A labelled region, so a screen reader (and the UI tests) can address a lane by its name.
   return (
-    <section
-      aria-labelledby={titleId}
-      className="board-lane"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        padding: '4px 10px 10px',
-        background: 'var(--bg-inset)',
-        border: '1px solid var(--lane-edge)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-lane)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 4px' }}>
-        <h2 id={titleId} className="board-lane-title" style={{ fontSize: 15, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
-        <div style={{ fontSize: 13, color: 'var(--t2)' }}>{tasks.length}</div>
+    <section aria-labelledby={titleId} className="board-lane">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 6px' }}>
+        <h2 id={titleId} className="board-lane-title" style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
+        <div style={{ fontSize: 13, color: 'var(--t3)' }}>{tasks.length}</div>
       </div>
 
       {tasks.length === 0 && (

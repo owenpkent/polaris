@@ -67,6 +67,39 @@ export function SourceBadge({ sourceType }) {
   )
 }
 
+// Projects carry no colour of their own, so one is picked from the accent tokens by the name:
+// the same project is the same colour in every view, on every device, and on every scratch
+// database the UI tests seed (ids differ there, names do not), and nothing is stored.
+const PROJECT_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--green)', 'var(--orange)', 'var(--yellow)', 'var(--red)']
+
+export function projectColor(name) {
+  if (!name) return 'var(--t3)'
+  let hash = 0
+  for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return PROJECT_PALETTE[hash % PROJECT_PALETTE.length]
+}
+
+// A project named in a list cell: its colour dot and its name on a soft pill.
+export function ProjectChip({ name }) {
+  if (!name) return null
+  return (
+    <span className="project-chip">
+      <span className="project-dot" aria-hidden="true" style={{ background: projectColor(name) }} />
+      <span>{name}</span>
+    </span>
+  )
+}
+
+// The tile that leads a project row: the project's colour with its initial.
+export function ProjectAvatar({ name }) {
+  const initial = (name || '').trim().charAt(0).toUpperCase() || '?'
+  return (
+    <span className="project-avatar" aria-hidden="true" style={{ background: projectColor(name) }}>
+      {initial}
+    </span>
+  )
+}
+
 export function Kbd({ children }) {
   return (
     <kbd

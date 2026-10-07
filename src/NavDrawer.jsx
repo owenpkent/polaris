@@ -36,8 +36,6 @@ export default function NavDrawer({
   const containerRef = useRef(null)
   const prevOpenRef = useRef(open)
   const [storedExpanded, setStoredExpanded] = useState(loadExpanded)
-  const [hoveredId, setHoveredId] = useState(null)
-  const [closeHovered, setCloseHovered] = useState(false)
   const [inboxCount, setInboxCount] = useState(null)
   const { connected, api } = useConnection()
 
@@ -114,8 +112,6 @@ export default function NavDrawer({
     <NavItem key={item.id} item={item} active={item.id === activeTab} onSelect={onSelect} indent={indent} trailing={trailing} ariaLabel={ariaLabel} />
   )
 
-  const moreHovered = hoveredId === '__more__'
-
   return (
     <>
       <div
@@ -161,26 +157,8 @@ export default function NavDrawer({
           }}
         >
           <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--t2)' }}>Polaris</span>
-          <button
-            type="button"
-            aria-label="Close navigation"
-            onClick={onClose}
-            onMouseEnter={() => setCloseHovered(true)}
-            onMouseLeave={() => setCloseHovered(false)}
-            style={{
-              width: 44,
-              height: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: closeHovered ? 'var(--bg3)' : 'transparent',
-              border: 'none',
-              borderRadius: 8,
-              color: 'var(--t1)',
-              flexShrink: 0,
-            }}
-          >
-            <X size={20} />
+          <button type="button" aria-label="Close navigation" onClick={onClose} className="icon-btn" style={{ color: 'var(--t1)' }}>
+            <X size={20} aria-hidden="true" />
           </button>
         </div>
 
@@ -203,25 +181,11 @@ export default function NavDrawer({
             setStoredExpanded(next)
             persistExpanded(next)
           }}
-          onMouseEnter={() => setHoveredId('__more__')}
-          onMouseLeave={() => setHoveredId((h) => (h === '__more__' ? null : h))}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            minHeight: 44,
-            padding: '0 20px',
-            background: moreHovered ? 'var(--bg3)' : 'transparent',
-            border: 'none',
-            color: 'var(--t2)',
-            fontSize: 15,
-            textAlign: 'left',
-            cursor: 'pointer',
-          }}
+          className="nav-item"
+          style={{ justifyContent: 'space-between' }}
         >
-          <span>More</span>
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          <span className="nav-item-label">More</span>
+          {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
         </button>
 
         {expanded && moreItems.map((item) => renderItem(item, { indent: true }))}

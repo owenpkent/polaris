@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Star } from 'lucide-react'
 import { useConnection } from './command-center/ConnectionContext'
 import { useEventRefresh } from './command-center/useEvents'
 import NavItem, { ConnectionStatus, InboxBadge, inboxLabel } from './NavItem'
@@ -28,18 +29,11 @@ export default function Sidebar({ primaryItems, moreItems, connectionItem, activ
 
   return (
     <aside className="app-sidebar">
-      <div
-        style={{
-          height: 56,
-          minHeight: 56,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 20px',
-          borderBottom: '1px solid var(--bd-surface)',
-        }}
-      >
-        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--t1)' }}>Polaris</span>
+      <div className="nav-brand">
+        <span className="nav-brand-mark" aria-hidden="true">
+          <Star size={15} strokeWidth={2.5} />
+        </span>
+        <span>Polaris</span>
       </div>
       <nav aria-label="Navigation" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
         <div style={{ display: 'flex', flexDirection: 'column', padding: '8px 0' }}>

@@ -73,9 +73,11 @@
 
   /* Shadows are crisp, not blurry: a lit top edge, a 1px dark ring that
      separates the surface from whatever is behind it, then a short, dense
-     drop shadow. */
+     drop shadow. A resting surface (--shadow-1) is almost all ring: the list
+     and the cards sit on the page rather than float over it, and only menus,
+     panels, and dialogs (--shadow-pop) carry a real drop. */
   --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.4);
-  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4), 0 8px 18px rgba(0, 0, 0, 0.3);
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.45), 0 14px 28px rgba(0, 0, 0, 0.35);
   --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 12px rgba(0, 0, 0, 0.45), 0 18px 40px rgba(0, 0, 0, 0.5);
   --shadow-inset: inset 0 2px 3px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
@@ -151,7 +153,7 @@
   /* Shadows stay crisp but lose the heavy black ring, which reads as grime on
      a white surface: a thin ink-tinted ring plus a short, soft drop. */
   --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.1), 0 1px 2px rgba(16, 20, 28, 0.1);
-  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.07), 0 1px 2px rgba(16, 20, 28, 0.06), 0 6px 14px rgba(16, 20, 28, 0.06);
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.07), 0 1px 2px rgba(16, 20, 28, 0.05);
   --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.09), 0 3px 6px rgba(16, 20, 28, 0.08), 0 10px 22px rgba(16, 20, 28, 0.08);
   --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.11), 0 4px 10px rgba(16, 20, 28, 0.1), 0 14px 32px rgba(16, 20, 28, 0.12);
   --shadow-inset: inset 0 1px 2px rgba(16, 20, 28, 0.1), inset 0 0 0 1px rgba(16, 20, 28, 0.06);
@@ -269,6 +271,47 @@ kbd { color: var(--t1); }
 .badge-hardware { background: var(--orange-soft); color: var(--orange); }
 .badge-business { background: var(--green-soft); color: var(--green); }
 .badge-planning { background: var(--neutral-soft); color: var(--t2); }
+.badge-neutral { background: var(--neutral-soft); color: var(--t2); }
+
+/* A project, wherever one is named: a dot in the project's colour (projectColor in shared.jsx,
+   picked from the accent tokens by the project's name) before its name. The chip form sits in a
+   list cell; the avatar form is the 28px tile that leads a project row. */
+.project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--t1);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.project-chip > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.project-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Priority in a list cell: a soft pill in the level's colour. None and medium (the default)
+   render nothing, so a pill always means something was set. */
+.priority-pill { font-weight: 600; }
+.priority-pill.is-low { background: var(--neutral-soft); color: var(--t2); }
+.priority-pill.is-high { background: var(--orange-soft); color: var(--orange); }
+.priority-pill.is-urgent { background: var(--red-soft); color: var(--red); }
 
 .progress-bar {
   height: 6px;
@@ -435,10 +478,57 @@ kbd { color: var(--t1); }
   background: var(--bg2);
   border-right: 1px solid var(--bd-surface);
 }
-/* One view in the sidebar or the drawer (src/NavItem.jsx). Hover only tints the row; nothing is
-   revealed by it. */
-.nav-item { background: transparent; }
-.nav-item:hover, .nav-item[aria-current='page'] { background: var(--bg3); }
+/* One view in the sidebar or the drawer (src/NavItem.jsx): an icon and a label on a rounded row
+   that is inset from the column's edges, the open view on a tinted pill. Hover only tints the
+   row; nothing is revealed by it. */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 16px);
+  min-height: var(--target);
+  margin: 1px 8px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--t2);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-item.is-indented { padding-left: 28px; }
+.nav-item-icon { display: inline-flex; flex-shrink: 0; color: var(--t3); }
+.nav-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item:hover { background: var(--bg3); color: var(--t1); }
+.nav-item[aria-current='page'] { background: var(--bg-selected); color: var(--t1); font-weight: 600; }
+.nav-item[aria-current='page'] .nav-item-icon { color: var(--blue); }
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  min-height: 56px;
+  flex-shrink: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--bd-surface);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--t1);
+}
+.nav-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, var(--blue-top), var(--blue));
+  color: var(--on-accent);
+  box-shadow: var(--shadow-accent);
+}
 @media (min-width: 641px) {
   .topbar-menu-btn { display: none; }
 }
@@ -480,10 +570,34 @@ kbd { color: var(--t1); }
 .mytasks-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
+  margin-left: auto;
 }
+
+/* Filter, Sort, Group, Columns: quiet text buttons at the right end of the toolbar, so the one
+   filled button on the row is Add task. A button whose setting is in effect (a filter applied)
+   is tinted so the state is visible without opening it. */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--target);
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--t2);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.toolbar-btn:hover, .toolbar-btn[aria-expanded='true'] { background: var(--bg-hover); color: var(--t1); }
+.toolbar-btn.is-active { background: var(--blue-soft); color: var(--blue); border-color: var(--blue); }
+.toolbar-btn.is-active:hover { color: var(--blue); }
 
 @media (max-width: 640px) {
   .mytasks-toolbar {
@@ -493,15 +607,75 @@ kbd { color: var(--t1); }
   .mytasks-toolbar-add {
     width: 100%;
   }
+  .mytasks-toolbar-actions { margin-left: 0; }
   .mytasks-toolbar-columns {
     display: none;
   }
 }
 
-/* Alternating list rows. Hover is declared after so it wins on striped rows. */
+/* Alternating rows, used by the Inbox table. Task lists are flat: a hairline under each row and
+   a tint on hover, nothing else. */
 .is-striped { background: var(--bg-zebra); }
 .mytasks-row { transition: background 0.12s; }
 .mytasks-row:hover { background: var(--bg-hover); }
+
+/* The whole My Tasks list is one panel: a flat column header stuck to the top, then every group
+   in turn with its own header row (title and count) and its rows under it, hairlines between. */
+.mytasks-colhead {
+  min-height: 40px;
+  align-items: stretch;
+  font-size: 12px;
+  color: var(--t2);
+  border-bottom: 1px solid var(--bd-surface);
+  background: var(--bg);
+}
+.mytasks-list { overflow: hidden; }
+.mytasks-section + .mytasks-section { border-top: 1px solid var(--bd-surface); }
+.mytasks-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 48px;
+  padding-right: 12px;
+  border-bottom: 1px solid var(--bd);
+}
+.mytasks-section-header.is-collapsed { border-bottom-color: transparent; }
+.mytasks-section-title { font-size: 15px; font-weight: 600; color: var(--t1); }
+.mytasks-section-count { margin-left: 8px; font-size: 13px; color: var(--t3); }
+.mytasks-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--target);
+  padding-left: 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--bd);
+  color: var(--t3);
+  text-align: left;
+  font-size: 14px;
+  transition: background 0.12s, color 0.12s;
+}
+.mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
+
+/* The check circle in a row: outlined at rest, filled green when done. Hovering the button tints
+   the circle green so the target reads as "complete" before the click; nothing is revealed. */
+.task-check { transition: background 0.12s; }
+.task-check:hover:not(:disabled) { background: var(--green-soft); }
+.task-check:hover:not(:disabled) .task-check-circle { border-color: var(--green); color: var(--green); }
+.task-check-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bd-strong);
+  color: transparent;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }
 
 /* Panels that clip their rows (overflow: hidden) would also clip an outward
    focus ring, so rows draw theirs inside. */
@@ -620,9 +794,30 @@ kbd { color: var(--t1); }
   padding-bottom: 8px;
 }
 .board-lane {
-  width: 320px;
+  width: 300px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 8px 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
 }
+.board-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: start;
+  gap: 4px;
+  padding: 12px 6px 12px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.board-card:hover { background: var(--bg3); box-shadow: var(--shadow-2); }
+.board-card.is-menu-open { border-color: var(--blue); }
 
 /* Board at phone width: a lane is sized to the viewport minus the page's two
    16px gutters (app-main-full's phone padding), the strip's own gap, and a
@@ -766,14 +961,16 @@ kbd { color: var(--t1); }
   align-items: center;
   gap: 8px 16px;
   width: 100%;
-  min-height: var(--target);
-  padding: 10px 12px;
+  min-height: 56px;
+  padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--bd);
+  transition: background 0.12s;
 }
+.project-row:hover { background: var(--bg-hover); }
 .project-name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex: 1 1 220px;
   min-width: 0;
   font-weight: 600;
@@ -785,12 +982,13 @@ kbd { color: var(--t1); }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 20px;
+  gap: 6px 16px;
   flex: 2 1 320px;
   min-width: 0;
   color: var(--t2);
   font-size: 13px;
 }
+.project-status { display: inline-flex; align-items: center; gap: 6px; }
 .project-cell { overflow-wrap: break-word; min-width: 0; }
 .project-form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .project-actions { display: flex; flex-wrap: wrap; gap: 8px; }

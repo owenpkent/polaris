@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CheckCircle2, Columns3, Folder, GitBranch, Inbox, MessagesSquare, Newspaper, Settings, Target, Zap } from 'lucide-react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsTab from './command-center/SettingsTab'
 import InboxTab from './command-center/InboxTab'
@@ -23,23 +24,25 @@ import { subscribeNativeShares, subscribeNotificationTaps } from './command-cent
 import { parseTaskParam, stripTaskParam } from './command-center/reminders'
 import ReminderScheduler from './command-center/ReminderScheduler'
 
+// Each view's icon is drawn by the sidebar and the drawer (src/NavItem.jsx); the phone tab bar
+// has its own three (src/BottomNav.jsx).
 const PRIMARY_ITEMS = [
-  { id: 'mytasks', label: 'My tasks' },
-  { id: 'inbox', label: 'Inbox' },
-  { id: 'board', label: 'Board' },
+  { id: 'mytasks', label: 'My tasks', icon: CheckCircle2 },
+  { id: 'inbox', label: 'Inbox', icon: Inbox },
+  { id: 'board', label: 'Board', icon: Columns3 },
 ]
 
 const MORE_ITEMS = [
-  { id: 'goals', label: 'Goals' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'threads', label: 'Threads' },
-  { id: 'rules', label: 'Rules' },
-  { id: 'digest', label: 'Digest' },
-  { id: 'github', label: 'GitHub' },
+  { id: 'goals', label: 'Goals', icon: Target },
+  { id: 'projects', label: 'Projects', icon: Folder },
+  { id: 'threads', label: 'Threads', icon: MessagesSquare },
+  { id: 'rules', label: 'Rules', icon: Zap },
+  { id: 'digest', label: 'Digest', icon: Newspaper },
+  { id: 'github', label: 'GitHub', icon: GitBranch },
 ]
 
 // The last row of the navigation, with the connection status beside it.
-const SETTINGS_ITEM = { id: 'settings', label: 'Settings' }
+const SETTINGS_ITEM = { id: 'settings', label: 'Settings', icon: Settings }
 
 const DEFAULT_TAB = 'mytasks'
 const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].map((item) => item.id))

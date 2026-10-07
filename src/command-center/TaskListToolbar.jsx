@@ -13,21 +13,8 @@ const PRIORITY_FILTER_OPTIONS = [
   { id: 'none', label: 'No priority' },
 ]
 
-const toolbarBtnStyle = (active) => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  height: 44,
-  padding: '0 14px',
-  borderRadius: 8,
-  border: '1px solid var(--bd-strong)',
-  background: active ? 'var(--bg-hover)' : 'var(--raised)',
-  boxShadow: 'var(--shadow-btn)',
-  color: 'var(--t1)',
-  fontSize: 14,
-  flexShrink: 0,
-  whiteSpace: 'nowrap',
-})
+// The look is .toolbar-btn (index.css); is-active marks a setting in effect.
+const toolbarBtnClass = (active) => (active ? 'toolbar-btn is-active' : 'toolbar-btn')
 
 // One checkbox-style row inside the Filter popover. Renders as a button
 // (not a native checkbox) so the whole label is a 44px click target and the
@@ -189,12 +176,11 @@ export default function TaskListToolbar({
       <div className="mytasks-toolbar-actions">
         <button
           type="button"
-          className="hover-surface"
+          className={toolbarBtnClass(filterCount > 0)}
           ref={filterRef}
           aria-haspopup="menu"
           aria-expanded={openMenu === 'filter'}
           onClick={() => toggle('filter')}
-          style={toolbarBtnStyle(filterCount > 0)}
         >
           <Filter size={16} aria-hidden="true" /> Filter{filterCount > 0 ? ` (${filterCount})` : ''}
         </button>
@@ -242,18 +228,18 @@ export default function TaskListToolbar({
           </div>
         </Popover>
 
-        <button type="button" className="hover-surface" ref={sortRef} aria-haspopup="menu" aria-expanded={openMenu === 'sort'} onClick={() => toggle('sort')} style={toolbarBtnStyle(false)}>
+        <button type="button" className={toolbarBtnClass(false)} ref={sortRef} aria-haspopup="menu" aria-expanded={openMenu === 'sort'} onClick={() => toggle('sort')}>
           <ArrowUpDown size={16} aria-hidden="true" /> Sort
         </button>
         <Menu anchorRef={sortRef} open={openMenu === 'sort'} onClose={close} items={sortItems} label="Sort tasks" minWidth={220} />
 
-        <button type="button" className="hover-surface" ref={groupRef} aria-haspopup="menu" aria-expanded={openMenu === 'group'} onClick={() => toggle('group')} style={toolbarBtnStyle(false)}>
+        <button type="button" className={toolbarBtnClass(view.group !== 'due')} ref={groupRef} aria-haspopup="menu" aria-expanded={openMenu === 'group'} onClick={() => toggle('group')}>
           <Layers size={16} aria-hidden="true" /> Group
         </button>
         <Menu anchorRef={groupRef} open={openMenu === 'group'} onClose={close} items={groupItems} label="Group tasks" minWidth={180} />
 
         <span className="mytasks-toolbar-columns">
-          <button type="button" className="hover-surface" ref={columnsRef} aria-haspopup="menu" aria-expanded={openMenu === 'columns'} onClick={() => toggle('columns')} style={toolbarBtnStyle(false)}>
+          <button type="button" className={toolbarBtnClass(false)} ref={columnsRef} aria-haspopup="menu" aria-expanded={openMenu === 'columns'} onClick={() => toggle('columns')}>
             <Columns3 size={16} aria-hidden="true" /> Columns
           </button>
           <Menu anchorRef={columnsRef} open={openMenu === 'columns'} onClose={close} items={columnItems} label="Show or hide columns" minWidth={200} />
