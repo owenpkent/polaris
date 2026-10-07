@@ -55,8 +55,10 @@ public class AppEndToEndTest {
         // The app keeps its settings in the WebView's localStorage across installs and runs, so
         // start each test as a first launch: no server, no token, no reminder choices.
         app.eval("localStorage.clear();null");
-        app.evalAsync("Promise.resolve(window.Capacitor.nativePromise('LocalNotifications','getPending',{}))"
-            + ".then(r=>window.Capacitor.nativePromise('LocalNotifications','cancel',{notifications:(r.notifications||[]).map(n=>({id:n.id}))}))", 10000);
+        // cancelAll, not cancel with whatever is pending: the plugin rejects cancel when the list
+        // is empty, which it is on every fresh launch. (The dashboard's own cancelAllNotifications
+        // skips the call in that case; nativeApp.test.js covers it.)
+        app.evalAsync("window.Capacitor.nativePromise('LocalNotifications','cancelAll',{})", 10000);
         app.eval("location.reload();null");
         app.waitFor("the connect form", "__pt.find('textbox','Server URL')", LOAD_MS);
     }
