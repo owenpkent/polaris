@@ -121,7 +121,8 @@ public class AppEndToEndTest {
         app.fill("Server URL", serverUrl);
         app.fill("Access token", "not-the-token");
         submitConnectForm();
-        app.waitFor("a refusal", "document.querySelector('[role=status]') && /token|unauthori|401|reject|invalid/i.test(document.querySelector('[role=status]').textContent)", 15000);
+        // Any status region: the not-connected banner above the form is one too.
+        app.waitFor("a refusal", "Array.from(document.querySelectorAll('[role=status]')).some(el=>/token|unauthori|401|reject|invalid/i.test(el.textContent))", 15000);
         assertFalse(app.truthy("__pt.find('button','Disconnect')"));
     }
 
@@ -179,12 +180,15 @@ public class AppEndToEndTest {
         assertEquals("Due today", reminder.getString("body"));
         assertTrue(reminder.getJSONObject("extra").getString("taskId").startsWith("t_"));
 
-        // The alarm itself must be allowed while the device idles. (That it is inexact is what
-        // keeps schedule() from opening system settings; nativeApp.test.js covers the flag.)
+        // The alarm itself must be allowed while the device idles. The plugin sets an RTC_WAKEUP
+        // alarm only on its allow-while-idle paths and a plain RTC one otherwise, and dumpsys
+        // prints the alarm's flags as a hex number, so the type is the evidence. (That it is
+        // inexact is what keeps schedule() from opening system settings; nativeApp.test.js covers
+        // the flag.)
         String alarms = shell("dumpsys alarm");
         String ours = alarmBlock(alarms);
         assertTrue("No alarm for the app in dumpsys alarm:\n" + alarms, ours != null);
-        assertTrue("Expected an allow-while-idle alarm:\n" + ours, ours.contains("ALLOW_WHILE_IDLE"));
+        assertTrue("Expected an allow-while-idle (RTC_WAKEUP) alarm:\n" + ours, ours.contains("RTC_WAKEUP"));
 
         app.click("checkbox", "Remind me on the day a task is due");
         waitForPending(title, false);
