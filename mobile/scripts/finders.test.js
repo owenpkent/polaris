@@ -53,6 +53,13 @@ describe('WebAppDriver FINDERS', () => {
     expect(pt.find('button', 'Tasks').id).toBe('b')
   })
 
+  it('searches only under a root when one is given', () => {
+    // The not-connected banner's Connect comes before the form's Connect in the page.
+    const pt = load('<button id="banner">Connect</button><form id="f"><button id="submit">Connect</button></form>')
+    expect(pt.find('button', 'Connect').id).toBe('banner')
+    expect(pt.find('button', 'Connect', document.getElementById('f')).id).toBe('submit')
+  })
+
   it('returns null when nothing matches', () => {
     const pt = load('<button>Other</button>')
     expect(pt.find('button', 'Connection')).toBeNull()

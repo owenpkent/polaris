@@ -38,7 +38,7 @@ final class WebAppDriver {
             + "return norm(text(el));};"
             + "const visible=el=>el.getClientRects().length>0;"
             + "const sel={button:'button,[role=button]',checkbox:'input[type=checkbox]',textbox:'input:not([type=checkbox]):not([type=date]):not([type=time]),textarea',dialog:'[role=dialog]'};"
-            + "const find=(role,n)=>{const c=Array.from(document.querySelectorAll(sel[role])).filter(visible);"
+            + "const find=(role,n,root)=>{const c=Array.from((root||document).querySelectorAll(sel[role])).filter(visible);"
             + "const lower=n.toLowerCase();"
             + "return c.find(el=>name(el)===n)||c.find(el=>name(el).toLowerCase().includes(lower))||null;};"
             + "window.__pt={find,"

@@ -60,7 +60,17 @@ public class AppEndToEndTest {
         // skips the call in that case; nativeApp.test.js covers it.)
         app.evalAsync("window.Capacitor.nativePromise('LocalNotifications','cancelAll',{})", 10000);
         app.eval("location.reload();null");
+        // A device with nothing saved starts in local mode on My tasks, where the banner's Connect
+        // button opens the Connection tab with the form.
+        app.waitFor("the not-connected banner", "document.body.innerText.includes('Not connected yet')", LOAD_MS);
+        app.click("button", "Connect");
         app.waitFor("the connect form", "__pt.find('textbox','Server URL')", LOAD_MS);
+    }
+
+    // Submits the connection form by its own button. The banner above the form has a Connect
+    // button too, and it comes first in the page, so the form's is found under the form.
+    private void submitConnectForm() {
+        app.eval("__pt.find('button','Connect',__pt.find('textbox','Server URL').form).click()");
     }
 
     @After
@@ -71,7 +81,7 @@ public class AppEndToEndTest {
     private void connect() {
         app.fill("Server URL", serverUrl);
         app.fill("Access token", apiToken);
-        app.click("button", "Connect");
+        submitConnectForm();
         // Once connected the form offers Disconnect, which it never does before.
         app.waitForButton("Disconnect", LOAD_MS);
     }
@@ -108,7 +118,7 @@ public class AppEndToEndTest {
     public void connectFormRejectsAWrongToken() {
         app.fill("Server URL", serverUrl);
         app.fill("Access token", "not-the-token");
-        app.click("button", "Connect");
+        submitConnectForm();
         app.waitFor("a refusal", "document.querySelector('[role=status]') && /token|unauthori|401|reject|invalid/i.test(document.querySelector('[role=status]').textContent)", 15000);
         assertFalse(app.truthy("__pt.find('button','Disconnect')"));
     }
