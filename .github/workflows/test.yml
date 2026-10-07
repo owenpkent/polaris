@@ -189,9 +189,6 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      # The one folder under $RUNNER_TEMP that a Docker container action can see, as /github/home.
-      RESULTS_DIR: ${{ runner.temp }}/_github_home
     steps:
       - uses: actions/checkout@v4
         with:
@@ -205,13 +202,18 @@ jobs:
           base="$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")"
           echo "merge base: $base"
           git checkout --detach "$base"
+      # RESULTS_DIR is the one folder under $RUNNER_TEMP that a Docker container action can see,
+      # as /github/home. Set here from the shell's $RUNNER_TEMP (the `runner` context is not
+      # allowed in a job-level `env`) for the steps that follow.
       - name: Keep the result files outside the checkout
         run: |
-          mkdir -p "$RESULTS_DIR"
-          rm -f "$RESULTS_DIR/old-results.json" "$RESULTS_DIR/new-results.json" "$RESULTS_DIR/results.sarif"
+          RESULTS_DIR="$RUNNER_TEMP/_github_home"
           case "$RESULTS_DIR" in
             "$GITHUB_WORKSPACE"/*) echo "::error::$RESULTS_DIR is inside the checkout"; exit 1 ;;
           esac
+          mkdir -p "$RESULTS_DIR"
+          rm -f "$RESULTS_DIR/old-results.json" "$RESULTS_DIR/new-results.json" "$RESULTS_DIR/results.sarif"
+          echo "RESULTS_DIR=$RESULTS_DIR" >> "$GITHUB_ENV"
       - name: Scan the merge base
         id: scan-old
         uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
