@@ -742,7 +742,7 @@ test('a tag whose signature is not one SSH signature does not verify, whatever g
   assert.ok(pgp.commandLines().includes('git cat-file tag v2.1.0'), 'the raw tag was read');
   assert.deepEqual(pgp.state.verifiedAgainst, [], 'git verify-tag, which would have said yes, was not even asked');
 
-  const cases: [FakeTag['signature'], RegExp][] = [
+  const cases: [NonNullable<FakeTag['signature']>, RegExp][] = [
     ['x509', /signed with X\.509, not SSH/],
     ['none', /no signature found/],
     ['ssh-twice', /carries 2 signature blocks \(SSH, SSH\); a release carries one SSH signature/],
