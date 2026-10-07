@@ -268,6 +268,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
   const [restoring, setRestoring] = useState(null)
+  // Save as checklist: busy while the request is out, then the line that says where it went.
+  const [checklistBusy, setChecklistBusy] = useState(false)
+  const [checklistNotice, setChecklistNotice] = useState('')
+  useEffect(() => { setChecklistNotice('') }, [taskId])
   const agentName = useDefaultAgentName(api)
   const [assignBusy, setAssignBusy] = useState(false)
   // What the hidden live region reads out after an assign or a take back.
@@ -503,6 +507,21 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       else pendingFocusRef.current = null
     } finally {
       setAssignBusy(false)
+    }
+  }
+
+  // A template from this task's subtasks, named after the task; it is renamed and edited on the
+  // Checklists page. Live only: a checklist write has no offline op kind.
+  async function handleSaveAsChecklist() {
+    setChecklistBusy(true)
+    setChecklistNotice('')
+    try {
+      const res = await api.saveTaskAsChecklist(taskId)
+      setChecklistNotice(`Saved as the checklist "${res.checklist.name}". Find it under Checklists.`)
+    } catch (err) {
+      setSaveError(err.message || 'Could not save that as a checklist.')
+    } finally {
+      setChecklistBusy(false)
     }
   }
 
@@ -920,6 +939,19 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 </div>
               )
             })}
+            {subtasks.length > 0 && !data.task.untrustedText && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleSaveAsChecklist}
+                  disabled={offline || local || checklistBusy}
+                >
+                  {checklistBusy ? 'Saving…' : 'Save as checklist'}
+                </button>
+                <span role="status" style={{ fontSize: 13, color: 'var(--t2)' }}>{checklistNotice}</span>
+              </div>
+            )}
           </div>
 
           <div>

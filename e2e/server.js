@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url'
 
 // A throwaway Command Center server on a fresh scratch database, one per Playwright worker
 // (e2e/fixtures.js). It holds the demo seed (command-center/src/dev/seed-demo.ts: 9 tasks, 4
-// inbox items) plus the UI test fixtures (seed-ui-test.ts: two projects, a board, a disabled
-// rule, two more inbox items), and with CC_UI_PERF=1 the 500 task perf project (seed-perf.ts).
+// inbox items, a checklist) plus the UI test fixtures (seed-ui-test.ts: two projects, a board, a
+// disabled rule, two more inbox items, a second checklist), and with CC_UI_PERF=1 the 500 task perf project (seed-perf.ts).
 // The real database is never opened, and stop() kills the server and deletes the folder.
 //
 // Every worker gets its own server because Playwright can only run tests in parallel when they

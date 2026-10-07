@@ -319,6 +319,16 @@ export const VIEWS = [
     ready: (page) => page.getByRole('article', { name: 'UI Test Project', exact: true }),
   },
   {
+    id: 'checklists',
+    label: 'Checklists',
+    request: (url) => url.pathname === '/api/checklists',
+    loading: 'Loading checklists…',
+    emptyBody: { checklists: [] },
+    emptyText: ['No checklists yet', 'Make one for anything you do again and again, like packing or cleaning.'],
+    emptyControls: ['New checklist'],
+    ready: (page) => page.getByRole('article', { name: 'Packing: weekend trip', exact: true }),
+  },
+  {
     id: 'threads',
     label: 'Threads',
     request: (url) => url.pathname === '/api/threads',

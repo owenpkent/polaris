@@ -223,6 +223,21 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     forkThread: (threadId, title) => call(`/api/threads/${encodeURIComponent(threadId)}/fork`, { method: 'POST', body: { title } }),
     setPostStatus: (postId, status) => call(`/api/posts/${encodeURIComponent(postId)}`, { method: 'PATCH', body: { status } }),
 
+    // Reusable checklists. None of these has an `offline` kind: a checklist write is a live
+    // click, and the dashboard turns the controls off without a server. Starting one creates
+    // ordinary tasks, so the task lists hear about it like any other task write.
+    listChecklists: () => call('/api/checklists'),
+    getChecklist: (id) => call(`/api/checklists/${encodeURIComponent(id)}`),
+    createChecklist: (payload) => call('/api/checklists', { method: 'POST', body: payload }),
+    updateChecklist: (id, patch) => call(`/api/checklists/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
+    deleteChecklist: (id) => call(`/api/checklists/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    startChecklist: async (id, payload) => {
+      const res = await call(`/api/checklists/${encodeURIComponent(id)}/start`, { method: 'POST', body: payload || {} })
+      notifyTaskChanges()
+      return res
+    },
+    saveTaskAsChecklist: (taskId, name) => call(`/api/tasks/${encodeURIComponent(taskId)}/save-as-checklist`, { method: 'POST', body: name ? { name } : {} }),
+
     listInbox: () => call('/api/inbox'),
     acceptInboxItem: (id, payload) => call(`/api/inbox/${encodeURIComponent(id)}/accept`, { method: 'POST', body: payload || {} }),
     rejectInboxItem: (id, payload) => call(`/api/inbox/${encodeURIComponent(id)}/reject`, { method: 'POST', body: payload || {} }),

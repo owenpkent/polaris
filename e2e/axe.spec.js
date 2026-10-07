@@ -27,7 +27,7 @@ import { UPDATE_INSTALLED, fakeUpdate, openView, openTask, isPhone } from './sup
 // This complements the hand-written checks in accessibility.spec.js rather than replacing them:
 // axe's target-size rule stops at 24px, and the bar here is 44px.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'threads', 'rules', 'digest', 'github', 'settings']
+const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'checklists', 'threads', 'rules', 'digest', 'github', 'settings']
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']
 const FAILS = new Set(['serious', 'critical'])
 const ALLOW = JSON.parse(readFileSync(new URL('./axe-allow.json', import.meta.url), 'utf8'))
@@ -168,6 +168,26 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await page.getByRole('toolbar', { name: 'Projects' }).getByRole('button', { name: 'New project' }).click()
     await expect(page.getByRole('form', { name: 'New project' })).toBeVisible()
     await audit(page, testInfo, 'new project form open')
+  })
+
+  test('the new checklist form, with items', async ({ page }, testInfo) => {
+    await openView(page, 'checklists')
+    await page.getByRole('toolbar', { name: 'Checklists' }).getByRole('button', { name: 'New checklist' }).click()
+    const form = page.getByRole('form', { name: 'New checklist' })
+    await form.getByRole('textbox', { name: 'Name' }).fill('Axe checklist')
+    for (const item of ['First', 'Second']) {
+      await form.getByRole('textbox', { name: 'New item' }).fill(item)
+      await form.getByRole('button', { name: 'Add item' }).click()
+    }
+    await expect(form.getByRole('textbox', { name: 'Item 2' })).toBeVisible()
+    await audit(page, testInfo, 'new checklist form open')
+  })
+
+  test('the start checklist form', async ({ page }, testInfo) => {
+    await openView(page, 'checklists')
+    await page.getByRole('button', { name: 'Start Packing: weekend trip', exact: true }).click()
+    await expect(page.getByRole('form', { name: 'Start Packing: weekend trip' })).toBeVisible()
+    await audit(page, testInfo, 'start checklist form open')
   })
 
   // The Rules view shows its New rule form at rest, so the audit of the view covers it.

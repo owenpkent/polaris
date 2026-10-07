@@ -18,6 +18,7 @@ function fakeApi() {
     listGoals: vi.fn(async () => ({ goals: [] })),
     listInbox: vi.fn(empty),
     listRules: vi.fn(empty),
+    listChecklists: vi.fn(empty),
     getView: vi.fn(empty),
     getDigest: vi.fn(empty),
     getSync: vi.fn(empty),
@@ -48,5 +49,11 @@ describe('useMirrorWarm', () => {
     // The rest of the list is still asked for.
     expect(connection.api.listInbox).toHaveBeenCalled()
     expect(connection.api.listRules).toHaveBeenCalled()
+  })
+
+  test('on connect it fetches the checklists, so the Checklists tab has a copy offline', async () => {
+    connection.api = fakeApi()
+    render(<Warmer />)
+    await waitFor(() => expect(connection.api.listChecklists).toHaveBeenCalledTimes(1))
   })
 })
