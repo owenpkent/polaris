@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The emulator needs hardware acceleration. ubuntu-latest exposes /dev/kvm, but the runner
       # user may not be allowed to use it until this udev rule is in place.
       - name: Enable KVM
