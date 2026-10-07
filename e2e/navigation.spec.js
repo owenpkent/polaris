@@ -16,7 +16,7 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
       await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()
     }
     await expect(sidebar.getByRole('button', { name: /^Inbox, \d+ waiting$/ })).toBeVisible()
-    await expect(sidebar.getByRole('button', { name: /Connection/ })).toContainText('Connected')
+    await expect(sidebar.getByRole('button', { name: /^Settings/ })).toContainText('Connected')
     await expect(sidebar.getByRole('button', { name: 'My tasks' })).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeHidden()
     expect(await smallTargets(sidebar)).toEqual([])
@@ -52,7 +52,7 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await expect(drawer.getByRole('button', { name: 'My tasks' })).toBeVisible()
     await expect(drawer.getByRole('button', { name: /^Inbox/ })).toBeVisible()
     await expect(drawer.getByRole('button', { name: 'Board' })).toBeVisible()
-    await expect(drawer.getByRole('button', { name: /Connection/ })).toContainText('Connected')
+    await expect(drawer.getByRole('button', { name: /^Settings/ })).toContainText('Connected')
     await expect(drawer.getByRole('button', { name: 'My tasks' })).toHaveAttribute('aria-current', 'page')
   })
 

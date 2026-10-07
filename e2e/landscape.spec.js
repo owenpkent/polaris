@@ -24,13 +24,13 @@ test.describe('landscape phone', { tag: ['@landscape'] }, () => {
   })
 
   // 844px wide is the desktop layout, so the navigation is the sidebar. It is taller than the
-  // screen here, and must scroll on its own to bring its last item, Connection, into reach.
+  // screen here, and must scroll on its own to bring its last item, Settings, into reach.
   test('the sidebar scrolls to its last item', async ({ page }) => {
     await openView(page)
-    const connection = page.getByRole('navigation', { name: 'Navigation' }).getByRole('button', { name: /Connection/ })
-    await connection.scrollIntoViewIfNeeded()
-    await onScreen(page, connection)
-    await connection.click()
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Connection')
+    const settings = page.getByRole('navigation', { name: 'Navigation' }).getByRole('button', { name: /^Settings/ })
+    await settings.scrollIntoViewIfNeeded()
+    await onScreen(page, settings)
+    await settings.click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Settings')
   })
 })
