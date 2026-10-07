@@ -102,8 +102,9 @@ function killTree(pid) {
 }
 
 // Asks the app's window to close, as the X button does (WM_CLOSE). The windows are found by the
-// owning process id, never by title or name.
-const CLOSE_WINDOWS = `
+// owning process id, never by title or name. Close answers with the count it asked, then every
+// top-level window of the process as class|title|visible or hidden|asked, separated by ";".
+const WINDOWS = `
 Add-Type @"
 using System; using System.Text; using System.Runtime.InteropServices;
 public static class W {
@@ -112,26 +113,60 @@ public static class W {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
-  public static int Close(uint target) {
-    int n = 0;
+  public static string Walk(uint target, bool close) {
+    int n = 0; var seen = new StringBuilder();
     EnumWindows((h, l) => {
       uint pid; GetWindowThreadProcessId(h, out pid);
-      if (pid != target || !IsWindowVisible(h)) return true;
+      if (pid != target) return true;
       var cls = new StringBuilder(256); GetClassName(h, cls, 256);
-      if (cls.ToString() == "ConsoleWindowClass") return true;
-      PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero); n++; return true;
+      var title = new StringBuilder(256); GetWindowText(h, title, 256);
+      bool visible = IsWindowVisible(h);
+      bool ask = close && visible && cls.ToString() != "ConsoleWindowClass";
+      if (ask) { PostMessage(h, 0x10, IntPtr.Zero, IntPtr.Zero); n++; }
+      seen.Append(';').Append(cls).Append('|').Append(title).Append('|').Append(visible ? "visible" : "hidden").Append(ask ? "|asked" : "");
+      return true;
     }, IntPtr.Zero);
-    return n;
+    return n + seen.ToString();
   }
 }
 "@
-[W]::Close(__PID__)
+[W]::Walk(__PID__, $__CLOSE__)
 `
 
-/** Posts WM_CLOSE to the app's windows. Returns how many it asked. */
+function walkWindows(pid, close) {
+  const line = powershell(WINDOWS.replace('__PID__', String(Number(pid))).replace('__CLOSE__', close ? 'true' : 'false')).trim().split(/\r?\n/).pop() || '0'
+  const [count, ...windows] = line.split(';')
+  return { count: Number(count) || 0, windows }
+}
+
+/** The top-level windows of a process, as "class|title|visible or hidden". */
+export function windowsOf(pid) {
+  return walkWindows(pid, false).windows
+}
+
+/** Posts WM_CLOSE to the app's windows. Returns how many it asked, and says which on stdout. */
 export function closeWindowOf(pid) {
-  return Number(powershell(CLOSE_WINDOWS.replace('__PID__', String(Number(pid)))).trim().split(/\s+/).pop())
+  const { count, windows } = walkWindows(pid, true)
+  console.log(`close: asked ${count} window(s) of pid ${pid}; windows: ${windows.join(', ') || 'none'}`)
+  return count
+}
+
+/** The app's process, children, windows, and the daemons on its port, for a failure report. */
+export function processState(app) {
+  const lines = [`app pid ${app.pid}: ${app.exited() ? 'exited' : alive(app.pid) ? 'alive' : 'gone'}`]
+  const tryLine = (label, read) => {
+    try {
+      lines.push(`${label}: ${read() || 'none'}`)
+    } catch (err) {
+      lines.push(`${label}: unknown (${err.message})`)
+    }
+  }
+  tryLine('children', () => childrenOf(app.pid).map((c) => `${c.name} (${c.pid})`).join(', '))
+  tryLine('windows', () => windowsOf(app.pid).join(', '))
+  tryLine(`daemons on port ${app.port}`, () => daemonsOnPort(app.port).join(', '))
+  return lines.join('\n')
 }
 
 /** A running copy of the owner's app, or of this debug build, would take over the launch. */

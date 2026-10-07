@@ -14,7 +14,8 @@ async function expectDashboard(app) {
     new RegExp(`^http://127\\.0\\.0\\.1:${app.port}/`),
   )
   await expect(app.page.getByRole('heading', { level: 1 })).toHaveText('My tasks')
-  await expect(app.page.getByRole('navigation', { name: 'Navigation' }).getByRole('button', { name: /Connection/ })).toContainText('Connected')
+  // The Settings row of the navigation carries the connection status (e2e/navigation.spec.js reads it the same way).
+  await expect(app.page.getByRole('navigation', { name: 'Navigation' }).getByRole('button', { name: /^Settings/ })).toContainText('Connected')
 }
 
 function today() {

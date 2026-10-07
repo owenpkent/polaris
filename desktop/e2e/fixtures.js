@@ -1,5 +1,6 @@
+import { writeFileSync } from 'node:fs'
 import { test as base, expect } from '@playwright/test'
-import { freePort, launchApp, makeScratch, startImpostor, startServer } from './app.js'
+import { freePort, launchApp, makeScratch, processState, startImpostor, startServer } from './app.js'
 
 // Every spec here imports `test` and `expect` from this file. The `rig` fixture is one test's
 // whole world: a scratch folder, a port of its own, a token, and the means to start the app, a
@@ -48,21 +49,41 @@ export const test = base.extend({
   },
 })
 
+// Written as files in the test's output folder, so a CI artifact keeps them whole (the list
+// reporter prints only the first lines of an attachment given as a body).
 async function attachFailure(testInfo, app) {
-  try {
-    await testInfo.attach('desktop.log', { body: app.appLog() || '(empty)', contentType: 'text/plain' })
-    await testInfo.attach('daemon.log', { body: app.daemonLog() || '(none)', contentType: 'text/plain' })
-    await testInfo.attach('app output', { body: app.output() || '(none)', contentType: 'text/plain' })
-    if (app.page) {
-      await testInfo.attach('window', { body: await app.page.screenshot({ timeout: 5000 }), contentType: 'image/png' })
+  const texts = {
+    'desktop.log': () => app.appLog() || '(empty)',
+    'daemon.log': () => app.daemonLog() || '(none)',
+    'app-output.txt': () => app.output() || '(none)',
+    'process-state.txt': () => processState(app),
+  }
+  for (const [name, read] of Object.entries(texts)) {
+    try {
+      const file = testInfo.outputPath(name)
+      writeFileSync(file, read())
+      await testInfo.attach(name, { path: file, contentType: 'text/plain' })
+    } catch (err) {
+      console.warn(`Could not attach ${name}: ${err.message}`)
     }
-    if (app.context) {
+  }
+  if (app.page) {
+    try {
+      const file = testInfo.outputPath('window.png')
+      await app.page.screenshot({ path: file, timeout: 5000 })
+      await testInfo.attach('window', { path: file, contentType: 'image/png' })
+    } catch (err) {
+      console.warn(`Could not attach the window: ${err.message}`)
+    }
+  }
+  if (app.context) {
+    try {
       const trace = testInfo.outputPath('desktop-trace.zip')
       await app.context.tracing.stop({ path: trace })
       await testInfo.attach('trace', { path: trace, contentType: 'application/zip' })
+    } catch (err) {
+      console.warn(`Could not attach the trace: ${err.message}`)
     }
-  } catch (err) {
-    console.warn(`Could not attach the app's state: ${err.message}`)
   }
 }
 
