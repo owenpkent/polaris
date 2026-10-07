@@ -60,7 +60,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       # API 35 with Google APIs matches the image the tests were written against. Running the
       # tests on the emulator is the script's job, so the whole thing is one command here and
       # locally; the runner only boots the emulator around it. --skip-build is not used: the
