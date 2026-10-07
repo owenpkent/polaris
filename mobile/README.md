@@ -4,8 +4,8 @@ An Android shell around the dashboard, built with Capacitor. The app bundles the
 
 ## Prerequisites
 
-- Android Studio with an SDK at `%LOCALAPPDATA%\Android\Sdk` (or set `ANDROID_HOME`).
-- A JDK 21. `npm run apk` uses `JAVA_HOME` if it has `javac`, else the JDK bundled with Android Studio. A plain runtime (the Adoptium JRE that `java` on the PATH often is) fails with "does not provide the required capabilities: [JAVA_COMPILER]".
+- An Android SDK at `%LOCALAPPDATA%\Android\Sdk` on Windows or `~/Android/Sdk` on Linux and macOS (or set `ANDROID_HOME`). Android Studio puts one there; so do the command-line tools alone, see "Without Android Studio" below.
+- A JDK 21. `npm run apk` uses `JAVA_HOME` if it has `javac`, else the JDK bundled with Android Studio. A plain runtime (the Adoptium JRE that `java` on the PATH often is, and Debian's `openjdk-21-jre`) fails with "does not provide the required capabilities: [JAVA_COMPILER]" or "No JDK with javac found".
 - The dashboard built: `npm run build` at the repo root.
 - A server the phone can reach over HTTPS, with the app's origin allowed:
 
@@ -72,6 +72,29 @@ npm run test:android -- -Pandroid.testInstrumentationRunnerArguments.class=com.o
 - `AppEndToEndTest` drives the dashboard in the app's WebView against the scratch daemon: the connect form, a share opening the new-task sheet prefilled, a second share reseeding the open sheet, and reminders being scheduled (and then cleared) as local notifications. `WebAppDriver` finds elements by role and accessible name through `evaluateJavascript` on the Capacitor bridge's WebView. `POST_NOTIFICATIONS` is granted with a `GrantPermissionRule`. Without the `serverUrl` and `apiToken` arguments the script passes, these tests are skipped.
 
 CI runs the same command on an emulator for pull requests that touch `mobile/`, `src/`, or `public/` (.github/workflows/android.yml). To start an emulator locally: `emulator -avd <name>`, and wait for it to boot.
+
+### Without Android Studio
+
+The command-line tools are enough to build and test, on Linux as on Windows. Download `commandlinetools-<os>-<build>_latest.zip` from the "Command line tools only" section of https://developer.android.com/studio, check its SHA-256 against the page, and unzip it so that `sdkmanager` sits at `<sdk>/cmdline-tools/latest/bin/`. Then install what CI uses and make the same emulator:
+
+```sh
+SDK=~/Android/Sdk    # %LOCALAPPDATA%\Android\Sdk on Windows
+yes | $SDK/cmdline-tools/latest/bin/sdkmanager --licenses
+$SDK/cmdline-tools/latest/bin/sdkmanager --install platform-tools "build-tools;37.0.0" "platforms;android-36" "platforms;android-35" emulator "system-images;android-35;google_apis;x86_64"
+echo no | $SDK/cmdline-tools/latest/bin/avdmanager create avd -n test -k "system-images;android-35;google_apis;x86_64"
+printf 'hw.cpu.ncore=4\nhw.ramSize=4096\n' >> ~/.android/avd/test.avd/config.ini
+```
+
+That is about 5 GB, and the first boot adds another 5 GB to the AVD. On Linux the emulator needs read and write access to `/dev/kvm`. A JDK that is not on the PATH is fine: point `JAVA_HOME` at it. Then, from the repo root:
+
+```sh
+$SDK/emulator/emulator -avd test -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect &
+$SDK/platform-tools/adb wait-for-device
+JAVA_HOME=/path/to/jdk-21 npm run test:android
+$SDK/platform-tools/adb emu kill
+```
+
+The headless emulator boots in about half a minute; `adb shell getprop sys.boot_completed` prints `1` once it is ready.
 
 ## Icons
 
