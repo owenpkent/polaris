@@ -56,7 +56,7 @@ jobs:
       - run: npm ci
         working-directory: mobile
       # Gradle needs a JDK with a compiler (the Android Gradle plugin here wants 17 or newer).
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
