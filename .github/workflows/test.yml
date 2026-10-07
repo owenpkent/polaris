@@ -105,7 +105,7 @@ jobs:
       - run: npm run test:ui -- --shard=${{ matrix.shard }}/4
       - name: Keep traces and screenshots from failed UI tests
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-output-${{ matrix.shard }}
           path: .playwright/
