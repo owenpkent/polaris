@@ -19,7 +19,10 @@ import { readUpdateStatus } from './status.ts';
 // here as in git.test.ts.
 for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY']) delete process.env[name];
 
-const GIT_IDENTITY = ['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false'];
+// core.autocrlf=false: the temp repositories are outside the project's .gitattributes (eol=lf),
+// so without it a Windows git checks the clone out with CRLF and the pinned copy, a byte copy of
+// the checked-out file, no longer matches what was committed.
+const GIT_IDENTITY = ['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false', '-c', 'core.autocrlf=false'];
 
 function sh(cwd: string, args: string[], extra: string[] = []): string {
   const r = spawnSync('git', [...GIT_IDENTITY, ...extra, ...args], { cwd, encoding: 'utf8' });
@@ -141,24 +144,39 @@ test('cc update --check accepts a tag signed by a pinned key and rejects every o
   assert.equal(sh(clone, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main');
 });
 
-/** Why the OpenPGP case cannot run here, or false: it needs everything above and gpg. */
+/** Why the OpenPGP case cannot run here, or false: it needs everything above and gpg. On Windows
+ *  the gpg at hand is the MSYS one Git for Windows ships, which reads GNUPGHOME as a POSIX path,
+ *  so cygpath is needed to spell the temp folder in its terms. */
 function skipOpenPgpReason(): string | false {
   const base = skipReason();
   if (base) return base;
   const gpg = spawnSync('gpg', ['--version'], { encoding: 'utf8' });
-  return gpg.error ? 'gpg is not installed, so an OpenPGP-signed tag cannot be made here' : false;
+  if (gpg.error) return 'gpg is not installed, so an OpenPGP-signed tag cannot be made here';
+  if (process.platform === 'win32' && spawnSync('cygpath', ['--version'], { encoding: 'utf8' }).error) return 'cygpath is not installed, so the MSYS gpg cannot be given a GNUPGHOME under the Windows temp folder';
+  return false;
+}
+
+/** The folder as gpg wants it in GNUPGHOME: unchanged on POSIX, and the MSYS spelling of the
+ *  Windows path (`/c/Users/...`) on Windows, where a `C:\...` value is taken as relative to cwd. */
+function gnupgHomeFor(dir: string): string {
+  if (process.platform !== 'win32') return dir;
+  const r = spawnSync('cygpath', ['-u', dir], { encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`cygpath -u failed: ${r.stderr}`);
+  return r.stdout.trim();
 }
 
 test('a tag signed with OpenPGP by a key in the local keyring does not verify, although git verify-tag on its own accepts it', { skip: skipOpenPgpReason() }, async (t) => {
   const base = mkdtempSync(join(tmpdir(), 'cc-update-openpgp-'));
   // A keyring of its own, so the owner's is never read or written. git and gpg both find it
   // through GNUPGHOME, which the check below runs with, as a daemon host with such a key would.
-  const gnupgHome = join(base, 'gnupg');
-  mkdirSync(gnupgHome, { mode: 0o700 });
+  const gnupgDir = join(base, 'gnupg');
+  mkdirSync(gnupgDir, { mode: 0o700 });
+  const gnupgHome = gnupgHomeFor(gnupgDir);
   const gpg = (args: string[]) => spawnSync('gpg', ['--batch', '--pinentry-mode', 'loopback', '--passphrase', '', ...args], { encoding: 'utf8', env: { ...process.env, GNUPGHOME: gnupgHome } });
   t.after(() => {
     spawnSync('gpgconf', ['--kill', 'gpg-agent'], { env: { ...process.env, GNUPGHOME: gnupgHome } });
-    rmSync(base, { recursive: true, force: true });
+    // The agent may let go of its socket a moment after it is told to stop.
+    rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
   const made = gpg(['--quick-gen-key', 'Polaris test <test@example.com>', 'default', 'default', 'never']);
   assert.equal(made.status, 0, made.stderr);
