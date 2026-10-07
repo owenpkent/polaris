@@ -12,8 +12,10 @@ import { chromium } from '@playwright/test'
 // SAFETY. The owner's own Constellation, with their real database, may be running on port 8788.
 // Everything here is built so that cannot be touched:
 //   - The app is started with CC_DB, CC_SECRETS_DIR, CC_BACKUP_DIR, APPDATA, and LOCALAPPDATA
-//     (where WebView2 keeps its profile) all inside a fresh temp folder, and with CC_PORT set to
-//     a free port that is never the daemon's default. main.rs reads the port and the database
+//     all inside a fresh temp folder, and with CC_PORT set to a free port that is never the
+//     daemon's default. WebView2 does not follow APPDATA or LOCALAPPDATA (Tauri finds its profile
+//     through the known-folder API), so launchApp also sets WEBVIEW2_USER_DATA_FOLDER, and checks
+//     that the profile really appeared under the temp folder. main.rs reads the port and the database
 //     from exactly these variables, so no code in the shell had to change.
 //   - Every inherited CC_* variable is dropped first, so none of the owner's settings leak in.
 //   - A process is killed only if this run started it (the app, which takes the daemon it
@@ -152,6 +154,8 @@ export function makeScratch() {
     backups: join(dir, 'backups'),
     appData: join(dir, 'appdata'),
     localAppData: join(dir, 'localappdata'),
+    // Made by WebView2 itself, not here, so its appearance proves the override was honoured.
+    webview2: join(dir, 'webview2-profile'),
     remove() {
       try {
         rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
@@ -223,6 +227,8 @@ export async function launchApp(scratch, { port, token }) {
   const cdpPort = await freePort()
   const env = {
     ...scratchEnv(scratch, { port, token }),
+    // After scratchEnv, which strips inherited WEBVIEW2_* variables. Replaces the user-data folder.
+    WEBVIEW2_USER_DATA_FOLDER: scratch.webview2,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort}`,
     // The updater's check on GitHub, a few seconds after start, goes nowhere. Loopback is exempt,
     // because the shell's own probe of the daemon must not go through it.
@@ -263,6 +269,10 @@ export async function launchApp(scratch, { port, token }) {
       }
       return (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok
     }, { timeout: 60000 })
+    // Verified, not assumed: a profile anywhere else would be the owner's real one.
+    if (!existsSync(scratch.webview2)) {
+      throw new Error(`WebView2 did not create its profile under ${scratch.webview2}, so it may be using the owner's real profile.`)
+    }
     app.browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`)
     app.context = app.browser.contexts()[0]
     await app.context.tracing.start({ screenshots: true, snapshots: true })

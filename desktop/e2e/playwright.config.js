@@ -23,5 +23,5 @@ export default defineConfig({
   timeout: 120000,
   expect: { timeout: 15000 },
   reporter: [['list']],
-  outputDir: '../../.playwright-desktop',
+  outputDir: '../../desktop-test-output',
 })

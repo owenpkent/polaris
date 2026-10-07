@@ -57,7 +57,7 @@ desktop.ini
 # Playwright UI test output
 .playwright/
 .playwright-perf/
-.playwright-desktop/
+desktop-test-output/
 playwright-report/
 
 # Desktop app (Tauri). These are made by scripts/desktop.mjs at build time.

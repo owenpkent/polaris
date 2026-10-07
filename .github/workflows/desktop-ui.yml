@@ -51,5 +51,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-ui-output
-          path: .playwright-desktop/
+          path: desktop-test-output/
           retention-days: 7
