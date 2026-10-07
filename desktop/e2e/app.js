@@ -41,7 +41,10 @@ export async function until(what, check, { timeout = 30000, every = 200 } = {}) 
     } catch (err) {
       last = err
     }
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}${last ? `: ${last.message}` : ''}`)
+    if (Date.now() > deadline) {
+      const cause = last?.cause ? ` (${last.cause.code || last.cause.message})` : ''
+      throw new Error(`Timed out waiting for ${what}${last ? `: ${last.message}${cause}` : ''}`)
+    }
     await sleep(every)
   }
 }
@@ -316,20 +319,60 @@ export function webView2Runtime() {
   }
 }
 
+/** TCP ports the given processes listen on, as "pid:port". */
+function listenersOf(pids) {
+  if (!pids.length) return 'none'
+  try {
+    const out = powershell(
+      `Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { @(${pids.join(',')}) -contains $_.OwningProcess } | ForEach-Object { "$($_.OwningProcess):$($_.LocalAddress):$($_.LocalPort)" }`,
+    ).trim()
+    return out ? out.split(/\s+/).join(', ') : 'none'
+  } catch (err) {
+    return `unknown (${err.message})`
+  }
+}
+
+/** Chromium writes DevToolsActivePort into the profile when its debugging server is up. */
+function devToolsActivePort(profile) {
+  try {
+    const out = powershell(
+      `Get-ChildItem -Path '${profile.replace(/'/g, "''")}' -Recurse -Filter DevToolsActivePort -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FullName): $((Get-Content $_.FullName) -join ' ')" }`,
+    ).trim()
+    return out || 'no DevToolsActivePort file'
+  } catch (err) {
+    return `unknown (${err.message})`
+  }
+}
+
+/** Edge and WebView2 policies in the registry, which can forbid remote debugging. */
+function edgePolicies() {
+  try {
+    const out = powershell(
+      `foreach ($k in 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge','HKCU:\\Software\\Policies\\Microsoft\\Edge') { if (Test-Path $k) { Get-ChildItem -Path $k -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }; (Get-ItemProperty -Path $k -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object { "$k $($_.Name)=$($_.Value)" } } }`,
+    ).trim()
+    return out || 'none'
+  } catch (err) {
+    return `unknown (${err.message})`
+  }
+}
+
 /** Everything there is to read about an app that did not open its debugging port. */
 function launchDiagnostics(child, scratch, output) {
   const dataDir = dirname(scratch.db)
-  const children = (() => {
-    try {
-      return childrenOf(child.pid).map((c) => `${c.name} (${c.pid})`)
-    } catch (err) {
-      return [`unknown: ${err.message}`]
-    }
-  })()
+  let children = []
+  try {
+    children = childrenOf(child.pid)
+  } catch (err) {
+    children = [{ pid: 0, name: `unknown: ${err.message}`, commandLine: '' }]
+  }
+  const described = children.map((c) => `${c.name} (${c.pid}): ${c.commandLine.slice(0, 1500)}`)
   return [
     `app pid ${child.pid}, exit code ${child.exitCode === null ? 'none (still running)' : child.exitCode}`,
-    `children of the app: ${children.length ? children.join(', ') : 'none'}`,
+    `children of the app:\n${described.length ? described.join('\n') : 'none'}`,
+    `listening ports of the app and its children: ${listenersOf([child.pid, ...children.map((c) => c.pid).filter(Boolean)])}`,
     `WebView2 profile under scratch: ${existsSync(scratch.webview2) ? 'yes' : 'no'}`,
+    `DevToolsActivePort: ${devToolsActivePort(scratch.webview2)}`,
+    `Edge policies: ${edgePolicies()}`,
     `WebView2 runtime: ${webView2Runtime()}`,
     `desktop.log:\n${readText(join(dataDir, 'desktop.log')) || '(empty)'}`,
     `daemon.log:\n${readText(join(dataDir, 'daemon.log')).slice(-3000) || '(none)'}`,
