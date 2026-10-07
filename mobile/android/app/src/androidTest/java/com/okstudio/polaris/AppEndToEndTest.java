@@ -54,19 +54,54 @@ public class AppEndToEndTest {
         app.waitFor("the dashboard to load", "document.readyState==='complete'&&window.Capacitor&&document.body.innerText.length>0", LOAD_MS);
         // The app keeps its settings in the WebView's localStorage across installs and runs, so
         // start each test as a first launch: no server, no token, no reminder choices.
-        app.eval("localStorage.clear();null");
-        // cancelAll, not cancel with whatever is pending: the plugin rejects cancel when the list
-        // is empty, which it is on every fresh launch. (The dashboard's own cancelAllNotifications
-        // skips the call in that case; nativeApp.test.js covers it.)
-        app.evalAsync("window.Capacitor.nativePromise('LocalNotifications','cancelAll',{})", 10000);
-        // The old page is marked so the wait below cannot pass on it: when the previous test never
-        // connected, it already shows the banner that the fresh page is waited for.
-        app.eval("window.__ptOld=true;location.reload();null");
+        startAsAFirstLaunch();
         // A device with nothing saved starts in local mode on My tasks, where the banner's Connect
         // button opens the Connection tab with the form.
         app.waitFor("the not-connected banner", "!window.__ptOld&&document.body.innerText.includes('Not connected yet')", LOAD_MS);
         app.click("button", "Connect");
         app.waitFor("the connect form", "__pt.find('textbox','Server URL')", LOAD_MS);
+    }
+
+    // The key under which the dashboard saves the server URL and token (ConnectionContext.jsx).
+    private static final String CONNECTION_KEY = "cc-connection-v1";
+
+    // Clears the page's storage and reloads it, so the page under test starts with nothing saved.
+    // The page that was just launched loads the connection the previous test saved and re-checks
+    // it in the background, and that check writes the connection back when the server answers.
+    // One clear raced it on CI's slower emulator and the reloaded page came up connected, so the
+    // clear is repeated until the saved connection stays away, and the fresh page is checked too.
+    private void startAsAFirstLaunch() {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            clearStorageUntilItStaysClear();
+            // cancelAll, not cancel with whatever is pending: the plugin rejects cancel when the
+            // list is empty, which it is on every fresh launch. (The dashboard's own
+            // cancelAllNotifications skips the call in that case; nativeApp.test.js covers it.)
+            app.evalAsync("window.Capacitor.nativePromise('LocalNotifications','cancelAll',{})", 10000);
+            // The old page is marked so the waits cannot pass on it: when the previous test never
+            // connected, it already shows the banner that the fresh page is waited for.
+            app.eval("window.__ptOld=true;location.reload();null");
+            app.waitFor("the reloaded page", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&document.body.innerText.length>0", LOAD_MS);
+            if (!app.truthy("localStorage.getItem(" + WebAppDriver.quote(CONNECTION_KEY) + ")")) return;
+        }
+        throw new AssertionError("The saved connection came back after every clear of localStorage.");
+    }
+
+    private void clearStorageUntilItStaysClear() {
+        long end = System.currentTimeMillis() + 10000;
+        long clearSince = -1;
+        while (System.currentTimeMillis() < end) {
+            if (app.truthy("localStorage.getItem(" + WebAppDriver.quote(CONNECTION_KEY) + ")")) {
+                app.eval("localStorage.clear();null");
+                clearSince = -1;
+            } else if (clearSince < 0) {
+                app.eval("localStorage.clear();null");
+                clearSince = System.currentTimeMillis();
+            } else if (System.currentTimeMillis() - clearSince >= 1500) {
+                return;
+            }
+            WebAppDriver.sleep(100);
+        }
+        throw new AssertionError("The saved connection kept being written back to localStorage.");
     }
 
     // Submits the connection form by its own button. The banner above the form has a Connect
