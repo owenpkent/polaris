@@ -17,6 +17,7 @@ import { createRouter } from './router.ts';
 import { createStaticHandler } from './static.ts';
 import { isSameOriginBrowserRequest, isTailscaleOwner } from './tailscale.ts';
 import type { HttpServerOptions } from './types.ts';
+import { readBarrier, updatingMessage } from '../update/barrier.ts';
 
 export type { ApiTokens, HttpServerOptions, JobStatus } from './types.ts';
 
@@ -152,6 +153,14 @@ export function createHttpServer(app: App, opts: HttpServerOptions): Server {
           if (isOwnerOverTailscale && !hasApiToken && method !== 'GET' && method !== 'HEAD' && !isSameOriginBrowserRequest(req)) {
             sendError(res, 403, 'Forbidden', 'a write signed in through Tailscale must come from the dashboard\'s own origin');
             return;
+          }
+          // While `cc update` holds its write barrier (update/barrier.ts), from the stop before
+          // the snapshot to the commit or the rollback, no write is taken: one acknowledged now
+          // could be lost to the rollback. Reads go on, and a 503 is what the dashboard already
+          // treats as "try later" (api.js keeps the edit in its outbox).
+          if (method !== 'GET' && method !== 'HEAD') {
+            const barrier = readBarrier(app.config.dbPath);
+            if (barrier) { sendError(res, 503, 'Updating', updatingMessage(barrier)); return; }
           }
           const body = method === 'POST' || method === 'PATCH' || method === 'PUT'
             ? await readJsonBody(req, MAX_BODY_BYTES)

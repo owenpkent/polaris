@@ -3,10 +3,13 @@
 // connected to StdioServerTransport (Phase 1) or mounted on Streamable HTTP in a
 // Cloudflare Worker (a later phase) without changes here.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { App } from '../app.ts';
 import { defaultAgentName, type ActorInput } from '../core/index.ts';
+import { readBarrier, updatingMessage } from '../update/barrier.ts';
 import { registerPrompts } from './prompts.ts';
 import { registerResources } from './resources.ts';
+import { err } from './shared.ts';
 import { registerGoalReadTools, registerGoalWriteTools } from './tools-goals.ts';
 import { registerProjectWriteTools } from './tools-projects.ts';
 import { registerReadTools } from './tools-read.ts';
@@ -53,12 +56,35 @@ export function createMcpServer(app: App, opts: CreateMcpServerOptions = {}): Mc
   registerReadTools(server, app, opts.agentName ?? null);
   registerGoalReadTools(server, app);
   if (!opts.readonly) {
-    registerWriteTools(server, app, actor);
-    registerGoalWriteTools(server, app, actor);
-    registerProjectWriteTools(server, app, actor);
+    const writes = behindWriteBarrier(server, app);
+    registerWriteTools(writes, app, actor);
+    registerGoalWriteTools(writes, app, actor);
+    registerProjectWriteTools(writes, app, actor);
   }
   registerResources(server, app);
   registerPrompts(server);
 
   return server;
+}
+
+type AnyToolCallback = (...args: unknown[]) => CallToolResult | Promise<CallToolResult>;
+
+/**
+ * The server the write tools register on: the same one, except that every tool registered
+ * through it first looks for the write barrier `cc update` holds across its restart
+ * (update/barrier.ts) and returns a tool error while it stands. A write acknowledged then could
+ * be lost to the update's rollback. The read tools register on the server itself and keep working.
+ */
+function behindWriteBarrier(server: McpServer, app: App): McpServer {
+  const registerTool: McpServer['registerTool'] = (name, config, cb) => {
+    const call = cb as unknown as AnyToolCallback;
+    const guarded: AnyToolCallback = (...args) => {
+      const barrier = readBarrier(app.config.dbPath);
+      return barrier ? err(updatingMessage(barrier)) : call(...args);
+    };
+    return server.registerTool(name, config, guarded as unknown as typeof cb);
+  };
+  return new Proxy(server, {
+    get: (target, prop, receiver) => (prop === 'registerTool' ? registerTool : Reflect.get(target, prop, receiver)),
+  });
 }

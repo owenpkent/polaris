@@ -505,6 +505,17 @@ describe('sending a long queue', () => {
     expect(getOfflineState()).toMatchObject({ pending: 1, lastSync: { failed: true, status: 413, count: 1 } })
   })
 
+  test('a 503 (the server is being updated, or a proxy in front of a stopped one) keeps every edit queued for a later try', async () => {
+    await queueComments(2)
+    global.fetch.mockImplementation(async () => jsonResponse(503, { error: { code: 'Updating', message: 'Polaris is being updated (started now). Try again in a minute.' } }))
+    expect(await flushOutbox('http://x', 'tok')).toBe(false)
+    expect(getOfflineState()).toMatchObject({ pending: 2, lastSync: null })
+    const server = outboxServer()
+    expect(await flushOutbox('http://x', 'tok')).toBe(true)
+    expect(server.applied).toHaveLength(2)
+    expect(getOfflineState().pending).toBe(0)
+  })
+
   test('an op the server did not answer for stays queued', async () => {
     await queueComments(2)
     global.fetch.mockImplementation(async (url, init) => {

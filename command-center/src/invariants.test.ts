@@ -21,6 +21,13 @@
 //      owner, and a fork leaves the original task alone except for its new subtask.
 //  10. Tailscale identity is off unless the owner names a login, opens only the dashboard's REST
 //      API, and only from the proxy on this machine. MCP keeps its tokens.
+//  11. An update is the owner's request, never the daemon's act: git, npm, the build, and a
+//      restart belong to `cc update`, whose module the daemon's import graph never reaches; the
+//      request routes are the human actor's alone, a request names one release strictly newer
+//      than what runs, pickup moves only a pending row, and no agent, rule, or offline op can
+//      touch any of it. The scheduled `--auto` run installs signed releases only, never main,
+//      the release check sends no credential, and the update path touches the data folder only
+//      through the backup code and its own files (docs/update-proposal.md, section 8).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -29,14 +36,21 @@ import { buildDigest } from './automation/digest.ts';
 import { nextOccurrence } from './automation/recurrence.ts';
 import { runRules, validateRuleDefinition } from './automation/rules.ts';
 import { EXTERNAL_SOURCE_TYPES, OUTBOX_OP_KINDS, OUTBOX_PATCH_FIELDS, POST_TYPES, SOURCE_TYPES, ValidationError, applyOutbox, openStore, type OutboxOp, type Json, type SourceType, type Store, type TaskPatch } from './core/index.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
+import { VERSION } from './http/version.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
 import { syncGithub } from './ingest/github/sync.ts';
 import { TOOL_CATALOG } from './mcp/catalog.ts';
 import { taskLine } from './mcp/format.ts';
+import { git } from './update/git.ts';
+import { RELEASE_SIGNERS_FILE } from './update/signers.ts';
+import { emptyUpdateStatus, UPDATE_STATUS_FILE, writeUpdateStatus } from './update/status.ts';
 
 const TODAY = '2026-09-18';
 const OWNER_SOURCE_TYPES = SOURCE_TYPES.filter((s) => !EXTERNAL_SOURCE_TYPES.includes(s));
@@ -1220,4 +1234,257 @@ test('10. with a login named, identity is the owner on REST only, from a loopbac
   const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
   assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
   assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
+});
+
+// =====================================================================================
+// 11. The daemon never runs a program. Updating (git, npm ci, the tests, the build, a restart)
+//    is `cc update`, run by the owner, and the module that does it is reached only through a
+//    dynamic import in the update command (docs/update-proposal.md, sections 7 and 8)
+// =====================================================================================
+
+const SRC = dirname(fileURLToPath(import.meta.url));
+
+/** The relative .ts modules a file loads at run time: `import ... from`, `export ... from`, and
+ *  bare `import '...'` lines. `import type` and `export type` lines are erased before Node runs
+ *  the file, so they load nothing and are not followed. */
+function staticImports(file: string): string[] {
+  const source = readFileSync(file, 'utf8');
+  const found: string[] = [];
+  for (const m of source.matchAll(/^(?:import|export)\b(?!\s+type\b)[^'"\n]*?\bfrom\s+['"]([^'"]+)['"]/gm)) found.push(m[1]);
+  for (const m of source.matchAll(/^import\s+['"]([^'"]+)['"]/gm)) found.push(m[1]);
+  return found.filter((spec) => spec.startsWith('.')).map((spec) => resolve(dirname(file), spec));
+}
+
+/** Every module reached from `roots` by static imports, including the roots. */
+function reachable(roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...roots];
+  while (queue.length) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    assert.ok(existsSync(file), `${file} is imported but does not exist`);
+    seen.add(file);
+    queue.push(...staticImports(file));
+  }
+  return seen;
+}
+
+const importsChildProcess = (file: string) => /from\s+['"](node:)?child_process['"]|require\(['"](node:)?child_process['"]\)/.test(readFileSync(file, 'utf8'));
+
+test('11. the daemon and the http server reach no module that starts a program, except the secret store for DPAPI', () => {
+  const roots = [join(SRC, 'daemon', 'daemon.ts'), join(SRC, 'http', 'server.ts'), join(SRC, 'cli.ts')];
+  const graph = reachable(roots);
+  assert.ok(graph.size > 20, 'the walk followed the imports');
+  const secrets = join(SRC, 'ingest', 'secrets.ts');
+  assert.ok(graph.has(secrets), 'the one allowed program (PowerShell for DPAPI) is in the graph, so the exception is real');
+  assert.ok(importsChildProcess(secrets));
+  const offenders = [...graph].filter((f) => f !== secrets && importsChildProcess(f)).map((f) => f.slice(SRC.length + 1));
+  assert.deepEqual(offenders, [], 'a module the daemon loads imports child_process');
+  for (const name of ['run.ts', 'exec.ts', 'git.ts', 'restart.ts', 'health.ts']) {
+    assert.ok(!graph.has(join(SRC, 'update', name)), `src/update/${name} is in the daemon's import graph`);
+  }
+  // The two src/update modules the daemon does load, the status file and the write barrier, lead
+  // nowhere: node:fs and node:path only, so the walk above can never reach the rest through them.
+  for (const name of ['status.ts', 'barrier.ts']) {
+    const file = join(SRC, 'update', name);
+    assert.ok(graph.has(file), `src/update/${name} is what the daemon reads`);
+    assert.deepEqual(staticImports(file), [], `src/update/${name} imports another module`);
+    const bare = [...readFileSync(file, 'utf8').matchAll(/^import\b[^'"\n]*?\bfrom\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort();
+    assert.deepEqual(bare, ['node:fs', 'node:path'], `src/update/${name} imports more than node:fs and node:path`);
+  }
+});
+
+test('11. src/update/run.ts is reached only by a dynamic import, from the update command', () => {
+  const run = join(SRC, 'update', 'run.ts');
+  const sources = [...reachable([join(SRC, 'cli.ts'), join(SRC, 'update', 'commands.ts')])];
+  const staticImporters = sources.filter((f) => f !== run && staticImports(f).includes(run)).map((f) => f.slice(SRC.length + 1));
+  assert.deepEqual(staticImporters, [], 'run.ts must not be a static import of anything the CLI loads');
+  const commands = readFileSync(join(SRC, 'update', 'commands.ts'), 'utf8');
+  assert.match(commands, /await import\('\.\/run\.ts'\)/, 'the update command loads run.ts when it runs');
+  assert.ok(!importsChildProcess(join(SRC, 'update', 'commands.ts')));
+  // And run.ts itself takes nothing lazily: the process must keep running the old code after the checkout moves.
+  assert.ok(!readFileSync(run, 'utf8').replace(/\/\/.*$/gm, '').includes('import('), 'run.ts has a dynamic import');
+});
+
+// -------------------------------------------------------------------------------------
+// 11, continued. An update is the owner's request, never the daemon's act (docs/update-proposal.md,
+//     sections 4C, 6, and 8). The request routes are the human actor's alone, on /api only;
+//     a request names one release version that is strictly newer than what runs; pickup moves
+//     only a pending row; and nothing about an update reaches an agent, a rule, or the outbox.
+// =====================================================================================
+
+function updateScratch(t: { after(fn: () => void): void }): { app: ReturnType<typeof fakeApp>; newer: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'cc-invariants-update-'));
+  const app = fakeApp();
+  app.config.dbPath = join(dir, 'constellation.db');
+  const [major, minor, patch] = VERSION.split('.').map(Number);
+  const newer = `${major}.${minor}.${patch + 1}`;
+  writeUpdateStatus(app.config.dbPath, {
+    ...emptyUpdateStatus(), updaterInstalled: true, lastRunAt: new Date().toISOString(), running: VERSION,
+    available: { version: newer, notes: '', touchesSchema: false },
+  });
+  t.after(() => { app.close(); rmSync(dir, { recursive: true, force: true }); });
+  return { app, newer };
+}
+
+test('11. the update request routes require the human actor: the mcp and read-only tokens are refused on every one', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    const routes: [string, string, unknown?][] = [
+      ['GET', '/api/update'],
+      ['POST', '/api/update/requests', { version: newer }],
+      ['POST', '/api/update/requests/up_0000000000/cancel'],
+      ['POST', '/api/update/requests/up_0000000000/pickup'],
+      ['POST', '/api/update/requests/up_0000000000/finish', { ok: true, message: 'x' }],
+    ];
+    for (const token of [TEST_TOKENS.mcp, TEST_TOKENS.mcpReadonly]) {
+      for (const [method, path, body] of routes) {
+        const res = await fetch(`${base}${path}`, {
+          method, headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined,
+        });
+        assert.equal(res.status, 401, `${method} ${path}`);
+      }
+    }
+    assert.equal(app.store.currentUpdateRequest(), null, 'nothing was written');
+    // The store itself refuses every actor but the human, whatever route or tool might call it.
+    for (const actor of ['agent', 'system', 'rule'] as const) {
+      assert.throws(() => app.store.createUpdateRequest(newer, actor), /only the owner/);
+    }
+    const request = app.store.createUpdateRequest(newer, 'human');
+    assert.equal(request.requestedBy, 'human');
+    assert.throws(() => app.store.cancelUpdateRequest(request.id, 'agent'), /only the owner/);
+  });
+});
+
+test('11. a request must name a release version strictly newer than the running one, and the one the updater reported', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    assert.equal((await api(base, 'POST', '/api/update/requests', {})).status, 400, 'no version');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: VERSION })).status, 400, 'the running version');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: '0.0.0' })).status, 400, 'older');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: 'main' })).status, 400, 'a branch is not a release');
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: `v${newer}` })).status, 400, 'a tag name is not a version');
+    const [major] = VERSION.split('.').map(Number);
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: `${major + 1}.0.0` })).status, 400, 'newer, but not what the updater reported');
+    assert.equal(app.store.currentUpdateRequest(), null);
+    assert.equal((await api(base, 'POST', '/api/update/requests', { version: newer })).status, 201);
+  });
+});
+
+test('11. pickup moves only a pending row: a second pickup, or a pickup of an expired or cancelled row, is refused', async (t) => {
+  const { app, newer } = updateScratch(t);
+  await withServer(app, {}, async (base) => {
+    const pickup = (id: string) => api(base, 'POST', `/api/update/requests/${id}/pickup`);
+    const first = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    assert.equal((await pickup(first.id)).status, 200);
+    assert.equal((await pickup(first.id)).status, 409, 'a second pickup');
+    await api(base, 'POST', `/api/update/requests/${first.id}/finish`, { ok: false, message: 'Rolled back: the build failed' });
+
+    const cancelled = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    await api(base, 'POST', `/api/update/requests/${cancelled.id}/cancel`);
+    assert.equal((await pickup(cancelled.id)).status, 409, 'a cancelled row');
+
+    const stale = (await api(base, 'POST', '/api/update/requests', { version: newer })).json.request;
+    // Backdated against the store's own clock, which the fake app pins.
+    app.store.db.run('UPDATE update_requests SET requested_at = ? WHERE id = ?', [new Date(Date.parse(stale.requestedAt) - 2 * 60 * 60_000).toISOString(), stale.id]);
+    assert.equal((await pickup(stale.id)).status, 409, 'an expired row');
+    assert.equal(app.store.getUpdateRequest(stale.id)?.state, 'expired');
+  });
+});
+
+test('11. nothing about an update reaches an agent, a rule, or the outbox: no MCP tool, no op kind, no rule action, no event kind', () => {
+  // No tool checks for, requests, or installs an update. update_task and update_goal edit a task
+  // or a goal, which is what their names say; nothing else carries the word.
+  for (const tool of TOOL_CATALOG) {
+    assert.ok(!/\bupdates?\b/i.test(tool.name.replace(/^update_(task|goal)$/, '')), `tool ${tool.name}`);
+    assert.ok(!/\b(release|updater|install)\b/i.test(tool.description), `tool ${tool.name} description: ${tool.description}`);
+  }
+  for (const kind of OUTBOX_OP_KINDS) assert.ok(!/update_request|release|install/.test(kind), kind);
+  for (const action of [
+    { type: 'request_update', version: '9.9.9' },
+    { type: 'update', version: '9.9.9' },
+    { type: 'install_update' },
+  ] as Record<string, Json>[]) {
+    assert.equal(validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [action] }).ok, false, JSON.stringify(action));
+  }
+  for (const kind of ['update.requested', 'update.picked_up', 'update.finished']) {
+    assert.equal(validateRuleDefinition({ trigger: { type: 'event', kinds: [kind] }, conditions: [], actions: [{ type: 'notify', message: 'x' }] }).ok, false, kind);
+  }
+  const types = readFileSync(new URL('./core/types.ts', import.meta.url), 'utf8');
+  assert.ok(!/'update\.[a-z_]+'/.test(types), 'no event kind starts with update.');
+  // And a request records no event at all.
+  const store = openStore(':memory:');
+  store.createUpdateRequest('999.0.0', 'human');
+  assert.equal(store.lastEventId(), 0);
+});
+
+// -------------------------------------------------------------------------------------
+// 11, continued (phase C). The scheduled updater: `cc update --auto` never installs main, the
+//     release check sends no credential, and the update path writes under command-center/data
+//     only through the backup code, the snapshot restore, and its own files (docs/update-proposal.md,
+//     sections 3, 7, and 8).
+// =====================================================================================
+
+const UPDATE = join(SRC, 'update');
+const stripComments = (text: string) => text.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+test('11. cc update --auto refuses main: the auto path only ever names a release, or one requested version, as its target', () => {
+  const auto = stripComments(readFileSync(join(UPDATE, 'auto.ts'), 'utf8'));
+  const targets = [...auto.matchAll(/kind: '([a-z_]+)'/g)].map((m) => m[1]);
+  assert.ok(targets.length >= 2, 'the targets were found');
+  assert.deepEqual([...new Set(targets)].sort(), ['release', 'to']);
+  assert.ok(!auto.includes("'main'"), 'auto.ts never names main');
+  assert.ok(/auto: true/.test(auto) && !/auto: false/.test(auto), 'every run through run.ts is marked as the updater');
+  assert.ok(!/confirm/.test(auto), 'nothing to ask with');
+  // In auto mode run.ts asks no question, and looks at main only when the target is main, which the updater never passes.
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  assert.match(run, /!opts\.yes && !opts\.auto && !\(await deps\.confirm/);
+  assert.match(run, /wantsRelease\s*\?\s*await considerRelease[\s\S]*?:\s*await considerMain/);
+});
+
+test('11. the release check sends no credential: a bare git fetch, and nothing under src/update reads the GitHub secrets', async () => {
+  const calls: string[][] = [];
+  const repo = git(async (cmd, args) => { calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, tmpdir());
+  await repo.fetchTags('origin');
+  await repo.fetch('origin');
+  assert.deepEqual(calls, [['git', 'fetch', '--prune', '--tags', 'origin'], ['git', 'fetch', '--prune', 'origin']]);
+  for (const line of calls) assert.ok(!line.some((a) => /token|authorization|credential|@|https?:/i.test(a)), line.join(' '));
+  // No module under src/update imports the GitHub code or the secret store, except run.ts for one key.
+  for (const name of readdirSync(UPDATE).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
+    const source = stripComments(readFileSync(join(UPDATE, name), 'utf8'));
+    assert.ok(!/from '\.\.\/ingest\/github\//.test(source), `${name} imports the GitHub code`);
+    assert.ok(!/github/i.test(source), `${name} mentions GitHub`);
+    if (name !== 'run.ts') assert.ok(!/from '\.\.\/ingest\//.test(source), `${name} imports the secret store`);
+  }
+  // run.ts reads the secret store for one thing: the backup passphrase, so the snapshot is encrypted like a backup is.
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  assert.deepEqual([...run.matchAll(/secrets\.get\(([^)]*)\)/g)].map((m) => m[1]), ['BACKUP_PASSPHRASE_KEY']);
+  assert.equal((run.match(/\bsecrets\b/g) ?? []).length, 4, 'the field, its default, the deps type, and the one read');
+});
+
+test('11. the update path writes under command-center/data only through the backup code, the snapshot restore, and its own log, status, and pinned-signers files', () => {
+  const run = stripComments(readFileSync(join(UPDATE, 'run.ts'), 'utf8'));
+  const auto = stripComments(readFileSync(join(UPDATE, 'auto.ts'), 'utf8'));
+  // auto.ts touches no file itself: the status file through status.ts, the log through run.ts.
+  assert.ok(!/from 'node:fs'/.test(auto), 'auto.ts imports node:fs');
+  assert.deepEqual([...auto.matchAll(/\b(writeUpdateStatus|readUpdateStatus)\(([^,)]*)/g)].map((m) => m[2].trim()).filter((a) => a !== 'opts.dbPath'), [], 'auto.ts reads and writes the status file next to the database only');
+  // Every filesystem write in run.ts names the log, the pinned-signers folder, or the dashboard
+  // folders (dist, dist.next, dist.prev), which are not under data.
+  const writes = [...run.matchAll(/\b(writeFileSync|appendFileSync|renameSync|rmSync|mkdirSync|copyFileSync|unlinkSync|rmdirSync|cpSync|createWriteStream|openSync)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2].trim()}`);
+  const allowed = new Set([
+    'appendFileSync(updateLogPath(opts.dbPath', 'appendFileSync(logFile', 'mkdirSync(dirname(logFile',
+    'mkdirSync(dirname(pinnedFile',
+    'rmSync(distNext', 'rmSync(prev', 'renameSync(dist', 'renameSync(next', 'rmSync(dist', 'renameSync(prev',
+  ]);
+  for (const w of writes) assert.ok(allowed.has(w), `run.ts writes somewhere new: ${w}`);
+  assert.ok(writes.length >= 8, 'the writes were found');
+  // The database and the backup folder are reached only through daemon/backup.ts, and the status
+  // and signers files through their own modules. No SQL of its own.
+  assert.match(run, /from '\.\.\/daemon\/backup\.ts'/);
+  assert.deepEqual([...new Set([...run.matchAll(/\b(snapshotDatabase|restoreDatabaseFile|writeUpdateStatus|pinSigners)\(/g)].map((m) => m[1]))].sort(), ['pinSigners', 'restoreDatabaseFile', 'snapshotDatabase', 'writeUpdateStatus']);
+  assert.ok(!run.includes('DatabaseSync') && !/\bdb\.(exec|run|prepare)\(/.test(run));
+  // The files it owns, by name.
+  assert.match(run, /^export const UPDATE_LOG_FILE = 'update\.log';$/m);
+  assert.equal(UPDATE_STATUS_FILE, 'update-status.json');
+  assert.equal(RELEASE_SIGNERS_FILE, 'release-signers');
 });

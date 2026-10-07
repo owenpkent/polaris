@@ -4,11 +4,11 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, TASK_STATUSES,
+  ACTIVE_STATUSES, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
   type NewProject, type NewTask, type Post, type PostSearch, type PostSearchHit, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
-  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadOptions, type ThreadSummary, type UpsertResult,
+  type SourceItem, type SourceType, type Task, type TaskFilter, type TaskPatch, type TaskStatus, type Thread, type ThreadOptions, type ThreadSummary, type UpdateRequest, type UpdateRequestState, type UpsertResult,
 } from './types.ts';
 
 const INBOX_HAS_NO_THREAD = 'an inbox task has no thread until the owner accepts it';
@@ -95,6 +95,22 @@ function rowToThread(r: Row): Thread {
     authorHidden: bool(r.author_hidden), dailyCap: (r.daily_cap as number | null) ?? null,
     successorThreadId: (r.successor_thread_id as string | null) ?? null,
     createdAt: r.created_at as string, closedAt: (r.closed_at as string | null) ?? null,
+  };
+}
+
+/** What a picked-up request that never reported an outcome says once the daemon gives up on it. */
+export const STALE_PICKUP_RESULT = 'The updater did not report an outcome: it was stopped or killed mid-run. See data/update.log.';
+
+/** A picked-up row the updater has held past UPDATE_REQUEST_STALE_MS with no outcome. */
+export function isStalePickup(row: UpdateRequest, now: string): boolean {
+  return row.state === 'picked_up' && row.pickedUpAt !== null && Date.parse(now) - Date.parse(row.pickedUpAt) >= UPDATE_REQUEST_STALE_MS;
+}
+
+function rowToUpdateRequest(r: Row): UpdateRequest {
+  return {
+    id: r.id as string, version: r.version as string, requestedAt: r.requested_at as string, requestedBy: r.requested_by as Actor,
+    state: r.state as UpdateRequestState, pickedUpAt: (r.picked_up_at as string | null) ?? null,
+    finishedAt: (r.finished_at as string | null) ?? null, result: (r.result as string | null) ?? null,
   };
 }
 
@@ -1610,6 +1626,113 @@ export class Store {
     return this.db.all<Row>(
       'SELECT * FROM (SELECT rowid AS rid, * FROM posts WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?) ORDER BY rid',
       [threadId, limit]).map(rowToPost);
+  }
+
+  // ------------------------------------------------------------ update requests
+  // docs/update-proposal.md, section 4C. A row is the owner asking the scheduled updater to
+  // install one release. Every transition has one owner: the owner creates and cancels (ownerOnly,
+  // like a verdict on a thread), the updater picks up and finishes, and the daemon expires. None
+  // of these records an event: events are keyed to a task, and there is no update event kind, so
+  // nothing here is a rule trigger. The daemon never installs anything: a row is a request.
+
+  /** The owner asks for one release, named exactly. One request at a time: a pending or picked-up row refuses a second. */
+  createUpdateRequest(version: string, actor: ActorInput): UpdateRequest {
+    this.ownerOnly(actor, 'request an update');
+    if (typeof version !== 'string' || !RELEASE_VERSION_PATTERN.test(version)) throw new ValidationError(`not a release version: ${String(version)}`);
+    return this.db.transaction(() => {
+      const open = this.currentUpdateRequest();
+      if (open && (open.state === 'pending' || open.state === 'picked_up')) {
+        throw new ValidationError(`an update request is already ${open.state === 'pending' ? 'pending' : 'being installed'}: ${open.id}`);
+      }
+      const request: UpdateRequest = {
+        id: newId('up'), version, requestedAt: this.now(), requestedBy: normalizeActorInput(actor).actor,
+        state: 'pending', pickedUpAt: null, finishedAt: null, result: null,
+      };
+      this.db.run(
+        'INSERT INTO update_requests (id, version, requested_at, requested_by, state) VALUES (?, ?, ?, ?, ?)',
+        [request.id, request.version, request.requestedAt, request.requestedBy, request.state],
+      );
+      return request;
+    });
+  }
+
+  /**
+   * The owner takes a request back: a pending one, or a picked-up one the updater has held for
+   * longer than UPDATE_REQUEST_STALE_MS with no outcome, which means the updater was stopped or
+   * killed mid-run. A fresh picked-up row is mid-install and stays the updater's.
+   */
+  cancelUpdateRequest(id: string, actor: ActorInput): UpdateRequest {
+    this.ownerOnly(actor, 'cancel an update request');
+    const now = this.now();
+    return this.db.transaction(() => {
+      const row = this.getUpdateRequest(id);
+      if (!row) throw new NotFoundError(`update request not found: ${id}`);
+      if (row.state === 'picked_up' && isStalePickup(row, now)) {
+        return this.moveUpdateRequest(id, 'picked_up', { state: 'cancelled', finished_at: now, result: STALE_PICKUP_RESULT }, 'cancel');
+      }
+      if (row.state === 'picked_up') throw new ValidationError(`cannot cancel an update request that is being installed (picked up at ${row.pickedUpAt})`);
+      return this.moveUpdateRequest(id, 'pending', { state: 'cancelled', finished_at: now }, 'cancel');
+    });
+  }
+
+  /**
+   * The updater claims a pending request. One UPDATE guarded on the state, so of a pickup and an
+   * expiry at the same moment exactly one wins: the loser finds the row already moved.
+   */
+  pickUpUpdateRequest(id: string): UpdateRequest {
+    return this.moveUpdateRequest(id, 'pending', { state: 'picked_up', picked_up_at: this.now() }, 'pick up');
+  }
+
+  /** The updater reports how a picked-up request ended. */
+  finishUpdateRequest(id: string, ok: boolean, message: string): UpdateRequest {
+    if (typeof message !== 'string') throw new ValidationError('an update result needs a message');
+    return this.moveUpdateRequest(id, 'picked_up', { state: ok ? 'done' : 'failed', finished_at: this.now(), result: message }, 'finish');
+  }
+
+  /**
+   * A pending request the updater has not picked up within an hour is expired, and so is a
+   * picked-up one with no outcome UPDATE_REQUEST_STALE_MS after its pickup: the updater was
+   * stopped or killed, and a row that could only leave through finish would hold the table
+   * forever. The caller reconciles a picked-up row with the status file first (http/update-routes.ts),
+   * so an outcome that reached the file wins over the expiry. Returns how many rows moved.
+   */
+  expireUpdateRequests(now = this.now()): number {
+    const pendingCutoff = new Date(Date.parse(now) - UPDATE_REQUEST_TTL_MS).toISOString();
+    const pickedUpCutoff = new Date(Date.parse(now) - UPDATE_REQUEST_STALE_MS).toISOString();
+    return this.db.transaction(() => {
+      const pending = this.db.run(
+        "UPDATE update_requests SET state = 'expired', finished_at = ? WHERE state = 'pending' AND requested_at < ?",
+        [now, pendingCutoff],
+      ).changes;
+      const stale = this.db.run(
+        "UPDATE update_requests SET state = 'expired', finished_at = ?, result = ? WHERE state = 'picked_up' AND picked_up_at <= ?",
+        [now, STALE_PICKUP_RESULT, pickedUpCutoff],
+      ).changes;
+      return pending + stale;
+    });
+  }
+
+  getUpdateRequest(id: string): UpdateRequest | null {
+    const r = this.db.get<Row>('SELECT * FROM update_requests WHERE id = ?', [id]);
+    return r ? rowToUpdateRequest(r) : null;
+  }
+
+  /** The newest request, whatever its state, or null when there has never been one. */
+  currentUpdateRequest(): UpdateRequest | null {
+    const r = this.db.get<Row>('SELECT * FROM update_requests ORDER BY requested_at DESC, rowid DESC LIMIT 1');
+    return r ? rowToUpdateRequest(r) : null;
+  }
+
+  private moveUpdateRequest(id: string, from: UpdateRequestState, set: Record<string, SqlValue>, what: string): UpdateRequest {
+    const columns = Object.keys(set);
+    const changed = this.db.run(
+      `UPDATE update_requests SET ${columns.map((c) => `${c} = ?`).join(', ')} WHERE id = ? AND state = ?`,
+      [...columns.map((c) => set[c]), id, from],
+    ).changes;
+    if (changed === 1) return this.getUpdateRequest(id)!;
+    const row = this.getUpdateRequest(id);
+    if (!row) throw new NotFoundError(`update request not found: ${id}`);
+    throw new ValidationError(`cannot ${what} an update request that is ${row.state}; it must be ${from}`);
   }
 
   // -------------------------------------------------------------------- kv
