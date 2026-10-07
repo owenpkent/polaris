@@ -40,10 +40,33 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: command-center
-      # windows-latest ships stable Rust with the MSVC toolchain and the WebView2 runtime.
+      # windows-latest ships stable Rust with the MSVC toolchain. The build is the slow part, so
+      # the cache is kept even when the tests fail.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+          cache-on-failure: true
+      # The app's window is WebView2, and the image lists Edge but not the Evergreen WebView2
+      # runtime (Edge Stable does not stand in for it). Installs the runtime when the registry
+      # does not list one, and prints what the tests will run against.
+      - name: WebView2 runtime
+        shell: pwsh
+        run: |
+          $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client", "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$client", "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$client"
+          function Installed { $keys | ForEach-Object { (Get-ItemProperty -Path $_ -ErrorAction SilentlyContinue).pv } | Where-Object { $_ } | Select-Object -First 1 }
+          Write-Host "session $((Get-Process -Id $PID).SessionId), interactive $([Environment]::UserInteractive), user $env:USERNAME"
+          $version = Installed
+          if (-not $version) {
+            Write-Host 'No WebView2 runtime in the registry; installing the Evergreen runtime'
+            $setup = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $setup
+            $run = Start-Process -FilePath $setup -ArgumentList '/silent', '/install' -Wait -PassThru
+            Write-Host "installer exit code $($run.ExitCode)"
+            $version = Installed
+            if (-not $version) { throw 'The WebView2 runtime is still not installed' }
+          }
+          Write-Host "WebView2 runtime $version"
       # Builds the dashboard and the debug app (no installer, no signing), then runs the tests.
       - run: npm run test:desktop:ui
       - name: Keep traces, logs, and screenshots from failed desktop UI tests

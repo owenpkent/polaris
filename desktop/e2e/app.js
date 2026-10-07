@@ -263,12 +263,18 @@ export async function launchApp(scratch, { port, token }) {
     },
   }
   try {
-    await until('the app to open its debugging port', async () => {
-      if (child.exitCode !== null) {
-        throw new Error(`the app exited with ${child.exitCode} before it was ready. If Constellation is already open, close it. Output: ${output}`)
-      }
-      return (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok
-    }, { timeout: 60000 })
+    try {
+      await until('the app to open its debugging port', async () => {
+        if (child.exitCode !== null) {
+          throw new Error(`the app exited with ${child.exitCode} before it was ready. If Constellation is already open, close it.`)
+        }
+        return (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok
+      }, { timeout: 60000 })
+    } catch (err) {
+      // The fixture attaches the logs of an app that launched. One that did not is only ever
+      // seen here, so everything there is to read goes into the error itself.
+      throw new Error(`${err.message}\n\n${launchDiagnostics(child, scratch, output)}`)
+    }
     // Verified, not assumed: a profile anywhere else would be the owner's real one.
     if (!existsSync(scratch.webview2)) {
       throw new Error(`WebView2 did not create its profile under ${scratch.webview2}, so it may be using the owner's real profile.`)
@@ -290,4 +296,43 @@ function readText(file) {
   } catch {
     return ''
   }
+}
+
+/** The installed WebView2 runtime (the Evergreen runtime or a per-user install), as the registry lists it. */
+export function webView2Runtime() {
+  const client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+  const keys = [
+    `HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\${client}`,
+    `HKLM:\\SOFTWARE\\Microsoft\\EdgeUpdate\\Clients\\${client}`,
+    `HKCU:\\Software\\Microsoft\\EdgeUpdate\\Clients\\${client}`,
+  ]
+  try {
+    const out = powershell(
+      `foreach ($k in '${keys.join("','")}') { $v = (Get-ItemProperty -Path $k -ErrorAction SilentlyContinue).pv; if ($v) { "$v at $k"; break } }`,
+    ).trim()
+    return out || 'none found in the registry'
+  } catch (err) {
+    return `unknown (${err.message})`
+  }
+}
+
+/** Everything there is to read about an app that did not open its debugging port. */
+function launchDiagnostics(child, scratch, output) {
+  const dataDir = dirname(scratch.db)
+  const children = (() => {
+    try {
+      return childrenOf(child.pid).map((c) => `${c.name} (${c.pid})`)
+    } catch (err) {
+      return [`unknown: ${err.message}`]
+    }
+  })()
+  return [
+    `app pid ${child.pid}, exit code ${child.exitCode === null ? 'none (still running)' : child.exitCode}`,
+    `children of the app: ${children.length ? children.join(', ') : 'none'}`,
+    `WebView2 profile under scratch: ${existsSync(scratch.webview2) ? 'yes' : 'no'}`,
+    `WebView2 runtime: ${webView2Runtime()}`,
+    `desktop.log:\n${readText(join(dataDir, 'desktop.log')) || '(empty)'}`,
+    `daemon.log:\n${readText(join(dataDir, 'daemon.log')).slice(-3000) || '(none)'}`,
+    `app output:\n${output || '(none)'}`,
+  ].join('\n')
 }
