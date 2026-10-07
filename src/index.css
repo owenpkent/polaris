@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
 
 /* Design tokens. There are two themes: the dark one below on :root (also the
    fallback when no theme has been chosen) and the light one in the
