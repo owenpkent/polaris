@@ -145,13 +145,28 @@ The app is public only so it can be installed on the organization; that exposes 
 
 The GitHub page also lists every repo the app can read, with three switches each: Track as project, Sync issues and PRs, and Read checklists. Track as project creates the repo's project, or brings it back if it was archived; the other two switches apply only to a repo that is tracked. Turning any switch off stops new updates from that repo and leaves its existing tasks as they are (turning off Track as project archives the project). `npm run cc -- github status` prints the same information, and `github logout` signs out.
 
+## Importing tasks
+
+Paste text or load a CSV to create many tasks at once. These are your own tasks: they start `open` (not in the inbox), are never marked untrusted, and are created all or nothing in one transaction. Any row error means nothing is created.
+
+- **Lines**: one task per line. Leading bullets (`-`, `*`, `+`, `1.`, `1)`) and `[ ]` / `[x]` checkboxes are stripped (checked means done). Indenting nests: a deeper line is a subtask of the nearest shallower line above it (a tab counts as four columns). Markdown headings and fenced code blocks are skipped.
+- **CSV / TSV**: a header row is required, with a comma, semicolon, or tab delimiter (detected from the header, so a spreadsheet paste works). Headers ignore case, spaces, underscores, and hyphens. Columns: `title` (also name, task, content, summary; required), `notes` (description, details, body), `status`, `priority`, `due` (duedate, deadline, date), `start`, `estimate` (minutes), `assignee` (owner, assignedto), `project`, `section`. Unknown columns are ignored and reported.
+- **Values**: status is one of inbox, open, in_progress, waiting, done, dropped (also "in progress", "todo", "completed"). Priority is none, low, medium, high, urgent (or p1 to p4). Dates are `YYYY-MM-DD` or a full ISO datetime. Estimates are minutes, `90m`, `1h`, `1h30m`, or `1.5h`. A row's `project` overrides the default project; a section is created if it does not exist. At most 1000 rows.
+
+```sh
+npm run cc -- tasks import tasks.csv --project nimbus --dry-run   # preview, creates nothing
+npm run cc -- tasks import tasks.txt --format lines               # - reads stdin
+```
+
+Over REST, `POST /api/tasks/import` takes `{ text, format?: "auto"|"csv"|"lines", project?, dryRun? }`. A dry run answers `200 { dryRun, format, rows, count, errors, ignoredColumns }`. A real run answers `201 { format, created, count, ignoredColumns }`, or `400 { error, errors: [{ line, message }] }` with nothing created. Import is live-only: there is no MCP tool, rule action, or offline queue entry for it.
+
 ## Backups
 
 The daemon's `backup` job copies the database once a day, to `data/backups` or to `CC_BACKUP_DIR`, and keeps the newest `CC_BACKUP_KEEP` (14). Point `CC_BACKUP_DIR` at another machine or disk: the default folder is on the same disk as the database, so it only protects against a bad write. Use a UNC path for a network share (`\\server\share\folder`), since a mapped drive letter may not exist yet when the daemon starts at logon.
 
 - **Every copy is checked.** It is made with SQLite's `VACUUM INTO` in a temp folder on the local disk, then checked: `integrity_check`, `foreign_key_check`, the schema version, and the row counts against the live database. Only the finished file is written to the backup folder, and it is read back and compared before it gets its dated name. A copy that fails is deleted and the job fails.
 - **When something stops.** A failing job, or a backup that never ran or is over 36 hours old, shows as a red strip under the dashboard's top bar (`warnings` on `GET /api/sync`).
-- **Encryption is your choice.** It is off until a passphrase is set, from the Backups card on the dashboard's Connection tab or with `npm run cc -- backup encrypt`. From then on the copies are `constellation-YYYY-MM-DD.db.enc`. The passphrase is kept in the secret store, never in the database, an environment variable, or a log, and the server never sends it back. Save it in a password manager: without it no encrypted backup can be read, on this machine or any other. `backup encrypt --status`, `--replace`, and `--off` do what they say; copies made before a change still need the old passphrase.
+- **Encryption is your choice.** It is off until a passphrase is set, from the Backups card on the dashboard's Settings tab or with `npm run cc -- backup encrypt`. From then on the copies are `constellation-YYYY-MM-DD.db.enc`. The passphrase is kept in the secret store, never in the database, an environment variable, or a log, and the server never sends it back. Save it in a password manager: without it no encrypted backup can be read, on this machine or any other. `backup encrypt --status`, `--replace`, and `--off` do what they say; copies made before a change still need the old passphrase.
 - **The restore drill.** `npm run cc -- backup check [file]` proves a copy can be read back. It never opens the live database, so it works on a recovery machine, and it asks for the passphrase when the secret store has none.
 - **Restoring.** Stop the daemon. For an encrypted copy, run `npm run cc -- backup decrypt <file.db.enc> [output.db]`, which never overwrites. Put the SQLite file where `CC_DB` points and start the daemon. An older copy is migrated when it is opened.
 - **Format.** scrypt (N=2^17, r=8, p=1), then ChaCha20-Poly1305, from `node:crypto` alone. The byte layout is at the top of `src/daemon/backupCrypto.ts`, so a copy can be read without this code.

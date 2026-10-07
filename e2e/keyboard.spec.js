@@ -5,7 +5,7 @@ import { openView, isPhone } from './support.js'
 // every control the pointer can, in visual order, and no Tab stop is unlabelled. Then Menu.jsx's
 // roving focus with the arrow keys, Home, and End, and the `?` legend.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'rules', 'digest', 'github', 'connection']
+const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'rules', 'digest', 'github', 'settings']
 
 // The Board's lanes are side-by-side columns that scroll sideways as a strip (src/index.css,
 // .board-lanes), and Tab walks one lane top to bottom before starting the next at the top again.
@@ -97,8 +97,12 @@ async function tabSweep(page) {
 async function unreachedPointerTargets(page) {
   return page.evaluate(() => {
     const reached = new Set(window.__ccStops)
+    // A radio group is one Tab stop, and the arrow keys move within it, so reaching one radio of
+    // a group reaches all of them.
+    const reachedGroups = new Set(window.__ccStops.filter((el) => el.type === 'radio' && el.name).map((el) => el.name))
     return window.__ccPointerSet
       .filter((el) => !reached.has(el))
+      .filter((el) => !(el.type === 'radio' && reachedGroups.has(el.name)))
       .map((el) => {
         const label = el.getAttribute('aria-label') || el.textContent.trim().slice(0, 40) || el.tagName.toLowerCase()
         return `${el.tagName.toLowerCase()} "${label}"`

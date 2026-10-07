@@ -639,3 +639,105 @@ test('assignee travels through POST, PATCH, and GET /api/tasks like the other ed
     assert.equal(tooLong.status, 400);
   });
 });
+
+test('POST /api/tasks/import: dry run previews and creates nothing', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  app.store.upsertProject({ slug: 'nimbus', name: 'Project Nimbus' });
+  await withServer(app, {}, async (base) => {
+    const { status, json } = await api(base, 'POST', '/api/tasks/import', { text: '- one\n  - two', project: 'nimbus', dryRun: true });
+    assert.equal(status, 200);
+    assert.equal(json.format, 'lines');
+    assert.equal(json.rows.length, 2);
+    assert.equal(json.rows[1].parentIndex, 0);
+    assert.equal(json.rows[0].projectSlug, 'nimbus');
+    assert.equal(app.store.countTasks({}), 0);
+  });
+});
+
+test('POST /api/tasks/import: creates tasks with subtasks as open, owner-trusted tasks', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const project = app.store.upsertProject({ slug: 'nimbus', name: 'Project Nimbus' });
+  await withServer(app, {}, async (base) => {
+    const { status, json } = await api(base, 'POST', '/api/tasks/import', { text: '- [ ] Parent\n  - [x] Child\n- Other', project: 'Project Nimbus' });
+    assert.equal(status, 201);
+    assert.equal(json.count, 3);
+    const [parent, child, other] = json.created;
+    assert.equal(parent.status, 'open');
+    assert.equal(parent.untrustedText, false);
+    assert.equal(parent.projectId, project.id);
+    assert.equal(child.parentId, parent.id);
+    assert.equal(child.status, 'done');
+    assert.equal(child.projectId, project.id);
+    assert.equal(other.parentId, null);
+  });
+});
+
+test('POST /api/tasks/import: a bad row creates nothing and reports its line', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const { status, json } = await api(base, 'POST', '/api/tasks/import', { text: 'title,due\nfine,2026-10-01\nbroken,someday' });
+    assert.equal(status, 400);
+    assert.equal(json.error.code, 'ValidationError');
+    assert.equal(json.errors.length, 1);
+    assert.equal(json.errors[0].line, 3);
+    assert.equal(app.store.countTasks({}), 0);
+  });
+});
+
+test('POST /api/tasks/import: an unterminated quoted CSV field creates no tasks or sections', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const project = app.store.upsertProject({ slug: 'nimbus', name: 'Project Nimbus' });
+  await withServer(app, {}, async (base) => {
+    const text = 'title,notes,section\nFirst,"unterminated,Backlog\nSecond,notes,Review\n';
+    const dry = await api(base, 'POST', '/api/tasks/import', { text, project: 'nimbus', dryRun: true });
+    assert.equal(dry.status, 200);
+    assert.deepEqual(dry.json.rows, []);
+    assert.deepEqual(dry.json.errors.map((e: { line: number }) => e.line), [2]);
+    assert.match(dry.json.errors[0].message, /quoted field is never closed/);
+    const real = await api(base, 'POST', '/api/tasks/import', { text, project: 'nimbus' });
+    assert.equal(real.status, 400);
+    assert.equal(real.json.error.code, 'ValidationError');
+    assert.deepEqual(real.json.errors.map((e: { line: number }) => e.line), [2]);
+    assert.equal(app.store.countTasks({}), 0);
+    assert.equal(app.store.listSections(project.id).length, 0);
+  });
+});
+
+test('POST /api/tasks/import: an unknown project is a row error', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const bad = await api(base, 'POST', '/api/tasks/import', { text: 'title,project\nx,ghost' });
+    assert.equal(bad.status, 400);
+    assert.deepEqual(bad.json.errors, [{ line: 2, message: 'project not found: ghost' }]);
+    const badDefault = await api(base, 'POST', '/api/tasks/import', { text: 'one', project: 'ghost' });
+    assert.equal(badDefault.status, 400);
+    assert.equal(app.store.countTasks({}), 0);
+  });
+});
+
+test('POST /api/tasks/import: CSV project and section columns override the default project', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const a = app.store.upsertProject({ slug: 'alpha', name: 'Alpha' });
+  const b = app.store.upsertProject({ slug: 'beta', name: 'Beta' });
+  await withServer(app, {}, async (base) => {
+    const text = 'title,project,section,priority\nfirst,,Backlog,high\nsecond,beta,Review,p4';
+    const dry = await api(base, 'POST', '/api/tasks/import', { text, project: 'alpha', dryRun: true });
+    assert.equal(dry.status, 200);
+    assert.equal(app.store.listSections(a.id).length, 0);
+    const { status, json } = await api(base, 'POST', '/api/tasks/import', { text, project: 'alpha' });
+    assert.equal(status, 201);
+    assert.equal(json.format, 'csv');
+    assert.equal(json.created[0].projectId, a.id);
+    assert.equal(json.created[0].priority, 'high');
+    assert.equal(json.created[1].projectId, b.id);
+    assert.equal(json.created[1].priority, 'low');
+    assert.equal(app.store.listSections(b.id)[0].name, 'Review');
+    assert.equal(json.created[0].sectionId, app.store.listSections(a.id)[0].id);
+  });
+});

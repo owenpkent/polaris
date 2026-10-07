@@ -4,7 +4,7 @@ import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTa
 // The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
 // targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'rules', 'digest', 'github', 'connection']
+const VIEWS = ['mytasks', 'inbox', 'board', 'rules', 'digest', 'github', 'settings']
 
 // Long and awkward titles from command-center/src/dev/seed-ui-test.ts, "UI Test Text" project:
 // three open tasks with no section and no due date, so they all land in the collapsed "No due
