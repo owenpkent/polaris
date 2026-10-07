@@ -1,9 +1,11 @@
 #!/bin/sh
-# Runs the fast test layers before every push: Command Center tests, typecheck, and the
-# dashboard unit tests (npm run test:fast). The browser UI tests are left to CI because they
-# take much longer. See initiatives/automated-testing.md, Phase 2.
+# Runs what the CI fast job runs before every push: Command Center tests, typecheck, and the
+# dashboard unit tests (npm run test:fast), then the dashboard build (npm run build). The browser
+# UI tests are left to CI because they take much longer. Keep this in step with the fast job in
+# .github/workflows/test.yml. See initiatives/automated-testing.md, Phase 2.
 #
-# Enable once per clone:   git config core.hooksPath .githooks
+# Enabled by `npm install` (the root prepare script, scripts/setup-hooks.mjs), except in CI.
+# By hand:                 git config core.hooksPath .githooks
 # Disable again:           git config --unset core.hooksPath
 # Skip for a single push:  git push --no-verify
 
@@ -21,10 +23,12 @@ fi
 
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
-echo "pre-push: running the fast test layers (npm run test:fast)"
-if ! npm run --silent test:fast > "$(git rev-parse --git-dir)/pre-push.log" 2>&1; then
-  echo "pre-push: tests failed, push stopped. Last lines of "$(git rev-parse --git-dir)/pre-push.log":"
-  tail -n 40 "$(git rev-parse --git-dir)/pre-push.log"
+log="$(git rev-parse --git-dir)/pre-push.log"
+
+echo "pre-push: running the fast test layers (npm run test:fast), then the build (npm run build)"
+if ! { npm run --silent test:fast && npm run --silent build; } > "$log" 2>&1; then
+  echo "pre-push: checks failed, push stopped. Last lines of $log:"
+  tail -n 40 "$log"
   exit 1
 fi
-echo "pre-push: all fast tests passed"
+echo "pre-push: fast tests and build passed"

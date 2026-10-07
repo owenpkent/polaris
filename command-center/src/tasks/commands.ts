@@ -2,6 +2,8 @@
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
 import type { Confidence, Post, PostStatus, PostType, Priority, Store, Task, TaskStatus, ThreadSummary } from '../core/index.ts';
+import { readFileSync } from 'node:fs';
+import { importTasks } from '../importer/taskImport.ts';
 import { ACTIVE_STATUSES, CONFIDENCES, POST_STATUSES, POST_TYPES } from '../core/index.ts';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
@@ -70,6 +72,32 @@ export const commands: Command[] = [
           recurrence: str(f.repeat), parentId: str(f.parent), notes: str(f.notes),
         }, 'human');
         stdout(formatTask(app.store, t, app.today()));
+        return 0;
+      } finally { app.close(); }
+    },
+  },
+  {
+    name: 'tasks import',
+    summary: 'Bulk-create tasks from a text or CSV file (- reads stdin)',
+    usage: 'tasks import <file|-> [--project <ref>] [--format csv|lines] [--dry-run]',
+    run(args, { openApp, stdout, stderr }) {
+      const f = parseFlags(args);
+      const file = f._[0];
+      if (!file) throw new Error('A file is required (or - for stdin).');
+      const format = str(f.format) ?? 'auto';
+      if (format !== 'auto' && format !== 'csv' && format !== 'lines') throw new Error('--format must be csv or lines.');
+      const text = readFileSync(file === '-' ? 0 : file, 'utf8');
+      const dryRun = f['dry-run'] === true || f['dry-run'] === 'true';
+      const app = openApp();
+      try {
+        const r = importTasks(app.store, text, { format, project: str(f.project), dryRun }, 'human');
+        for (const e of r.errors) stderr(e.line > 0 ? `line ${e.line}: ${e.message}` : e.message);
+        if (r.ignoredColumns.length) stdout(`Ignored columns: ${r.ignoredColumns.join(', ')}`);
+        if (r.errors.length) {
+          stdout(`Import failed (${r.errors.length} error(s)), nothing was created.`);
+          return 1;
+        }
+        stdout(dryRun ? `Dry run: ${r.rows.length} task(s) would be created from ${r.format}.` : `Created ${r.created.length} task(s) from ${r.format}.`);
         return 0;
       } finally { app.close(); }
     },

@@ -10,7 +10,7 @@ export default defineConfig({
   // Dashboard unit tests (npm test). Command Center has its own node:test suite.
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.{js,jsx}', 'e2e/**/*.test.js'],
+    include: ['src/**/*.test.{js,jsx}', 'e2e/**/*.test.js', 'mobile/scripts/**/*.test.js'],
     restoreMocks: true,
   },
 })

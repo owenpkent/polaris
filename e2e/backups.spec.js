@@ -13,7 +13,7 @@ test.describe('Backup settings', { tag: ['@flow'] }, () => {
   })
 
   test('the card shows the state of backups and fits the page', async ({ page }) => {
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     const card = page.getByRole('region', { name: 'Backups' })
     await expect(card).toContainText('Encryption')
     await expect(card).toContainText('Off')
@@ -25,7 +25,7 @@ test.describe('Backup settings', { tag: ['@flow'] }, () => {
   })
 
   test('turning encryption on needs the saved tick, then shows On and offers Change and Turn off', async ({ page, request }) => {
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     const card = page.getByRole('region', { name: 'Backups' })
     await card.getByRole('button', { name: 'Turn on encryption' }).click()
 
@@ -53,7 +53,7 @@ test.describe('Backup settings', { tag: ['@flow'] }, () => {
   })
 
   test('a typed passphrase that is too short or does not match cannot be sent', async ({ page }) => {
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     await page.getByRole('region', { name: 'Backups' }).getByRole('button', { name: 'Turn on encryption' }).click()
     const form = page.getByRole('form', { name: 'Turn on backup encryption' })
     await form.getByLabel('I will type my own').check()
@@ -81,7 +81,7 @@ test.describe('Backup settings', { tag: ['@flow'] }, () => {
   })
 
   test('Esc closes the form, sends nothing, and focus returns to the button that opened it', async ({ page, request }) => {
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     const open = page.getByRole('region', { name: 'Backups' }).getByRole('button', { name: 'Turn on encryption' })
     await open.click()
     await expect(page.getByRole('form')).toBeVisible()
@@ -96,7 +96,7 @@ test.describe('Backup settings', { tag: ['@flow'] }, () => {
     // Checked, so a server that cannot store a secret fails here with its reason, not 30 seconds later on a missing button.
     const set = await request.post('/api/backup/encryption', { headers: auth, data: { passphrase: 'a long enough passphrase' } })
     expect(set.ok(), await set.text()).toBe(true)
-    await openView(page, 'connection')
+    await openView(page, 'settings')
     const card = page.getByRole('region', { name: 'Backups' })
     await card.getByRole('button', { name: 'Turn off encryption' }).click()
     expect((await (await request.get('/api/backup', { headers: auth })).json()).encryption).toBe(true)

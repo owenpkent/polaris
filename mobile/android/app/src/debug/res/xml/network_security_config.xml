@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only. The instrumented tests (src/androidTest) talk to a scratch daemon on the
+     host through `adb reverse`, which the app sees as plain http on its own loopback address, and
+     Android blocks cleartext everywhere by default. This allows it for 127.0.0.1 and nothing else;
+     release builds have no such file, so a real server still has to be HTTPS (README.md). -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

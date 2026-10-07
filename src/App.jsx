@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
-import SettingsForm from './command-center/SettingsForm'
-import AgentSettings from './command-center/AgentSettings'
-import BackupSettings from './command-center/BackupSettings'
+import SettingsTab from './command-center/SettingsTab'
 import InboxTab from './command-center/InboxTab'
 import MyTasksTab from './command-center/MyTasksTab'
 import BoardTab from './command-center/BoardTab'
@@ -23,7 +21,6 @@ import { useTheme } from './theme'
 import { parseShareParams, stripShareParams } from './command-center/shareIntake'
 import { subscribeNativeShares, subscribeNotificationTaps } from './command-center/nativeApp'
 import { parseTaskParam, stripTaskParam } from './command-center/reminders'
-import ReminderSettings from './command-center/ReminderSettings'
 import ReminderScheduler from './command-center/ReminderScheduler'
 
 const PRIMARY_ITEMS = [
@@ -41,16 +38,16 @@ const MORE_ITEMS = [
   { id: 'github', label: 'GitHub' },
 ]
 
-const CONNECTION_ITEM = { id: 'connection', label: 'Connection' }
+// The last row of the navigation, with the connection status beside it.
+const SETTINGS_ITEM = { id: 'settings', label: 'Settings' }
 
 const DEFAULT_TAB = 'mytasks'
-const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, CONNECTION_ITEM].map((item) => item.id))
-// settings is accepted as an alias for connection, since that is the tab that holds the
-// connection/settings form; there is no separate "settings" tab id internally.
-const VIEW_ALIASES = { settings: 'connection' }
+const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].map((item) => item.id))
+// The settings page used to be called Connection, so old bookmarks to ?view=connection still land on it.
+const VIEW_ALIASES = { connection: 'settings' }
 
 // Accepted `?view=` query values: mytasks (the default; also the value the URL is cleared to),
-// inbox, board, goals, projects, threads, rules, digest, github, connection (or its alias settings). Anything else is ignored and the default tab is used instead.
+// inbox, board, goals, projects, threads, rules, digest, github, settings (or its old name connection). Anything else is ignored and the default tab is used instead.
 function readInitialTab() {
   try {
     const raw = new URLSearchParams(window.location.search).get('view')
@@ -131,7 +128,7 @@ export default function App() {
   }, [tab])
 
   const currentTitle =
-    [...PRIMARY_ITEMS, ...MORE_ITEMS, CONNECTION_ITEM].find((i) => i.id === tab)?.label || ''
+    [...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].find((i) => i.id === tab)?.label || ''
 
   return (
     <ConnectionProvider>
@@ -139,7 +136,7 @@ export default function App() {
         <Sidebar
           primaryItems={PRIMARY_ITEMS}
           moreItems={MORE_ITEMS}
-          connectionItem={CONNECTION_ITEM}
+          connectionItem={SETTINGS_ITEM}
           activeTab={tab}
           onSelect={setTab}
         />
@@ -156,7 +153,7 @@ export default function App() {
           resolvedTheme={resolvedTheme}
           onThemeChange={setTheme}
         />
-        <OfflineBanner onConnect={() => setTab('connection')} />
+        <OfflineBanner onConnect={() => setTab('settings')} />
         <ReminderScheduler />
         <JobWarningsBanner />
         <NavDrawer
@@ -164,7 +161,7 @@ export default function App() {
           onClose={() => setDrawerOpen(false)}
           primaryItems={PRIMARY_ITEMS}
           moreItems={MORE_ITEMS}
-          connectionItem={CONNECTION_ITEM}
+          connectionItem={SETTINGS_ITEM}
           activeTab={tab}
           onSelect={(id) => { setTab(id); setDrawerOpen(false) }}
           menuButtonRef={drawerOpenerRef}
@@ -189,14 +186,7 @@ export default function App() {
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}
           {tab === 'github' && <GithubTab />}
-          {tab === 'connection' && (
-            <div style={{ maxWidth: 480, margin: '2rem auto' }}>
-              <SettingsForm />
-              <AgentSettings />
-              <ReminderSettings />
-              <BackupSettings />
-            </div>
-          )}
+          {tab === 'settings' && <SettingsTab theme={theme} onThemeChange={setTheme} />}
         </main>
         <BottomNav
           items={PRIMARY_ITEMS}

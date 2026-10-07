@@ -158,7 +158,7 @@ function PassphraseForm({ replacing, minLength, busy, disabled = false, onSubmit
   )
 }
 
-// Shown on the Connection tab once connected. Everything that writes is off while offline:
+// Shown on the Settings tab once connected. Everything that writes is off while offline:
 // nothing here can be queued, least of all a passphrase.
 export default function BackupSettings() {
   const { connected, api } = useConnection()
@@ -243,7 +243,7 @@ export default function BackupSettings() {
   const newest = state?.newest
 
   return (
-    <section className="card" aria-labelledby="cc-backups-heading" style={{ marginTop: '1.5rem' }}>
+    <section className="card" aria-labelledby="cc-backups-heading">
       <div className="section-header" id="cc-backups-heading">Backups</div>
 
       {error && <ErrorBanner message={error} />}

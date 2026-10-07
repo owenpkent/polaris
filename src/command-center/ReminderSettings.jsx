@@ -36,7 +36,7 @@ export default function ReminderSettings() {
   }
 
   return (
-    <section className="card" aria-labelledby="cc-reminders-heading" style={{ marginTop: '1.5rem' }}>
+    <section className="card" aria-labelledby="cc-reminders-heading">
       <div className="section-header" id="cc-reminders-heading">Reminders</div>
 
       <label

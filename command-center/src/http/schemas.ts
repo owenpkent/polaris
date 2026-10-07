@@ -42,6 +42,14 @@ export const newTaskBodySchema = z.object({
   blockedBy: z.array(z.string()).optional(),
 }).strict();
 
+// Bulk import from pasted text or CSV (importer/taskText.ts).
+export const taskImportBodySchema = z.object({
+  text: z.string().min(1, 'text is required').max(1_000_000),
+  format: z.enum(['auto', 'csv', 'lines']).default('auto'),
+  project: z.string().min(1).optional(),
+  dryRun: z.boolean().optional(),
+}).strict();
+
 // TaskPatch (NewTask minus sourceType/sourceId) plus status.
 export const taskPatchBodySchema = z.object({
   title: z.string().min(1).optional(),

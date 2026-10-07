@@ -194,6 +194,10 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     reopenTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/reopen`, { method: 'POST', offline: { kind: 'reopen_task', taskId: id } }),
     // Not queued offline: it reads the server's history, so it has no offline op kind.
     restoreTask: (id, eventId) => call(`/api/tasks/${encodeURIComponent(id)}/restore`, { method: 'POST', body: { eventId } }),
+    // Bulk import from pasted text or a file (POST /api/tasks/import). dryRun answers with the
+    // parsed rows and any problems and creates nothing. Live only, with no `offline` kind: a
+    // batch of new tasks is not something to replay against a server that may have moved on.
+    importTasks: (payload) => call('/api/tasks/import', { method: 'POST', body: payload }),
     moveTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}/move`, { method: 'POST', body: payload, offline: { kind: 'move_task', taskId: id, body: payload } }),
     addComment: (id, body) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }

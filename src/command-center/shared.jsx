@@ -20,7 +20,10 @@ export const STATUS_LABELS = {
 
 export function formatDate(value) {
   if (!value) return ''
-  const d = new Date(value)
+  // A plain date (a due date) is a day on the owner's calendar. new Date() would read it as UTC
+  // midnight, which is the day before anywhere west of UTC.
+  const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const d = plain ? new Date(Number(plain[1]), Number(plain[2]) - 1, Number(plain[3])) : new Date(value)
   if (Number.isNaN(d.getTime())) return value
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }

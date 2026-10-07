@@ -8,7 +8,7 @@ vi.mock('./command-center/ConnectionContext', () => ({
 
 vi.mock('./command-center/GoalsTab', () => ({ default: () => <div data-testid="tab-goals" /> }))
 vi.mock('./command-center/ProjectsTab', () => ({ default: () => <div data-testid="tab-projects" /> }))
-vi.mock('./command-center/SettingsForm', () => ({ default: () => <div data-testid="tab-connection" /> }))
+vi.mock('./command-center/SettingsTab', () => ({ default: () => <div data-testid="tab-settings" /> }))
 vi.mock('./command-center/InboxTab', () => ({ default: () => <div data-testid="tab-inbox" /> }))
 vi.mock('./command-center/MyTasksTab', () => ({ default: () => <div data-testid="tab-mytasks" /> }))
 vi.mock('./command-center/BoardTab', () => ({ default: () => <div data-testid="tab-board" /> }))
@@ -18,8 +18,6 @@ vi.mock('./command-center/GithubTab', () => ({ default: () => <div data-testid="
 vi.mock('./OfflineBanner', () => ({ default: () => <div data-testid="offline-banner" /> }))
 vi.mock('./JobWarningsBanner', () => ({ default: () => null }))
 vi.mock('./UpdateButton', () => ({ default: () => null }))
-vi.mock('./command-center/AgentSettings', () => ({ default: () => null }))
-vi.mock('./command-center/BackupSettings', () => ({ default: () => null }))
 vi.mock('./NavDrawer', () => ({ default: () => <div data-testid="nav-drawer" /> }))
 vi.mock('./BottomNav', () => ({ default: () => <div data-testid="bottom-nav" /> }))
 vi.mock('./Sidebar', () => ({ default: () => <div data-testid="sidebar" /> }))
@@ -27,7 +25,7 @@ vi.mock('./Sidebar', () => ({ default: () => <div data-testid="sidebar" /> }))
 const ALL_TAB_TESTIDS = [
   'tab-goals',
   'tab-projects',
-  'tab-connection',
+  'tab-settings',
   'tab-inbox',
   'tab-mytasks',
   'tab-board',
@@ -91,7 +89,7 @@ const VALID_VIEWS = [
   ['rules', 'tab-rules'],
   ['digest', 'tab-digest'],
   ['github', 'tab-github'],
-  ['connection', 'tab-connection'],
+  ['settings', 'tab-settings'],
 ]
 
 describe('App tab selection via ?view=', () => {
@@ -103,10 +101,10 @@ describe('App tab selection via ?view=', () => {
     })
   })
 
-  test('?view=settings aliases to the connection tab', () => {
-    setLocation('view=settings')
+  test('?view=connection, the old name, opens the settings tab', () => {
+    setLocation('view=connection')
     const { container } = render(<App />)
-    expect(container.querySelector('[data-testid="tab-connection"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="tab-settings"]')).not.toBeNull()
   })
 
   test('an unknown ?view= value falls back to mytasks', () => {

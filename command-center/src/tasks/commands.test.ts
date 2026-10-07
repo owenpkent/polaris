@@ -97,3 +97,39 @@ test('thread list, judge, pin, set, close, reopen, fork, and search: the owner\'
   assert.equal(JSON.parse(out.at(-1)!).length, 2);
   assert.throws(() => cmd('thread search').run(['--type', 'verdict'], ctx), /--type must be one of/);
 });
+
+test('tasks import: dry run, real run, and a failing file from the command line', async (t) => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const app = fakeApp();
+  t.after(() => app.close());
+  const dir = mkdtempSync(join(tmpdir(), 'cc-import-'));
+  const good = join(dir, 'good.txt');
+  const bad = join(dir, 'bad.csv');
+  writeFileSync(good, '- A\n  - B\n');
+  writeFileSync(bad, 'title,due\nx,soon\n');
+  const out: string[] = [];
+  const err: string[] = [];
+  const ctx = { openApp: () => ({ ...app, close: () => undefined }), stdout: (s: string) => out.push(s), stderr: (s: string) => err.push(s) };
+
+  assert.equal(await cmd('tasks import').run([good, '--dry-run'], ctx), 0);
+  assert.match(out.at(-1)!, /Dry run: 2 task\(s\)/);
+  assert.equal(app.store.countTasks({}), 0);
+
+  assert.equal(await cmd('tasks import').run([good], ctx), 0);
+  assert.match(out.at(-1)!, /Created 2 task\(s\) from lines/);
+  assert.equal(app.store.countTasks({}), 2);
+
+  assert.equal(await cmd('tasks import').run([bad, '--format', 'csv'], ctx), 1);
+  assert.match(err.at(-1)!, /^line 2: invalid due date/);
+  assert.equal(app.store.countTasks({}), 2);
+
+  // A quote that never closes is an error on the line it opened, never a task holding the rest of the file.
+  const unterminated = join(dir, 'unterminated.csv');
+  writeFileSync(unterminated, 'title,notes\nFirst,"unterminated\nSecond,notes\n');
+  assert.equal(await cmd('tasks import').run([unterminated], ctx), 1);
+  assert.match(err.at(-1)!, /^line 2: a quoted field is never closed/);
+  assert.equal(app.store.countTasks({}), 2);
+  assert.throws(() => cmd('tasks import').run([good, '--format', 'xml'], ctx), /--format must be/);
+});
