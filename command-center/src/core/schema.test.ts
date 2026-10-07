@@ -9,7 +9,7 @@ import { MIGRATIONS } from './schema.ts';
 // sqlite_sequence is SQLite's own bookkeeping table, created implicitly because events.id is
 // an AUTOINCREMENT primary key.
 const EXPECTED_TABLES = [
-  'applied_ops', 'comments', 'dependencies', 'events', 'goal_links', 'goals', 'kv', 'links', 'posts', 'projects',
+  'applied_ops', 'checklists', 'comments', 'dependencies', 'events', 'goal_links', 'goals', 'kv', 'links', 'posts', 'projects',
   'rules', 'schema_version', 'sections', 'source_items', 'sqlite_sequence', 'sync_cursors', 'tasks', 'threads', 'update_requests', 'views',
 ];
 
@@ -239,6 +239,7 @@ test('migration 3 backfills untrusted_text from source_type on a database that p
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE checklists');
     db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
@@ -324,6 +325,7 @@ test('migration 7 adds events.actor_name and comments.author_name to a database 
   try {
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE checklists');
     db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
@@ -361,6 +363,7 @@ test('migration 6 adds tasks.assignee to a database that predates it and leaves 
     db.exec('ALTER TABLE tasks DROP COLUMN assignee');
     db.exec('ALTER TABLE events DROP COLUMN actor_name');
     db.exec('ALTER TABLE comments DROP COLUMN author_name');
+    db.exec('DROP TABLE checklists');
     db.exec('DROP TABLE update_requests');
     db.exec('DROP TABLE posts');
     db.exec('DROP TABLE threads');
@@ -379,6 +382,40 @@ test('migration 6 adds tasks.assignee to a database that predates it and leaves 
     // The other columns are untouched: the migration only appends.
     const row = db.get<{ title: string; status: string; untrusted_text: number }>('SELECT title, status, untrusted_text FROM tasks WHERE id = ?', ['old']);
     assert.deepEqual({ ...row }, { title: 'made before the column existed', status: 'open', untrusted_text: 0 });
+  } finally {
+    db.close();
+  }
+});
+
+test('migration 12 adds the checklists table to a database that predates it, leaving every task as it was', () => {
+  const db = openNodeDriver(':memory:');
+  try {
+    db.exec('DROP TABLE checklists');
+    db.run('UPDATE schema_version SET version = ?', [11]);
+    db.run(
+      'INSERT INTO tasks (id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ['old', 'made before checklists existed', 'open', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'],
+    );
+
+    migrate(db);
+
+    assert.equal(db.get<{ version: number }>('SELECT version FROM schema_version')?.version, MIGRATIONS.length);
+    assert.deepEqual(columnNames(db, 'checklists'), ['id', 'name', 'notes', 'items', 'position', 'created_at', 'updated_at']);
+    assert.equal(db.get<{ n: number }>('SELECT COUNT(*) AS n FROM checklists')?.n, 0);
+    const row = db.get<{ title: string; status: string }>('SELECT title, status FROM tasks WHERE id = ?', ['old']);
+    assert.deepEqual({ ...row }, { title: 'made before checklists existed', status: 'open' });
+  } finally {
+    db.close();
+  }
+});
+
+test('checklists.items and notes default to empty, so a bare row reads as a checklist with nothing in it', () => {
+  const db = openNodeDriver(':memory:');
+  try {
+    db.run('INSERT INTO checklists (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+      ['cl1', 'Bare', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z']);
+    const row = db.get<{ items: string; notes: string; position: number }>('SELECT items, notes, position FROM checklists WHERE id = ?', ['cl1']);
+    assert.deepEqual({ ...row }, { items: '[]', notes: '', position: 0 });
   } finally {
     db.close();
   }

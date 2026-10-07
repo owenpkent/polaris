@@ -5,7 +5,7 @@ import { openView, isPhone } from './support.js'
 // every control the pointer can, in visual order, and no Tab stop is unlabelled. Then Menu.jsx's
 // roving focus with the arrow keys, Home, and End, and the `?` legend.
 
-const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'rules', 'digest', 'github', 'settings']
+const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'checklists', 'rules', 'digest', 'github', 'settings']
 
 // The Board's lanes are side-by-side columns that scroll sideways as a strip (src/index.css,
 // .board-lanes), and Tab walks one lane top to bottom before starting the next at the top again.

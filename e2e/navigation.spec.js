@@ -12,7 +12,7 @@ test.describe('navigation', { tag: ['@flow'] }, () => {
     await openView(page)
     const sidebar = page.getByRole('navigation', { name: 'Navigation' })
     await expect(sidebar).toBeVisible()
-    for (const name of ['My tasks', 'Board', 'Goals', 'Projects', 'Threads', 'Rules', 'Digest', 'GitHub']) {
+    for (const name of ['My tasks', 'Board', 'Goals', 'Projects', 'Checklists', 'Threads', 'Rules', 'Digest', 'GitHub']) {
       await expect(sidebar.getByRole('button', { name, exact: true })).toBeVisible()
     }
     await expect(sidebar.getByRole('button', { name: /^Inbox, \d+ waiting$/ })).toBeVisible()

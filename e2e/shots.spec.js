@@ -161,6 +161,23 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'threads', 'page')
   })
 
+  // The checklist edit form on the seeded checklist, with its item rows, and the Start form.
+  // Neither is saved: a start would add tasks that other shots in this worker would show.
+  test('checklists: edit', async ({ page }, testInfo) => {
+    await openView(page, 'checklists')
+    await page.getByRole('button', { name: 'Edit Packing: weekend trip', exact: true }).click()
+    await expect(page.getByRole('form', { name: 'Edit Packing: weekend trip' }).getByRole('textbox', { name: 'Item 5' })).toBeVisible()
+    await shot(page, testInfo, 'checklists', 'edit')
+  })
+
+  test('checklists: start', async ({ page }, testInfo) => {
+    await openView(page, 'checklists')
+    await page.getByRole('button', { name: 'Start Packing: weekend trip', exact: true }).click()
+    const form = page.getByRole('form', { name: 'Start Packing: weekend trip' })
+    await expect(form.getByRole('option', { name: 'UI Test Project' })).toBeAttached()
+    await shot(page, testInfo, 'checklists', 'start')
+  })
+
   test('mytasks: new', async ({ page }, testInfo) => {
     await openView(page)
     if (phone(testInfo)) {
@@ -247,7 +264,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'inbox', 'accept')
   })
 
-  for (const view of ['board', 'goals', 'projects', 'rules', 'github']) {
+  for (const view of ['board', 'goals', 'projects', 'checklists', 'rules', 'github']) {
     // threads: page is below, since it needs a thread to show.
     test(`${view}: page`, async ({ page }, testInfo) => {
       await openView(page, view)

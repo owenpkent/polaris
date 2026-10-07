@@ -9,6 +9,7 @@ import DigestTab from './command-center/DigestTab'
 import GithubTab from './command-center/GithubTab'
 import GoalsTab from './command-center/GoalsTab'
 import ProjectsTab from './command-center/ProjectsTab'
+import ChecklistsTab from './command-center/ChecklistsTab'
 import ThreadsTab from './command-center/ThreadsTab'
 import TopBar from './TopBar'
 import NavDrawer from './NavDrawer'
@@ -32,6 +33,7 @@ const PRIMARY_ITEMS = [
 const MORE_ITEMS = [
   { id: 'goals', label: 'Goals' },
   { id: 'projects', label: 'Projects' },
+  { id: 'checklists', label: 'Checklists' },
   { id: 'threads', label: 'Threads' },
   { id: 'rules', label: 'Rules' },
   { id: 'digest', label: 'Digest' },
@@ -47,7 +49,7 @@ const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].map
 const VIEW_ALIASES = { connection: 'settings' }
 
 // Accepted `?view=` query values: mytasks (the default; also the value the URL is cleared to),
-// inbox, board, goals, projects, threads, rules, digest, github, settings (or its old name connection). Anything else is ignored and the default tab is used instead.
+// inbox, board, goals, projects, checklists, threads, rules, digest, github, settings (or its old name connection). Anything else is ignored and the default tab is used instead.
 function readInitialTab() {
   try {
     const raw = new URLSearchParams(window.location.search).get('view')
@@ -172,6 +174,7 @@ export default function App() {
         >
           {tab === 'goals' && <GoalsTab />}
           {tab === 'projects' && <ProjectsTab />}
+          {tab === 'checklists' && <ChecklistsTab />}
           {tab === 'inbox' && <InboxTab />}
           {tab === 'mytasks' && (
             <MyTasksTab

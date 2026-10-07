@@ -295,4 +295,20 @@ export const MIGRATIONS: string[] = [
     result TEXT
   );
   `,
+  // 12: checklists. A reusable list the owner fills in once ("Packing: weekend trip") and starts
+  // as often as needed: starting one makes an ordinary open task whose subtasks are the items, in
+  // order, and leaves the template as it was. items is a JSON array of item titles, kept on the
+  // row because the list is only ever read and written whole. No link to the tasks started from
+  // it: deleting a template never touches them.
+  `
+  CREATE TABLE checklists (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    items TEXT NOT NULL DEFAULT '[]',
+    position REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];
