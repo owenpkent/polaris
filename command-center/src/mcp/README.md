@@ -93,9 +93,9 @@ the path; either works on Windows.
 ## Tool surface
 
 Run `npm run cc -- mcp tools` for the live list (name, read/write, one-line
-description). 25 tools: 11 read (`search_tasks`, `get_task`, `list_projects`,
+description). 26 tools: 12 read (`search_tasks`, `get_task`, `list_projects`,
 `list_sections`, `get_view`, `list_inbox`, `list_goals`, `get_goal`, `list_threads`,
-`get_thread`, `search_posts`) and 14 write
+`get_thread`, `search_posts`, `list_checklists`) and 14 write
 (`create_task`, `update_task`, `complete_task`, `move_task`, `accept_inbox_item`,
 `reject_inbox_item`, `create_rule`, `run_rule`, `create_goal`, `update_goal`,
 `link_goal`, `create_project`, `create_thread`, `post_to_thread`). `catalog.ts` is the single list, and a test fails if the served tools
