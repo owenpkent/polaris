@@ -63,6 +63,9 @@ const daemonCommand: Command = {
   name: 'daemon',
   summary: 'Run every job on its schedule plus the HTTP API and MCP endpoint',
   usage: 'daemon [--no-http] [--port 8788] [--host 127.0.0.1] [--readonly-mcp] [--only job,job] [--skip job,job]',
+  // The update stops and starts the daemon while its write barrier is up; the daemon refuses
+  // writes itself for as long as the barrier stands (http/server.ts, mcp/server.ts).
+  runsDuringUpdate: true,
   async run(args, { openApp, stdout, stderr }) {
     const f = parseFlags(args);
     const list = (v: unknown) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);

@@ -2,6 +2,8 @@
 // Command Center CLI. Each module contributes commands from its own commands.ts.
 import { openApp } from './app.ts';
 import type { Command } from './cli-types.ts';
+import { loadConfig } from './config.ts';
+import { assertNotUpdating, UpdateInProgressError } from './update/barrier.ts';
 import { commands as importer } from './importer/commands.ts';
 import { commands as mcp } from './mcp/commands.ts';
 import { commands as github } from './ingest/github/commands.ts';
@@ -30,10 +32,18 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(`${cmd.name}: ${cmd.summary}\n${cmd.usage ?? ''}\n`);
     return 0;
   }
-  return cmd.run(rest, { openApp, stdout: (s) => process.stdout.write(s + '\n'), stderr: (s) => process.stderr.write(s + '\n') });
+  // While `cc update` holds its write barrier (update/barrier.ts) the store is not opened: a
+  // write made now could be lost to the update's rollback. The daemon is the exception (it is
+  // what the update restarts, and it refuses writes itself); `cc update`, `cc backup check`, and
+  // `cc backup decrypt` never open the store through here, so they are not affected.
+  const openAppUnlessUpdating = () => {
+    if (!cmd.runsDuringUpdate) assertNotUpdating(loadConfig().dbPath);
+    return openApp();
+  };
+  return cmd.run(rest, { openApp: openAppUnlessUpdating, stdout: (s) => process.stdout.write(s + '\n'), stderr: (s) => process.stderr.write(s + '\n') });
 }
 
 main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (err) => {
-  process.stderr.write(`${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+  process.stderr.write(`${err instanceof UpdateInProgressError ? err.message : err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
   process.exitCode = 1;
 });

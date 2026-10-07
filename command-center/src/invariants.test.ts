@@ -1283,6 +1283,15 @@ test('11. the daemon and the http server reach no module that starts a program, 
   for (const name of ['run.ts', 'exec.ts', 'git.ts', 'restart.ts', 'health.ts']) {
     assert.ok(!graph.has(join(SRC, 'update', name)), `src/update/${name} is in the daemon's import graph`);
   }
+  // The two src/update modules the daemon does load, the status file and the write barrier, lead
+  // nowhere: node:fs and node:path only, so the walk above can never reach the rest through them.
+  for (const name of ['status.ts', 'barrier.ts']) {
+    const file = join(SRC, 'update', name);
+    assert.ok(graph.has(file), `src/update/${name} is what the daemon reads`);
+    assert.deepEqual(staticImports(file), [], `src/update/${name} imports another module`);
+    const bare = [...readFileSync(file, 'utf8').matchAll(/^import\b[^'"\n]*?\bfrom\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort();
+    assert.deepEqual(bare, ['node:fs', 'node:path'], `src/update/${name} imports more than node:fs and node:path`);
+  }
 });
 
 test('11. src/update/run.ts is reached only by a dynamic import, from the update command', () => {

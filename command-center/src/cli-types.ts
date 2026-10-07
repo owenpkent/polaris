@@ -7,6 +7,13 @@ export interface Command {
   name: string;
   summary: string;
   usage?: string;
+  /**
+   * May open the store while `cc update` holds its write barrier (update/barrier.ts). Only for
+   * the commands that run the daemon, which the update stops and starts and which turns writes
+   * away itself, request by request. Every other command that opens the store is refused until
+   * the update has committed or rolled back, so nothing it writes can be lost to the rollback.
+   */
+  runsDuringUpdate?: boolean;
   /** Receives remaining argv after the command name. Return a process exit code. */
   run(args: string[], ctx: CommandContext): Promise<number> | number;
 }

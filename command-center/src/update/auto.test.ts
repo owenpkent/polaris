@@ -100,10 +100,14 @@ function harness(t: { after(fn: () => void): void }, s: Scenario, at = OUTSIDE) 
           if (args[1] === '-l') return ok('tag\nNotes for the release\n');
           return fail(`unexpected ${line}`);
         case '-c': {
-          const tag = args[5];
+          // git -c ... verify-tag <tag>
+          const tag = args[args.length - 1];
           state.verified.push(tag);
           return (tags.find((x) => x.tag === tag)?.verifies ?? true) ? ok() : fail('Good "git" signature with ED25519 key SHA256:other\nNo principal matched.');
         }
+        case 'cat-file':
+          // The raw tag git verified: one SSH signature, which is what a release carries.
+          return ok(`object ${TARGET}\ntype commit\ntag ${args[2]}\ntagger test <test@example.com> 1760000000 +0000\n\nNotes for the release\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n`);
         case 'fetch': return ok();
         case 'rev-list': return ok(`0\t${s.behind ?? 0}\n`);
         case 'log': return ok('bbbbbbb feat: the newer thing\n');

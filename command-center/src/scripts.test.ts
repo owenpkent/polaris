@@ -129,7 +129,8 @@ test('the shell installer writes the unit with --port and the environment file f
   const unit = readFileSync(unitFile, 'utf8');
   assert.match(unit, /^EnvironmentFile=-%h\/\.config\/polaris\/updater\.env$/m);
   assert.match(unit, /^ExecStart=".*node" ".*\/command-center\/src\/cli\.ts" update --auto --port 8790$/m);
-  assert.equal(statSync(envFile).mode & 0o777, 0o600, 'owner-only');
+  // The mode bits are POSIX: on Windows (Git bash) the file has none to check.
+  if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600, 'owner-only');
   assert.deepEqual(values(), ['CC_DB=/srv/polaris/constellation.db', 'CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00'], 'inherited, then --env, which wins; an empty inherited value is not copied');
   for (const name of UPDATER_VARS) assert.match(readFileSync(envFile, 'utf8'), new RegExp(`^#${name}=`, 'm'));
   assert.match(first.stdout, /^Environment: .*updater\.env \(set now: CC_DB CC_UPDATE_AT CC_BACKUP_DIR CC_UPDATE_AT\)$/m, 'says where the file is');
@@ -139,7 +140,7 @@ test('the shell installer writes the unit with --port and the environment file f
   const again = run(['--env', 'CC_DB=/elsewhere/constellation.db']);
   assert.equal(again.status, 0, again.stderr);
   assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/constellation.db']);
-  assert.equal(statSync(envFile).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600);
   assert.match(readFileSync(unitFile, 'utf8'), /^ExecStart=.* update --auto$/m);
   const nothing = run([]);
   assert.equal(nothing.status, 0, nothing.stderr);
@@ -173,7 +174,8 @@ test('the sudoers line allows systemctl stop, start, and restart on the one unit
 });
 
 test('the shell installer is executable and parses', (t) => {
-  assert.ok(statSync(SH).mode & 0o111, 'scripts/install-updater-systemd.sh is not executable');
+  // The executable bit is POSIX; a Windows checkout has no such bit to assert on.
+  if (process.platform !== 'win32') assert.ok(statSync(SH).mode & 0o111, 'scripts/install-updater-systemd.sh is not executable');
   const result = spawnSync('bash', ['-n', SH], { encoding: 'utf8' });
   if (result.error) {
     t.skip('bash is not installed');

@@ -4,6 +4,8 @@
 // programs would move the real one, so the order of steps and every rollback can be checked.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -13,7 +15,10 @@ import { inspectDatabaseFile, openStore } from '../core/index.ts';
 import { MIGRATIONS } from '../core/schema.ts';
 import { listSnapshots } from '../daemon/backup.ts';
 import { identityProof } from '../http/identity.ts';
+import { api, fakeApp, withServer } from '../http/test-support.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
+import { createMcpServer } from '../mcp/server.ts';
+import { assertNotUpdating, barrierPath, readBarrier, UpdateInProgressError, writeBarrier } from './barrier.ts';
 import type { Exec, ExecResult } from './exec.ts';
 import { NO_RESTART_METHOD, performUpdate, runTrustSigners, runUpdate, updateLogPath, type UpdateDeps, type UpdateTarget } from './run.ts';
 import { pinnedSignersPath } from './signers.ts';
@@ -32,8 +37,22 @@ const SIGNERS_NONE = '# no keys yet\n';
 const FINGERPRINT = 'SHA256:7XkuoKngBtHFlb11TNVHq4BN7kSlZDld0g0xBo6AAos';
 
 /** A tag on the fake origin: whether `git verify-tag` passes against the pinned file, what the
- *  package.json at the tag says (default: the tag's own version), and the annotation. */
-interface FakeTag { tag: string; verifies?: boolean; version?: string; notes?: string }
+ *  package.json at the tag says (default: the tag's own version), the annotation, and what
+ *  signature block the raw tag object carries (default: one SSH signature). */
+interface FakeTag { tag: string; verifies?: boolean; version?: string; notes?: string; signature?: 'ssh' | 'pgp' | 'x509' | 'none' | 'ssh-twice' }
+
+const SIGNATURE_BLOCKS = {
+  ssh: '-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg\n-----END SSH SIGNATURE-----\n',
+  pgp: '-----BEGIN PGP SIGNATURE-----\n\niQEzBAABCAAdFiEE\n-----END PGP SIGNATURE-----\n',
+  x509: '-----BEGIN SIGNED MESSAGE-----\nMIIGdQYJKoZIhvcNAQcCoIIGZjCCBmICAQExDzANBglghkgBZQMEAgEFADALBgkq\n-----END SIGNED MESSAGE-----\n',
+  none: '',
+  'ssh-twice': '-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n',
+};
+
+/** What `git cat-file tag` prints for a fake tag: the headers, the message, the signature block. */
+function rawTag(tag: FakeTag): string {
+  return `object ${TARGET}\ntype commit\ntag ${tag.tag}\ntagger test <test@example.com> 1760000000 +0000\n\n${tag.notes ?? `Release ${tag.tag}`}\n${SIGNATURE_BLOCKS[tag.signature ?? 'ssh']}`;
+}
 
 interface Scenario {
   dirty?: string[];
@@ -87,7 +106,8 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const tags = s.tags ?? [];
   const tagVersion = (tag: string) => tags.find((x) => x.tag === tag)?.version ?? tag.replace(/^v/, '');
 
-  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1, verifiedAgainst: [] as string[] };
+  const snapshots = () => listSnapshots(join(dataDir, 'backups')).length;
+  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1, snapshotsAtStop: -1, snapshotsAtStart: -1, verifiedAgainst: [] as string[] };
   const calls: Call[] = [];
   const out: string[] = [];
   const err: string[] = [];
@@ -110,13 +130,22 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
           if (args[1] === '-l') return ok(`tag\n${tags.find((x) => x.tag === args[3])?.notes ?? ''}\n`);
           return fail(`unexpected ${line}`);
         case '-c': {
-          // git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=<pinned> verify-tag <tag>
-          assert.deepEqual(args.slice(0, 5), ['-c', 'gpg.format=ssh', '-c', args[3], 'verify-tag']);
-          assert.ok(args[3].startsWith('gpg.ssh.allowedSignersFile='));
-          state.verifiedAgainst.push(args[3].slice('gpg.ssh.allowedSignersFile='.length));
-          const tag = args[5];
+          // git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=<pinned> -c gpg.openpgp.program=<none> -c gpg.x509.program=<none> verify-tag <tag>
+          const settings = args.filter((_, i) => i % 2 === 1 && args[i - 1] === '-c' && i < args.indexOf('verify-tag'));
+          assert.deepEqual(args.slice(settings.length * 2), ['verify-tag', args[args.length - 1]], `${line} is -c settings, then verify-tag <tag>`);
+          const signers = settings.find((x) => x.startsWith('gpg.ssh.allowedSignersFile='));
+          assert.ok(signers, 'the signers file is named');
+          assert.ok(settings.includes('gpg.format=ssh'));
+          assert.ok(settings.some((x) => x.startsWith('gpg.openpgp.program=')) && settings.some((x) => x.startsWith('gpg.x509.program=')), 'OpenPGP and X.509 are pointed at nothing');
+          state.verifiedAgainst.push(signers.slice('gpg.ssh.allowedSignersFile='.length));
+          const tag = args[args.length - 1];
           const verifies = tag === s.tag && s.startVerifies !== undefined ? s.startVerifies : tags.find((x) => x.tag === tag)?.verifies ?? true;
           return verifies ? ok() : fail(`Good "git" signature with ED25519 key SHA256:other\nNo principal matched.`);
+        }
+        case 'cat-file': {
+          assert.equal(args[1], 'tag');
+          const found = tags.find((x) => x.tag === args[2]) ?? (args[2] === s.tag ? { tag: s.tag } : undefined);
+          return found ? ok(rawTag(found)) : fail(`fatal: Not a valid object name ${args[2]}`);
         }
         case 'fetch': return ok();
         case 'rev-list': return ok(`${s.ahead ?? 0}\t${s.behind ?? 1}\n`);
@@ -124,11 +153,11 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
         case 'diff': return ok((s.changed ?? []).join('\n'));
         case 'show': return args[1] === 'origin/main:package.json' ? ok(JSON.stringify({ version: target })) : { code: 128, stdout: '', stderr: 'no such path' };
         case 'merge':
-          state.snapshotsAtCheckout = listSnapshots(join(dataDir, 'backups')).length;
+          state.snapshotsAtCheckout = snapshots();
           state.head = 'target'; writeVersion(target); return ok();
         case 'checkout': {
           const ref = args[args.length - 1];
-          if (/^v\d/.test(ref)) { state.snapshotsAtCheckout = listSnapshots(join(dataDir, 'backups')).length; state.head = 'target'; writeVersion(tagVersion(ref)); return ok(); }
+          if (/^v\d/.test(ref)) { state.snapshotsAtCheckout = snapshots(); state.head = 'target'; writeVersion(tagVersion(ref)); return ok(); }
           if (ref === 'main' || ref === PREVIOUS) { state.head = 'previous'; writeVersion(running); return ok(); }
           return fail(`unexpected ${line}`);
         }
@@ -151,8 +180,9 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
     }
     if (cmd === 'systemctl' && args[0] === '--user') {
       if (args[1] === 'show') return ok('loaded\n');
-      if (args[1] === 'stop') { state.listening = false; return ok(); }
+      if (args[1] === 'stop') { state.snapshotsAtStop = snapshots(); state.listening = false; return ok(); }
       if (args[1] === 'start') {
+        state.snapshotsAtStart = snapshots();
         state.listening = true;
         if (state.head === 'target') {
           state.daemonVersion = s.fail === 'health' || s.fail === 'health-after-migration' ? 'broken' : version();
@@ -209,7 +239,9 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const pinned = () => (existsSync(pinnedFile) ? readFileSync(pinnedFile, 'utf8') : null);
   const distFile = (name: string) => (existsSync(join(root, name, 'index.html')) ? readFileSync(join(root, name, 'index.html'), 'utf8') : null);
   const tasks = () => { const st = openStore(dbPath); try { return st.searchAllTasks().map((x) => x.title); } finally { st.db.close(); } };
-  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
+  /** A write the way the CLI makes one: the store opened directly, outside the update process. */
+  const writeTask = (title: string) => { const st = openStore(dbPath); try { st.createTask({ title }); } finally { st.db.close(); } };
+  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, writeTask, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
 }
 
 const npmAndRestartCalls = (lines: string[]) => lines.filter((l) => l.startsWith('npm ') || l.startsWith('npx ') || / (stop|start) /.test(l));
@@ -323,10 +355,13 @@ test('without --yes the owner is asked, and a no installs nothing', async (t) =>
   assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), []);
 });
 
-test('the happy path: snapshot, checkout, npm ci, tests, staged build, restart with the swap, health check, status', async (t) => {
+test('the happy path: checkout, npm ci, tests, staged build, restart with the snapshot and the swap, health check, status', async (t) => {
   const h = harness(t, { changed: ['command-center/src/core/schema.ts'] });
   assert.equal(await h.run(), 0, h.err.join('\n'));
-  assert.equal(h.state.snapshotsAtCheckout, 1, 'the snapshot was taken before the checkout moved');
+  assert.equal(h.state.snapshotsAtCheckout, 0, 'no snapshot before the checkout: the daemon was still taking writes');
+  assert.equal(h.state.snapshotsAtStop, 0, 'none at the stop either');
+  assert.equal(h.state.snapshotsAtStart, 1, 'the snapshot was taken with the daemon stopped, before the start');
+  assert.equal(existsSync(barrierPath(h.dbPath)), false, 'the barrier is gone after the commit');
   const lines = h.commandLines();
   const after = (a: string, b: string) => assert.ok(lines.findIndex((l) => l.startsWith(a)) < lines.findIndex((l) => l.startsWith(b)), `${a} before ${b}`);
   after('git fetch', 'git merge --ff-only origin/main');
@@ -550,9 +585,182 @@ test('a restart that stops the daemon and cannot start it again still rolls back
 });
 
 // -------------------------------------------------------------------------------------
-// Phase B: releases (docs/update-proposal.md, section 2). The fake origin carries tags; the fake
-// `git verify-tag` answers from the scenario and records which signers file it was given.
+// The snapshot and the write barrier (docs/update-proposal.md, section 1, steps 7 to 9). The
+// snapshot is taken with the daemon stopped, so every write taken before the stop is in it, and
+// the barrier (data/update-barrier.json) keeps any write from being taken after it.
 // -------------------------------------------------------------------------------------
+
+test('a task written while the tests run survives a migrated update whose health check fails', async (t) => {
+  const h = harness(t, { fail: 'health-after-migration', changed: ['command-center/src/core/schema.ts'] });
+  const code = await h.run({
+    exec: async (cmd, args, o) => {
+      // The old snapshot was taken before the checkout; this write lands after that point and
+      // before the stop, the way a REST, MCP, or CLI write would while the tests run.
+      if (cmd === 'npm' && args[0] === 'run') h.writeTask('during the update');
+      return h.deps.exec(cmd, args, o);
+    },
+  });
+  assert.equal(code, 1);
+  assert.match(h.log(), /Restored the database from .*constellation-pre-update-2\.0\.0-/);
+  assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length, 'the migration was undone');
+  assert.deepEqual(h.tasks().sort(), ['before the update', 'during the update'], 'the write taken before the stop is in the snapshot the rollback restored');
+  assert.equal(h.state.snapshotsAtStart, 1);
+});
+
+test('while the daemon is stopped the barrier stands: the CLI refuses to open the store, a REST write gets 503, a GET does not, an MCP write tool refuses; after the commit it is gone', async (t) => {
+  const h = harness(t, {});
+  const app = fakeApp();
+  app.config.dbPath = h.dbPath;
+  t.after(() => app.close());
+  const mcp = createMcpServer(app);
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const agent = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: {} });
+  await Promise.all([mcp.connect(serverTransport), agent.connect(clientTransport)]);
+  const tool = async (name: string, args: Record<string, unknown>) => (await agent.callTool({ name, arguments: args })) as { isError?: boolean; content: { type: string; text: string }[] };
+  await withServer(app, {}, async (base) => {
+    const seen: string[] = [];
+    const code = await h.run({
+      exec: async (cmd, args, o) => {
+        const r = await h.deps.exec(cmd, args, o);
+        if (cmd === 'systemctl' && args[1] === 'stop') {
+          // The daemon is down and the snapshot is about to be taken. Every writer is turned away.
+          assert.ok(existsSync(barrierPath(h.dbPath)), 'the barrier was written before the stop');
+          const barrier = readBarrier(h.dbPath);
+          assert.ok(barrier && barrier.pid === process.pid && barrier.version === '2.1.0', 'this process, this version');
+          assert.throws(() => assertNotUpdating(h.dbPath), (e: unknown) => e instanceof UpdateInProgressError && /^Polaris is being updated \(started \S+\)\. Try again in a minute\.$/.test(e.message));
+          const post = await api(base, 'POST', '/api/tasks', { title: 'during the stop' });
+          assert.equal(post.status, 503);
+          assert.equal(post.json.error.code, 'Updating');
+          assert.match(post.json.error.message, /^Polaris is being updated \(started .*\)\. Try again in a minute\.$/);
+          assert.equal((await api(base, 'PATCH', '/api/settings/agent', { name: 'x' })).status, 503);
+          assert.equal((await api(base, 'GET', '/api/tasks')).status, 200, 'reads go on');
+          assert.equal((await api(base, 'GET', '/api/health')).status, 200);
+          assert.notEqual((await fetch(`${base}/api/identity?challenge=abc`)).status, 503, 'the identity probe is a GET and is answered');
+          const refused = await tool('create_task', { title: 'during the stop' });
+          assert.equal(refused.isError, true);
+          assert.match(refused.content[0].text, /^Polaris is being updated \(started .*\)\. Try again in a minute\.$/);
+          const read = await tool('search_tasks', { text: 'anything' });
+          assert.ok(!read.isError, 'read tools keep working');
+          seen.push('checked');
+        }
+        return r;
+      },
+    });
+    assert.equal(code, 0, h.err.join('\n'));
+    assert.deepEqual(seen, ['checked']);
+    assert.equal(existsSync(barrierPath(h.dbPath)), false, 'gone after the commit');
+    assert.equal((await api(base, 'POST', '/api/tasks', { title: 'after the update' })).status, 201);
+    assert.ok(!(await tool('create_task', { title: 'after the update' })).isError);
+    assert.deepEqual(app.store.searchAllTasks().map((x) => x.title).sort(), ['after the update', 'after the update'], 'nothing was taken during the stop');
+  });
+});
+
+test('a stale barrier is ignored and removed: a dead pid, or over two hours old', async (t) => {
+  const h = harness(t, {});
+  const app = fakeApp();
+  app.config.dbPath = h.dbPath;
+  t.after(() => app.close());
+  const file = barrierPath(h.dbPath);
+  writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(), version: '2.1.0' }));
+  await withServer(app, {}, async (base) => {
+    assert.equal((await api(base, 'POST', '/api/tasks', { title: 'the update is long over' })).status, 201);
+  });
+  assert.equal(existsSync(file), false, 'the old barrier was removed by the reader');
+  writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), version: '2.1.0' }));
+  assert.equal(readBarrier(h.dbPath, { alive: () => false }), null, 'a pid that is not alive');
+  assert.equal(existsSync(file), false);
+  writeFileSync(file, 'not json');
+  assert.doesNotThrow(() => assertNotUpdating(h.dbPath));
+  assert.equal(existsSync(file), false, 'an unreadable barrier is removed too');
+  // A fresh one, for contrast: this process, now.
+  writeBarrier(h.dbPath, '2.1.0');
+  assert.throws(() => assertNotUpdating(h.dbPath), UpdateInProgressError);
+  assert.equal(readBarrier(h.dbPath)?.version, '2.1.0');
+  rmSync(file);
+});
+
+test('the barrier is gone after a rollback, and after a rollback that failed', async (t) => {
+  const rolled = harness(t, { fail: 'health' });
+  const during: boolean[] = [];
+  const code = await rolled.run({
+    exec: async (cmd, args, o) => {
+      if (cmd === 'systemctl' && args[1] === 'start') during.push(existsSync(barrierPath(rolled.dbPath)));
+      return rolled.deps.exec(cmd, args, o);
+    },
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(during, [true, true], 'up through the restart and through the rollback\'s restart');
+  assert.equal(existsSync(barrierPath(rolled.dbPath)), false);
+
+  const failed = harness(t, { fail: 'health' });
+  assert.equal(await failed.run({
+    exec: async (cmd, args, o) => (cmd === 'git' && args[0] === 'reset' ? { code: 1, stdout: '', stderr: 'disk full' } : failed.deps.exec(cmd, args, o)),
+  }), 2);
+  assert.equal(existsSync(barrierPath(failed.dbPath)), false, 'a failed rollback drops it too: the owner finishes by hand, and must be able to');
+});
+
+test('a snapshot that fails with the daemon stopped rolls back: the daemon is started again on the old code and nothing is swapped', async (t) => {
+  const h = harness(t, { changed: ['command-center/src/core/schema.ts'] });
+  // CC_BACKUP_DIR names a file, so the backup folder cannot be made and the snapshot throws
+  // inside the stopped interval, after the stop and before the swap.
+  const notADir = join(h.root, 'not-a-dir');
+  writeFileSync(notADir, 'x');
+  assert.equal(await h.run({ env: { CC_BACKUP_DIR: notADir } }), 1);
+  const lines = h.commandLines();
+  assert.equal(lines.filter((l) => l === 'systemctl --user stop polaris').length, 2, 'the stop for the update, then the rollback\'s stop of an already stopped daemon');
+  assert.equal(lines.filter((l) => l === 'systemctl --user start polaris').length, 1, 'the update never got to its start; the rollback\'s start is the one');
+  assert.ok(lines.indexOf(`git reset --hard ${PREVIOUS}`) > lines.indexOf('systemctl --user stop polaris'), 'the failure was after the stop');
+  assert.equal(h.state.listening, true, 'the daemon is back');
+  assert.equal(h.state.daemonVersion, '2.0.0');
+  assert.equal(h.version(), '2.0.0');
+  assert.equal(h.distFile('dist'), 'old', 'the swap never happened');
+  assert.equal(existsSync(`${h.dist}.next`), false);
+  assert.equal(existsSync(`${h.dist}.prev`), false);
+  assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length);
+  assert.deepEqual(h.tasks(), ['before the update']);
+  assert.ok(!h.log().includes('Restored the database'), 'nothing migrated, so nothing to restore');
+  assert.match(h.err.join('\n'), /FAILED: .*not-a-dir/);
+  assert.match(h.out.join('\n'), /Rolled back\. The daemon is up on port 8790 running 2\.0\.0/);
+  assert.equal(existsSync(barrierPath(h.dbPath)), false);
+  const status = readUpdateStatus(h.dbPath);
+  assert.equal(status.lastResult?.ok, false);
+  assert.equal(status.running, '2.0.0');
+});
+
+// -------------------------------------------------------------------------------------
+// Phase B: releases (docs/update-proposal.md, section 2). The fake origin carries tags; the fake
+// `git verify-tag` answers from the scenario and records which signers file it was given, and
+// the fake `git cat-file tag` prints the raw tag with the signature block the scenario names.
+// -------------------------------------------------------------------------------------
+
+test('a tag whose signature is not one SSH signature does not verify, whatever git verify-tag said', async (t) => {
+  // The fake git verify-tag exits 0 for every one of these (as git does with the signer's
+  // OpenPGP key in the local keyring); the raw tag is what decides, and it is read first.
+  const pgp = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0', signature: 'pgp' }] });
+  assert.equal(await pgp.run(), 1);
+  assert.deepEqual(pgp.err, ['Skipped v2.1.0: the tag is signed with OpenPGP, not SSH; releases verify by SSH signature against the pinned signers only', 'Refused: no release newer than 2.0.0 verifies against the pinned signers (1 skipped). Nothing installed.']);
+  assert.ok(pgp.commandLines().includes('git cat-file tag v2.1.0'), 'the raw tag was read');
+  assert.deepEqual(pgp.state.verifiedAgainst, [], 'git verify-tag, which would have said yes, was not even asked');
+
+  const cases: [FakeTag['signature'], RegExp][] = [
+    ['x509', /signed with X\.509, not SSH/],
+    ['none', /no signature found/],
+    ['ssh-twice', /carries 2 signature blocks \(SSH, SSH\); a release carries one SSH signature/],
+  ];
+  for (const [signature, reason] of cases) {
+    const h = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.1.0', signature }] });
+    assert.equal(await h.run(), 1, signature);
+    assert.match(h.err.join('\n'), new RegExp(`v2\\.1\\.0 does not verify against the pinned signers: .*${reason.source}`), signature);
+    assert.deepEqual(npmAndRestartCalls(h.commandLines()), [], signature);
+    assert.equal(h.version(), '2.0.0', signature);
+  }
+
+  // The newest tag is OpenPGP-signed and the one below it SSH-signed: the SSH one is installed.
+  const mixed = harness(t, { mode: 'release', tags: [{ tag: 'v2.2.0', signature: 'pgp' }, { tag: 'v2.1.0' }] });
+  assert.equal(await mixed.run(), 0, mixed.err.join('\n'));
+  assert.match(mixed.err.join('\n'), /Skipped v2\.2\.0: the tag is signed with OpenPGP/);
+  assert.equal(mixed.version(), '2.1.0');
+});
 
 test('--release installs the newest verified release: pinned on first use, verified against the pinned copy, checked out detached', async (t) => {
   const h = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0', notes: 'Release 2.1.0\n\nNotes line two' }, { tag: 'v2.0.0' }, { tag: 'not-a-release' }], changed: ['command-center/src/core/schema.ts'] });
@@ -565,7 +773,8 @@ test('--release installs the newest verified release: pinned on first use, verif
   assert.ok(lines.includes('git fetch --prune --tags origin'));
   assert.ok(lines.includes('git checkout -q --detach v2.1.0'), 'a release is checked out detached');
   assert.ok(!lines.some((l) => l.startsWith('git merge')));
-  assert.equal(h.state.snapshotsAtCheckout, 1, 'the snapshot was taken before the checkout moved');
+  assert.equal(h.state.snapshotsAtCheckout, 0, 'no snapshot before the checkout');
+  assert.equal(h.state.snapshotsAtStart, 1, 'the snapshot was taken with the daemon stopped');
   assert.ok(lines.indexOf('git checkout -q --detach v2.1.0') < lines.indexOf('npm ci --ignore-scripts'));
   assert.equal(h.version(), '2.1.0');
   assert.equal(h.state.daemonVersion, '2.1.0');
@@ -698,7 +907,7 @@ test('a release whose package.json is not the tag version is rolled back before 
   assert.equal(status.lastResult?.ok, false);
   assert.match(status.lastResult!.message, /Rolled back: the release v2\.1\.0 says version 2\.0\.5/);
   assert.equal(status.running, '2.0.0');
-  assert.equal(listSnapshots(join(h.dataDir, 'backups')).length, 1, 'the snapshot was taken (and kept)');
+  assert.deepEqual(listSnapshots(join(h.dataDir, 'backups')), [], 'the daemon was never stopped, so nothing was snapshotted');
 });
 
 test('a release update that fails its health check rolls back to the branch and the old version', async (t) => {

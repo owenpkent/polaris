@@ -54,7 +54,7 @@ export function parseUpdateArgs(args: string[]): UpdateArgs {
 
 const updateCommand: Command = {
   name: 'update',
-  summary: 'Update this install: snapshot the database, check out origin/main (or a signed release with --release or --to), npm ci, test, build, restart the daemon, health-check, and roll back on failure. --check only reports; --trust-signers reviews the pinned release keys; --auto is the scheduled updater (signed releases only, the quiet window, the dashboard\'s requests).',
+  summary: 'Update this install: check out origin/main (or a signed release with --release or --to), npm ci, test, build, then stop the daemon, snapshot the database, swap the dashboard, start it, health-check, and roll back on failure. --check only reports; --trust-signers reviews the pinned release keys; --auto is the scheduled updater (signed releases only, the quiet window, the dashboard\'s requests).',
   usage: 'update [--release | --to vX.Y.Z] [--check] [--trust-signers] [--auto] [--yes] [--port 8788]    restart method from CC_UPDATE_RESTART (task, systemd:<unit>, systemd-user:<unit>, manual) or detected; --auto checks daily at CC_UPDATE_AT (04:00)',
   async run(args, ctx) {
     let parsed: UpdateArgs;

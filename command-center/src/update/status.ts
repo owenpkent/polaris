@@ -3,7 +3,8 @@
 // what it is doing. The updater is its only writer. The daemon only reads it: it never runs an
 // update and never starts a program (docs/update-proposal.md, sections 3 and 4).
 //
-// This module imports nothing that runs a program, so the daemon may import it. The code that
+// This module imports nothing that runs a program, so the daemon may import it; barrier.ts, the
+// write barrier an update holds across its restart, is the other such module. The code that
 // runs git, npm, and the restart lives in run.ts behind a dynamic import from the update command.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

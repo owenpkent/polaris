@@ -10,8 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import { realExec, type Exec } from './exec.ts';
-import { git, LOCKFILES, SCHEMA_FILE } from './git.ts';
+import { git, LOCKFILES, NO_OTHER_SIGNATURE_PROGRAMS, SCHEMA_FILE, signatureFormatProblem } from './git.ts';
 import { runUpdate } from './run.ts';
+
+// Every repository here is a temp one the test makes. A pre-push hook in a linked worktree runs
+// with GIT_DIR exported (git does that for hooks there), and every git call below would then act
+// on the repository being pushed, so the variables that name a repository are dropped for this
+// process. signing.test.ts does the same.
+for (const name of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY']) delete process.env[name];
 
 const GIT_IDENTITY = ['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', '-c', 'tag.gpgsign=false'];
 
@@ -183,4 +189,24 @@ test('with the real git, each refusal stops before any other program runs', asyn
 
   assert.deepEqual([...new Set(programs)], ['git'], 'git was the only program run');
   assert.equal(sh(r.clone, ['rev-parse', 'HEAD']), sh(r.clone, ['rev-parse', 'origin/main~1']), 'the checkout never moved');
+});
+
+test('the signature gate takes exactly one SSH signature block and names any other format', () => {
+  const tag = (blocks: string) => `object ${'a'.repeat(40)}\ntype commit\ntag v2.1.0\ntagger t <t@example.com> 1760000000 +0000\n\nRelease 2.1.0\n${blocks}`;
+  const ssh = '-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n';
+  const pgp = '-----BEGIN PGP SIGNATURE-----\n\niQEz\n-----END PGP SIGNATURE-----\n';
+  const x509 = '-----BEGIN SIGNED MESSAGE-----\nMIIG\n-----END SIGNED MESSAGE-----\n';
+  assert.equal(signatureFormatProblem(tag(ssh)), null);
+  assert.equal(signatureFormatProblem(tag(ssh.replace(/\n/g, '\r\n'))), null, 'CRLF line ends');
+  assert.equal(signatureFormatProblem(tag('')), 'no signature found');
+  assert.match(signatureFormatProblem(tag(pgp))!, /^the tag is signed with OpenPGP, not SSH/);
+  assert.match(signatureFormatProblem(tag('-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----\n'))!, /signed with OpenPGP/);
+  assert.match(signatureFormatProblem(tag(x509))!, /^the tag is signed with X\.509, not SSH/);
+  assert.match(signatureFormatProblem(tag(ssh + pgp))!, /^the tag carries 2 signature blocks \(SSH, OpenPGP\)/);
+  assert.match(signatureFormatProblem(tag(ssh + ssh))!, /carries 2 signature blocks \(SSH, SSH\)/);
+  // A message that quotes a signature header is two blocks, and two blocks is a refusal.
+  assert.match(signatureFormatProblem(tag('').replace('Release 2.1.0', 'Release 2.1.0\n-----BEGIN SSH SIGNATURE-----\nquoted\n-----END SSH SIGNATURE-----') + ssh)!, /carries 2 signature blocks/);
+  assert.match(signatureFormatProblem(tag('-----BEGIN SOMETHING ELSE-----\nx\n-----END SOMETHING ELSE-----\n'))!, /signed with SOMETHING ELSE, not SSH/);
+  assert.equal(signatureFormatProblem(tag('  -----BEGIN SSH SIGNATURE-----\n')), 'no signature found', 'a header is a whole line, as git writes it');
+  assert.ok(NO_OTHER_SIGNATURE_PROGRAMS.includes('-c') && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.openpgp.program=')) && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.x509.program=')));
 });

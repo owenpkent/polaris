@@ -1,10 +1,13 @@
 // `cc update`, the steps of docs/update-proposal.md section 1 in order: refuse, fetch and show,
-// snapshot, check out, install, test and build, restart, health check, roll back on any failure
-// after the checkout moved, and log every step. The target is `origin/main` (the pre-release
-// world) or a signed release tag (`--release`, `--to`), verified against the pinned signers
-// (signers.ts) before anything moves. This module runs git, npm, the tests, the build, and the
-// restart, which the daemon never does: it is reached only through the dynamic import in
-// commands.ts, so the daemon's static import graph never includes it (invariants.test.ts, group 11).
+// ask, check out, install, test and build, then behind a write barrier (barrier.ts): stop the
+// daemon, snapshot the database, swap the dashboard, start, health check; roll back on any
+// failure after the checkout moved, and log every step. The target is `origin/main` (the
+// pre-release world) or a signed release tag (`--release`, `--to`), verified against the pinned
+// signers (signers.ts) before anything moves. This module runs git, npm, the tests, the build,
+// and the restart, which the daemon never does: it is reached only through the dynamic import in
+// commands.ts, so the daemon's static import graph never includes it (invariants.test.ts, group
+// 11). The daemon reaches src/update only through status.ts and barrier.ts, which import nothing
+// that runs a program.
 //
 // Every import here is static and at the top. Node loads these modules before the first step, so
 // the process keeps running the old code after the checkout has moved; a lazy import taken after
@@ -21,6 +24,7 @@ import { MIGRATIONS } from '../core/schema.ts';
 import { BACKUP_PASSPHRASE_KEY, backupDir, restoreDatabaseFile, snapshotDatabase, snapshotName } from '../daemon/backup.ts';
 import { resolveTokens } from '../http/token.ts';
 import { defaultSecretStore, type SecretStore } from '../ingest/secrets.ts';
+import { removeBarrier, writeBarrier } from './barrier.ts';
 import { npmProgram, realExec, type Exec } from './exec.ts';
 import { git, LOCKFILES, SCHEMA_FILE, type Git } from './git.ts';
 import { waitForHealthy } from './health.ts';
@@ -71,6 +75,9 @@ export interface UpdateDeps {
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
   portListening: (port: number) => Promise<boolean>;
+  /** The platform the programs are chosen for: the restart method (restart.ts) and the npm and
+   *  npx program names (exec.ts). A test sets it to script the commands. The permission checks on
+   *  real files (signers.ts) go by `process.platform`, which is the platform the files are on. */
   platform: NodeJS.Platform;
   env: NodeJS.ProcessEnv;
   secrets: SecretStore;
@@ -133,7 +140,7 @@ export interface UpdateOutcome {
   message: string;
   /** The version running afterwards, or null when that is not known (a failed rollback). */
   version: string | null;
-  /** Whether an install was attempted: a target was chosen and the steps from the snapshot on
+  /** Whether an install was attempted: a target was chosen and the steps from the checkout on
    *  ran. False for a refusal, nothing newer, a check, a declined question, and a failure before
    *  a target was chosen (a fetch that did not answer), none of which the updater counts. */
   attempted: boolean;
@@ -181,6 +188,7 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
   let method: RestartMethod = { kind: 'manual' };
   let restartAttempted = false;
   let swapped = false;
+  let barrierUp = false;
   const schemaBefore = MIGRATIONS.length;
 
   try {
@@ -249,27 +257,18 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
     plan = considered.plan;
     // The scheduled updater needs a restart it can perform (section 1A): with none, refuse here,
     // after the check is recorded (so the dashboard still names the release and the owner's
-    // request comes back with this reason) and before the snapshot, the first thing that changes.
+    // request comes back with this reason) and before the checkout, the first thing that changes.
     if (opts.auto && method.kind === 'manual') throw new Refused(NO_RESTART_METHOD);
+
+    // 3. Ask, unless --yes or --auto. Nothing is snapshotted here: a copy made while the daemon
+    // still answers is out of date the moment it is finished, and a write taken after it would be
+    // lost when a rollback restored it. The one snapshot is taken in step 7, with the daemon
+    // stopped. The passphrase is read now so the stopped interval has no secret store to wait on.
     if (!opts.yes && !opts.auto && !(await deps.confirm(`Update ${running} to ${plan.version}${plan.tag ? ` (${plan.tag})` : ''} and restart the daemon? [y/N] `))) {
       log('Not updating. Pass --yes to update without the question.');
       return { code: 0, kind: 'declined', message: 'Not updating', version: running, attempted: false };
     }
-
-    // 3. Snapshot, live, while the checkout is still on the old code.
-    if (existsSync(opts.dbPath)) {
-      passphrase = await deps.secrets.get(BACKUP_PASSPHRASE_KEY);
-      const dir = backupDir(opts.dbPath, deps.env)!;
-      const store = openStore(opts.dbPath);
-      try {
-        snapshot = snapshotDatabase(store, dir, snapshotName(running, deps.now()), { passphrase }).file;
-      } finally {
-        store.db.close();
-      }
-      log(`Snapshot ${snapshot}${passphrase ? ' (encrypted)' : ''}`);
-    } else {
-      log(`No database at ${opts.dbPath}: nothing to snapshot.`);
-    }
+    passphrase = await deps.secrets.get(BACKUP_PASSPHRASE_KEY);
 
     // 4. Check out. From here on any failure rolls back. A release is checked out detached; main
     // is fast-forwarded. Then the checkout must say it is the version it was chosen for.
@@ -297,10 +296,24 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
     await program('vite build', npx, ['vite', 'build', '--outDir', distNext, '--emptyOutDir'], opts.repoRoot);
     if (!existsSync(join(distNext, 'index.html'))) throw new UpdateError(`the build left no index.html in ${distNext}`);
 
-    // 7. Restart, swapping the dashboard in while nothing serves it.
+    // 7. The write barrier goes up (barrier.ts): from here until the finally below, the daemon
+    // turns writes away, the MCP write tools refuse, and the CLI will not open the store. Then
+    // the restart: stop, and with nothing listening take the one snapshot and swap the dashboard
+    // in, then start. The snapshot is taken here, with the daemon stopped and this process still
+    // on the old modules (so opening the store runs no new migration), because it is what a
+    // rollback restores: a write acknowledged after it would be lost, and none can be.
     log(`Restarting the daemon: ${describeRestart(method)}`);
+    writeBarrier(opts.dbPath, plan.version);
+    barrierUp = true;
     restartAttempted = true;
-    await restartDaemon(method, { port: opts.port, between: () => { swapDist(opts.dashboardDir, distNext, distPrev); swapped = true; } }, restartDeps());
+    await restartDaemon(method, {
+      port: opts.port,
+      between: () => {
+        takeSnapshot();
+        swapDist(opts.dashboardDir, distNext, distPrev);
+        swapped = true;
+      },
+    }, restartDeps());
 
     // 8. Health: our daemon, holding our token, on the new version.
     const health = await waitForHealthy({ port: opts.port, apiToken: resolveTokens(opts.dbPath, deps.env).api, expectedVersion: plan.version }, HEALTH_TIMEOUT_MS, healthDeps());
@@ -318,7 +331,10 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
     }
 
     // 9. Roll back: the previous commit, its dependencies, the previous dashboard, and, when the
-    // new code migrated the database, the snapshot.
+    // new code migrated the database, the snapshot. A restart that failed at the snapshot (the
+    // stop had happened, `between` threw before the swap) comes here with the daemon down,
+    // nothing swapped, and nothing migrated: the restart below stops a stopped daemon, which is
+    // allowed, and starts it on the old code.
     log(`FAILED: ${message}`, 'stderr');
     log(`Rolling back to ${running} at ${previousSha.slice(0, 7)}.`);
     try {
@@ -368,6 +384,27 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
       recordResult(false, `Rolled back, and that failed: ${why}`, null);
       return { code: 2, kind: 'rollback_failed', message: `Rolled back, and that failed: ${why}`, version: null, attempted: true };
     }
+  } finally {
+    // Every way out once the barrier is up: the commit, a finished rollback, a failed rollback.
+    if (barrierUp) removeBarrier(opts.dbPath);
+  }
+
+  /** The one snapshot (step 7), through the backup code, named so the daily copy never replaces
+   *  it: `constellation-pre-update-<version>-<moment>.db`, encrypted when backup encryption is on.
+   *  Called with the daemon stopped; a failure here throws out of the restart and rolls back. */
+  function takeSnapshot(): void {
+    if (!existsSync(opts.dbPath)) {
+      log(`No database at ${opts.dbPath}: nothing to snapshot.`);
+      return;
+    }
+    const dir = backupDir(opts.dbPath, deps.env)!;
+    const store = openStore(opts.dbPath);
+    try {
+      snapshot = snapshotDatabase(store, dir, snapshotName(running, deps.now()), { passphrase }).file;
+    } finally {
+      store.db.close();
+    }
+    log(`Snapshot ${snapshot}${passphrase ? ' (encrypted)' : ''}`);
   }
 
   function restartDeps() {
@@ -435,7 +472,7 @@ async function considerRelease(repo: Git, opts: UpdateOptions, deps: UpdateDeps,
     const pinned = pinSigners(committedFile, pinnedFile);
     log(`Pinned ${RELEASE_SIGNERS_FILE} (${pinned.length} key${pinned.length === 1 ? '' : 's'}) to ${pinnedFile}: releases verify against that copy from now on, and cc update --trust-signers is how it changes.`);
   }
-  const pinned = readSignersFile(pinnedFile, deps.platform);
+  const pinned = readSignersFile(pinnedFile);
   if (existsSync(committedFile)) {
     const committed = parseAllowedSigners(readFileSync(committedFile, 'utf8'));
     if (!sameSigners(committed, pinned.signers)) log(`The signers file changed; run cc update --trust-signers to review it. Verifying against the pinned copy at ${pinnedFile}.`, 'stderr');
@@ -487,7 +524,7 @@ async function describeChanges(repo: Git, ref: string, log: Log): Promise<{ touc
   const changed = await repo.changedFiles('HEAD', ref, [SCHEMA_FILE, ...LOCKFILES]);
   const touchesSchema = changed.includes(SCHEMA_FILE);
   const lockfiles = changed.filter((f) => LOCKFILES.includes(f));
-  log(touchesSchema ? 'The schema changes: a snapshot of the database is taken first, and a rollback restores it.' : 'The schema does not change.');
+  log(touchesSchema ? 'The schema changes: a snapshot of the database is taken while the daemon is stopped for the restart, and a rollback restores it.' : 'The schema does not change.');
   log(lockfiles.length ? `Dependencies change (${lockfiles.join(', ')}): npm ci --ignore-scripts runs from the new lockfiles.` : 'Dependencies do not change.');
   return { touchesSchema, lockfiles };
 }
@@ -514,7 +551,7 @@ export async function runTrustSigners(opts: TrustSignersOptions, deps: UpdateDep
     if (!existsSync(committedFile)) { log(`Refused: there is no ${RELEASE_SIGNERS_FILE} file at ${committedFile}.`, 'stderr'); return 1; }
     const committed = parseAllowedSigners(readFileSync(committedFile, 'utf8'));
     let pinned: Signer[] | null = null;
-    if (existsSync(pinnedFile)) pinned = readSignersFile(pinnedFile, deps.platform).signers;
+    if (existsSync(pinnedFile)) pinned = readSignersFile(pinnedFile).signers;
     log(pinned === null ? `Pinned (${pinnedFile}): nothing pinned yet` : `Pinned (${pinnedFile}):`);
     if (pinned !== null) for (const line of await describeSigners(deps.exec, pinned)) log(line);
     log(`Committed (${committedFile}):`);

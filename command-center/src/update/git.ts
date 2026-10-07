@@ -4,7 +4,9 @@
 // command line. Nothing here writes to the remote: the only network calls are `git fetch` and
 // `git fetch --tags`, with whatever credential-free access the remote already has for `git pull`.
 // A tag is verified with `git verify-tag` against one named allowed_signers file (signers.ts),
-// never against the checkout's own or the global git config.
+// never against the checkout's own or the global git config, and only a tag that carries exactly
+// one signature, an SSH one, is taken as verified: git would otherwise accept an OpenPGP or X.509
+// signature from the local keyring, which the pinned signers never named.
 import type { Exec, ExecResult } from './exec.ts';
 
 export const SCHEMA_FILE = 'command-center/src/core/schema.ts';
@@ -15,6 +17,33 @@ export class GitError extends Error {}
 export interface AheadBehind { ahead: number; behind: number }
 
 export type TagVerification = { ok: true } | { ok: false; reason: string };
+
+/** `git verify-tag` picks the verifier from the signature in the tag, not from `gpg.format`: an
+ *  OpenPGP signature goes to gpg and an X.509 one to gpgsm, and a key in the local keyring would
+ *  pass. These point both at a program that does not exist, so neither can succeed; the format
+ *  check on the raw tag (`signatureFormatProblem`) is the gate that does not depend on it. */
+export const NO_OTHER_SIGNATURE_PROGRAMS = ['-c', 'gpg.openpgp.program=cc-update-refuses-openpgp', '-c', 'gpg.x509.program=cc-update-refuses-x509'];
+
+const SIGNATURE_BLOCK_RE = /^-----BEGIN ([A-Z0-9 ]+?)-----\r?$/gm;
+
+/** The name of a signature format from the line that opens its block, as git writes them. */
+function signatureFormatName(block: string): string {
+  if (block === 'SSH SIGNATURE') return 'SSH';
+  if (block === 'PGP SIGNATURE' || block === 'PGP MESSAGE') return 'OpenPGP';
+  if (block === 'SIGNED MESSAGE') return 'X.509';
+  return block;
+}
+
+/** Why a raw tag object (`git cat-file tag`) is not a release signature: anything but exactly one
+ *  signature block, which must be an SSH one. Null when it is. A message that quotes a signature
+ *  header counts as a second block, and refusing that is the safe reading. */
+export function signatureFormatProblem(rawTag: string): string | null {
+  const blocks = [...rawTag.matchAll(SIGNATURE_BLOCK_RE)].map((m) => m[1]);
+  if (blocks.length === 0) return 'no signature found';
+  if (blocks.length > 1) return `the tag carries ${blocks.length} signature blocks (${blocks.map(signatureFormatName).join(', ')}); a release carries one SSH signature`;
+  const format = signatureFormatName(blocks[0]);
+  return format === 'SSH' ? null : `the tag is signed with ${format}, not SSH; releases verify by SSH signature against the pinned signers only`;
+}
 
 export interface Git {
   /** The porcelain status lines: empty for a clean tree. Untracked files count as dirty. */
@@ -78,10 +107,21 @@ export function git(exec: Exec, cwd: string): Git {
       return newline > 0 && text.slice(0, newline) === 'tag' ? text.slice(newline + 1) : '';
     },
     verifyTag: async (tag, allowedSignersFile) => {
-      const r = await run(['-c', 'gpg.format=ssh', '-c', `gpg.ssh.allowedSignersFile=${allowedSignersFile}`, 'verify-tag', tag]);
-      if (r.code === 0) return { ok: true };
-      const said = lines(`${r.stdout}\n${r.stderr}`).pop() ?? `git verify-tag exited ${r.code}`;
-      return { ok: false, reason: said.replace(/^error: /, '').replace(/\.$/, '') };
+      // The gate first: git verify-tag would verify whatever signature the tag carries with
+      // whatever program that format names, so only a tag that carries one SSH signature is put
+      // to it at all. A lightweight tag has no tag object; git says so below.
+      const raw = await run(['cat-file', 'tag', tag]);
+      if (raw.code === 0) {
+        const problem = signatureFormatProblem(raw.stdout);
+        if (problem) return { ok: false, reason: problem };
+      }
+      const r = await run(['-c', 'gpg.format=ssh', '-c', `gpg.ssh.allowedSignersFile=${allowedSignersFile}`, ...NO_OTHER_SIGNATURE_PROGRAMS, 'verify-tag', tag]);
+      if (r.code !== 0) {
+        const said = lines(`${r.stdout}\n${r.stderr}`).pop() ?? `git verify-tag exited ${r.code}`;
+        return { ok: false, reason: said.replace(/^error: /, '').replace(/\.$/, '') };
+      }
+      if (raw.code !== 0) return { ok: false, reason: `the tag object could not be read (git cat-file exited ${raw.code}), so its signature format is not known` };
+      return { ok: true };
     },
     aheadBehind: async (ref) => {
       const [ahead, behind] = (await must(['rev-list', '--left-right', '--count', `HEAD...${ref}`])).trim().split(/\s+/).map(Number);
