@@ -21,6 +21,7 @@
     "desktop": "node scripts/desktop.mjs",
     "test:android": "npm --prefix mobile run test:device --",
     "test:desktop": "node scripts/desktop.mjs test",
+    "test:desktop:ui": "node scripts/desktop.mjs test-ui",
     "shots": "node scripts/shots.mjs"
   },
   "dependencies": {

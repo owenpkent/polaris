@@ -11,8 +11,11 @@
 //                                                release on the releases repo (unless --dry-run)
 //   node scripts/desktop.mjs version <x.y.z>      set the app version in tauri.conf.json
 //   node scripts/desktop.mjs test                 cargo test for the shell's own helpers
+//   node scripts/desktop.mjs test-ui [-- args]    prepare, a debug build with no installer, then the UI
+//                                                tests in desktop/e2e that drive the real app window
 //
-// Options: --skip-dashboard reuses dist/ from the last `npm run build`; --debug makes a debug build.
+// Options: --skip-dashboard reuses dist/ from the last `npm run build`; --debug makes a debug build;
+// --skip-build (test-ui) reuses the debug exe from an earlier run. Anything after -- goes to Playwright.
 //
 // Signing. A code-signed build needs the OK Studio EV token plugged in, run from a normal (not
 // elevated) shell, since the token is invisible to elevated processes. Tauri calls signtool itself
@@ -49,12 +52,12 @@ const SIGNING_KEY = join(homedir(), '.tauri', 'constellation.key')
 
 function usage(message) {
   if (message) console.error(message)
-  console.error(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 22).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'))
+  console.error(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 27).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'))
   process.exit(2)
 }
 
 function parseArgs(argv) {
-  const args = { command: argv[0], rest: [], skipDashboard: false, unsigned: false, debug: false, dryRun: false, notes: undefined }
+  const args = { command: argv[0], rest: [], skipDashboard: false, unsigned: false, debug: false, skipBuild: false, dryRun: false, notes: undefined }
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--skip-dashboard') args.skipDashboard = true
@@ -62,6 +65,8 @@ function parseArgs(argv) {
     else if (a === '--debug') args.debug = true
     else if (a === '--dry-run') args.dryRun = true
     else if (a === '--notes') args.notes = argv[++i]
+    else if (a === '--skip-build') args.skipBuild = true
+    else if (a === '--') { args.rest.push(...argv.slice(i + 1)); break }
     else if (a.startsWith('--')) usage(`Unknown option: ${a}`)
     else args.rest.push(a)
   }
@@ -269,6 +274,19 @@ function test() {
   run('cargo', ['test', '--manifest-path', join(SRC_TAURI, 'Cargo.toml')], { env })
 }
 
+// The UI tests drive the real app window (desktop/e2e, Playwright over WebView2's debugging port).
+// They need the debug exe with its sidecar and resources beside it, which `tauri build --debug
+// --no-bundle` makes without the NSIS installer, so no signing certificate and no updater key.
+// The tests run the app against scratch data on a port of their own; see desktop/e2e/README.md.
+async function testUi(args) {
+  if (!args.skipBuild) {
+    await prepare(args)
+    tauri(['build', '--debug', '--no-bundle'])
+  }
+  const playwright = join(ROOT, 'node_modules', '@playwright', 'test', 'cli.js')
+  run(process.execPath, [playwright, 'test', '--config', join(DESKTOP, 'e2e', 'playwright.config.js'), ...args.rest])
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   switch (args.command) {
@@ -278,6 +296,7 @@ async function main() {
     case 'release': return release(args)
     case 'version': return setVersion(args.rest[0])
     case 'test': return test()
+    case 'test-ui': return testUi(args)
     default: return usage(args.command ? `Unknown command: ${args.command}` : undefined)
   }
 }

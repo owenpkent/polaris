@@ -51,6 +51,7 @@ npm run build            # dashboard; the daemon then serves dist/ at http://127
 npm run mockup           # dashboard on a scratch database with demo data (-- --fresh to rebuild)
 npm run test:android     # Android app instrumented tests on a running emulator (mobile/README.md, Testing)
 npm run test:desktop     # the desktop shell's Rust tests (cargo test); needs Rust (MSVC)
+npm run test:desktop:ui  # builds the debug desktop app, then drives its real window (desktop/e2e); close Constellation first
 ```
 
 `*.property.test.ts` files use fast-check with a fixed seed; the nightly run randomizes it. When one fails, fix the bug and add the shrunk input as a named regression test. See "Gates" in CONTRIBUTING.md for every check and what to do when it fails.

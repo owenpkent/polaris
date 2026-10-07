@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use daemon::NewWindow;
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PageLoadEvent};
 use tauri::{AppHandle, Manager, RunEvent, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
@@ -35,6 +35,25 @@ struct Daemon(Mutex<Owned>);
 struct Owned {
     child: Option<Child>,
     closing: bool,
+}
+
+/// What the start page should be showing: the shell's last status line and its error, if any.
+/// The start thread speaks from the moment the window exists, which can be before the page's
+/// script has defined setStatus and showError (an impostor on the port answers in milliseconds),
+/// so each is kept here and said again once the page has finished loading.
+#[derive(Default)]
+struct StartPage(Mutex<StartPageState>);
+
+#[derive(Default)]
+struct StartPageState {
+    status: Option<String>,
+    error: Option<String>,
+}
+
+impl StartPage {
+    fn lock(&self) -> std::sync::MutexGuard<'_, StartPageState> {
+        self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
 /// How the daemon being started is doing, as the start thread sees it.
@@ -116,6 +135,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Daemon::default())
+        .manage(StartPage::default())
         .setup(|app| {
             let handle = app.handle().clone();
             main_window(&handle)?;
@@ -161,6 +181,11 @@ fn main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                 NewWindowResponse::Deny
             }
             NewWindow::Refuse => NewWindowResponse::Deny,
+        })
+        .on_page_load(|window, payload| {
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                replay_start_page(&window);
+            }
         })
         .build()
 }
@@ -451,13 +476,40 @@ fn parse_url(text: String) -> Result<url::Url, String> {
     url::Url::parse(&text).map_err(|e| format!("Bad dashboard URL {text}: {e}"))
 }
 
-/// The two functions the start page (desktop/ui/index.html) defines. Nothing is evaluated once
-/// the window has moved on to the dashboard.
+/// The two functions the start page (desktop/ui/index.html) defines, said now and again when the
+/// page finishes loading (replay_start_page). Both are guarded, so once the window has moved on
+/// to the dashboard, where neither exists, nothing happens.
 fn set_status(window: &WebviewWindow, text: &str) {
-    let _ = window.eval(&format!("window.setStatus && window.setStatus({})", json(text)));
+    window.state::<StartPage>().lock().status = Some(text.to_string());
+    eval_status(window, text);
 }
 
 fn show_error(window: &WebviewWindow, text: &str) {
+    window.state::<StartPage>().lock().error = Some(text.to_string());
+    eval_error(window, text);
+}
+
+/// Says the last status and error again, for a page that has just finished loading. On the
+/// dashboard neither function exists, so this does nothing there.
+fn replay_start_page(window: &WebviewWindow) {
+    let (status, error) = {
+        let state = window.state::<StartPage>();
+        let state = state.lock();
+        (state.status.clone(), state.error.clone())
+    };
+    if let Some(text) = status {
+        eval_status(window, &text);
+    }
+    if let Some(text) = error {
+        eval_error(window, &text);
+    }
+}
+
+fn eval_status(window: &WebviewWindow, text: &str) {
+    let _ = window.eval(&format!("window.setStatus && window.setStatus({})", json(text)));
+}
+
+fn eval_error(window: &WebviewWindow, text: &str) {
     let _ = window.eval(&format!("window.showError && window.showError({})", json(text)));
 }
 
