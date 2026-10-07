@@ -138,6 +138,16 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: 'Add one post to a thread: one idea, typed as claim, evidence, objection, question, failed_attempt, summary, or result, with optional confidence and refs to the posts it answers. Failed attempts are worth posting. A post never changes the task, and only the owner decides whether a claim or result is accepted.',
   },
   {
+    name: 'create_checklist',
+    readonly: false,
+    description: 'Save a reusable checklist: a name and its items in order, plus optional notes. Use it when the owner asks for a list they will run again, such as packing for a trip or a cleaning routine. Checklists are edited and deleted by the owner in the dashboard; there is no tool for that.',
+  },
+  {
+    name: 'start_checklist',
+    readonly: false,
+    description: 'Start a checklist by id or name: creates a new open task, titled with the checklist name unless a title is given, with one subtask per item in order, optionally in a project and with a due date. The checklist itself is unchanged, so it can be started again.',
+  },
+  {
     name: 'create_project',
     readonly: false,
     description: 'Create a project to put tasks in: a name, plus optional type, status, markdown description, and GitHub repo. A project needs no repo. Projects are renamed, edited, and archived by the owner in the dashboard; there is no tool for that.',

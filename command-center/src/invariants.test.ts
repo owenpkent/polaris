@@ -573,6 +573,8 @@ test('4. calling any write tool by name on the read-only endpoint changes nothin
     try {
       const attempts: [string, Record<string, unknown>][] = [
         ['create_project', { name: 'Sneaky project' }],
+        ['create_checklist', { name: 'Sneaky checklist', items: ['x'] }],
+        ['start_checklist', { checklist: 'Sneaky checklist' }],
         ['create_thread', { task_id: suggestion.id }],
         ['post_to_thread', { thread_id: thread.id, type: 'claim', body: 'Sneaky post' }],
         ['create_task', { title: 'Sneaky' }],

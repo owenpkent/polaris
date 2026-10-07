@@ -67,3 +67,69 @@ test('list_checklists says so when there are none', async (t) => {
     }
   });
 });
+
+test('create_checklist and start_checklist: an agent saves a checklist and starts it, recorded against the agent', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const project = app.store.createProject({ name: 'Home' });
+  const before = app.store.lastEventId();
+  await withServer(app, {}, async (base) => {
+    const client = await connect(base);
+    try {
+      const created = await call(client, 'create_checklist', { name: 'Packing: weekend trip', items: ['Passport', ' ', 'Charger'], notes: 'Check the forecast.' });
+      assert.ok(!created.isError, created.content[0].text);
+      const checklist = created.structuredContent!.checklist;
+      assert.deepEqual(checklist.items, ['Passport', 'Charger']);
+      assert.match(created.content[0].text, /^Created checklist "Packing: weekend trip" \{cl_[0-9a-z]+\} with 2 item\(s\)\./);
+
+      const started = await call(client, 'start_checklist', { checklist: 'packing: weekend TRIP', project: 'Home', due_at: '2026-09-14' });
+      assert.ok(!started.isError, started.content[0].text);
+      const task = started.structuredContent!.task;
+      assert.equal(task.title, 'Packing: weekend trip');
+      assert.equal(task.status, 'open');
+      assert.equal(task.projectId, project.id);
+      assert.equal(task.notes, 'Check the forecast.');
+      assert.deepEqual(started.structuredContent!.subtasks.map((s: { title: string }) => s.title), ['Passport', 'Charger']);
+      assert.deepEqual(app.store.getChecklist(checklist.id)!.items, ['Passport', 'Charger'], 'the template is unchanged');
+
+      const titled = await call(client, 'start_checklist', { checklist: checklist.id, title: 'Packing: Lisbon' });
+      assert.equal(titled.structuredContent!.task.title, 'Packing: Lisbon');
+
+      for (const [args, pattern] of [
+        [{ checklist: 'nothing like it' }, /^Not found: checklist not found/],
+        [{ checklist: checklist.id, project: 'Nowhere' }, /^Not found: project not found/],
+        [{ checklist: checklist.id, due_at: 'soon' }, /^Invalid: /],
+      ] as [Record<string, unknown>, RegExp][]) {
+        const res = await call(client, 'start_checklist', args);
+        assert.ok(res.isError);
+        assert.match(res.content[0].text, pattern);
+      }
+      const blank = await call(client, 'create_checklist', { name: ' ', items: [] });
+      assert.ok(blank.isError);
+    } finally {
+      await client.close();
+    }
+  });
+  const events = app.store.eventsSince(before);
+  assert.ok(events.length > 0);
+  for (const e of events) assert.equal(e.actor, 'agent');
+  assert.equal(app.store.searchTasks({ parentId: null }).length, 2, 'the failed starts made nothing');
+});
+
+test('checklist tools: an agent cannot edit or delete a checklist, and the read-only endpoint has no write tool', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const full = await connect(base);
+    const readonly = await connect(base, '/mcp/readonly');
+    try {
+      const names = (await full.listTools()).tools.map((tool) => tool.name).filter((name) => name.includes('checklist'));
+      assert.deepEqual(names.sort(), ['create_checklist', 'list_checklists', 'start_checklist']);
+      const roNames = (await readonly.listTools()).tools.map((tool) => tool.name).filter((name) => name.includes('checklist'));
+      assert.deepEqual(roNames, ['list_checklists']);
+    } finally {
+      await full.close();
+      await readonly.close();
+    }
+  });
+});
