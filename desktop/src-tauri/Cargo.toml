@@ -24,7 +24,7 @@ url = "2"
 # and HMAC-SHA256 of the daemon's answer. All three were already in the tree through tauri.
 getrandom = "0.3"
 hex = "0.4"
-sha2 = "0.10"
+sha2 = "0.11"
 # Hands links the dashboard opens in a new tab to the system browser (main_window in main.rs).
 tauri-plugin-opener = "2"
 
