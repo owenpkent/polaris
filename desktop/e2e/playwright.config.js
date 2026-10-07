@@ -8,9 +8,10 @@ import { defineConfig } from '@playwright/test'
 // rules that do apply: select by role or accessible name, tag every describe, no exact counts.
 //
 // Playwright does not launch anything here. desktop/e2e/app.js starts the app with
-// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<free port>, and the tests attach
-// with chromium.connectOverCDP. That reuses the Playwright install: no tauri-driver, and no
-// msedgedriver matched to the WebView2 runtime.
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=0 (an HKLM policy says the same
+// where the shell is elevated, see launchApp), reads the port Chromium chose from the profile's
+// DevToolsActivePort file, and the tests attach with chromium.connectOverCDP. That reuses the
+// Playwright install: no tauri-driver, and no msedgedriver matched to the WebView2 runtime.
 //
 // One worker, one app at a time: the shell is a single-instance app (tauri-plugin-single-instance),
 // so a second copy would only focus the first.

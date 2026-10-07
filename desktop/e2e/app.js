@@ -219,6 +219,37 @@ export async function startImpostor(port, respond) {
   return { requests, stop: () => new Promise((r) => server.close(r)) }
 }
 
+// How the debugging port is asked for. WebView2 appends WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS to the
+// browser's command line, except in an elevated (administrator) process: since runtime 150 the
+// user-writable channels (WEBVIEW2_* variables, HKCU policy) are dropped there, and only an HKLM
+// policy or arguments the app itself passes survive (MicrosoftEdge/WebView2Feedback#5640). A GitHub
+// Actions job on Windows runs elevated, so .github/workflows/desktop-ui.yml writes the policy below
+// for this exe. Port 0 lets Chromium pick a free port and write it to DevToolsActivePort in the
+// profile, which is read back here; the policy can then be one fixed value.
+export const REMOTE_DEBUGGING_ARG = '--remote-debugging-port=0'
+export const BROWSER_ARGS_POLICY = 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments'
+
+/** Whether this process (and so the app it starts) runs elevated. */
+export function isElevated() {
+  return /^True/i.test(
+    powershell('([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)').trim(),
+  )
+}
+
+/** The HKLM browser-arguments policy values, "name=value" per line, or empty when the key is absent. */
+export function browserArgsPolicy() {
+  return powershell(
+    `if (Test-Path '${BROWSER_ARGS_POLICY}') { (Get-ItemProperty -Path '${BROWSER_ARGS_POLICY}').PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object { "$($_.Name)=$($_.Value)" } }`,
+  ).trim()
+}
+
+/** The port Chromium chose, from the DevToolsActivePort file it writes once its server is up. */
+function devToolsPort(scratch) {
+  const text = readText(join(scratch.webview2, 'EBWebView', 'DevToolsActivePort'))
+  const port = Number(text.split(/\r?\n/)[0])
+  return Number.isInteger(port) && port > 0 ? port : 0
+}
+
 /**
  * Starts the debug app against the scratch locations and attaches to its WebView2 over CDP.
  * `cleanup` stops only what this call started.
@@ -227,12 +258,17 @@ export async function launchApp(scratch, { port, token }) {
   if (!existsSync(APP_EXE)) throw new Error(`The debug app is not built: ${APP_EXE}. Run npm run test:desktop:ui, which builds it.`)
   if (port === OWNERS_PORT) throw new Error('refusing to run the app on the default port')
   assertNoOtherApp()
-  const cdpPort = await freePort()
+  if (isElevated() && !browserArgsPolicy().includes('--remote-debugging-port')) {
+    throw new Error(
+      'This shell is elevated, where WebView2 ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, so the app would open no debugging port. ' +
+        `Run the tests from a normal (non-administrator) shell, or set ${REMOTE_DEBUGGING_ARG} for this exe under ${BROWSER_ARGS_POLICY} as the CI workflow does.`,
+    )
+  }
   const env = {
     ...scratchEnv(scratch, { port, token }),
     // After scratchEnv, which strips inherited WEBVIEW2_* variables. Replaces the user-data folder.
     WEBVIEW2_USER_DATA_FOLDER: scratch.webview2,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort}`,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: REMOTE_DEBUGGING_ARG,
     // The updater's check on GitHub, a few seconds after start, goes nowhere. Loopback is exempt,
     // because the shell's own probe of the daemon must not go through it.
     HTTPS_PROXY: 'http://127.0.0.1:9',
@@ -247,7 +283,8 @@ export async function launchApp(scratch, { port, token }) {
     port,
     token,
     scratch,
-    cdpPort,
+    /** The debugging port Chromium chose, known once the app is up. */
+    cdpPort: 0,
     output: () => output,
     exited: () => child.exitCode !== null,
     /** The shell's own log (desktop.log): what it found, what it started, and why it could not. */
@@ -271,18 +308,23 @@ export async function launchApp(scratch, { port, token }) {
         if (child.exitCode !== null) {
           throw new Error(`the app exited with ${child.exitCode} before it was ready. If Constellation is already open, close it.`)
         }
-        return (await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok
+        const cdpPort = devToolsPort(scratch)
+        if (!cdpPort) throw new Error('no DevToolsActivePort file yet')
+        if (!(await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok) return false
+        app.cdpPort = cdpPort
+        return true
       }, { timeout: 60000 })
     } catch (err) {
       // The fixture attaches the logs of an app that launched. One that did not is only ever
       // seen here, so everything there is to read goes into the error itself.
       throw new Error(`${err.message}\n\n${launchDiagnostics(child, scratch, output)}`)
     }
-    // Verified, not assumed: a profile anywhere else would be the owner's real one.
+    // Verified, not assumed: a profile anywhere else would be the owner's real one. (The port
+    // was read from under it, so this is only ever the first check that would catch a change.)
     if (!existsSync(scratch.webview2)) {
       throw new Error(`WebView2 did not create its profile under ${scratch.webview2}, so it may be using the owner's real profile.`)
     }
-    app.browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`)
+    app.browser = await chromium.connectOverCDP(`http://127.0.0.1:${app.cdpPort}`)
     app.context = app.browser.contexts()[0]
     await app.context.tracing.start({ screenshots: true, snapshots: true })
     app.page = await until('the app window', () => app.context.pages()[0], { timeout: 30000 })
@@ -373,6 +415,8 @@ function launchDiagnostics(child, scratch, output) {
     `WebView2 profile under scratch: ${existsSync(scratch.webview2) ? 'yes' : 'no'}`,
     `DevToolsActivePort: ${devToolsActivePort(scratch.webview2)}`,
     `Edge policies: ${edgePolicies()}`,
+    `elevated: ${(() => { try { return isElevated() ? 'yes' : 'no' } catch (err) { return `unknown (${err.message})` } })()}`,
+    `browser-arguments policy: ${(() => { try { return browserArgsPolicy() || 'none' } catch (err) { return `unknown (${err.message})` } })()}`,
     `WebView2 runtime: ${webView2Runtime()}`,
     `desktop.log:\n${readText(join(dataDir, 'desktop.log')) || '(empty)'}`,
     `daemon.log:\n${readText(join(dataDir, 'daemon.log')).slice(-3000) || '(none)'}`,

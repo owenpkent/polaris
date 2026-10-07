@@ -67,6 +67,21 @@ jobs:
             if (-not $version) { throw 'The WebView2 runtime is still not installed' }
           }
           Write-Host "WebView2 runtime $version"
+      # The job runs elevated, and since runtime 150 an elevated WebView2 host ignores
+      # WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (MicrosoftEdge/WebView2Feedback#5640), so the
+      # debugging port the tests attach to is asked for through the HKLM policy instead, which
+      # is the one channel that survives elevation. The value is keyed by the app: its
+      # identifier (the AppUserModelID Tauri sets), then the exe name, then any WebView2 app.
+      # Port 0 lets Chromium pick a port and write it to DevToolsActivePort (desktop/e2e/app.js).
+      - name: Ask WebView2 for a debugging port
+        shell: pwsh
+        run: |
+          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $key -Force | Out-Null
+          foreach ($app in 'com.okstudio.constellation', 'constellation-desktop.exe', '*') {
+            New-ItemProperty -Path $key -Name $app -Value '--remote-debugging-port=0' -PropertyType String -Force | Out-Null
+          }
+          Get-ItemProperty -Path $key | Format-List
       # Builds the dashboard and the debug app (no installer, no signing), then runs the tests.
       - run: npm run test:desktop:ui
       - name: Keep traces, logs, and screenshots from failed desktop UI tests
