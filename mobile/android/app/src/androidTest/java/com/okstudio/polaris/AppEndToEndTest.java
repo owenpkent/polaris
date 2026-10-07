@@ -59,10 +59,12 @@ public class AppEndToEndTest {
         // is empty, which it is on every fresh launch. (The dashboard's own cancelAllNotifications
         // skips the call in that case; nativeApp.test.js covers it.)
         app.evalAsync("window.Capacitor.nativePromise('LocalNotifications','cancelAll',{})", 10000);
-        app.eval("location.reload();null");
+        // The old page is marked so the wait below cannot pass on it: when the previous test never
+        // connected, it already shows the banner that the fresh page is waited for.
+        app.eval("window.__ptOld=true;location.reload();null");
         // A device with nothing saved starts in local mode on My tasks, where the banner's Connect
         // button opens the Connection tab with the form.
-        app.waitFor("the not-connected banner", "document.body.innerText.includes('Not connected yet')", LOAD_MS);
+        app.waitFor("the not-connected banner", "!window.__ptOld&&document.body.innerText.includes('Not connected yet')", LOAD_MS);
         app.click("button", "Connect");
         app.waitFor("the connect form", "__pt.find('textbox','Server URL')", LOAD_MS);
     }
