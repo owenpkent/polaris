@@ -9,9 +9,9 @@ import { useCallback, useEffect, useState } from 'react'
 // Source, which isn't sortable) -- it lines up with SORT_FIELDS in viewState.js.
 export const COLUMN_DEFS = [
   { id: 'name', label: 'Name', minWidth: 160, defaultWidth: 440, canHide: false, sortField: 'name' },
-  { id: 'due', label: 'Due date', minWidth: 90, defaultWidth: 130, canHide: true, sortField: 'due' },
+  { id: 'due', label: 'Due date', minWidth: 98, defaultWidth: 140, canHide: true, sortField: 'due' },
   { id: 'project', label: 'Project', minWidth: 90, defaultWidth: 180, canHide: true, sortField: 'project' },
-  { id: 'priority', label: 'Priority', minWidth: 80, defaultWidth: 100, canHide: true, sortField: 'priority' },
+  { id: 'priority', label: 'Priority', minWidth: 88, defaultWidth: 110, canHide: true, sortField: 'priority' },
   { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null },
 ]
 
@@ -171,7 +171,7 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 // the row has room, shrinking toward its minimum (instead of overflowing the
 // page) when the window or an open detail panel is narrow.
 export function buildGridTemplate(visibleColumns, widths, { phone } = {}) {
-  if (phone) return '44px minmax(0, 1fr) 112px'
+  if (phone) return '44px minmax(0, 1fr) 120px'
   const tracks = visibleColumns.map((col) => `minmax(${col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
   return ['44px', ...tracks, 'minmax(0, 1fr)'].join(' ')
 }

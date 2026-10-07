@@ -520,7 +520,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               <Loading label="Loading tasks…" />
             </div>
           ) : (
-            <div className="surface mytasks-list" style={{ borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTop: 'none' }}>
+            <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
                 <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} />
               )}

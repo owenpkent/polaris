@@ -487,7 +487,7 @@ kbd { color: var(--t1); }
   gap: 10px;
   width: calc(100% - 16px);
   min-height: var(--target);
-  margin: 1px 8px;
+  margin: 0 8px;
   padding: 0 12px;
   border: none;
   border-radius: var(--radius);
@@ -505,6 +505,24 @@ kbd { color: var(--t1); }
 .nav-item:hover { background: var(--bg3); color: var(--t1); }
 .nav-item[aria-current='page'] { background: var(--bg-selected); color: var(--t1); font-weight: 600; }
 .nav-item[aria-current='page'] .nav-item-icon { color: var(--blue); }
+/* The sidebar's project list (src/Sidebar.jsx): a small label, then one .nav-item per project
+   with a square in the project's colour where the icon would be. Choosing one opens the Board
+   on that project. */
+.nav-group-label {
+  padding: 10px 20px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.nav-project-mark {
+  width: 14px;
+  height: 14px;
+  margin: 0 2px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
 .nav-brand {
   display: flex;
   align-items: center;
@@ -619,28 +637,37 @@ kbd { color: var(--t1); }
 .mytasks-row { transition: background 0.12s; }
 .mytasks-row:hover { background: var(--bg-hover); }
 
-/* The whole My Tasks list is one panel: a flat column header stuck to the top, then every group
-   in turn with its own header row (title and count) and its rows under it, hairlines between. */
+/* The My Tasks list is a flat table on the page, not a card: a column header stuck to the top,
+   then every group in turn with its own header row (title and count) and its rows under it.
+   Hairlines run under each row and, from the third column on, between the columns, so the
+   grid reads as a spreadsheet the way a tracker's list does. The first two children of a row
+   (the check and the name) share one cell visually, so the rules start after them. */
 .mytasks-colhead {
   min-height: 40px;
   align-items: stretch;
   font-size: 12px;
   color: var(--t2);
-  border-bottom: 1px solid var(--bd-surface);
+  border-bottom: 1px solid var(--bd);
   background: var(--bg);
 }
+.mytasks-colhead > :nth-child(n+3),
+.mytasks-row > :nth-child(n+3) {
+  border-left: 1px solid var(--bd);
+  padding-left: 8px;
+}
+.mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
 .mytasks-list { overflow: hidden; }
-.mytasks-section + .mytasks-section { border-top: 1px solid var(--bd-surface); }
+.mytasks-section + .mytasks-section { padding-top: 16px; }
 .mytasks-section-header {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 48px;
+  min-height: 44px;
   padding-right: 12px;
   border-bottom: 1px solid var(--bd);
 }
 .mytasks-section-header.is-collapsed { border-bottom-color: transparent; }
-.mytasks-section-title { font-size: 15px; font-weight: 600; color: var(--t1); }
+.mytasks-section-title { font-size: 14px; font-weight: 600; color: var(--t1); }
 .mytasks-section-count { margin-left: 8px; font-size: 13px; color: var(--t3); }
 .mytasks-add-row {
   display: flex;
@@ -659,8 +686,9 @@ kbd { color: var(--t1); }
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
 
-/* The check circle in a row: outlined at rest, filled green when done. Hovering the button tints
-   the circle green so the target reads as "complete" before the click; nothing is revealed. */
+/* The check circle in a row: a grey tick in an outlined circle at rest, filled green when done.
+   Hovering the button turns the circle green so the target reads as "complete" before the
+   click; nothing is revealed. */
 .task-check { transition: background 0.12s; }
 .task-check:hover:not(:disabled) { background: var(--green-soft); }
 .task-check:hover:not(:disabled) .task-check-circle { border-color: var(--green); color: var(--green); }
@@ -672,7 +700,7 @@ kbd { color: var(--t1); }
   height: 20px;
   border-radius: 50%;
   border: 1.5px solid var(--bd-strong);
-  color: transparent;
+  color: var(--t3);
   transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
 .task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }
@@ -793,16 +821,23 @@ kbd { color: var(--t1); }
   overflow-x: auto;
   padding-bottom: 8px;
 }
+/* A lane is a header band over its cards, which sit straight on the page. */
 .board-lane {
   width: 300px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 4px 8px 8px;
-  background: var(--bg-inset);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+}
+.board-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius);
 }
 .board-card {
   display: grid;

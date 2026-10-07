@@ -106,6 +106,12 @@ export default function App() {
     drawerOpenerRef.current = opener || menuButtonRef.current
     setDrawerOpen(true)
   }
+  // The project the Board shows, so the sidebar's project list can mark it and open another.
+  const [boardProject, setBoardProject] = useState(null)
+  const openProjectBoard = useCallback((id) => {
+    setBoardProject(id)
+    setTab('board')
+  }, [])
   const [chatMockup] = useState(readChatMockup)
   const [chatOpen, setChatOpen] = useState(chatMockup.enabled && chatMockup.open)
   const chatButtonRef = useRef(null)
@@ -142,6 +148,8 @@ export default function App() {
           connectionItem={SETTINGS_ITEM}
           activeTab={tab}
           onSelect={setTab}
+          boardProjectId={tab === 'board' ? boardProject : null}
+          onSelectProject={openProjectBoard}
         />
         <div className="app-content">
         <TopBar
@@ -184,7 +192,7 @@ export default function App() {
               onFocusTaskConsumed={consumeFocusTask}
             />
           )}
-          {tab === 'board' && <BoardTab />}
+          {tab === 'board' && <BoardTab projectId={boardProject} onProjectChange={setBoardProject} />}
           {tab === 'threads' && <ThreadsTab />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}

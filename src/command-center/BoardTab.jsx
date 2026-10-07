@@ -201,7 +201,7 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
   // A labelled region, so a screen reader (and the UI tests) can address a lane by its name.
   return (
     <section aria-labelledby={titleId} className="board-lane">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 6px' }}>
+      <div className="board-lane-head">
         <h2 id={titleId} className="board-lane-title" style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
         <div style={{ fontSize: 13, color: 'var(--t3)' }}>{tasks.length}</div>
       </div>
@@ -264,10 +264,23 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
   )
 }
 
-export default function BoardTab() {
+// `projectId`, when set, is the project the sidebar asked for (App.jsx): it replaces the remembered
+// choice. `onProjectChange` reports whichever project the board ends up showing, so the sidebar
+// can mark it.
+export default function BoardTab({ projectId = null, onProjectChange }) {
   const { connected, api } = useConnection()
   const [projects, setProjects] = useState([])
   const [projectRef, setProjectRef] = useState('')
+
+  useEffect(() => {
+    if (!projectId) return
+    setProjectRef(projectId)
+    rememberBoardProject(projectId)
+  }, [projectId])
+
+  useEffect(() => {
+    if (projectRef) onProjectChange?.(projectRef)
+  }, [projectRef, onProjectChange])
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

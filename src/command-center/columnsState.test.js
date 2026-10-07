@@ -115,7 +115,7 @@ describe('buildGridTemplate', () => {
   test('builds the full template with a leading checkbox track and trailing filler', () => {
     const template = buildGridTemplate(COLUMN_DEFS, widths, {})
     expect(template).toBe(
-      '44px minmax(160px, 440px) minmax(90px, 130px) minmax(90px, 180px) minmax(80px, 100px) minmax(80px, 120px) minmax(0, 1fr)'
+      '44px minmax(160px, 440px) minmax(98px, 130px) minmax(90px, 180px) minmax(88px, 100px) minmax(80px, 120px) minmax(0, 1fr)'
     )
   })
 
@@ -123,7 +123,7 @@ describe('buildGridTemplate', () => {
     const nameCol = COLUMN_DEFS.find((c) => c.id === 'name')
     const dueCol = COLUMN_DEFS.find((c) => c.id === 'due')
     const template = buildGridTemplate([nameCol, dueCol], widths, {})
-    expect(template).toBe('44px minmax(160px, 440px) minmax(90px, 130px) minmax(0, 1fr)')
+    expect(template).toBe('44px minmax(160px, 440px) minmax(98px, 130px) minmax(0, 1fr)')
   })
 
   test('falls back to a column defaultWidth when widths omits it', () => {
@@ -134,7 +134,7 @@ describe('buildGridTemplate', () => {
 
   test('returns the fixed phone template regardless of columns or widths', () => {
     const template = buildGridTemplate(COLUMN_DEFS, widths, { phone: true })
-    expect(template).toBe('44px minmax(0, 1fr) 112px')
+    expect(template).toBe('44px minmax(0, 1fr) 120px')
   })
 
   test('treats a missing options argument as non-phone', () => {
@@ -218,7 +218,7 @@ describe('useColumnsState', () => {
     act(() => {
       result.current.resetWidth('due')
     })
-    expect(result.current.widths.due).toBe(130)
+    expect(result.current.widths.due).toBe(140)
   })
 
   test('setHidden toggles a hideable column', () => {
