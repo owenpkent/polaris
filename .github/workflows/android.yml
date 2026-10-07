@@ -77,7 +77,7 @@ jobs:
           script: npm run test:android
       - name: Keep the test reports from a failed run
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: android-test-reports
           path: |
