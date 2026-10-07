@@ -123,7 +123,7 @@ Each token works on its own routes only. That separation is what stops an agent 
 
 ### Step 6: Open the dashboard
 
-Open http://127.0.0.1:8788/ in your browser. It opens on My tasks, empty, with a blue strip that says **Not connected yet**. Click **Connect** in that strip (or open http://127.0.0.1:8788/?view=connection) to reach the **Connection** view, where **Server URL** is already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**. Then open the menu at the top left and go back to **My tasks**.
+Open http://127.0.0.1:8788/ in your browser. It opens on My tasks, empty, with a blue strip that says **Not connected yet**. Click **Connect** in that strip (or open http://127.0.0.1:8788/?view=connection) to reach the **Connection** view, where **Server URL** is already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**. Then go back to **My tasks** (in the sidebar on a computer, or through the menu button at the top left on a phone).
 
 **You should now see** My tasks, with the task you added in step 3.
 
@@ -171,11 +171,11 @@ Settings go in as `Environment=NAME=value` lines under `[Service]`. Do not add `
 
 ## 3. Your first ten minutes
 
-The menu button at the top left opens **My tasks**, **Inbox**, and **Board**. **More** holds **Goals**, **Projects**, **Threads**, **Rules**, **Digest**, and **GitHub**. **Connection** holds your connection and settings.
+On a computer, the sidebar on the left lists every view: **My tasks**, **Inbox**, **Board**, **Goals**, **Projects**, **Threads**, **Rules**, **Digest**, **GitHub**, and **Connection**, which holds your connection and settings. On a phone there is no sidebar. The menu button at the top left (**Open navigation**) opens a drawer with **My tasks**, **Inbox**, and **Board**; **More** in the drawer (or **More views** in the bar along the bottom) adds **Goals**, **Projects**, **Threads**, **Rules**, **Digest**, and **GitHub**. **Connection** is in the drawer too. Later steps say "open **X**": click it in the sidebar, or on a phone reach it through **More**.
 
 ### Step 1: Make a project
 
-Open **More**, then **Projects**, and click **New project**. A project needs only a name. A GitHub repo is optional, so a project can hold work that has nothing to do with code.
+Open **Projects** (on a phone: **More**, then **Projects**) and click **New project**. A project needs only a name. A GitHub repo is optional, so a project can hold work that has nothing to do with code.
 
 Projects are never deleted. Archiving one hides it and keeps its tasks.
 
@@ -202,7 +202,7 @@ Your inbox is empty until you connect GitHub in section 6.
 
 ### Step 5: Set a goal
 
-Open **More**, then **Goals**, and click **Add goal**. Give it a title and, if you like, a period such as this quarter.
+Open **Goals** (on a phone: **More**, then **Goals**) and click **Add goal**. Give it a title and, if you like, a period such as this quarter.
 
 - **Progress** is counted for you, from tasks you link to the goal and the milestones of projects you link.
 - **Status** (on track, at risk, off track, achieved, dropped) is yours alone. Polaris never computes it, and agents set it only when you ask them to.
@@ -213,7 +213,7 @@ A goal with nothing open that could move it, or whose status you have not update
 
 ### Step 6: Meet rules
 
-Open **More**, then **Rules**. A rule watches for an event or a schedule and organizes tasks: it can set a field, move a task, add a comment, create a follow-up, or notify you. A rule can never complete, drop, or accept a task.
+Open **Rules** (on a phone: **More**, then **Rules**). A rule watches for an event or a schedule and organizes tasks: it can set a field, move a task, add a comment, create a follow-up, or notify you. A rule can never complete, drop, or accept a task.
 
 A rule you create here can start enabled. A rule an agent creates is always saved disabled, and stays that way until you tick **Enabled** yourself (or run `npm run cc -- rules enable <id>`).
 
@@ -328,7 +328,7 @@ Remote Control pre-creates one session in the project folder itself when it star
 
 ### Threads
 
-For a hard problem, agents and you can work it out in a task's thread: short typed posts such as claim, evidence, objection, question, and result. A post never changes the task. Only you decide which claims stand, pin a summary, or close the thread. The **Threads** tab under **More** shows them all. [agent-threads-proposal.md](agent-threads-proposal.md) has the design.
+For a hard problem, agents and you can work it out in a task's thread: short typed posts such as claim, evidence, objection, question, and result. A post never changes the task. Only you decide which claims stand, pin a summary, or close the thread. The **Threads** view (under **More** on a phone) shows them all. [agent-threads-proposal.md](agent-threads-proposal.md) has the design.
 
 ## 6. GitHub (optional)
 
@@ -351,7 +351,7 @@ Starting from the tailnet address on your phone will not work for this one step.
 
 ### Step 2: Create, install, sign in
 
-Open **More**, then **GitHub**, and follow its three steps:
+Open **GitHub** (on a phone: **More**, then **GitHub**) and follow its three steps:
 
 1. **Create app.** GitHub opens with a read-only app filled in. Click Create GitHub App.
 2. **Install on GitHub.** Install it on your account (and any organization), choose Only select repositories, and tick the repos Polaris may read.
