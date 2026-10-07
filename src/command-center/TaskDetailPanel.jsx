@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useId } from 'react'
-import { X, Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { X, Check, Calendar, ChevronDown, ChevronRight, Plus, Repeat } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
-import { Loading, ErrorBanner, StatusChip, ProjectChip, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
+import { Loading, ErrorBanner, StatusChip, ProjectChip, Avatar, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
 import { SOURCE_LABELS } from './TaskRow'
+import DueDateMenu from './DueDateMenu'
+import { formatDueCell, getDueBounds, repeatLabel } from './dueDates'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
@@ -68,6 +70,7 @@ function FieldRow({ label, htmlFor, children }) {
       <div
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           gap: 8,
           minHeight: 44,
@@ -220,6 +223,121 @@ const blendInputStyle = {
   width: '100%',
 }
 
+// The Due date row's value: a calendar circle and the date as the list writes it (Today,
+// Tomorrow, a weekday, or a short date) on a button that opens the shared picker, plus a clear
+// button once a date is set. `value` is the form's plain date ('' for none).
+function DueDateField({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const due = value ? formatDueCell(value, getDueBounds()) : { text: '', color: null }
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        className="due-field"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={value ? `Due date, ${due.text}` : 'Due date, none'}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={value ? 'due-field-icon is-set' : 'due-field-icon'} aria-hidden="true">
+          <Calendar size={14} />
+        </span>
+        <span style={{ color: value ? due.color || 'var(--t1)' : 'var(--t2)', fontWeight: value ? 500 : 400 }}>
+          {value ? due.text : 'No due date'}
+        </span>
+      </button>
+      <DueDateMenu
+        anchorRef={btnRef}
+        open={open}
+        onClose={() => setOpen(false)}
+        value={value || null}
+        dueBounds={getDueBounds()}
+        onChange={(next) => onChange(next || '')}
+        label="Due date"
+      />
+      {value && (
+        <button
+          type="button"
+          className="hover-surface"
+          aria-label="Clear due date"
+          onClick={() => onChange('')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 44,
+            height: 44,
+            flexShrink: 0,
+            background: 'transparent',
+            border: 'none',
+            borderRadius: 8,
+            color: 'var(--t2)',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={16} aria-hidden="true" />
+        </button>
+      )}
+    </>
+  )
+}
+
+// The repeat choices offered beside the due date: the server's friendly aliases
+// (automation/recurrence.ts). Anything else, such as a raw RRULE, is a custom rule and is typed
+// into the Recurrence box under More details, which Custom rule opens.
+const REPEAT_OPTIONS = [
+  ['', 'Never'],
+  ['daily', 'Daily'],
+  ['weekdays', 'Weekdays'],
+  ['weekly', 'Weekly'],
+  ['monthly', 'Monthly'],
+  ['yearly', 'Yearly'],
+]
+
+function RepeatField({ value, onChange, onCustom }) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef(null)
+  const label = repeatLabel(value)
+  const current = String(value || '').trim().toLowerCase()
+  const items = [
+    ...REPEAT_OPTIONS.map(([option, text]) => ({
+      key: option || 'never',
+      label: text,
+      radio: true,
+      checked: current === option,
+      onSelect: () => onChange(option),
+    })),
+    { type: 'separator', key: 'sep-custom' },
+    {
+      key: 'custom',
+      label: 'Custom rule',
+      radio: true,
+      checked: Boolean(current) && !REPEAT_OPTIONS.some(([option]) => option === current),
+      onSelect: onCustom,
+    },
+  ]
+  return (
+    <>
+      <button
+        type="button"
+        ref={btnRef}
+        className="due-field"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label ? `Repeat, ${label}` : 'Repeat, never'}
+        onClick={() => setOpen((v) => !v)}
+        style={{ marginLeft: 0 }}
+      >
+        <Repeat size={14} aria-hidden="true" style={{ color: label ? 'var(--blue)' : 'var(--t3)', flexShrink: 0 }} />
+        <span style={{ color: label ? 'var(--t1)' : 'var(--t2)' }}>{label ? `Repeats ${label}` : 'Repeat'}</span>
+      </button>
+      <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
+    </>
+  )
+}
+
 // A 44x44 icon-only button with the app's standard hover treatment.
 function IconButton({ children, onClick, ariaLabel }) {
   return (
@@ -264,6 +382,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   const [moreOpen, setMoreOpen] = useState(false)
+  // The Recurrence box under More details, which the Repeat menu's Custom rule jumps to.
+  const recurrenceRef = useRef(null)
   const [commentDraft, setCommentDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
@@ -699,16 +819,24 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <FieldRow label="Due date">
-              <input
-                type="date"
+              <DueDateField
                 value={form.dueAt}
-                onChange={(e) => {
-                  const { value } = e.target
+                onChange={(value) => {
                   setForm((f) => ({ ...f, dueAt: value }))
                   patchTask({ dueAt: value || null }, { dueAt: value })
                 }}
-                aria-label="Due date"
-                style={blendInputStyle}
+              />
+              <RepeatField
+                value={form.recurrence}
+                onChange={(value) => {
+                  setForm((f) => ({ ...f, recurrence: value }))
+                  patchTask({ recurrence: value || null }, { recurrence: value })
+                }}
+                onCustom={() => {
+                  setMoreOpen(true)
+                  // The box is rendered by the More details section, so it exists after this render.
+                  requestAnimationFrame(() => recurrenceRef.current?.focus())
+                }}
               />
             </FieldRow>
             <FieldRow label="Project">
@@ -719,7 +847,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               )}
             </FieldRow>
             <FieldRow label="Section">
-              <span style={{ color: sectionName ? 'var(--t1)' : 'var(--t2)' }}>{sectionName || 'None'}</span>
+              {sectionName ? (
+                <span className="badge badge-neutral">{sectionName}</span>
+              ) : (
+                <span style={{ color: 'var(--t2)' }}>None</span>
+              )}
             </FieldRow>
             <FieldRow label="Goals">
               <GoalsField
@@ -744,7 +876,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   patchTask({ priority: value })
                 }}
                 aria-label="Priority"
-                style={{ ...blendInputStyle, color: PRIORITY_COLORS[form.priority] || 'var(--t1)', cursor: 'pointer' }}
+                className={form.priority && form.priority !== 'none' ? `priority-select is-${form.priority}` : 'priority-select'}
+                style={{ ...blendInputStyle, background: undefined, width: undefined, color: PRIORITY_COLORS[form.priority] || 'var(--t1)' }}
               >
                 <option value="none">None</option>
                 <option value="low">Low</option>
@@ -754,6 +887,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               </select>
             </FieldRow>
             <FieldRow label="Assignee" htmlFor={assigneeInputId}>
+              {form.assignee.trim() ? <Avatar name={form.assignee} /> : null}
               <input
                 id={assigneeInputId}
                 value={form.assignee}
@@ -981,6 +1115,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   </FieldRow>
                   <FieldRow label="Recurrence">
                     <input
+                      ref={recurrenceRef}
                       value={form.recurrence}
                       onChange={(e) => { const { value } = e.target; setForm((f) => ({ ...f, recurrence: value })) }}
                       onBlur={() => {

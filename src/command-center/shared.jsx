@@ -67,16 +67,31 @@ export function SourceBadge({ sourceType }) {
   )
 }
 
-// Projects carry no colour of their own, so one is picked from the accent tokens by the name:
-// the same project is the same colour in every view, on every device, and on every scratch
-// database the UI tests seed (ids differ there, names do not), and nothing is stored.
-const PROJECT_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--green)', 'var(--orange)', 'var(--yellow)', 'var(--red)']
+// Projects and assignees carry no colour of their own, so one is picked from the accent tokens
+// by the name: the same name is the same colour in every view, on every device, and on every
+// scratch database the UI tests seed (ids differ there, names do not), and nothing is stored.
+const NAME_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--green)', 'var(--orange)', 'var(--yellow)', 'var(--red)']
 
-export function projectColor(name) {
+export function colorFor(name) {
   if (!name) return 'var(--t3)'
   let hash = 0
   for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
-  return PROJECT_PALETTE[hash % PROJECT_PALETTE.length]
+  return NAME_PALETTE[hash % NAME_PALETTE.length]
+}
+
+export const projectColor = colorFor
+
+// Who a task is assigned to, as a circle with the name's initials (an agent name like
+// "claude-code" reads "CC"). Decorative: the name itself is always written next to it.
+export function Avatar({ name, size = 24 }) {
+  if (!name) return null
+  const parts = String(name).trim().split(/[\s_.-]+/).filter(Boolean)
+  const initials = ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?'
+  return (
+    <span className="avatar" aria-hidden="true" style={{ width: size, height: size, background: colorFor(name) }}>
+      {initials}
+    </span>
+  )
 }
 
 // A project named in a list cell: its colour dot and its name on a soft pill.

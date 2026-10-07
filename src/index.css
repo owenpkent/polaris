@@ -57,14 +57,17 @@
   --blue-top: color-mix(in srgb, var(--blue) 80%, white);
   --green-top: color-mix(in srgb, var(--green) 80%, white);
 
-  /* Soft tints for chips, selected rows, and banners. */
-  --blue-soft: color-mix(in srgb, var(--blue) 14%, transparent);
-  --green-soft: color-mix(in srgb, var(--green) 14%, transparent);
-  --yellow-soft: color-mix(in srgb, var(--yellow) 14%, transparent);
-  --purple-soft: color-mix(in srgb, var(--purple) 14%, transparent);
-  --red-soft: color-mix(in srgb, var(--red) 14%, transparent);
-  --orange-soft: color-mix(in srgb, var(--orange) 14%, transparent);
-  --neutral-soft: color-mix(in srgb, var(--t2) 14%, transparent);
+  /* Soft tints for chips, selected rows, and banners. Opaque, mixed into --bg2: a transparent
+     tint takes its luminance from whatever sits behind it, and over the task panel (--bg3,
+     the lightest surface) that lifted a red pill's background to #50444c, where --red on it
+     measures 4.25:1. Mixed into --bg2 a chip is the same measured colour on every surface. */
+  --blue-soft: color-mix(in srgb, var(--blue) 14%, var(--bg2));
+  --green-soft: color-mix(in srgb, var(--green) 14%, var(--bg2));
+  --yellow-soft: color-mix(in srgb, var(--yellow) 14%, var(--bg2));
+  --purple-soft: color-mix(in srgb, var(--purple) 14%, var(--bg2));
+  --red-soft: color-mix(in srgb, var(--red) 14%, var(--bg2));
+  --orange-soft: color-mix(in srgb, var(--orange) 14%, var(--bg2));
+  --neutral-soft: color-mix(in srgb, var(--t2) 14%, var(--bg2));
 
   --focus: #a3cfff;
   --radius-sm: 6px;
@@ -136,10 +139,10 @@
   --blue-top: color-mix(in srgb, var(--blue) 92%, white);
   --green-top: color-mix(in srgb, var(--green) 92%, white);
 
-  /* Opaque here, translucent in the dark theme: a transparent tint takes its
-     luminance from whatever sits behind it, and over a recessed surface that
-     drops the accent text on top of it under 4.5:1. Mixing into --bg2 instead
-     makes every chip, banner, and danger hover the same measured color. */
+  /* Opaque, like the dark theme's: a transparent tint takes its luminance from
+     whatever sits behind it, and over a recessed surface that drops the accent
+     text on top of it under 4.5:1. Mixing into --bg2 instead makes every chip,
+     banner, and danger hover the same measured color. */
   --blue-soft: color-mix(in srgb, var(--blue) 12%, var(--bg2));
   --green-soft: color-mix(in srgb, var(--green) 12%, var(--bg2));
   --yellow-soft: color-mix(in srgb, var(--yellow) 12%, var(--bg2));
@@ -312,6 +315,64 @@ kbd { color: var(--t1); }
 .priority-pill.is-low { background: var(--neutral-soft); color: var(--t2); }
 .priority-pill.is-high { background: var(--orange-soft); color: var(--orange); }
 .priority-pill.is-urgent { background: var(--red-soft); color: var(--red); }
+
+/* The task panel's Priority select, drawn as the same pill (the text colour is set inline from
+   PRIORITY_COLORS). None stays plain. */
+.priority-select { border-radius: 999px; padding: 4px 10px; width: auto; font-weight: 600; cursor: pointer; }
+.priority-select.is-low { background: var(--neutral-soft); }
+.priority-select.is-medium { background: var(--yellow-soft); }
+.priority-select.is-high { background: var(--orange-soft); }
+.priority-select.is-urgent { background: var(--red-soft); }
+
+/* An assignee's initials in a circle coloured by the name (Avatar in shared.jsx). */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* The task panel's Due date field: a calendar in a circle (dashed while unset, green once set)
+   and the date as the list writes it, on a button that opens the shared picker. The negative
+   margin lines the text up with the plain values in the other rows. */
+.due-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--target);
+  margin-left: -10px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--t1);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.due-field:hover { background: var(--bg-hover); }
+.due-field-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px dashed var(--bd-strong);
+  color: var(--t3);
+}
+.due-field-icon.is-set { border-style: solid; border-color: var(--green); color: var(--green); }
+
+/* The repeat glyph after a repeating task's date in a list row or on a board card. */
+.repeat-glyph { display: inline-block; margin-left: 6px; vertical-align: -1px; color: var(--t3); }
 
 .progress-bar {
   height: 6px;

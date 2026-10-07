@@ -1,10 +1,10 @@
 import { useId, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban, Repeat } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
-import { Loading, EmptyState, ErrorBanner, formatDate, isOverdue } from './shared'
+import { Loading, EmptyState, ErrorBanner, Avatar, formatDate, isOverdue } from './shared'
 import { plainTitle } from './dueDates'
 import { Popover } from './Menu'
 import { useRequestGuard } from './useRequestGuard'
@@ -25,12 +25,12 @@ function rememberBoardProject(id) {
   try { localStorage.setItem(BOARD_PROJECT_KEY, id) } catch { /* storage unavailable */ }
 }
 
-// Priority is shown as plain colored text in the card meta row; none/medium
-// (the default) render nothing, matching the approved mockup.
+// Priority is a soft pill in the card meta row, as in the list (.priority-pill in index.css);
+// none/medium (the default) render nothing.
 const PRIORITY_META = {
-  low: { label: 'Low', color: 'var(--t2)' },
-  high: { label: 'High', color: 'var(--orange)' },
-  urgent: { label: 'Urgent', color: 'var(--red)' },
+  low: { label: 'Low', className: 'badge priority-pill is-low' },
+  high: { label: 'High', className: 'badge priority-pill is-high' },
+  urgent: { label: 'Urgent', className: 'badge priority-pill is-urgent' },
 }
 
 function sectionKey(task) {
@@ -122,7 +122,7 @@ function MoveMenu({ task, destinations, onMove, onClose, anchorRef }) {
 function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
   const overdue = isOverdue(task)
   const priority = PRIORITY_META[task.priority]
-  const hasMeta = Boolean(task.dueAt || priority)
+  const hasMeta = Boolean(task.dueAt || task.recurrence || priority || task.assignee)
   const anchorRef = useRef(null)
 
   return (
@@ -152,11 +152,18 @@ function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu,
         >
           <div className="board-card-title" style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--t1)', paddingTop: 2 }}>{plainTitle(task.title)}</div>
           {hasMeta && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
               {task.dueAt && (
                 <span style={{ color: overdue ? 'var(--red)' : 'var(--t2)' }}>{formatDate(task.dueAt)}</span>
               )}
-              {priority && <span style={{ color: priority.color }}>{priority.label}</span>}
+              {task.recurrence && <Repeat size={12} aria-hidden="true" className="repeat-glyph" style={{ marginLeft: task.dueAt ? -4 : 0 }} />}
+              {priority && <span className={priority.className}>{priority.label}</span>}
+              {task.assignee && (
+                // The initials stand for the name here; the panel spells it out.
+                <span style={{ marginLeft: 'auto', display: 'inline-flex' }} title={task.assignee}>
+                  <Avatar name={task.assignee} size={22} />
+                </span>
+              )}
             </div>
           )}
         </button>

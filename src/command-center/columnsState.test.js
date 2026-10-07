@@ -19,8 +19,12 @@ beforeEach(() => {
 })
 
 describe('COLUMN_DEFS', () => {
-  test('lists the five My Tasks columns in a fixed order', () => {
-    expect(COLUMN_DEFS.map((c) => c.id)).toEqual(['name', 'due', 'project', 'priority', 'source'])
+  test('lists the six My Tasks columns in a fixed order', () => {
+    expect(COLUMN_DEFS.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
+  })
+
+  test('assignee is the only column that starts hidden', () => {
+    expect(COLUMN_DEFS.filter((c) => c.defaultHidden).map((c) => c.id)).toEqual(['assignee'])
   })
 
   test('has unique ids', () => {
@@ -53,17 +57,17 @@ describe('COLUMN_DEFS', () => {
 })
 
 describe('getVisibleColumns', () => {
-  const noHidden = { name: false, due: false, project: false, priority: false, source: false }
+  const noHidden = { name: false, due: false, project: false, assignee: false, priority: false, source: false }
 
   test('shows every column when nothing is hidden and no breakpoint is active', () => {
     const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
-    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'priority', 'source'])
+    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 
   test('respects an explicit per-column hidden flag', () => {
     const hidden = { ...noHidden, priority: true }
     const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
-    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'source'])
+    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'source'])
   })
 
   test('never hides the name column even if asked to', () => {
@@ -72,7 +76,7 @@ describe('getVisibleColumns', () => {
     expect(visible.map((c) => c.id)).toContain('name')
   })
 
-  test('narrow900 hides priority and source even when the user left them visible', () => {
+  test('narrow900 hides assignee, priority, and source even when the user left them visible', () => {
     const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: false, phone: false, panelOpen: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project'])
   })
@@ -84,7 +88,7 @@ describe('getVisibleColumns', () => {
 
   test('narrow600 hides the project column independently of narrow900', () => {
     const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: true, phone: false, panelOpen: false })
-    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'priority', 'source'])
+    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'assignee', 'priority', 'source'])
   })
 
   test('narrow900 and narrow600 combined hide project, priority, and source', () => {
@@ -115,7 +119,7 @@ describe('buildGridTemplate', () => {
   test('builds the full template with a leading checkbox track and trailing filler', () => {
     const template = buildGridTemplate(COLUMN_DEFS, widths, {})
     expect(template).toBe(
-      '44px minmax(160px, 440px) minmax(98px, 130px) minmax(90px, 180px) minmax(88px, 100px) minmax(80px, 120px) minmax(0, 1fr)'
+      '44px minmax(160px, 440px) minmax(98px, 130px) minmax(90px, 180px) minmax(90px, 150px) minmax(88px, 100px) minmax(80px, 120px) minmax(0, 1fr)'
     )
   })
 
@@ -145,12 +149,13 @@ describe('buildGridTemplate', () => {
 })
 
 describe('useColumnsState', () => {
-  test('defaults every column to its defaultWidth and visible state', () => {
+  test('defaults every column to its defaultWidth, and to visible unless it starts hidden', () => {
     const { result } = renderHook(() => useColumnsState())
     for (const col of COLUMN_DEFS) {
       expect(result.current.widths[col.id]).toBe(col.defaultWidth)
-      expect(result.current.hidden[col.id]).toBe(false)
+      expect(result.current.hidden[col.id]).toBe(Boolean(col.defaultHidden))
     }
+    expect(result.current.hidden.assignee).toBe(true)
   })
 
   test('merges a partial persisted state over the defaults', () => {
@@ -394,6 +399,6 @@ describe('the sidebar and an open task panel', () => {
 
   test('narrowPanel alone, with no panel open, hides nothing', () => {
     const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false, narrowPanel: true })
-    expect(ids(visible)).toEqual(['name', 'due', 'project', 'priority', 'source'])
+    expect(ids(visible)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 })
