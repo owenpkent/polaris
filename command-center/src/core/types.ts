@@ -274,7 +274,18 @@ export interface ChecklistStart {
   title?: string | null;
   projectId?: string | null;
   dueAt?: string | null;
+  /**
+   * Bring the items back each time the task repeats: when the started task recurs, its next
+   * occurrence gets fresh open copies of its subtasks. Defaults to true. Stored on the task as the
+   * custom field CHECKLIST_REPEAT_ITEMS_FIELD.
+   */
+  repeatItems?: boolean;
 }
+
+/** Custom field on a started task naming the checklist it came from. */
+export const CHECKLIST_ID_FIELD = 'checklistId';
+/** Custom field on a task: when true, the next occurrence of a recurring task gets fresh copies of its subtasks. */
+export const CHECKLIST_REPEAT_ITEMS_FIELD = 'checklistRepeatItems';
 
 // ---- update requests (docs/update-proposal.md, section 4C) ----
 

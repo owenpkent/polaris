@@ -160,3 +160,21 @@ test('checklists: the MCP tokens cannot reach the checklist routes', async (t) =
   assert.equal(app.store.countTasks({}), 0);
   assert.equal(app.store.listChecklists().length, 1);
 });
+
+test('checklists: repeatItems defaults to true over REST, can be turned off, and decides whether a repeat brings the items back', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const checklist = app.store.createChecklist({ name: 'Kitchen', items: ['Dishes', 'Floor'] });
+  await withServer(app, {}, async (base) => {
+    const on = await api(base, 'POST', `/api/checklists/${checklist.id}/start`, { dueAt: '2026-09-13' });
+    const off = await api(base, 'POST', `/api/checklists/${checklist.id}/start`, { dueAt: '2026-09-13', repeatItems: false });
+    assert.equal(on.json.task.customFields.checklistRepeatItems, true);
+    assert.equal(off.json.task.customFields.checklistRepeatItems, false);
+    assert.equal((await api(base, 'POST', `/api/checklists/${checklist.id}/start`, { repeatItems: 'yes' })).status, 400);
+    for (const res of [on, off]) await api(base, 'PATCH', `/api/tasks/${res.json.task.id}`, { recurrence: 'FREQ=WEEKLY' });
+    const nextOn = (await api(base, 'POST', `/api/tasks/${on.json.task.id}/complete`)).json.next;
+    const nextOff = (await api(base, 'POST', `/api/tasks/${off.json.task.id}/complete`)).json.next;
+    assert.deepEqual((await api(base, 'GET', `/api/tasks/${nextOn.id}`)).json.subtasks.map((s: { title: string; status: string }) => [s.title, s.status]), [['Dishes', 'open'], ['Floor', 'open']]);
+    assert.deepEqual((await api(base, 'GET', `/api/tasks/${nextOff.id}`)).json.subtasks, []);
+  });
+});

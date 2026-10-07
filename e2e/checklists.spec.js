@@ -50,6 +50,10 @@ test.describe('Checklists', { tag: ['@flow'] }, () => {
     const start = page.getByRole('form', { name: `Start ${name}` })
     await expect(start.getByRole('textbox', { name: 'Task title' })).toHaveValue(name)
     await start.getByRole('combobox', { name: 'Project (optional)' }).selectOption({ label: 'UI Test Project' })
+    const repeat = start.getByRole('checkbox', { name: 'Bring the items back each time it repeats' })
+    await expect(repeat).toBeChecked()
+    // The label is the click target, and it is 44px tall like every other control.
+    expect((await start.getByText('Bring the items back each time it repeats').boundingBox()).height).toBeGreaterThanOrEqual(44)
     await start.getByRole('button', { name: 'Start' }).click()
 
     const panel = page.getByRole('dialog', { name: 'Task details' })

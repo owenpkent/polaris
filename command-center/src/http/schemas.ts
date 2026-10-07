@@ -214,6 +214,8 @@ export const checklistStartBodySchema = z.object({
   title: z.string().trim().max(500).nullable().optional(),
   projectId: z.string().min(1).nullable().optional(),
   dueAt: z.string().nullable().optional(),
+  /** Bring the items back each time the task repeats. Defaults to true. */
+  repeatItems: z.boolean().optional(),
 }).strict();
 
 export const saveAsChecklistBodySchema = z.object({

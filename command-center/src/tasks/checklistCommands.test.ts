@@ -75,3 +75,14 @@ test('checklist start: a fresh task with the items as subtasks, in a project and
   assert.throws(() => cmd('checklist start').run(['Nothing'], ctx), /No checklist matches/);
   assert.equal(app.store.searchTasks({ parentId: null }).length, 2);
 });
+
+test('checklist start --repeat-items: on unless turned off, stored on the task', async (t) => {
+  const { app, ctx } = harness(t);
+  const c = app.store.createChecklist({ name: 'Kitchen', items: ['Dishes'] });
+  assert.equal(await cmd('checklist start').run([c.id], ctx), 0);
+  assert.equal(await cmd('checklist start').run([c.id, '--repeat-items', 'off'], ctx), 0);
+  assert.equal(await cmd('checklist start').run([c.id, '--repeat-items', 'on'], ctx), 0);
+  const flags = app.store.searchTasks({ parentId: null, orderBy: 'position' }).map((task) => task.customFields.checklistRepeatItems);
+  assert.deepEqual(flags, [true, false, true]);
+  assert.throws(() => cmd('checklist start').run([c.id, '--repeat-items', 'maybe'], ctx), /on or off/);
+});

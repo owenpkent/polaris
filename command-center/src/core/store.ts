@@ -4,7 +4,7 @@
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
 import {
-  ACTIVE_STATUSES, CHECKLIST_MAX_ITEM, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_NAME, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
+  ACTIVE_STATUSES, CHECKLIST_ID_FIELD, CHECKLIST_MAX_ITEM, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_NAME, CHECKLIST_REPEAT_ITEMS_FIELD, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Checklist, type ChecklistPatch, type ChecklistStart, type NewChecklist, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
   type GoalLink, type GoalPatch, type GoalProgress, type Json, type Link, type NewGoal, type NewPost,
   type NewProject, type NewTask, type Post, type PostSearch, type PostSearchHit, type PostStatus, type PostType, type Priority, type Project, type ProjectInput, type ProjectPatch, type Rule, type SavedView, type Section,
@@ -641,6 +641,15 @@ export class Store {
             untrustedText: before.untrustedText,
           }, actor);
           this.addComment(next.id, `Next occurrence of ${id}.`, 'system');
+          // A task started from a checklist with "bring the items back" on gets fresh open copies
+          // of its subtasks, in order. Only for this flag: every other recurring task repeats
+          // alone, as before. Dropped subtasks stay behind, and so does any third-party text.
+          if (before.customFields[CHECKLIST_REPEAT_ITEMS_FIELD] === true) {
+            for (const sub of this.subtasks(id)) {
+              if (sub.status === 'dropped' || sub.untrustedText) continue;
+              this.createTask({ title: sub.title, parentId: next.id, status: 'open' }, actor);
+            }
+          }
         }
       }
       return { task: this.requireTask(id), next };
@@ -1445,8 +1454,9 @@ export class Store {
 
   /**
    * Makes a fresh open task from the template, with one subtask per item in order, in one
-   * transaction. The task's notes are the template's, and its custom field `checklistId` names the
-   * template it came from. Each task fires the usual task.created event.
+   * transaction. The task's notes are the template's, its custom field `checklistId` names the
+   * template it came from, and `checklistRepeatItems` (default true) says whether a repeat of the
+   * task brings the items back. Each task fires the usual task.created event.
    */
   startChecklist(id: string, opts: ChecklistStart = {}, actor: ActorInput = 'human'): { task: Task; subtasks: Task[] } {
     return this.db.transaction(() => {
@@ -1455,7 +1465,7 @@ export class Store {
       const title = opts.title != null && opts.title.trim() ? opts.title : checklist.name;
       const task = this.createTask({
         title, notes: checklist.notes, status: 'open', projectId: opts.projectId ?? null, dueAt: opts.dueAt ?? null,
-        customFields: { checklistId: checklist.id },
+        customFields: { [CHECKLIST_ID_FIELD]: checklist.id, [CHECKLIST_REPEAT_ITEMS_FIELD]: opts.repeatItems !== false },
       }, actor);
       const subtasks = checklist.items.map((item) => this.createTask({ title: item, parentId: task.id, status: 'open' }, actor));
       return { task, subtasks };

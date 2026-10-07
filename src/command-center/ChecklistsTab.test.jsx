@@ -170,6 +170,21 @@ describe('ChecklistsTab', () => {
     expect(screen.getByRole('dialog', { name: 'Task details' })).toBeTruthy()
   })
 
+  test('start: "Bring the items back each time it repeats" is on by default, and turning it off is sent', async () => {
+    api.listChecklists.mockResolvedValue({ checklists: [serverChecklist()] })
+    api.startChecklist.mockResolvedValue({ task: { id: 't_new', title: 'Packing: weekend trip' }, subtasks: [{}] })
+    render(<ChecklistsTab />)
+    await screen.findByRole('article', { name: 'Packing: weekend trip' })
+    fireEvent.click(screen.getByRole('button', { name: 'Start Packing: weekend trip' }))
+    const form = screen.getByRole('form', { name: 'Start Packing: weekend trip' })
+    const box = within(form).getByRole('checkbox', { name: 'Bring the items back each time it repeats' })
+    expect(box.checked).toBe(true)
+    fireEvent.click(box)
+    expect(box.checked).toBe(false)
+    fireEvent.click(within(form).getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(api.startChecklist).toHaveBeenCalledWith('cl_1', { repeatItems: false }))
+  })
+
   test('start with nothing chosen sends an empty body, and a failure stays in the form', async () => {
     api.listChecklists.mockResolvedValue({ checklists: [serverChecklist()] })
     api.startChecklist.mockRejectedValueOnce(new Error('project p9 not found'))

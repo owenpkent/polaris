@@ -220,6 +220,8 @@ function StartForm({ checklist, projects, onStart, onCancel }) {
   const [title, setTitle] = useState(checklist.name)
   const [dueAt, setDueAt] = useState('')
   const [projectId, setProjectId] = useState('')
+  // On by default: a repeat of the started task gets fresh copies of its items.
+  const [repeatItems, setRepeatItems] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -233,6 +235,7 @@ function StartForm({ checklist, projects, onStart, onCancel }) {
       if (title.trim() && title.trim() !== checklist.name) payload.title = title.trim()
       if (dueAt) payload.dueAt = dueAt
       if (projectId) payload.projectId = projectId
+      if (!repeatItems) payload.repeatItems = false
       await onStart(payload)
     } catch (err) {
       setError(err.message || 'Could not start that checklist.')
@@ -266,6 +269,13 @@ function StartForm({ checklist, projects, onStart, onCancel }) {
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
+      </div>
+      <div>
+        <label className="checklist-check" htmlFor={`${idBase}-repeat`}>
+          <input id={`${idBase}-repeat`} type="checkbox" checked={repeatItems} onChange={(e) => setRepeatItems(e.target.checked)} aria-describedby={`${idBase}-repeat-hint`} />
+          Bring the items back each time it repeats
+        </label>
+        <p id={`${idBase}-repeat-hint`} className="checklist-hint">If you make the task repeat, each new occurrence gets its items again, unticked.</p>
       </div>
 
       {error && <div role="alert" style={{ color: 'var(--red)', fontSize: 14 }}>{error}</div>}

@@ -1572,3 +1572,12 @@ test('12. the read-only endpoint lists checklists and offers no tool that writes
   assert.equal(app.store.lastEventId(), before, 'nothing was written');
   assert.equal(app.store.countTasks({}), 0);
 });
+
+test('12. bringing a checklist\'s items back on a repeat is the owner\'s choice per start: a rule cannot set it, and no other task repeats with its subtasks', () => {
+  const result = validateRuleDefinition({ trigger: SCHEDULE, conditions: [], actions: [{ type: 'set_field', field: 'customField', key: 'checklistRepeatItems', value: true }] });
+  assert.equal(result.ok, false, 'a rule must not be able to switch on copying subtasks');
+  const store = openStore(':memory:', { nextOccurrence: (rrule, prev) => nextOccurrence(rrule, prev, TODAY) });
+  const plain = store.createTask({ title: 'Plain repeat', dueAt: '2026-09-18', recurrence: 'FREQ=WEEKLY' });
+  store.createTask({ title: 'A subtask', parentId: plain.id });
+  assert.deepEqual(store.subtasks(store.completeTask(plain.id).next!.id), []);
+});

@@ -56,11 +56,12 @@ export function registerChecklistWriteTools(server: McpServer, app: App, actor: 
       title: z.string().max(500).optional().describe('Title of the new task. Defaults to the checklist name.'),
       project: z.string().optional().describe('Project id, slug, or name.'),
       due_at: z.string().optional().describe('YYYY-MM-DD or ISO datetime.'),
+      repeat_items: z.boolean().optional().describe('If the task is later made to repeat, bring the items back as fresh subtasks each time. Defaults to true.'),
     },
   }, (args) => guard(() => {
     const checklist = resolveChecklist(app.store, args.checklist);
     const projectId = args.project ? resolveProject(app.store, args.project).id : null;
-    const { task, subtasks } = app.store.startChecklist(checklist.id, { title: args.title ?? null, projectId, dueAt: args.due_at ?? null }, actor);
+    const { task, subtasks } = app.store.startChecklist(checklist.id, { title: args.title ?? null, projectId, dueAt: args.due_at ?? null, repeatItems: args.repeat_items ?? true }, actor);
     return ok(`Started ${JSON.stringify(checklist.name)}: task ${taskRef(task)} with ${subtasks.length} subtask(s).`, { task, subtasks });
   }));
 }

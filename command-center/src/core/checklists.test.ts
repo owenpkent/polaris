@@ -71,7 +71,7 @@ test('startChecklist makes one open task with the items as subtasks in order, an
   assert.equal(task.dueAt, '2026-10-09');
   assert.equal(task.sourceType, null);
   assert.equal(task.untrustedText, false);
-  assert.deepEqual(task.customFields, { checklistId: c.id });
+  assert.deepEqual(task.customFields, { checklistId: c.id, checklistRepeatItems: true }, 'bringing the items back is on unless asked otherwise');
   assert.deepEqual(subtasks.map((s) => s.title), ['Passport', 'Phone charger', 'Toothbrush', 'Book']);
   assert.deepEqual(store.subtasks(task.id).map((s) => s.title), ['Passport', 'Phone charger', 'Toothbrush', 'Book'], 'read back in the same order');
   for (const s of subtasks) {
@@ -175,4 +175,63 @@ test('every checklist write is recorded with its actor and no task id', () => {
     ['checklist.updated', 'human', null, null],
     ['checklist.deleted', 'human', null, null],
   ]);
+});
+
+// A weekly series: each completion makes the next occurrence a week on.
+const weekly = () => openStore(':memory:', {
+  nextOccurrence: (_rrule: string, prev: string) => {
+    const d = new Date(`${prev.slice(0, 10)}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
+  },
+});
+
+test('with repeatItems on, a repeat brings the current items back as fresh open subtasks in order, dropped ones left out', () => {
+  const store = weekly();
+  const c = store.createChecklist({ name: 'Clean the kitchen', items: ['Dishes', 'Counters', 'Floor'] });
+  const { task, subtasks } = store.startChecklist(c.id, { dueAt: '2026-10-11' });
+  store.updateTask(task.id, { recurrence: 'FREQ=WEEKLY' });
+  // The owner works the list: ticks one, drops one, and adds one of their own.
+  store.completeTask(subtasks[0].id);
+  store.updateTask(subtasks[2].id, { status: 'dropped' });
+  store.createTask({ title: 'Bins', parentId: task.id });
+  const before = store.lastEventId();
+
+  const { next } = store.completeTask(task.id, { actor: 'agent', name: 'scribe' });
+  assert.ok(next);
+  assert.equal(next.dueAt, '2026-10-18');
+  assert.equal(next.customFields.checklistRepeatItems, true, 'the choice carries on to every later repeat');
+  const copies = store.subtasks(next.id);
+  assert.deepEqual(copies.map((s) => [s.title, s.status, s.untrustedText]), [['Dishes', 'open', false], ['Counters', 'open', false], ['Bins', 'open', false]]);
+  for (const e of store.eventsSince(before).filter((ev) => ev.kind === 'task.created')) assert.equal(e.actor, 'agent', 'recorded as whoever completed it');
+  assert.deepEqual(store.subtasks(task.id).map((s) => s.status), ['done', 'open', 'dropped', 'open'], 'the finished occurrence keeps its own items as they were');
+  assert.deepEqual(store.getChecklist(c.id)!.items, ['Dishes', 'Counters', 'Floor'], 'the template is not involved');
+
+  // And again on the next repeat.
+  const third = store.completeTask(next.id).next!;
+  assert.deepEqual(store.subtasks(third.id).map((s) => s.title), ['Dishes', 'Counters', 'Bins']);
+});
+
+test('with repeatItems off, or on a task that never came from a checklist, a repeat comes back alone as before', () => {
+  const store = weekly();
+  const c = store.createChecklist({ name: 'Clean the kitchen', items: ['Dishes', 'Floor'] });
+  const { task } = store.startChecklist(c.id, { dueAt: '2026-10-11', repeatItems: false });
+  assert.equal(task.customFields.checklistRepeatItems, false);
+  store.updateTask(task.id, { recurrence: 'FREQ=WEEKLY' });
+  const { next } = store.completeTask(task.id);
+  assert.deepEqual(store.subtasks(next!.id), []);
+
+  const plain = store.createTask({ title: 'Water plants', dueAt: '2026-10-11', recurrence: 'FREQ=WEEKLY' });
+  store.createTask({ title: 'Ferns', parentId: plain.id });
+  assert.deepEqual(store.subtasks(store.completeTask(plain.id).next!.id), []);
+});
+
+test('a repeat never carries a subtask marked as third-party text, even with the flag on', () => {
+  const store = weekly();
+  const c = store.createChecklist({ name: 'Release', items: ['Tag it'] });
+  const { task } = store.startChecklist(c.id, { dueAt: '2026-10-11' });
+  store.updateTask(task.id, { recurrence: 'FREQ=WEEKLY' });
+  store.createTask({ title: 'Copied from an issue', parentId: task.id, untrustedText: true });
+  const { next } = store.completeTask(task.id);
+  assert.deepEqual(store.subtasks(next!.id).map((s) => s.title), ['Tag it']);
 });

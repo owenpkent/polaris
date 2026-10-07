@@ -133,3 +133,20 @@ test('checklist tools: an agent cannot edit or delete a checklist, and the read-
     }
   });
 });
+
+test('start_checklist: repeat_items defaults to true and can be turned off', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const checklist = app.store.createChecklist({ name: 'Kitchen', items: ['Dishes'] });
+  await withServer(app, {}, async (base) => {
+    const client = await connect(base);
+    try {
+      const on = await call(client, 'start_checklist', { checklist: checklist.id });
+      const off = await call(client, 'start_checklist', { checklist: checklist.id, repeat_items: false });
+      assert.equal(on.structuredContent!.task.customFields.checklistRepeatItems, true);
+      assert.equal(off.structuredContent!.task.customFields.checklistRepeatItems, false);
+    } finally {
+      await client.close();
+    }
+  });
+});

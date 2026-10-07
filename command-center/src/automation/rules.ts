@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import {
   ACTIVE_STATUSES,
+  CHECKLIST_REPEAT_ITEMS_FIELD,
   EXTERNAL_SOURCE_TYPES,
   type CustomFieldValue,
   type EventKind,
@@ -104,7 +105,13 @@ const setFieldActionSchema = z.discriminatedUnion('field', [
   z.object({ type: z.literal('set_field'), field: z.literal('priority'), value: z.enum(PRIORITY_VALUES) }).strict(),
   z.object({ type: z.literal('set_field'), field: z.literal('status'), value: z.enum(SETTABLE_STATUS_VALUES) }).strict(),
   z.object({ type: z.literal('set_field'), field: z.literal('dueAt'), value: z.union([z.string(), z.null()]) }).strict(),
-  z.object({ type: z.literal('set_field'), field: z.literal('customField'), key: z.string().min(1), value: customFieldValueSchema }).strict(),
+  // checklistRepeatItems decides whether a repeat copies a task's subtasks: the owner's choice when
+  // starting a checklist, never a rule's, so a rule cannot set it.
+  z.object({
+    type: z.literal('set_field'), field: z.literal('customField'),
+    key: z.string().min(1).refine((k) => k !== CHECKLIST_REPEAT_ITEMS_FIELD, { message: `a rule cannot set ${CHECKLIST_REPEAT_ITEMS_FIELD}` }),
+    value: customFieldValueSchema,
+  }).strict(),
 ]);
 
 // There is deliberately no 'complete', 'drop', 'delete', 'accept_inbox', or external-system

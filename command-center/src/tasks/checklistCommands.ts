@@ -70,9 +70,13 @@ export const commands: Command[] = [
   {
     name: 'checklist start',
     summary: 'Start a checklist: a new task with one subtask per item',
-    usage: 'checklist start <id|name> [--title <text>] [--project <name>] [--due YYYY-MM-DD]',
+    usage: 'checklist start <id|name> [--title <text>] [--project <name>] [--due YYYY-MM-DD] [--repeat-items on|off]',
     run(args, { openApp, stdout }) {
       const f = parseFlags(args);
+      // Bring the items back each time the task repeats: on unless asked otherwise.
+      const repeatRaw = str(f['repeat-items']) ?? 'on';
+      if (repeatRaw !== 'on' && repeatRaw !== 'off') throw new Error('--repeat-items must be on or off.');
+      const repeatItems = repeatRaw === 'on';
       const app = openApp();
       try {
         const c = requireChecklist(app.store, f._.join(' '));
@@ -83,7 +87,7 @@ export const commands: Command[] = [
           if (!p) throw new Error(`No project matches "${projectRef}". Run "npm run cc -- projects" to list them.`);
           projectId = p.id;
         }
-        const { task, subtasks } = app.store.startChecklist(c.id, { title: str(f.title), projectId, dueAt: str(f.due) }, 'human');
+        const { task, subtasks } = app.store.startChecklist(c.id, { title: str(f.title), projectId, dueAt: str(f.due), repeatItems }, 'human');
         stdout([formatTask(app.store, task, app.today()), ...subtasks.map((s) => `  ${formatTask(app.store, s)}`)].join('\n'));
         return 0;
       } finally { app.close(); }
