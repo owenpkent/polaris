@@ -130,6 +130,9 @@ export function Popover({
   return createPortal(
     <div
       ref={popRef}
+      // Marks the portal for focus traps (TaskDetailPanel.jsx): focus in here belongs to the
+      // trigger's own view even though the element sits at the end of <body>.
+      data-popover=""
       // React bubbles portal events through the *component* tree, not the
       // DOM tree: a click way over here in <body> still reaches a row's
       // onClick (which opens the task detail panel) unless it's stopped

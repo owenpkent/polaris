@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone } from './support.js'
+import { createTask, isPhone, openTask, openView } from './support.js'
 
 // The keyboard-only sweep (initiatives/ui-ux-testing.md, phase 7): from page load, Tab reaches
 // every control the pointer can, in visual order, and no Tab stop is unlabelled. Then Menu.jsx's
@@ -226,5 +226,54 @@ test.describe('the ? legend', { tag: ['@a11y'] }, () => {
     await expect(field).toHaveValue('?')
     await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0)
     await page.keyboard.press('Escape')
+  })
+})
+
+test.describe('the due date box in the task panel', { tag: ['@a11y'] }, () => {
+  // DueDateMenu.jsx is portalled to <body>, outside the panel's focus trap (TaskDetailPanel.jsx).
+  // Tab has to move between the date box's own segments, and typing a new year has to reach
+  // all four digits: Chromium fires change after the first one, which must not be saved.
+  test('Tab stays in the date box, a typed year saves whole on Enter, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the date box has keyboard segments on the desktop tier')
+    const title = await createTask(request, testInfo, 'due year', { dueAt: '2026-10-08' })
+    await openView(page)
+    await openTask(page, title)
+    const trigger = page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / })
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    const menu = page.getByRole('menu', { name: 'Due date' })
+    await expect(menu).toBeVisible()
+    const input = menu.getByLabel('Date')
+    await input.focus()
+    await expect(input).toBeFocused()
+
+    // Month, day, year in en-US: two Tabs reach the year, Shift+Tab goes back, and focus never
+    // leaves the box.
+    await page.keyboard.press('Tab')
+    await expect(input).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(input).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(input).toBeFocused()
+    await page.keyboard.press('Tab')
+
+    const saved = []
+    page.on('request', (req) => {
+      if (req.method() === 'PATCH' && req.url().includes('/api/tasks/')) saved.push(req.postDataJSON())
+    })
+    await page.keyboard.type('2027')
+    await expect(menu).toBeVisible()
+    expect(saved).toEqual([])
+    await page.keyboard.press('Enter')
+    await expect(menu).toBeHidden()
+    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual(['2027-10-08'])
+
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    await expect(trigger).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
   })
 })

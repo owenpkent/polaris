@@ -518,6 +518,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
       const active = document.activeElement
+      // A menu opened from the panel is portalled to <body> (Menu.jsx), so focus in it is still
+      // the panel's. Left alone, Tab in the date box moves between its segments as the browser
+      // does it, instead of being pulled back to the panel's first control.
+      if (active?.closest('[data-popover]')) return
       if (e.shiftKey) {
         if (active === first || !panelRef.current.contains(active)) {
           e.preventDefault()

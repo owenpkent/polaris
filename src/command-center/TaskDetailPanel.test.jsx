@@ -596,3 +596,29 @@ describe('save as checklist', () => {
     expect(await screen.findByText(/written by a third party/)).toBeTruthy()
   })
 })
+
+describe('the due date menu and the focus trap', () => {
+  // The menu is portalled to <body>, outside the panel. The panel's Tab trap must leave focus
+  // alone there, or Tab in the date box jumps to Mark complete instead of the next segment.
+  test('Tab and Shift+Tab inside the date box are left to the browser', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, dueAt: '2026-10-08' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    const input = screen.getByLabelText('Date')
+    input.focus()
+    // fireEvent returns false when a listener called preventDefault.
+    expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(true)
+    expect(document.activeElement).toBe(input)
+    expect(fireEvent.keyDown(input, { key: 'Tab', shiftKey: true })).toBe(true)
+    expect(document.activeElement).toBe(input)
+  })
+
+  test('Tab from outside the panel, with no menu open, is still pulled into it', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const dialog = await screen.findByRole('dialog', { name: 'Task details' })
+    document.activeElement?.blur?.()
+    expect(fireEvent.keyDown(document.body, { key: 'Tab' })).toBe(false)
+    expect(dialog.contains(document.activeElement)).toBe(true)
+  })
+})
