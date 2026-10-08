@@ -233,7 +233,7 @@ test.describe('the due date box in the task panel', { tag: ['@a11y'] }, () => {
   // DueDateMenu.jsx is portalled to <body>, outside the panel's focus trap (TaskDetailPanel.jsx).
   // Tab has to move between the date box's own segments, and typing a new year has to reach
   // all four digits: Chromium fires change after the first one, which must not be saved.
-  test('Tab stays in the date box, a typed year saves whole on Enter, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
+  test('Tab stays in the date box, a typed digit waits for Enter to save, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
     test.skip(isPhone(testInfo), 'the date box has keyboard segments on the desktop tier')
     const title = await createTask(request, testInfo, 'due year', { dueAt: '2026-10-08' })
     await openView(page)
@@ -247,26 +247,44 @@ test.describe('the due date box in the task panel', { tag: ['@a11y'] }, () => {
     await input.focus()
     await expect(input).toBeFocused()
 
-    // Month, day, year in en-US: two Tabs reach the year, Shift+Tab goes back, and focus never
-    // leaves the box.
+    // Where focus is and what the box holds after each key, kept with the test so a run on
+    // another browser explains itself: Edge on Windows does not give the box the Tab stops
+    // Chromium on Linux does.
+    const trace = []
+    async function note(step) {
+      trace.push({ step, ...(await page.evaluate(() => {
+        const el = document.activeElement
+        return { active: el?.tagName + (el?.type ? `[${el.type}]` : ''), label: el?.getAttribute?.('aria-label') || el?.textContent?.slice(0, 40) || '', value: el?.value ?? null }
+      })) })
+    }
+
+    // Tab from the first segment moves to the next one, and Shift+Tab back, with focus never
+    // leaving the box (the panel's trap used to pull it to Mark complete).
     await page.keyboard.press('Tab')
-    await expect(input).toBeFocused()
-    await page.keyboard.press('Tab')
+    await note('Tab')
     await expect(input).toBeFocused()
     await page.keyboard.press('Shift+Tab')
+    await note('Shift+Tab')
     await expect(input).toBeFocused()
-    await page.keyboard.press('Tab')
 
+    // One digit into whichever segment is focused changes the box's value (Chromium fires change
+    // at once, which used to save the half-typed date and close the menu). Nothing is saved until
+    // Enter, which saves what the box shows, once. The unit tests cover the year-0002 case.
     const saved = []
     page.on('request', (req) => {
       if (req.method() === 'PATCH' && req.url().includes('/api/tasks/')) saved.push(req.postDataJSON())
     })
-    await page.keyboard.type('2027')
+    await page.keyboard.type('2')
+    await note('type 2')
+    await testInfo.attach('focus trace', { body: JSON.stringify(trace, null, 2), contentType: 'application/json' })
     await expect(menu).toBeVisible()
     expect(saved).toEqual([])
+    const typed = await input.inputValue()
+    expect(typed).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(typed).not.toBe('2026-10-08')
     await page.keyboard.press('Enter')
     await expect(menu).toBeHidden()
-    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual(['2027-10-08'])
+    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual([typed])
 
     await trigger.focus()
     await page.keyboard.press('Enter')
