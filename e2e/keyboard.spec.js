@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone } from './support.js'
+import { createTask, isPhone, openTask, openView } from './support.js'
 
 // The keyboard-only sweep (initiatives/ui-ux-testing.md, phase 7): from page load, Tab reaches
 // every control the pointer can, in visual order, and no Tab stop is unlabelled. Then Menu.jsx's
@@ -226,5 +226,72 @@ test.describe('the ? legend', { tag: ['@a11y'] }, () => {
     await expect(field).toHaveValue('?')
     await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0)
     await page.keyboard.press('Escape')
+  })
+})
+
+test.describe('the due date box in the task panel', { tag: ['@a11y'] }, () => {
+  // DueDateMenu.jsx is portalled to <body>, outside the panel's focus trap (TaskDetailPanel.jsx).
+  // Tab has to move between the date box's own segments, and typing a new year has to reach
+  // all four digits: Chromium fires change after the first one, which must not be saved.
+  test('Tab stays in the date box, a typed digit waits for Enter to save, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the date box has keyboard segments on the desktop tier')
+    const title = await createTask(request, testInfo, 'due year', { dueAt: '2026-10-08' })
+    await openView(page)
+    await openTask(page, title)
+    const trigger = page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / })
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    const menu = page.getByRole('menu', { name: 'Due date' })
+    await expect(menu).toBeVisible()
+    const input = menu.getByLabel('Date')
+    await input.focus()
+    await expect(input).toBeFocused()
+
+    // Where focus is and what the box holds after each key, kept with the test so a run on
+    // another browser explains itself: Edge on Windows does not give the box the Tab stops
+    // Chromium on Linux does.
+    const trace = []
+    async function note(step) {
+      trace.push({ step, ...(await page.evaluate(() => {
+        const el = document.activeElement
+        return { active: el?.tagName + (el?.type ? `[${el.type}]` : ''), label: el?.getAttribute?.('aria-label') || el?.textContent?.slice(0, 40) || '', value: el?.value ?? null }
+      })) })
+    }
+
+    // Tab from the first segment moves to the next one, and Shift+Tab back, with focus never
+    // leaving the box (the panel's trap used to pull it to Mark complete).
+    await page.keyboard.press('Tab')
+    await note('Tab')
+    await expect(input).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await note('Shift+Tab')
+    await expect(input).toBeFocused()
+
+    // One digit into whichever segment is focused changes the box's value (Chromium fires change
+    // at once, which used to save the half-typed date and close the menu). Nothing is saved until
+    // Enter, which saves what the box shows, once. The unit tests cover the year-0002 case.
+    const saved = []
+    page.on('request', (req) => {
+      if (req.method() === 'PATCH' && req.url().includes('/api/tasks/')) saved.push(req.postDataJSON())
+    })
+    await page.keyboard.type('2')
+    await note('type 2')
+    await testInfo.attach('focus trace', { body: JSON.stringify(trace, null, 2), contentType: 'application/json' })
+    await expect(menu).toBeVisible()
+    expect(saved).toEqual([])
+    const typed = await input.inputValue()
+    expect(typed).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(typed).not.toBe('2026-10-08')
+    await page.keyboard.press('Enter')
+    await expect(menu).toBeHidden()
+    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual([typed])
+
+    await trigger.focus()
+    await page.keyboard.press('Enter')
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    await expect(trigger).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
   })
 })

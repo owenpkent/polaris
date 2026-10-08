@@ -24,18 +24,6 @@ const ALLOW_LIST = [
     reason:
       'SUSPECTED BUG, found 2026-09-26: setPointerCapture drives the column-width drag handle, which also has an ArrowLeft/ArrowRight keyboard nudge and a widen/narrow/reset menu, so this may be a false positive the owner should confirm.',
   },
-  {
-    file: 'src/NavDrawer.jsx',
-    rule: 'hover-only-jsx',
-    reason:
-      'SUSPECTED BUG, found 2026-09-26: onMouseEnter/onMouseLeave toggle a background highlight on the nav rows and the close button, with no onFocus or onFocusCapture anywhere in the file.',
-  },
-  {
-    file: 'src/command-center/BoardTab.jsx',
-    rule: 'hover-only-jsx',
-    reason:
-      'SUSPECTED BUG, found 2026-09-26: onMouseEnter/onMouseLeave toggle a card background and shadow highlight, with no onFocus or onFocusCapture anywhere in the file.',
-  },
 ]
 
 function isAllowed(file, rule) {

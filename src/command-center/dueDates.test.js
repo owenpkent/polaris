@@ -8,7 +8,34 @@ import {
   bucketForTask,
   groupTasks,
   formatDueCell,
+  repeatLabel,
 } from './dueDates'
+
+describe('repeatLabel', () => {
+  test('nothing for a task that does not repeat', () => {
+    expect(repeatLabel(null)).toBeNull()
+    expect(repeatLabel('')).toBeNull()
+    expect(repeatLabel('   ')).toBeNull()
+  })
+
+  test('words the aliases the server accepts, whatever their case', () => {
+    expect(repeatLabel('weekly')).toBe('weekly')
+    expect(repeatLabel('Daily')).toBe('daily')
+    expect(repeatLabel('weekdays')).toBe('on weekdays')
+    expect(repeatLabel('MONTHLY')).toBe('monthly')
+    expect(repeatLabel('yearly')).toBe('yearly')
+  })
+
+  test('keeps an every-N rule as written', () => {
+    expect(repeatLabel('every 2 weeks')).toBe('every 2 weeks')
+    expect(repeatLabel('Every 3 days')).toBe('every 3 days')
+  })
+
+  test('anything else is a custom rule', () => {
+    expect(repeatLabel('FREQ=WEEKLY;BYDAY=MO')).toBe('by a custom rule')
+    expect(repeatLabel('RRULE:FREQ=DAILY')).toBe('by a custom rule')
+  })
+})
 
 describe('plainTitle', () => {
   test('returns plain text unchanged when there is no markdown', () => {

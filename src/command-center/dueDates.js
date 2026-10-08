@@ -69,6 +69,20 @@ export function groupTasks(tasks, bounds) {
 
 // Display text + color for the Due date cell. Independent of which group the
 // row is rendered in -- computed purely from the date's relation to bounds.
+// How a task's recurrence reads after "Repeats": the friendly aliases the server accepts
+// (automation/recurrence.ts) and its "every N units" form get their own words, and anything
+// else (a raw RRULE) is a custom rule. Null when the task does not repeat.
+const REPEAT_WORDS = { daily: 'daily', weekdays: 'on weekdays', weekly: 'weekly', monthly: 'monthly', yearly: 'yearly' }
+
+export function repeatLabel(recurrence) {
+  const lower = String(recurrence || '').trim().toLowerCase()
+  if (!lower) return null
+  if (REPEAT_WORDS[lower]) return REPEAT_WORDS[lower]
+  const every = /^every\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)$/.exec(lower)
+  if (every) return `every ${every[1]} ${every[2]}`
+  return 'by a custom rule'
+}
+
 export function formatDueCell(dueAt, bounds) {
   const d = dueDateOnly(dueAt)
   if (d === null) return { text: '', color: null }

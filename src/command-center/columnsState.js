@@ -6,12 +6,15 @@ import { useCallback, useEffect, useState } from 'react'
 // dragging a column's right edge moves exactly that edge. Name is always
 // visible; the rest can be hidden. `sortField` is the id this column sorts
 // by when a header menu's "Sort ascending/descending" is used (null for
-// Source, which isn't sortable) -- it lines up with SORT_FIELDS in viewState.js.
+// Source and Assignee, which aren't sortable) -- it lines up with SORT_FIELDS in viewState.js.
+// Assignee starts hidden (`defaultHidden`): shown by default it would take width from Name on
+// an ordinary window, and the Columns menu turns it on for an owner who hands tasks to agents.
 export const COLUMN_DEFS = [
   { id: 'name', label: 'Name', minWidth: 160, defaultWidth: 440, canHide: false, sortField: 'name' },
-  { id: 'due', label: 'Due date', minWidth: 90, defaultWidth: 130, canHide: true, sortField: 'due' },
+  { id: 'due', label: 'Due date', minWidth: 98, defaultWidth: 140, canHide: true, sortField: 'due' },
   { id: 'project', label: 'Project', minWidth: 90, defaultWidth: 180, canHide: true, sortField: 'project' },
-  { id: 'priority', label: 'Priority', minWidth: 80, defaultWidth: 100, canHide: true, sortField: 'priority' },
+  { id: 'assignee', label: 'Assignee', minWidth: 90, defaultWidth: 150, canHide: true, sortField: null, defaultHidden: true },
+  { id: 'priority', label: 'Priority', minWidth: 88, defaultWidth: 110, canHide: true, sortField: 'priority' },
   { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null },
 ]
 
@@ -23,7 +26,7 @@ function defaultState() {
   const hidden = {}
   for (const col of COLUMN_DEFS) {
     widths[col.id] = col.defaultWidth
-    hidden[col.id] = false
+    hidden[col.id] = Boolean(col.defaultHidden)
   }
   return { widths, hidden }
 }
@@ -155,7 +158,7 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
     if (!col.canHide) return true
     if (phone) return col.id === 'due'
     if (hidden[col.id]) return false
-    if ((narrow900 || panelOpen) && (col.id === 'priority' || col.id === 'source')) return false
+    if ((narrow900 || panelOpen) && (col.id === 'priority' || col.id === 'source' || col.id === 'assignee')) return false
     if ((narrow600 || (panelOpen && narrowPanel)) && col.id === 'project') return false
     return true
   })
@@ -171,7 +174,7 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 // the row has room, shrinking toward its minimum (instead of overflowing the
 // page) when the window or an open detail panel is narrow.
 export function buildGridTemplate(visibleColumns, widths, { phone } = {}) {
-  if (phone) return '44px minmax(0, 1fr) 112px'
+  if (phone) return '44px minmax(0, 1fr) 120px'
   const tracks = visibleColumns.map((col) => `minmax(${col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
   return ['44px', ...tracks, 'minmax(0, 1fr)'].join(' ')
 }

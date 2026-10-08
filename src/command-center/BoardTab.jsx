@@ -1,10 +1,10 @@
 import { useId, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban, Repeat } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
-import { Loading, EmptyState, ErrorBanner, formatDate, isOverdue } from './shared'
+import { Loading, EmptyState, ErrorBanner, Avatar, formatDate, isOverdue } from './shared'
 import { plainTitle } from './dueDates'
 import { Popover } from './Menu'
 import { useRequestGuard } from './useRequestGuard'
@@ -25,12 +25,12 @@ function rememberBoardProject(id) {
   try { localStorage.setItem(BOARD_PROJECT_KEY, id) } catch { /* storage unavailable */ }
 }
 
-// Priority is shown as plain colored text in the card meta row; none/medium
-// (the default) render nothing, matching the approved mockup.
+// Priority is a soft pill in the card meta row, as in the list (.priority-pill in index.css);
+// none/medium (the default) render nothing.
 const PRIORITY_META = {
-  low: { label: 'Low', color: 'var(--t2)' },
-  high: { label: 'High', color: 'var(--orange)' },
-  urgent: { label: 'Urgent', color: 'var(--red)' },
+  low: { label: 'Low', className: 'badge priority-pill is-low' },
+  high: { label: 'High', className: 'badge priority-pill is-high' },
+  urgent: { label: 'Urgent', className: 'badge priority-pill is-urgent' },
 }
 
 function sectionKey(task) {
@@ -122,28 +122,12 @@ function MoveMenu({ task, destinations, onMove, onClose, anchorRef }) {
 function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
   const overdue = isOverdue(task)
   const priority = PRIORITY_META[task.priority]
-  const hasMeta = Boolean(task.dueAt || priority)
+  const hasMeta = Boolean(task.dueAt || task.recurrence || priority || task.assignee)
   const anchorRef = useRef(null)
-  const [hovered, setHovered] = useState(false)
 
   return (
     <div style={{ position: 'relative' }}>
-      <div
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) 44px',
-          alignItems: 'start',
-          gap: 4,
-          padding: '12px 6px 12px 14px',
-          background: hovered ? 'var(--bg3)' : 'var(--bg2)',
-          border: `1px solid ${menuOpen ? 'var(--blue)' : 'var(--bd-surface)'}`,
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: hovered ? 'var(--shadow-2)' : 'var(--shadow-1)',
-          transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
-        }}
-      >
+      <div className={menuOpen ? 'board-card is-menu-open' : 'board-card'}>
         <button
           type="button"
           onClick={() => onOpen(task.id)}
@@ -168,11 +152,18 @@ function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu,
         >
           <div className="board-card-title" style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--t1)', paddingTop: 2 }}>{plainTitle(task.title)}</div>
           {hasMeta && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
               {task.dueAt && (
                 <span style={{ color: overdue ? 'var(--red)' : 'var(--t2)' }}>{formatDate(task.dueAt)}</span>
               )}
-              {priority && <span style={{ color: priority.color }}>{priority.label}</span>}
+              {task.recurrence && <Repeat size={12} aria-hidden="true" className="repeat-glyph" style={{ marginLeft: task.dueAt ? -4 : 0 }} />}
+              {priority && <span className={priority.className}>{priority.label}</span>}
+              {task.assignee && (
+                // The initials stand for the name here; the panel spells it out.
+                <span style={{ marginLeft: 'auto', display: 'inline-flex' }} title={task.assignee}>
+                  <Avatar name={task.assignee} size={22} />
+                </span>
+              )}
             </div>
           )}
         </button>
@@ -216,23 +207,10 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
 
   // A labelled region, so a screen reader (and the UI tests) can address a lane by its name.
   return (
-    <section
-      aria-labelledby={titleId}
-      className="board-lane"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        padding: '4px 10px 10px',
-        background: 'var(--bg-inset)',
-        border: '1px solid var(--lane-edge)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-lane)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 4px' }}>
-        <h2 id={titleId} className="board-lane-title" style={{ fontSize: 15, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
-        <div style={{ fontSize: 13, color: 'var(--t2)' }}>{tasks.length}</div>
+    <section aria-labelledby={titleId} className="board-lane">
+      <div className="board-lane-head">
+        <h2 id={titleId} className="board-lane-title" style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
+        <div style={{ fontSize: 13, color: 'var(--t3)' }}>{tasks.length}</div>
       </div>
 
       {tasks.length === 0 && (
@@ -293,10 +271,23 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
   )
 }
 
-export default function BoardTab() {
+// `projectId`, when set, is the project the sidebar asked for (App.jsx): it replaces the remembered
+// choice. `onProjectChange` reports whichever project the board ends up showing, so the sidebar
+// can mark it.
+export default function BoardTab({ projectId = null, onProjectChange }) {
   const { connected, api } = useConnection()
   const [projects, setProjects] = useState([])
   const [projectRef, setProjectRef] = useState('')
+
+  useEffect(() => {
+    if (!projectId) return
+    setProjectRef(projectId)
+    rememberBoardProject(projectId)
+  }, [projectId])
+
+  useEffect(() => {
+    if (projectRef) onProjectChange?.(projectRef)
+  }, [projectRef, onProjectChange])
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)

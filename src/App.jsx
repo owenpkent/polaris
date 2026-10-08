@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CheckCircle2, Columns3, Folder, GitBranch, Inbox, ListChecks, MessagesSquare, Newspaper, Settings, Target, Zap } from 'lucide-react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsTab from './command-center/SettingsTab'
 import InboxTab from './command-center/InboxTab'
@@ -24,24 +25,26 @@ import { subscribeNativeShares, subscribeNotificationTaps } from './command-cent
 import { parseTaskParam, stripTaskParam } from './command-center/reminders'
 import ReminderScheduler from './command-center/ReminderScheduler'
 
+// Each view's icon is drawn by the sidebar and the drawer (src/NavItem.jsx); the phone tab bar
+// has its own three (src/BottomNav.jsx).
 const PRIMARY_ITEMS = [
-  { id: 'mytasks', label: 'My tasks' },
-  { id: 'inbox', label: 'Inbox' },
-  { id: 'board', label: 'Board' },
+  { id: 'mytasks', label: 'My tasks', icon: CheckCircle2 },
+  { id: 'inbox', label: 'Inbox', icon: Inbox },
+  { id: 'board', label: 'Board', icon: Columns3 },
 ]
 
 const MORE_ITEMS = [
-  { id: 'goals', label: 'Goals' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'checklists', label: 'Checklists' },
-  { id: 'threads', label: 'Threads' },
-  { id: 'rules', label: 'Rules' },
-  { id: 'digest', label: 'Digest' },
-  { id: 'github', label: 'GitHub' },
+  { id: 'goals', label: 'Goals', icon: Target },
+  { id: 'projects', label: 'Projects', icon: Folder },
+  { id: 'checklists', label: 'Checklists', icon: ListChecks },
+  { id: 'threads', label: 'Threads', icon: MessagesSquare },
+  { id: 'rules', label: 'Rules', icon: Zap },
+  { id: 'digest', label: 'Digest', icon: Newspaper },
+  { id: 'github', label: 'GitHub', icon: GitBranch },
 ]
 
 // The last row of the navigation, with the connection status beside it.
-const SETTINGS_ITEM = { id: 'settings', label: 'Settings' }
+const SETTINGS_ITEM = { id: 'settings', label: 'Settings', icon: Settings }
 
 const DEFAULT_TAB = 'mytasks'
 const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].map((item) => item.id))
@@ -105,6 +108,12 @@ export default function App() {
     drawerOpenerRef.current = opener || menuButtonRef.current
     setDrawerOpen(true)
   }
+  // The project the Board shows, so the sidebar's project list can mark it and open another.
+  const [boardProject, setBoardProject] = useState(null)
+  const openProjectBoard = useCallback((id) => {
+    setBoardProject(id)
+    setTab('board')
+  }, [])
   const [chatMockup] = useState(readChatMockup)
   const [chatOpen, setChatOpen] = useState(chatMockup.enabled && chatMockup.open)
   const chatButtonRef = useRef(null)
@@ -141,6 +150,8 @@ export default function App() {
           connectionItem={SETTINGS_ITEM}
           activeTab={tab}
           onSelect={setTab}
+          boardProjectId={tab === 'board' ? boardProject : null}
+          onSelectProject={openProjectBoard}
         />
         <div className="app-content">
         <TopBar
@@ -184,7 +195,7 @@ export default function App() {
               onFocusTaskConsumed={consumeFocusTask}
             />
           )}
-          {tab === 'board' && <BoardTab />}
+          {tab === 'board' && <BoardTab projectId={boardProject} onProjectChange={setBoardProject} />}
           {tab === 'threads' && <ThreadsTab />}
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}

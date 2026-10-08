@@ -1,13 +1,16 @@
 import { useRef, useState } from 'react'
-import { Check } from 'lucide-react'
-import { formatDueCell, plainTitle, localIso, addDays } from './dueDates'
-import { Menu, Popover, useRovingFocus } from './Menu'
+import { Check, Repeat } from 'lucide-react'
+import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
+import { Menu } from './Menu'
+import { Avatar, ProjectChip } from './shared'
+import DueDateMenu from './DueDateMenu'
 
-// Priority is text only in this view: blank for none and medium (the default).
+// Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
+// medium (the default), so a pill always means a level was chosen.
 const PRIORITY_DISPLAY = {
-  low: { label: 'Low', color: 'var(--t2)' },
-  high: { label: 'High', color: 'var(--orange)' },
-  urgent: { label: 'Urgent', color: 'var(--red)' },
+  low: { label: 'Low', className: 'badge priority-pill is-low' },
+  high: { label: 'High', className: 'badge priority-pill is-high' },
+  urgent: { label: 'Urgent', className: 'badge priority-pill is-urgent' },
 }
 
 const PRIORITY_MENU_OPTIONS = [
@@ -80,22 +83,18 @@ const CHIP_BACKGROUNDS = { 'var(--green)': 'var(--green-soft)', 'var(--red)': 'v
 function DueDateCell({ task, dueBounds, onUpdate, phone }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
-  const listRef = useRef(null)
-  const onKeyDown = useRovingFocus(listRef)
   const due = formatDueCell(task.dueAt, dueBounds)
-  const dateOnly = task.dueAt ? task.dueAt.slice(0, 10) : ''
-
-  const now = new Date()
-  const nextMondayDays = ((1 - now.getDay() + 7) % 7) || 7
-
-  function commit(value) {
-    setOpen(false)
-    onUpdate(task, { dueAt: value })
-  }
+  // A repeating task shows a small repeat glyph after its date; the name says how it repeats.
+  const repeat = repeatLabel(task.recurrence)
 
   return (
     <div style={{ position: 'relative', minWidth: 0 }}>
-      <CellButton innerRef={btnRef} ariaLabel={`Change due date for ${task.title}`} onClick={() => setOpen((v) => !v)} color={due.color}>
+      <CellButton
+        innerRef={btnRef}
+        ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        color={due.color}
+      >
         {phone && due.text ? (
           <span
             className="due-chip"
@@ -106,43 +105,17 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
         ) : (
           due.text
         )}
+        {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
       </CellButton>
-      <Popover anchorRef={btnRef} open={open} onClose={() => setOpen(false)} minWidth={200}>
-        <div ref={listRef} role="menu" aria-label={`Due date for ${task.title}`} onKeyDown={onKeyDown} style={{ padding: '6px 0' }}>
-          {[
-            { key: 'today', label: 'Today', value: dueBounds.today },
-            { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow },
-            { key: 'monday', label: 'Next Monday', value: localIso(addDays(now, nextMondayDays)) },
-            { key: 'week', label: 'In one week', value: localIso(addDays(now, 7)) },
-          ].map((opt) => (
-            <button
-              key={opt.key}
-              type="button"
-              role="menuitem"
-              data-menu-item
-              onClick={() => commit(opt.value)}
-              style={menuItemStyle}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <div role="separator" style={{ height: 1, background: 'var(--bd)', margin: '6px 0' }} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, padding: '0 14px', fontSize: 14, color: 'var(--t1)' }}>
-            <span style={{ flexShrink: 0, color: 'var(--t2)' }}>Date</span>
-            <input
-              type="date"
-              data-menu-item
-              value={dateOnly}
-              onChange={(e) => commit(e.target.value || null)}
-              style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
-            />
-          </label>
-          <div role="separator" style={{ height: 1, background: 'var(--bd)', margin: '6px 0' }} />
-          <button type="button" role="menuitem" data-menu-item onClick={() => commit(null)} style={menuItemStyle}>
-            Clear
-          </button>
-        </div>
-      </Popover>
+      <DueDateMenu
+        anchorRef={btnRef}
+        open={open}
+        onClose={() => setOpen(false)}
+        value={task.dueAt}
+        dueBounds={dueBounds}
+        onChange={(value) => onUpdate(task, { dueAt: value })}
+        label={`Due date for ${task.title}`}
+      />
     </div>
   )
 }
@@ -167,7 +140,7 @@ function ProjectCell({ task, projectName, projectOptions, onUpdate }) {
   return (
     <div style={{ position: 'relative', minWidth: 0 }}>
       <CellButton innerRef={btnRef} ariaLabel={`Change project for ${task.title}`} onClick={() => setOpen((v) => !v)} placeholder="None">
-        {projectName}
+        {projectName ? <ProjectChip name={projectName} /> : null}
       </CellButton>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label={`Project for ${task.title}`} minWidth={200} />
     </div>
@@ -191,27 +164,12 @@ function PriorityCell({ task, onUpdate }) {
       {/* Blank (not "None") for both the "none" and "medium" priority values,
           matching the read-only display this replaces -- medium is the
           default level and isn't called out visually. */}
-      <CellButton innerRef={btnRef} ariaLabel={`Change priority for ${task.title}`} onClick={() => setOpen((v) => !v)} color={priority?.color}>
-        {priority?.label}
+      <CellButton innerRef={btnRef} ariaLabel={`Change priority for ${task.title}`} onClick={() => setOpen((v) => !v)}>
+        {priority ? <span className={priority.className}>{priority.label}</span> : null}
       </CellButton>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label={`Priority for ${task.title}`} minWidth={160} />
     </div>
   )
-}
-
-const menuItemStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  width: '100%',
-  minHeight: 44,
-  padding: '0 14px',
-  background: 'transparent',
-  border: 'none',
-  textAlign: 'left',
-  font: 'inherit',
-  fontSize: 14,
-  color: 'var(--t1)',
-  cursor: 'pointer',
 }
 
 // One task row in the My Tasks grid. The row opens the task detail panel
@@ -224,7 +182,6 @@ export default function TaskRow({
   projectOptions,
   dueBounds,
   pending,
-  striped,
   open,
   visibleColumns,
   gridTemplateColumns,
@@ -245,7 +202,7 @@ export default function TaskRow({
 
   return (
     <div
-      className={`mytasks-grid mytasks-row${striped ? ' is-striped' : ''}`}
+      className="mytasks-grid mytasks-row"
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
@@ -268,6 +225,7 @@ export default function TaskRow({
         aria-checked={done}
         aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
         disabled={pending}
+        className="task-check"
         onClick={(e) => {
           e.stopPropagation()
           onToggleComplete(task)
@@ -285,20 +243,10 @@ export default function TaskRow({
           opacity: pending ? 0.6 : 1,
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: '50%',
-            border: `2px solid ${done ? 'var(--green)' : 'var(--t2)'}`,
-            background: done ? 'var(--green)' : 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {done && <Check size={13} strokeWidth={3} style={{ color: 'var(--on-accent)' }} />}
+        {/* The check is always drawn; the circle's colour hides it until the task is done or
+            the button is hovered (.task-check-circle). */}
+        <span aria-hidden="true" className={done ? 'task-check-circle is-done' : 'task-check-circle'}>
+          <Check size={12} strokeWidth={3} />
         </span>
       </button>
 
@@ -319,9 +267,10 @@ export default function TaskRow({
               }
             : {
                 ...cellStyle,
-                fontSize: '0.9375rem',
+                fontSize: '0.875rem',
                 color: done ? 'var(--t2)' : 'var(--t1)',
                 textDecoration: done ? 'line-through' : 'none',
+                paddingRight: 12,
               }
         }
       >
@@ -336,6 +285,17 @@ export default function TaskRow({
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} />}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
+      )}
+      {columnIds.has('assignee') && (
+        // Read-only here: who a task goes to is set in the panel, where Assign to and Take back live.
+        <span style={{ ...cellStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {task.assignee ? (
+            <>
+              <Avatar name={task.assignee} size={22} />
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{task.assignee}</span>
+            </>
+          ) : null}
+        </span>
       )}
       {columnIds.has('priority') && <PriorityCell task={task} onUpdate={onQuickUpdate} />}
       {columnIds.has('source') && <span style={cellStyle}>{SOURCE_LABELS[task.sourceType] || ''}</span>}

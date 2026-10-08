@@ -91,8 +91,9 @@ export default function ColumnHeader({ column, phone, sort, onSetWidth, onResetW
           whiteSpace: 'nowrap',
           flexGrow: 1,
           minWidth: 0,
-          fontSize: '0.8125rem',
-          fontWeight: 500,
+          fontSize: '0.75rem',
+          fontWeight: 600,
+          letterSpacing: '0.02em',
           color: 'var(--t2)',
         }}
       >
