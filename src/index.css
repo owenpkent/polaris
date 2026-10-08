@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@source "./";
+@source "../index.html";
 
 /* Design tokens. There are two themes: the dark one below on :root (also the
    fallback when no theme has been chosen) and the light one in the
@@ -1092,6 +1092,81 @@ kbd { color: var(--t1); }
 
 @media (max-width: 640px) {
   .projects-toolbar .btn { flex: 1 1 100%; }
+}
+
+/* Checklists view: reusable templates in a list like Projects, each with Start and Edit. The edit
+   form holds the items as rows of a text field and three icon buttons (up, down, remove), so the
+   order changes by button and never needs a drag. Start opens a short form under its row. */
+.checklists-page { display: flex; flex-direction: column; gap: 12px; max-width: 980px; }
+.checklists-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.checklists-summary { color: var(--t2); font-size: 14px; margin-left: 4px; }
+.checklist-list { overflow: hidden; }
+.checklist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+.checklist-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--t1);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.checklist-meta { font-weight: 400; color: var(--t2); font-size: 13px; }
+.checklist-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.checklist-form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.checklist-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.checklist-hint { margin: 0; font-size: 12px; color: var(--t2); }
+.checklist-items { border: none; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.checklist-items legend { font-size: 0.85rem; color: var(--t2); font-weight: 500; margin-bottom: 8px; }
+.checklist-item-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.checklist-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--target) var(--target) var(--target);
+  align-items: center;
+  gap: 4px;
+}
+.checklist-item input, .checklist-add input { width: 100%; min-height: var(--target); padding: 0 12px; font-size: 0.9rem; }
+.checklist-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.checklist-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--target);
+  padding: 0 4px;
+  color: var(--t1);
+  font-size: 14px;
+  cursor: pointer;
+}
+.checklist-start-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.checklist-started {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  color: var(--t1);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .checklists-toolbar .btn { flex: 1 1 100%; }
+  .checklist-row-actions { flex: 1 1 100%; }
+  .checklist-row-actions .btn { flex: 1 1 0; }
+  .checklist-start-fields { grid-template-columns: minmax(0, 1fr); }
+  .checklist-add { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Chat side panel (Phase 3 mockup). Docked to the right below the top bar

@@ -191,6 +191,37 @@ export const restoreBodySchema = z.object({ eventId: z.number().int().positive()
 
 export const goalVisionBodySchema = z.object({ text: z.string().max(4000) }).strict();
 
+// ---- checklists ----
+// Live-only writes with no op identity: there is no checklist op kind in the outbox, so the
+// dashboard disables these controls offline. The store trims, drops blank items, and enforces the
+// caps (CHECKLIST_MAX_ITEMS and friends); the bounds here only keep a body from being absurd.
+
+const checklistItems = z.array(z.string().max(2000)).max(1000);
+
+export const checklistCreateBodySchema = z.object({
+  name: z.string().trim().min(1, 'name is required').max(200),
+  notes: z.string().max(20000).optional(),
+  items: checklistItems.optional(),
+}).strict();
+
+export const checklistPatchBodySchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  notes: z.string().max(20000).optional(),
+  items: checklistItems.optional(),
+}).strict().refine((v) => Object.keys(v).length > 0, { message: 'nothing to change' });
+
+export const checklistStartBodySchema = z.object({
+  title: z.string().trim().max(500).nullable().optional(),
+  projectId: z.string().min(1).nullable().optional(),
+  dueAt: z.string().nullable().optional(),
+  /** Bring the items back each time the task repeats. Defaults to true. */
+  repeatItems: z.boolean().optional(),
+}).strict();
+
+export const saveAsChecklistBodySchema = z.object({
+  name: z.string().trim().max(200).nullable().optional(),
+}).strict();
+
 // ---- threads (docs/agent-threads-proposal.md) ----
 
 export const threadCreateBodySchema = z.object({ title: z.string().max(200).nullable().optional() }).strict();

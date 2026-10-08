@@ -19,11 +19,11 @@ import { registerUpdateRoutes } from './update-routes.ts';
 import { readUpdateStatus } from '../update/status.ts';
 import { VERSION } from './version.ts';
 import {
-  agentSettingsBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
+  agentSettingsBodySchema, checklistCreateBodySchema, checklistPatchBodySchema, checklistStartBodySchema, commentBodySchema, dependencyBodySchema, goalCreateBodySchema, goalLinkBodySchema, goalPatchBodySchema,
   goalVisionBodySchema, inboxAcceptBodySchema, inboxRejectBodySchema,
   moveTaskBodySchema, newTaskBodySchema, taskImportBodySchema, outboxBodySchema, parseBody, postBodySchema, projectCreateBodySchema, projectPatchBodySchema,
   ruleCreateBodySchema, rulePatchBodySchema,
-  postStatusBodySchema, restoreBodySchema, ruleRunBodySchema, taskPatchBodySchema, threadCreateBodySchema, threadForkBodySchema, threadPatchBodySchema,
+  postStatusBodySchema, restoreBodySchema, ruleRunBodySchema, saveAsChecklistBodySchema, taskPatchBodySchema, threadCreateBodySchema, threadForkBodySchema, threadPatchBodySchema,
 } from './schemas.ts';
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -580,6 +580,44 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     if (!goal) throw new NotFoundError(`goal not found: ${ctx.params.id}`);
     store.unlinkGoal(goal.id, { projectId: body.project, taskId: body.taskId }, 'human');
     sendJson(ctx.res, 200, goalPayload(goal.id));
+  });
+
+  // -------------------------------------------------------------- checklists
+  // Reusable templates. The owner's own writes, so the actor is 'human'. Live-only: none of these
+  // has an outbox op kind. Starting one creates ordinary tasks, and ticking an item is the usual
+  // subtask completion, which does queue offline.
+
+  router.add('GET', '/api/checklists', (ctx) => {
+    sendJson(ctx.res, 200, { checklists: store.listChecklists() });
+  });
+
+  router.add('POST', '/api/checklists', (ctx) => {
+    const body = parseBody(checklistCreateBodySchema, ctx.body);
+    sendJson(ctx.res, 201, { checklist: store.createChecklist(body, 'human') });
+  });
+
+  router.add('GET', '/api/checklists/:id', (ctx) => {
+    sendJson(ctx.res, 200, { checklist: store.requireChecklist(ctx.params.id) });
+  });
+
+  router.add('PATCH', '/api/checklists/:id', (ctx) => {
+    const patch = parseBody(checklistPatchBodySchema, ctx.body);
+    sendJson(ctx.res, 200, { checklist: store.updateChecklist(ctx.params.id, patch, 'human') });
+  });
+
+  router.add('DELETE', '/api/checklists/:id', (ctx) => {
+    if (!store.deleteChecklist(ctx.params.id, 'human')) throw new NotFoundError(`checklist not found: ${ctx.params.id}`);
+    sendNoContent(ctx.res, 204);
+  });
+
+  router.add('POST', '/api/checklists/:id/start', (ctx) => {
+    const body = parseBody(checklistStartBodySchema, ctx.body);
+    sendJson(ctx.res, 201, store.startChecklist(ctx.params.id, body, 'human'));
+  });
+
+  router.add('POST', '/api/tasks/:id/save-as-checklist', (ctx) => {
+    const body = parseBody(saveAsChecklistBodySchema, ctx.body);
+    sendJson(ctx.res, 201, { checklist: store.saveTaskAsChecklist(ctx.params.id, body.name ?? null, 'human') });
   });
 
   // ----------------------------------------------------------------- threads

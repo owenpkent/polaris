@@ -56,6 +56,11 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: 'Search posts across every thread by type, status, task, and body text, newest first: the library of what was argued before. Filter type result with status accepted to find what the owner has accepted, and cite a hit by its post id.',
   },
   {
+    name: 'list_checklists',
+    readonly: true,
+    description: 'List the owner\'s reusable checklists (for example a packing list or a cleaning routine), each with its items in order. Starting one makes a new task with one subtask per item.',
+  },
+  {
     name: 'create_task',
     readonly: false,
     description: 'Create a task. Accepts a project and section by id, slug, or name (a named section is created if it does not exist), and a list of task ids that block this one. '
@@ -131,6 +136,16 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     name: 'post_to_thread',
     readonly: false,
     description: 'Add one post to a thread: one idea, typed as claim, evidence, objection, question, failed_attempt, summary, or result, with optional confidence and refs to the posts it answers. Failed attempts are worth posting. A post never changes the task, and only the owner decides whether a claim or result is accepted.',
+  },
+  {
+    name: 'create_checklist',
+    readonly: false,
+    description: 'Save a reusable checklist: a name and its items in order, plus optional notes. Use it when the owner asks for a list they will run again, such as packing for a trip or a cleaning routine. Checklists are edited and deleted by the owner in the dashboard; there is no tool for that.',
+  },
+  {
+    name: 'start_checklist',
+    readonly: false,
+    description: 'Start a checklist by id or name: creates a new open task, titled with the checklist name unless a title is given, with one subtask per item in order, optionally in a project and with a due date. The checklist itself is unchanged, so it can be started again.',
   },
   {
     name: 'create_project',

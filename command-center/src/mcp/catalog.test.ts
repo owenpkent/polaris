@@ -17,6 +17,8 @@ const WRITE_TOOL_NAMES = new Set([
   'update_goal',
   'link_goal',
   'create_project',
+  'create_checklist',
+  'start_checklist',
   'create_thread',
   'post_to_thread',
 ]);

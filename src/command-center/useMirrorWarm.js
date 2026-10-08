@@ -54,6 +54,7 @@ export function useMirrorWarm() {
         () => api.listGoals(true),
         () => api.listInbox(),
         () => api.listRules(),
+        () => api.listChecklists(),
         // The two views behind the Readiness filter on My tasks.
         () => api.getView('ready'),
         () => api.getView('blocked'),

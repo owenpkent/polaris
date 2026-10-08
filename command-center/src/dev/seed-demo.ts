@@ -51,6 +51,9 @@ const blocker = store.createTask({ title: 'Choose a standing desk', dueAt: day(2
 const held = store.createTask({ title: 'Assemble the standing desk', dueAt: day(5), priority: 'medium' });
 store.addDependency(blocker.id, held.id);
 
+// One reusable checklist, so the Checklists view has something to start.
+store.createChecklist({ name: 'Clean the kitchen', items: ['Wash the dishes', 'Wipe the counters', 'Clean the hob', 'Sweep the floor', 'Take the bins out'] });
+
 const inbox: { sourceType: SourceType; title: string; notes: string; url: string; due: number | null }[] = [
   { sourceType: 'github', title: 'Review requested: fix keyboard trap in settings dialog', notes: 'Demo pull request.', url: 'https://github.com/example/demo/pull/1', due: null },
   { sourceType: 'github', title: 'Issue assigned: board cards overflow on narrow screens', notes: 'Demo issue.', url: 'https://github.com/example/demo/issues/2', due: null },
@@ -64,4 +67,4 @@ inbox.forEach((item, i) => {
   });
 });
 
-console.log(`Seeded ${tasks.length + 2} demo tasks (one blocked by another) and ${inbox.length} inbox items into ${config.dbPath}`);
+console.log(`Seeded ${tasks.length + 2} demo tasks (one blocked by another), one checklist, and ${inbox.length} inbox items into ${config.dbPath}`);

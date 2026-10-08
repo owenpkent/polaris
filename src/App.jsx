@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Columns3, Folder, GitBranch, Inbox, MessagesSquare, Newspaper, Settings, Target, Zap } from 'lucide-react'
+import { CheckCircle2, Columns3, Folder, GitBranch, Inbox, ListChecks, MessagesSquare, Newspaper, Settings, Target, Zap } from 'lucide-react'
 import { ConnectionProvider } from './command-center/ConnectionContext'
 import SettingsTab from './command-center/SettingsTab'
 import InboxTab from './command-center/InboxTab'
@@ -10,6 +10,7 @@ import DigestTab from './command-center/DigestTab'
 import GithubTab from './command-center/GithubTab'
 import GoalsTab from './command-center/GoalsTab'
 import ProjectsTab from './command-center/ProjectsTab'
+import ChecklistsTab from './command-center/ChecklistsTab'
 import ThreadsTab from './command-center/ThreadsTab'
 import TopBar from './TopBar'
 import NavDrawer from './NavDrawer'
@@ -35,6 +36,7 @@ const PRIMARY_ITEMS = [
 const MORE_ITEMS = [
   { id: 'goals', label: 'Goals', icon: Target },
   { id: 'projects', label: 'Projects', icon: Folder },
+  { id: 'checklists', label: 'Checklists', icon: ListChecks },
   { id: 'threads', label: 'Threads', icon: MessagesSquare },
   { id: 'rules', label: 'Rules', icon: Zap },
   { id: 'digest', label: 'Digest', icon: Newspaper },
@@ -50,7 +52,7 @@ const ALL_TAB_IDS = new Set([...PRIMARY_ITEMS, ...MORE_ITEMS, SETTINGS_ITEM].map
 const VIEW_ALIASES = { connection: 'settings' }
 
 // Accepted `?view=` query values: mytasks (the default; also the value the URL is cleared to),
-// inbox, board, goals, projects, threads, rules, digest, github, settings (or its old name connection). Anything else is ignored and the default tab is used instead.
+// inbox, board, goals, projects, checklists, threads, rules, digest, github, settings (or its old name connection). Anything else is ignored and the default tab is used instead.
 function readInitialTab() {
   try {
     const raw = new URLSearchParams(window.location.search).get('view')
@@ -183,6 +185,7 @@ export default function App() {
         >
           {tab === 'goals' && <GoalsTab />}
           {tab === 'projects' && <ProjectsTab />}
+          {tab === 'checklists' && <ChecklistsTab />}
           {tab === 'inbox' && <InboxTab />}
           {tab === 'mytasks' && (
             <MyTasksTab

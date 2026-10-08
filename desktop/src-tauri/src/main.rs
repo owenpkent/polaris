@@ -229,6 +229,18 @@ fn log_line(path: &Path, text: &str) {
     }
 }
 
+/// The updater enables rustls-no-provider on our shared reqwest dependency, even though
+/// this client only uses HTTP. Install the same provider the updater uses before the first
+/// client is built; an error just means another caller already installed a provider.
+fn daemon_client() -> Result<reqwest::Client, reqwest::Error> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    // This is called from a plain thread; client construction needs a Tokio reactor.
+    // The updater also enables system proxies, which must not intercept the loopback probe.
+    tauri::async_runtime::block_on(async {
+        reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(2)).build()
+    })
+}
+
 /// Finds or starts the daemon and returns the URL to open. Every failure is a sentence for the
 /// start page, with the log's last lines when the daemon itself said something.
 fn boot(app: &AppHandle, window: &WebviewWindow, app_log: &Path) -> Result<url::Url, String> {
@@ -239,12 +251,7 @@ fn boot(app: &AppHandle, window: &WebviewWindow, app_log: &Path) -> Result<url::
     let data_dir = db.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     fs::create_dir_all(&data_dir).map_err(|e| format!("Could not create {}: {e}", data_dir.display()))?;
     let token_file = daemon::token_file(&db);
-    // Built inside the runtime: reqwest wants a Tokio reactor from the moment the client exists,
-    // and this thread is a plain one.
-    let client = tauri::async_runtime::block_on(async {
-        reqwest::Client::builder().timeout(Duration::from_secs(2)).build()
-    })
-    .map_err(|e| e.to_string())?;
+    let client = daemon_client().map_err(|e| e.to_string())?;
 
     set_status(window, "Looking for a running Command Center...");
     // Resolved every time it is needed, the way the daemon resolves it: an override in the
@@ -524,7 +531,7 @@ mod tests {
     use std::net::TcpListener;
 
     fn client() -> reqwest::Client {
-        tauri::async_runtime::block_on(async { reqwest::Client::builder().timeout(Duration::from_secs(2)).build() }).expect("client")
+        daemon_client().expect("client")
     }
 
     /// A one-request HTTP server on a free port that answers with `respond(request_target)`.

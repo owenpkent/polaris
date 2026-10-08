@@ -82,6 +82,8 @@ jobs:
             New-ItemProperty -Path $key -Name $app -Value '--remote-debugging-port=0' -PropertyType String -Force | Out-Null
           }
           Get-ItemProperty -Path $key | Format-List
+      # Exercise the identity probe and client construction before driving the real app.
+      - run: npm run test:desktop
       # Builds the dashboard and the debug app (no installer, no signing), then runs the tests.
       - run: npm run test:desktop:ui
       - name: Keep traces, logs, and screenshots from failed desktop UI tests

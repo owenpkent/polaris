@@ -1,5 +1,5 @@
 // Adds what the demo seed (seed-demo.ts) leaves out, so the UI tests in e2e/ can exercise the
-// Board, Rules, and Goals views: one project with two sections and four cards, one rule saved
+// Board, Rules, Goals, and Checklists views: one project with two sections and four cards, one rule saved
 // disabled (the way an agent-created rule arrives), and two goals. Also adds a second project,
 // "UI Test Text", holding three open tasks with long or awkward titles (a 300-character
 // unbroken title, a right-to-left title, and a URL title) so the overflow checks in
@@ -59,6 +59,10 @@ const shipIt = store.createGoal({ title: 'Ship the UI test project', periodLabel
 store.linkGoal(shipIt.id, { projectId: project.id });
 store.createGoal({ title: 'Grow the audience', progressMode: 'manual', currentValue: 250, targetValue: 1000, unit: 'subscribers' });
 void milestone;
+
+// A checklist for the Checklists view to list, start, and photograph. Tests that change one make
+// their own, so this one is never edited or started by a test that asserts on it.
+store.createChecklist({ name: 'Packing: weekend trip', notes: 'Check the forecast first.', items: ['Passport', 'Phone charger', 'Toothbrush', 'Rain jacket', 'Book for the train'] });
 
 // A second project, kept apart from "UI Test Project" so its board lanes and card lists stay
 // exactly as the Board tests expect. Three open tasks, no section, no due date, each with a

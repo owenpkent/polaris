@@ -17,6 +17,7 @@ const api = {
   unlinkGoal: vi.fn(),
   getAgentSettings: vi.fn(),
   getThread: vi.fn(),
+  saveTaskAsChecklist: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -547,5 +548,51 @@ describe('Assign to AI', () => {
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
 
     expect(await screen.findByText('agent scribe', { exact: false })).toBeTruthy()
+  })
+})
+
+describe('save as checklist', () => {
+  const SUBS = [
+    { id: 't_s1', title: 'Passport', status: 'done' },
+    { id: 't_s2', title: 'Charger', status: 'open' },
+  ]
+
+  test('a task with subtasks offers it, and saving says where the checklist went', async () => {
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: SUBS })
+    api.saveTaskAsChecklist.mockResolvedValue({ checklist: { id: 'cl_1', name: 'Current title', items: ['Passport', 'Charger'] } })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as checklist' }))
+    await waitFor(() => expect(api.saveTaskAsChecklist).toHaveBeenCalledWith('t_1'))
+    expect((await screen.findByText(/Saved as the checklist "Current title"/)).getAttribute('role')).toBe('status')
+  })
+
+  test('a task with no subtasks, or with third-party text, does not offer it', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    await screen.findByText('No subtasks.')
+    expect(screen.queryByRole('button', { name: 'Save as checklist' })).toBeNull()
+    cleanup()
+
+    api.getTask.mockResolvedValueOnce({ ...detail({ ...TASK, untrustedText: true, sourceType: 'github' }, []), subtasks: SUBS })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    await screen.findByRole('checkbox', { name: 'Reopen Passport' })
+    expect(screen.queryByRole('button', { name: 'Save as checklist' })).toBeNull()
+  })
+
+  test('offline, the button is off: a checklist write is never queued', async () => {
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: SUBS })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const button = await screen.findByRole('button', { name: 'Save as checklist' })
+    act(() => { markOffline() })
+    expect(button.disabled).toBe(true)
+    resetOfflineStatus()
+  })
+
+  test('a refusal from the server is shown, not swallowed', async () => {
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: SUBS })
+    api.saveTaskAsChecklist.mockRejectedValue(new Error('this task holds text written by a third party'))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as checklist' }))
+    expect(await screen.findByText(/written by a third party/)).toBeTruthy()
   })
 })

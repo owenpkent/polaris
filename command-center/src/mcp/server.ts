@@ -10,6 +10,7 @@ import { readBarrier, updatingMessage } from '../update/barrier.ts';
 import { registerPrompts } from './prompts.ts';
 import { registerResources } from './resources.ts';
 import { err } from './shared.ts';
+import { registerChecklistReadTools, registerChecklistWriteTools } from './tools-checklists.ts';
 import { registerGoalReadTools, registerGoalWriteTools } from './tools-goals.ts';
 import { registerProjectWriteTools } from './tools-projects.ts';
 import { registerReadTools } from './tools-read.ts';
@@ -55,11 +56,13 @@ export function createMcpServer(app: App, opts: CreateMcpServerOptions = {}): Mc
 
   registerReadTools(server, app, opts.agentName ?? null);
   registerGoalReadTools(server, app);
+  registerChecklistReadTools(server, app);
   if (!opts.readonly) {
     const writes = behindWriteBarrier(server, app);
     registerWriteTools(writes, app, actor);
     registerGoalWriteTools(writes, app, actor);
     registerProjectWriteTools(writes, app, actor);
+    registerChecklistWriteTools(writes, app, actor);
   }
   registerResources(server, app);
   registerPrompts(server);
