@@ -31,10 +31,10 @@ Run `npm run cc` with no arguments for the full command list, and `npm run cc --
 
 ## Using it from Claude
 
-- **Claude Code in this repo:** the repo root `.mcp.json` registers the stdio server. Approve it when Claude Code asks.
+- **Claude Code in this repo:** the repo ships no `.mcp.json`, so register the stdio server with the next line, or add a `.mcp.json` at the repo root as shown in [src/mcp/README.md](src/mcp/README.md).
 - **Claude Code elsewhere:** `claude mcp add polaris -- node <ABS_PATH_TO_REPO>\command-center\src\mcp\stdio.ts`
 - **Over HTTP** while the daemon or `serve` is running: `claude mcp add --transport http polaris http://127.0.0.1:8788/mcp --header "Authorization: Bearer <token>"`, using the token in `command-center/data/mcp-token`. For read-only access use `/mcp/readonly` with `data/mcp-readonly-token`.
-- **Another computer, including sessions you drive through Claude Code Remote Control:** add the server once per computer at user scope over the private HTTPS address, with a name for that computer: `claude mcp add --scope user --transport http polaris https://<host>.<tailnet>.ts.net/mcp --header "Authorization: Bearer <token>" --header "X-Agent-Name: claude@laptop"`. Every session on that computer, including one started from claude.ai/code or the Claude app through `claude remote-control`, can then read a handed-off task, comment, and complete it, and the task's history names the computer. The MCP connection goes from that computer to your server, so it needs no public endpoint. Use HTTP, not the stdio server, on any computer other than the host: stdio opens a local database and would start a second, empty Polaris.
+- **Another computer, including sessions you drive through Claude Code Remote Control:** add the server once per computer at user scope over the private HTTPS address, with a name for that computer: `claude mcp add --scope user --transport http polaris https://<host>.<tailnet>.ts.net/mcp --header "Authorization: Bearer <token>" --header "X-Agent-Name: claude-laptop"`. Every session on that computer, including one started from claude.ai/code or the Claude app through `claude remote-control`, can then read a handed-off task, comment, and complete it, and the task's history names the computer. The MCP connection goes from that computer to your server, so it needs no public endpoint. Use HTTP, not the stdio server, on any computer other than the host: stdio opens a local database and would start a second, empty Polaris.
 - **Phone and laptop:** keep the server on loopback and reach it behind a reverse proxy on a private network you control, such as Tailscale (`tailscale serve`). Never expose it publicly: the MCP routes have no OAuth. With `CC_TAILSCALE_LOGIN` set to your Tailscale login, a dashboard opened through `tailscale serve` signs in with your Tailscale identity and needs no token pasted; MCP clients still need theirs. docs/tailscale-identity.md says what that trusts. On the phone, use the browser or the Android app in [../mobile/](../mobile/README.md), which needs `CC_CORS_ORIGINS=https://localhost` on the server.
 - **claude.ai:** not yet. It needs a public HTTPS endpoint with OAuth, deferred until you ask for it.
 
@@ -173,9 +173,9 @@ Over REST, `POST /api/tasks/import` takes `{ text, format?: "auto"|"csv"|"lines"
 The daemon's `backup` job copies the database once a day, to `data/backups` or to `CC_BACKUP_DIR`, and keeps the newest `CC_BACKUP_KEEP` (14). Point `CC_BACKUP_DIR` at another machine or disk: the default folder is on the same disk as the database, so it only protects against a bad write. Use a UNC path for a network share (`\\server\share\folder`), since a mapped drive letter may not exist yet when the daemon starts at logon.
 
 - **Every copy is checked.** It is made with SQLite's `VACUUM INTO` in a temp folder on the local disk, then checked: `integrity_check`, `foreign_key_check`, the schema version, and the row counts against the live database. Only the finished file is written to the backup folder, and it is read back and compared before it gets its dated name. A copy that fails is deleted and the job fails.
-- **When something stops.** A failing job, or a backup that never ran or is over 36 hours old, shows as a red strip under the dashboard's top bar (`warnings` on `GET /api/sync`).
+- **When something stops.** A failing job, or a backup that never ran or is over 36 hours old, shows as a red strip under the dashboard's top bar (`warnings` on `GET /api/sync`, which also carries a failed or stopped update).
 - **Encryption is your choice.** It is off until a passphrase is set, from the Backups card on the dashboard's Settings tab or with `npm run cc -- backup encrypt`. From then on the copies are `constellation-YYYY-MM-DD.db.enc`. The passphrase is kept in the secret store, never in the database, an environment variable, or a log, and the server never sends it back. Save it in a password manager: without it no encrypted backup can be read, on this machine or any other. `backup encrypt --status`, `--replace`, and `--off` do what they say; copies made before a change still need the old passphrase.
-- **The restore drill.** `npm run cc -- backup check [file]` proves a copy can be read back. It never opens the live database, so it works on a recovery machine, and it asks for the passphrase when the secret store has none.
+- **The restore drill.** `npm run cc -- backup check [file]` proves a copy can be read back. It never opens the store (the live database is only described, for comparison, when it can be read), so it works on a recovery machine, and it asks for the passphrase when the secret store has none.
 - **Restoring.** Stop the daemon. For an encrypted copy, run `npm run cc -- backup decrypt <file.db.enc> [output.db]`, which never overwrites. Put the SQLite file where `CC_DB` points and start the daemon. An older copy is migrated when it is opened.
 - **Format.** scrypt (N=2^17, r=8, p=1), then ChaCha20-Poly1305, from `node:crypto` alone. The byte layout is at the top of `src/daemon/backupCrypto.ts`, so a copy can be read without this code.
 
@@ -289,7 +289,7 @@ The updater's environment. It must see the same `CC_*` variables the daemon runs
 - **The rules are tests.** `src/invariants.test.ts` states everything in this section as tests, and each was checked by breaking the code on purpose and watching it fail. If one fails, the change is wrong, not the test.
 - **Audit log.** Every change is an event with an actor (human, agent, system, rule). `npm run cc -- show <id>` prints a task's history.
 - **Secrets.** Three separate bearer tokens live in data/: api-token for the dashboard, mcp-token for full MCP, and mcp-readonly-token for read-only MCP. An MCP token cannot call the REST API, so an agent cannot enable its own rules. The GitHub App's client secret and sign-in, and the backup passphrase if one is set, are in the secret store (DPAPI on Windows, a 0600 file elsewhere). None of them is stored in the database or in git. The backup passphrase can be set over the REST API and never read back, and there is no MCP tool for it: an agent cannot turn backup encryption off or set a passphrase you do not have.
-- **Local only.** The HTTP server binds to 127.0.0.1 and requires a bearer token. The only exceptions are the two GitHub sign-in callbacks (`GET /api/github/app/callback` and `GET /api/github/callback`), which GitHub redirects your browser to and which accept only a single-use state value that expires after 10 minutes, and `GET /api/identity`, which answers a challenge with an HMAC keyed with the api token so the desktop app can recognize its own daemon before handing the token over. Every response forbids framing, so the dashboard cannot be embedded and clicked through by another page.
+- **Local only.** The HTTP server binds to 127.0.0.1 and requires a bearer token. The only exceptions are the two GitHub sign-in callbacks (`GET /api/github/app/callback` and `GET /api/github/callback`), which GitHub redirects your browser to and which accept only a single-use state value that expires after 10 minutes, and `GET /api/identity`, which answers a challenge with an HMAC keyed with the api token so the desktop app can recognize its own daemon before handing the token over. The dashboard's static files need no token and hold no data, the GitHub webhook route (only when a webhook secret is set) checks GitHub's HMAC signature instead, and with `CC_TAILSCALE_LOGIN` set, the owner's Tailscale identity from a loopback peer stands in for the api token on `/api` (docs/tailscale-identity.md). Every response forbids framing, so the dashboard cannot be embedded and clicked through by another page.
 - **Rules and recurrence always finish.** A rule's `matches` pattern is run by a linear-time engine (src/automation/pattern.ts), not by RegExp, so no pattern can stall the daemon; the everyday syntax is supported and backreferences and lookaround are refused when the rule is saved. A recurrence rule is walked day by day over a bounded horizon (src/automation/recurrence.ts): FREQ is DAILY, WEEKLY, MONTHLY, or YEARLY, INTERVAL and COUNT are positive, and BYSETPOS, BYWEEKNO, BYYEARDAY, and the time-of-day parts are refused.
 
 ## Configuration
@@ -305,7 +305,7 @@ The updater's environment. It must see the same `CC_*` variables the daemon runs
 | CC_BACKUP_KEEP | 14 | How many dated copies to keep |
 | CC_SECRETS_DIR | %APPDATA%\constellation\secrets on Windows, the database's folder elsewhere | Where the secret store lives |
 | CC_API_TOKEN, CC_MCP_TOKEN, CC_MCP_READONLY_TOKEN | generated | Bearer token overrides |
-| CC_CORS_ORIGINS | localhost:5173 | Dashboard origins allowed to call the API |
+| CC_CORS_ORIGINS | http://localhost:5173,http://127.0.0.1:5173 | Comma-separated dashboard origins allowed to call the API |
 | CC_TAILSCALE_LOGIN | unset | Your Tailscale login. A dashboard opened through `tailscale serve` on this machine then needs no token (docs/tailscale-identity.md). Never applies to MCP |
 | CC_DASHBOARD_DIR | repo root's dist/ | Built dashboard directory served at / |
 | CC_UPDATE_RESTART | detected | How `cc update` restarts the daemon: `task`, `systemd:<unit>`, `systemd-user:<unit>`, or `manual` (see Updating) |
@@ -317,7 +317,7 @@ The updater's environment. It must see the same `CC_*` variables the daemon runs
 ```
 src/
   core/        task graph store, schema, types (runtime-portable)
-  importer/    initiatives/*.md
+  importer/    initiatives/*.md, checkbox parsing for repo checklists, and the bulk task import (text and CSV)
   export/      writes PROJECT_STATUS.md from the database
   ingest/      github, plus the shared secret store and PKCE helper
   automation/  views, rules, recurrence, digest, scheduler
@@ -326,13 +326,13 @@ src/
   daemon/      job catalog, one-shot sync, long-running daemon, backups and their encryption
   tasks/       human CLI commands
   update/      cc update: releases, signers, the install steps, the restart, the scheduled --auto run, and the status file the daemon reads
-  dev/         demo and UI-test database seeders; both refuse to run against the real database
+  dev/         demo and UI-test database seeders (both refuse to run against the real database), and the fake GitHub the UI test server uses
 ```
 
 ## Development
 
 ```powershell
-npm test            # server tests (node:test), about 780 of them
+npm test            # server tests (node:test), about 1,180 of them
 npm run typecheck   # tsc --noEmit
 ```
 

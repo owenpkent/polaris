@@ -20,7 +20,7 @@ Polaris keeps your tasks in one SQLite file on your own machine. A small daemon 
 
 - Teams. There is one owner, one database, and no accounts or permissions beyond three bearer tokens.
 - Anyone who needs a hosted service or sync between several servers.
-- Anyone who wants an agent to close, assign, or reprioritize work on its own.
+- Anyone who wants work accepted or automated without their say. GitHub items wait in the inbox for the owner, and a rule an agent writes stays off until the owner turns it on.
 
 ## It's working if...
 
@@ -146,7 +146,7 @@ The full guide, with the MCP calls and the ticket flavours, is in [docs/decision
 - `cc import` reads plans in one specific shape (`initiatives/*.md` under `CC_REPO_ROOT`, which defaults to the repo root). Without that folder the import job finds nothing and reports zero, which is the normal case for a fresh checkout.
 - The dashboard refreshes by polling `/api/events` every ten seconds. There is no push.
 - Custom fields are stored, settable, and searchable, but the dashboard does not display them.
-- `ready`, `blocked`, and `assignee` are new in this release. `npm run cc -- views` lists the views your build has.
+- `npm run cc -- views` lists the built-in and saved views, including `ready` and `blocked`.
 
 ## Security
 

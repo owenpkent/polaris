@@ -217,5 +217,5 @@ Stages 1 and 2 are built as planned, with these decisions taken while building:
 - Whether to seed a thread from a GitHub issue or discussion over the read-only App (option 1D's hybrid), and whether a pinned summary gets a copy button for pasting into GitHub.
 - Whether the owner wants a "state your position before reading the thread" convention in the agent instructions, as the echo papers suggest.
 - Settled: the default post body size limit is 20,000 characters (`postBodySchema` in command-center/src/http/schemas.ts).
-- Settled: the Threads tab sits beside the Digest in the More menu (`MORE_ITEMS` in src/App.jsx).
+- Settled: the Threads tab sits in the More menu, between Checklists and Rules (`MORE_ITEMS` in src/App.jsx).
 - How a thread reads over MCP once it passes a few hundred posts. Settled for now by the newest window plus the pinned post (see "What was built"); `get_thread` has only the forward `after` cursor, so whether agents also need an older-page cursor is open.

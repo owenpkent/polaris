@@ -105,6 +105,12 @@ Request bodies are capped at 1 MB and must be `application/json` (or absent, for
 need one); oversized bodies are rejected as soon as the cap is crossed, without being buffered.
 Errors are always `{ "error": { "code": string, "message": string } }`, with no stack traces.
 
+While `cc update` holds its write barrier (`data/update-barrier.json`, `../update/barrier.ts`), every
+request on `/api` other than GET or HEAD is a `503` with code `Updating`, so no write is taken that
+the update's rollback could lose. Reads, `GET /api/health`, and `GET /api/identity` carry on, and the
+MCP write tools return an error. A barrier left by a crashed update is ignored once its process is gone
+or it is over two hours old.
+
 One line is logged to stderr per request (method, path, status, duration) -- never request bodies
 or the token.
 
@@ -115,7 +121,7 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/health` | `{ ok, version, today, counts: { inbox, overdue, today } }` |
+| GET | `/api/health` | `{ ok, version, today, counts: { inbox, overdue, today }, auth }`, where `auth` is `{ via: "token" }` or, through [Tailscale identity](#tailscale-identity), `{ via: "tailscale", login }`. |
 | GET | `/api/settings/agent` | `{ defaultAgentName }`: the stored kv value, or `'claude-code'` if none is set yet. |
 | PATCH | `/api/settings/agent` | Body: `{ defaultAgentName }`, validated by `normalizeAgentName` (1 to 40 characters of letters, digits, spaces, `-`, `_`, `.`, starting with a letter or digit). `400` on an invalid name. `{ defaultAgentName }`. Used by the dashboard's "Assign to AI" button. |
 | GET | `/api/identity` | No bearer token. Query `challenge` (32 to 128 lowercase hex characters). `{ proof }`: HMAC-SHA256 hex over `constellation-identity\n<port>\n<challenge>` keyed with the api token, `port` being the one the request arrived on. `400` for any other challenge. |
@@ -124,10 +130,11 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | PATCH | `/api/projects/:ref` | Any of the POST fields, plus `archived`. `null` clears an optional field. The slug never changes. There is no DELETE: archive instead, so tasks keep their project. `path`, `todoFile`, and `meta` belong to the importers and are refused. |
 | GET | `/api/projects/:ref` | `:ref` is id, slug, or name. `{ project, sections, tasks }` (non-dropped, position order) |
 | GET | `/api/tasks` | Query: `text, status, project, section, priority, dueBefore, dueAfter, sourceType, blocked, assignee, unassigned, orderBy, limit, offset`. `assignee` is an exact match and `unassigned=true` keeps only tasks with none. `{ tasks, total }` |
-| GET | `/api/tasks/:id` | `{ task, subtasks, blockers, blocking, comments, links, history }` |
+| GET | `/api/tasks/:id` | `{ task, subtasks, blockers, blocking, comments, links, goals, history }`. `goals` are the goals linked to the task itself (`{ id, title, status }`). Each `history` entry also carries `restore`, the edit that Put back would make, or null when nothing in it can be put back. |
 | POST | `/api/tasks` | Body: `NewTask` fields plus `project` (ref), `section` (name, created if missing), `blockedBy: string[]`. The dashboard also sends `id`, `opId`, and `deviceId`: the identity the same create would carry through `/api/outbox`, so a create whose answer was lost is not made again by the replay. `201 { task }` |
 | POST | `/api/tasks/import` | Bulk import from pasted text or CSV. Body: `{ text, format?: auto|csv|lines, project?, dryRun? }`. Dry run `200 { dryRun, format, rows, count, errors, ignoredColumns }`; success `201 { format, created, count, ignoredColumns }`; any row error `400 { error, errors: [{ line, message }] }` and nothing is created. Live-only |
 | PATCH | `/api/tasks/:id` | Body: `TaskPatch` fields (status included). `{ task }` |
+| POST | `/api/tasks/:id/restore` | Body: `{ eventId }`, an entry in the task's history. Puts back what that entry changed (title, notes, priority, dates, estimate, or recurrence) as an ordinary edit, so it is recorded and can itself be put back. `{ task }`. `400` when the entry is not in the task's history or has nothing to put back. Live-only: no outbox op kind. |
 | POST | `/api/tasks/:id/complete` | `{ task, next }` |
 | POST | `/api/tasks/:id/reopen` | `{ task }` |
 | POST | `/api/tasks/:id/move` | Body: `{ project?, section?, parentId?, position? }`. `{ task }` |
@@ -146,7 +153,7 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | DELETE | `/api/rules/:id` | `204` |
 | POST | `/api/rules/run` | Body: `{ ruleId?, dryRun? }` (`dryRun` defaults `true`). Returns a `RuleRunReport` directly. |
 | GET | `/api/digest` | Returns a `Digest` directly (`buildDigest` for `app.today()`). |
-| GET | `/api/goals` | `?includeClosed=1` also lists achieved and dropped goals. Returns `{ goals: GoalDetail[], total, vision }`; `total` counts closed goals too. |
+| GET | `/api/goals` | `?includeClosed=1` also lists achieved and dropped goals. Returns `{ goals: GoalDetail[], total, vision }`; each goal also carries `linkedWork: { projectIds, taskIds }`, the projects and tasks linked to it and its sub-goals. `total` counts closed goals too. |
 | POST | `/api/goals` | Body: `{ title, notes?, parentId?, periodLabel?, startsOn?, endsOn?, status?, statusNote?, progressMode?, currentValue?, targetValue?, unit? }`. 201 with the goal payload below. |
 | GET | `/api/goals/:id` | Returns `{ goal: GoalDetail, linkedProjects, linkedTasks, openTasks }`. `openTasks` are the active tasks that can move the goal. |
 | PATCH | `/api/goals/:id` | Any of the POST fields. `null` clears an optional field. Status is never computed; it changes only here or through `update_goal`. |
@@ -186,9 +193,9 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | POST | `/api/backup/encryption` | Body `{ passphrase, replace? }`. Turns backup encryption on by storing the passphrase in the secret store; `409` when it is already on and `replace` is not true. Returns the status. The passphrase is never returned or logged. |
 | DELETE | `/api/backup/encryption` | Turns backup encryption off. Copies already encrypted still need their passphrase. Returns the status. |
 | POST | `/api/backup/check` | The restore drill on the newest copy, with the stored passphrase: `{ checked: true, ok, name, encrypted, problems, counts?, schemaVersion? }`, or `{ checked: false, message }` when there is no copy yet. |
-| GET | `/api/update` | The update icon's state (docs/update-proposal.md, section 4): `{ running, updaterInstalled, available, request, lastResult, command }`. `running` is the version `/api/health` reports; `updaterInstalled` is a heartbeat in `data/update-status.json` within fifteen minutes; `available` is the newer signed release the updater reported, or null; `request` the newest row of `update_requests` after a pending row older than an hour is expired and a picked-up row is reconciled with the status file; `command` the `cc update --release` line to copy when no updater is installed. The daemon reads a file here and runs nothing. |
+| GET | `/api/update` | The update icon's state (docs/update-proposal.md, section 4): `{ running, updaterInstalled, available, request, lastResult, command }`. `running` is the version `/api/health` reports; `updaterInstalled` is a heartbeat in `data/update-status.json` within fifteen minutes; `available` is the newer signed release the updater reported, or null; `request` the newest row of `update_requests` after a pending row older than an hour is expired, a picked-up row held for two hours with no outcome is expired, and a picked-up row is reconciled with the status file; `command` the `cc update --release` line to copy when no updater is installed. The daemon reads a file here and runs nothing. |
 | POST | `/api/update/requests` | Body `{ version }`. The owner asks the scheduled updater to install that release: `201 { request }`. `400` when the version is not `MAJOR.MINOR.PATCH`, not strictly newer than `running`, or not the one `available` names; `409` while a request is pending or picked up. Live only, with no outbox op kind and no MCP tool. |
-| POST | `/api/update/requests/:id/cancel` | The owner takes a pending request back. `{ request }`; `409` once it is picked up or finished. |
+| POST | `/api/update/requests/:id/cancel` | The owner takes a pending request back. `{ request }`; `409` once it is finished, or while the updater is installing it (a picked-up request held for two hours with no outcome can be cancelled). |
 | POST | `/api/update/requests/:id/pickup` | The updater claims a pending request, atomically: `{ request }`, or `409` when the row has already moved (picked up, expired, cancelled). |
 | POST | `/api/update/requests/:id/finish` | Body `{ ok, message }`. The updater's outcome for a picked-up request: `{ request }` in state `done` or `failed`; `409` unless it was picked up. |
 | GET | `/api/sync` | `{ jobs: getJobStatus() ?? {}, warnings }` |
@@ -258,12 +265,13 @@ configured at all.
 - `server.ts` -- `createHttpServer(app, opts)`: routing, per-route auth, CORS, body limits, logging.
 - `router.ts` -- tiny `:param` path router.
 - `static.ts` -- `createStaticHandler(root)`: serves the built dashboard at `/` (see [Dashboard](#dashboard)).
-- `rest.ts` -- REST route handlers, other than GitHub (registers `github-routes.ts` at the end).
+- `rest.ts` -- REST route handlers, other than the groups below (registers `github-routes.ts`, `backup-routes.ts`, `update-routes.ts`, and the identity route at the end).
 - `github-routes.ts` -- GitHub App setup, sign-in, status, and the per-repo routes (`/api/github/*`).
 - `backup-routes.ts` -- backup status, encryption on and off, and the restore drill (`/api/backup*`).
 - `update-routes.ts` -- the update icon's state and the update request table (`/api/update*`): reads the updater's status file, never runs anything.
 - `version.ts` -- the running version, from command-center/package.json.
-- `warnings.ts` -- the `warnings` on `GET /api/sync`: a failing job or a stale backup, shown as a banner by the dashboard.
+- `identity.ts` -- `GET /api/identity`: the HMAC proof the desktop shell asks for before it sends the api token (see [Auth](#auth)).
+- `warnings.ts` -- the `warnings` on `GET /api/sync`: a failing job, a stale backup, or a failed or stopped update, shown as a banner by the dashboard.
 - `schemas.ts` -- zod request-body schemas.
 - `mcp.ts` -- mounts `createMcpServer` on Streamable HTTP in stateless mode.
 - `body.ts`, `errors.ts` -- body reading (1 MB cap, JSON only) and the `{ error: { code, message } }` envelope.
