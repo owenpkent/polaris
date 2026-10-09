@@ -1,6 +1,6 @@
 # Safe updates: design
 
-Status: built, 2026-10-06. Approved by the owner on 2026-10-06 and built in the four phases of section 9. This revision folds in the review of the first draft: a named snapshot that survives the daily backup, a rollback that restores the database as well as the code, a build that never empties the live dashboard, a health check that can actually pass, a strict "newer only" rule for what gets installed, a stated owner for every row of the request table, and an update module the daemon's import graph never reaches. The review of the built code moved the snapshot inside the stopped interval behind a write barrier, so a write taken during the update can never be lost to its rollback, and made the signature check SSH-only. The rule changes in section 7 were approved together with "build it".
+Status: built, 2026-10-06. Approved by the owner on 2026-10-06 and built in the four phases of section 9 (proposal merged as PR #13, the build as PR #17, feat/updates). This revision folds in the review of the first draft: a named snapshot that survives the daily backup, a rollback that restores the database as well as the code, a build that never empties the live dashboard, a health check that can actually pass, a strict "newer only" rule for what gets installed, a stated owner for every row of the request table, and an update module the daemon's import graph never reaches. The review of the built code moved the snapshot inside the stopped interval behind a write barrier, so a write taken during the update can never be lost to its rollback, and made the signature check SSH-only. The rule changes in section 7 were approved together with "build it".
 
 This document describes how a Polaris install gets newer code: a `cc update` command the owner runs, signed releases, an opt-in scheduled updater, and an update icon on the dashboard that says when a newer release exists and can ask the updater to install it. Security is a requirement throughout, because an updater decides what code runs next to the owner's data on every install.
 
@@ -207,6 +207,6 @@ A new group in command-center/src/invariants.test.ts (11, or 12 if the runner gr
 
 ## Open questions
 
-- Should the deploy-only checkout stay the recommended pattern, with development always in a second clone? (Yes for now: `cc update` refuses a dirty tree, which a development clone usually is.)
-- Release cadence: a release per merged feature, or batched?
-- What forks do: their own key and `release-signers` is the design. `cc update --release` refuses to run until the pinned file has a key, which answers it for now.
+- Decided for now: the deploy-only checkout stays the recommended pattern, with development always in a second clone, because `cc update` refuses a dirty tree, which a development clone usually is.
+- Release cadence: a release per merged feature, or batched? No release has been cut yet (docs/releases.md is the checklist).
+- Settled: forks make their own key and replace the lines in `release-signers` (docs/releases.md, "Forks"). `cc update --release` refuses to run until the pinned file has a key.

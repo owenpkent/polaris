@@ -1,6 +1,6 @@
 # Assign to AI: options
 
-Status: exploration, 2026-10-03. Stage 1 of the recommended path (1A, 2A, 3A, 5B) is implemented on branch feat/assign-to-ai, and nothing else is. Stage 2, reshaped for several machines, is proposed in docs/machine-runner-proposal.md (2026-10-06).
+Status: exploration, 2026-10-03. Stage 1 of the recommended path (1A, 2A, 3A, 5B) merged as PR #2 (feat/assign-to-ai), with the hand-off reporting back in PR #10; nothing else is built. Stage 2, reshaped for several machines, is proposed in docs/machine-runner-proposal.md (2026-10-06) and awaits the owner's approval.
 
 This document lays out the choices for an "Assign to AI" button on a task: what the button writes, who starts the agent, how status comes back, where approvals live, how agents are identified, what a team version would take, and how Polaris would talk to Anchor. Each option lists what it buys and what it costs. A recommended path is at the end.
 
