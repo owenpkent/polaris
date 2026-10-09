@@ -280,7 +280,7 @@ Each is a separate yes or no.
 
 ## 9. Invariants to add
 
-A new group 11 in command-center/src/invariants.test.ts:
+A new group 13 in command-center/src/invariants.test.ts (groups 11 and 12 are taken by updates and checklists):
 
 - Only the human actor can create a run. The dispatch route refuses the mcp, read-only, runner, and run tokens; no MCP tool, rule action, or outbox op creates, starts, or resumes a run.
 - Setting `assignee` to `claude@<name>` by any route creates no run.
@@ -297,7 +297,7 @@ A new group 11 in command-center/src/invariants.test.ts:
 - The runner never passes a secret or the brief as a command-line argument.
 - The runner reports itself healthy only after the launch compatibility check in section 3 has passed for the complete argument combination of its flag set, and a Claude Code that refuses that combination means no heartbeat and no claim.
 - The schema has no column for a runner's folders, budget, flags, or API key.
-- Nothing the daemon or the http server loads imports `child_process`, except `src/ingest/secrets.ts`, which runs PowerShell on Windows to unlock the secret store (a source check with that one file allowed, as group 8 checks the fake GitHub; docs/update-proposal.md proposes the same check).
+- Nothing the daemon or the http server loads imports `child_process`, except `src/ingest/secrets.ts`, which runs PowerShell on Windows to unlock the secret store (a source check with that one file allowed, as group 8 checks the fake GitHub; group 11 already makes the same check for the daemon and the http server, see docs/update-proposal.md).
 - The `runner` command never opens a store.
 - Run events are not rule triggers, and rules have no run action.
 - The outbox has no runner or run op kind.
@@ -309,7 +309,7 @@ Two tests beside the runner's code, run on every platform CI covers, prove the t
 
 ## 10. Phases
 
-- **Phase A: one machine, one run at a time, locked down from the first run.** `cc runner` with heartbeat, polling, the checks, claim, start, and outcome. The dispatch route, the confirmation sheet, the run token, the `runners` and `runs` tables, Pause all runners, revoke, Stop, and group 11. Nothing from section 6 is deferred to a later phase.
+- **Phase A: one machine, one run at a time, locked down from the first run.** `cc runner` with heartbeat, polling, the checks, claim, start, and outcome. The dispatch route, the confirmation sheet, the run token, the `runners` and `runs` tables, Pause all runners, revoke, Stop, and group 13. Nothing from section 6 is deferred to a later phase.
 - **Phase B: liveness and spend.** Reconciling after a reboot (an open run whose session is gone becomes "lost" with a comment; the leash is what makes "gone" true, since no session survives its runner), spend on runs when Claude Code reports it, a daily spend cap per runner, the optional local confirmation.
 - **Phase C: local checklists**, section 7B, with the per-project checklist source.
 - **Only with the owner's word: a shell.** Running tests needs Bash, and Bash with the owner's credentials in reach is the risk this design exists to avoid. If it is ever wanted, the session runs as a separate OS account with no SSH keys, no `gh` login, and no git credentials, in its own clone, with outbound network limited to Anthropic's API and Polaris, and Bash only inside that boundary. That is its own proposal.
