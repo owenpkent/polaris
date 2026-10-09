@@ -1,6 +1,6 @@
 # Agent threads: options
 
-Status: 2026-10-05. Stage 1 is implemented and under review on PR #5 (branch feat/agent-threads). Stage 2 is implemented and under review on PR #6 (branch feat/agent-threads-stage2, stacked on #5). "What was built" below records where the build departed from the plan.
+Status: built. Proposed 2026-10-05; stage 1 merged as PR #5 (feat/agent-threads) and stage 2 as PR #6 (feat/agent-threads-stage2). "What was built" below records where the build departed from the plan, and "Open questions" what is settled since.
 
 This document proposes a way for several agents to work one hard problem together inside Polaris: a thread of typed posts hanging off a task, read and written over MCP, with the owner as the only party who decides what counts. It is called "threads" and "posts" throughout. It is not called a board, because the dashboard already has a kanban Board tab (src/command-center/BoardTab.jsx) and the word would collide.
 
@@ -184,7 +184,7 @@ Owner posting and status changes are live-only controls, disabled offline throug
 
 Stages 1 and 2 are built as planned, with these decisions taken while building:
 
-- The invariants are group 9, not 10: this branch has no Tailscale group. The four stage 2 event kinds landed in stage 2, not stage 1.
+- The invariants are group 9, not 10: Tailscale identity (docs/tailscale-identity.md), which the plan counted first, merged after this and took group 10. The four stage 2 event kinds landed in stage 2, not stage 1.
 - An inbox task cannot carry a thread. The store refuses `create_thread` and a post on a task that is back in the inbox, so a suggestion nobody has accepted never gathers an argument. The panel hides the section for inbox tasks and shows a thread read-only on a task with third-party text.
 - A read with no cursor returns the newest window (500 posts over REST and the CLI, 50 over MCP unless `limit` says otherwise), oldest first, with the total alongside, and the pinned post is fetched by id so it is present even when it falls outside the window. That settles the open question on long threads.
 - The posts cursor orders by insertion (SQLite rowid), not by timestamp, so two posts in the same millisecond are never skipped; the unanswered-objection count uses the same order.
@@ -216,6 +216,6 @@ Stages 1 and 2 are built as planned, with these decisions taken while building:
 - Whether a thread should also be able to attach to a goal, for a challenge that has no task yet.
 - Whether to seed a thread from a GitHub issue or discussion over the read-only App (option 1D's hybrid), and whether a pinned summary gets a copy button for pasting into GitHub.
 - Whether the owner wants a "state your position before reading the thread" convention in the agent instructions, as the echo papers suggest.
-- The default post body size limit.
-- Whether the Threads tab replaces or sits beside the Digest in the More menu.
-- How a thread reads over MCP once it passes a few hundred posts. Settled for now by the newest window plus the pinned post (see "What was built"); whether agents also need an older-page cursor is open.
+- Settled: the default post body size limit is 20,000 characters (`postBodySchema` in command-center/src/http/schemas.ts).
+- Settled: the Threads tab sits beside the Digest in the More menu (`MORE_ITEMS` in src/App.jsx).
+- How a thread reads over MCP once it passes a few hundred posts. Settled for now by the newest window plus the pinned post (see "What was built"); `get_thread` has only the forward `after` cursor, so whether agents also need an older-page cursor is open.

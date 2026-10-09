@@ -1,6 +1,6 @@
 # Tailscale identity for the dashboard
 
-Status: plan, 2026-10-04. Built on branch feat/tailscale-identity, as described here.
+Status: built. Planned 2026-10-04 and merged as PR #4 (feat/tailscale-identity), as described here. The `tailscale whois` cross-check under "Out of scope" is still not built.
 
 Polaris is reached from a phone or a second computer through `tailscale serve` on the host, which gives the daemon a private HTTPS address and forwards to 127.0.0.1:8788. Today every one of those devices still has to be given the api token: it is pasted into the connect form once, and then sits in that browser's localStorage. This document describes letting the owner's own Tailscale sign-in stand in for the token on those devices, what that trusts, and what it leaves alone.
 
