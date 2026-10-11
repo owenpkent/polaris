@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { Command } from '../../cli-types.ts';
 import { parseFlags } from '../../cli-types.ts';
 import { formatReport } from '../common.ts';
@@ -9,6 +10,7 @@ import { getRepoSettings } from './repoSettings.ts';
 import { syncGithubRepoFiles } from './repoFiles.ts';
 import { syncGithub } from './sync.ts';
 import { createWebhookHandler } from './webhook.ts';
+import { warnIfNotLoopback } from '../../http/commands.ts';
 
 const syncGithubCommand: Command = {
   name: 'sync github',
@@ -59,7 +61,7 @@ const syncRepoFilesCommand: Command = {
 const webhookCommand: Command = {
   name: 'github webhook',
   summary: 'Run a local HTTP server that receives GitHub webhook events and re-syncs the affected item.',
-  usage: '[--port 8787] (secret comes from GITHUB_WEBHOOK_SECRET)',
+  usage: '[--port 8787] [--host 127.0.0.1] (secret comes from GITHUB_WEBHOOK_SECRET)',
   run(args, { openApp, stdout, stderr }) {
     const flags = parseFlags(args);
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
@@ -68,12 +70,22 @@ const webhookCommand: Command = {
       return 1;
     }
     const port = Number(flags.port ?? 8787);
+    // Loopback like `serve`: GitHub reaches it through a tunnel or proxy on this machine.
+    const host = typeof flags.host === 'string' ? flags.host : '127.0.0.1';
+    warnIfNotLoopback(host, stderr);
     const app = openApp();
     const handler = createWebhookHandler(app, { secret, log: stdout });
     const server = createServer(handler);
     return new Promise<number>((resolvePromise) => {
-      server.listen(port, () => stdout(`github webhook listening on :${port}`));
-      const shutdown = () => server.close(() => { app.close(); resolvePromise(0); });
+      server.listen(port, host, () => {
+        const bound = server.address() as AddressInfo;
+        stdout(`github webhook listening on ${bound.address}:${bound.port}`);
+      });
+      const shutdown = () => {
+        process.off('SIGINT', shutdown);
+        process.off('SIGTERM', shutdown);
+        server.close(() => { app.close(); resolvePromise(0); });
+      };
       process.on('SIGINT', shutdown);
       process.on('SIGTERM', shutdown);
     });
