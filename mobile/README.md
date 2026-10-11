@@ -71,7 +71,7 @@ npm run test:android -- -Pandroid.testInstrumentationRunnerArguments.class=com.o
 - `ShareRewriteTest` calls `MainActivity.rewriteShare` directly: String and styled (`Spanned`) extras, subject and text, empty or missing text, characters that need URL encoding, and intents that must be left alone. It needs no server.
 - `AppEndToEndTest` drives the dashboard in the app's WebView against the scratch daemon: the connect form, a share opening the new-task sheet prefilled, a second share reseeding the open sheet, and reminders being scheduled (and then cleared) as local notifications. `WebAppDriver` finds elements by role and accessible name through `evaluateJavascript` on the Capacitor bridge's WebView. `POST_NOTIFICATIONS` is granted with a `GrantPermissionRule`. Without the `serverUrl` and `apiToken` arguments the script passes, these tests are skipped.
 
-CI runs the same command on an emulator for pull requests that touch `mobile/`, `src/`, or `public/` (.github/workflows/android.yml). To start an emulator locally: `emulator -avd <name>`, and wait for it to boot.
+CI runs the same command on an emulator for pull requests that touch `mobile/`, `src/`, `public/`, or the root `package.json` or lockfile (.github/workflows/android.yml). To start an emulator locally: `emulator -avd <name>`, and wait for it to boot.
 
 ### Without Android Studio
 

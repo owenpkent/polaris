@@ -8,6 +8,8 @@ Prior art: the owner's alpha-osk updater (a Windows installer-based updater with
 
 ## Where things stand
 
+This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds; no release tag has been cut yet.
+
 - Updating is manual. On every install it is: `git pull`, `npm install` at the root, `npm --prefix command-center install`, `npm run build`, then a restart of the daemon. The owner snapshots the database first when `command-center/src/core/schema.ts` changes.
 - The daemon, the CLI, and the Windows logon task all run `command-center/src/cli.ts` straight from the git working tree with Node. There is no install step and no built server: a `git checkout` changes the code the next process runs. The dashboard is the one built thing, `npm run build` writing `dist/`, which the running daemon serves.
 - The owner's own host, GR9, runs the daemon as a systemd system unit (`polaris.service`) from a deploy-only checkout. Restarting it needs `sudo`. On Windows the daemon runs from the logon task that `scripts/install-command-center-task.ps1` installs, restarted with the wait-for-the-port loop in command-center/README.md.
@@ -179,7 +181,7 @@ Nothing. There is no MCP tool, no read-only MCP tool, and no runner route (the p
 
 ## 8. Invariants to add
 
-A new group in command-center/src/invariants.test.ts (11, or 12 if the runner group lands first):
+A new group in command-center/src/invariants.test.ts (built as group 11; the runner group, if it lands, takes the next number):
 
 - The daemon and the http server never run `git`, `npm`, or a restart. As a check on the source: walking the static imports from src/daemon/daemon.ts and src/http/server.ts reaches no module that imports `node:child_process` or `child_process` except src/ingest/secrets.ts, whose PowerShell call for DPAPI is the one allowed program. The update module is reached only by a dynamic import in the `update` command.
 - No REST route, MCP tool, or runner route installs anything or starts a program.

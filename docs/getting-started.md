@@ -123,7 +123,7 @@ Each token works on its own routes only. That separation is what stops an agent 
 
 ### Step 6: Open the dashboard
 
-Open http://127.0.0.1:8788/ in your browser. It opens on My tasks, empty, with a blue strip that says **Not connected yet**. Click **Connect** in that strip (or open http://127.0.0.1:8788/?view=connection) to reach the **Connection** view, where **Server URL** is already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**. Then go back to **My tasks** (in the sidebar on a computer, or through the menu button at the top left on a phone).
+Open http://127.0.0.1:8788/ in your browser. It opens on My tasks, empty, with a blue strip that says **Not connected yet**. Click **Connect** in that strip (or open http://127.0.0.1:8788/?view=settings) to reach **Settings**, where the Connection card has **Server URL** already filled in. Paste the contents of `command-center/data/api-token` into **Access token** and click **Connect**. Then go back to **My tasks** (in the sidebar on a computer, or through the menu button at the top left on a phone).
 
 **You should now see** My tasks, with the task you added in step 3.
 
@@ -171,7 +171,7 @@ Settings go in as `Environment=NAME=value` lines under `[Service]`. Do not add `
 
 ## 3. Your first ten minutes
 
-On a computer, the sidebar on the left lists every view: **My tasks**, **Inbox**, **Board**, **Goals**, **Projects**, **Threads**, **Rules**, **Digest**, **GitHub**, and **Connection**, which holds your connection and settings. On a phone there is no sidebar. The menu button at the top left (**Open navigation**) opens a drawer with **My tasks**, **Inbox**, and **Board**; **More** in the drawer (or **More views** in the bar along the bottom) adds **Goals**, **Projects**, **Threads**, **Rules**, **Digest**, and **GitHub**. **Connection** is in the drawer too. Later steps say "open **X**": click it in the sidebar, or on a phone reach it through **More**.
+On a computer, the sidebar on the left lists every view: **My tasks**, **Inbox**, **Board**, **Goals**, **Projects**, **Checklists**, **Threads**, **Rules**, **Digest**, **GitHub**, and **Settings**, which holds your connection and the other settings. Below the views it lists your busiest projects, and a click opens that project's Board. On a phone there is no sidebar. The menu button at the top left (**Open navigation**) opens a drawer with **My tasks**, **Inbox**, and **Board**; **More** in the drawer (or **More views** in the bar along the bottom) adds **Goals**, **Projects**, **Checklists**, **Threads**, **Rules**, **Digest**, and **GitHub**. **Settings** is in the drawer too. Later steps say "open **X**": click it in the sidebar, or on a phone reach it through **More**.
 
 ### Step 1: Make a project
 
@@ -183,7 +183,7 @@ Projects are never deleted. Archiving one hides it and keeps its tasks.
 
 ### Step 2: Add a few tasks
 
-On **My tasks**, click **New task**, give it a name, and pick your project. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
+On **My tasks**, click **Add task** (on a phone, the floating **New task** button), give it a name, and pick your project. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
 
 The toolbar filters by readiness (Ready: could be started now; Blocked: waiting on an unfinished task), project, goal, priority, source, and assignee. You can also click a row's due date, project, or priority to change it in place.
 
@@ -192,7 +192,7 @@ The toolbar filters by readiness (Ready: could be started now; Blocked: waiting 
 ### Step 3: Look at the views
 
 - **Board** shows one project at a time, with its sections as columns, and lets you move tasks between them.
-- `npm run cc -- views` lists the saved views, and `npm run cc -- view ready` shows what you could start right now.
+- `npm run cc -- views` lists the built-in and saved views, and `npm run cc -- view ready` shows what you could start right now.
 
 ### Step 4: Understand the inbox
 
@@ -313,7 +313,7 @@ Text from a third party is wrapped in a warning inside the prompt, so the agent 
 
 ### Step 4: Assign to AI
 
-The task panel's **Assign to <name>** button sets the task's assignee to your default agent name in one click, and **Take back** clears it. It starts nothing by itself: an agent connected under that name finds the task when it looks for its work. Set the default name in the **Agents** card on the **Connection** tab. It starts as `claude-code`; to match the computer you set up in step 1, make it the same `X-Agent-Name` (`claude-laptop` in the example). The same character rules apply.
+The task panel's **Assign to <name>** button sets the task's assignee to your default agent name in one click, and **Take back** clears it. It starts nothing by itself: an agent connected under that name finds the task when it looks for its work. Set the default name in the **Agents** card on the **Settings** view. It starts as `claude-code`; to match the computer you set up in step 1, make it the same `X-Agent-Name` (`claude-laptop` in the example). The same character rules apply.
 
 ### Step 5: Work from your phone with Remote Control
 
@@ -393,7 +393,7 @@ It reads the newest copy back and checks it, without opening your live database,
 
 ### Step 3: Encryption (your choice)
 
-Backups are not encrypted until you set a passphrase, from the **Backups** card on the **Connection** tab or with `npm run cc -- backup encrypt`. Polaris never sets one for you. Keep the passphrase in a password manager: without it, no encrypted copy can be read. `npm run cc -- backup decrypt <file.db.enc>` turns a copy back into a plain database.
+Backups are not encrypted until you set a passphrase, from the **Backups** card on the **Settings** view or with `npm run cc -- backup encrypt`. Polaris never sets one for you. Keep the passphrase in a password manager: without it, no encrypted copy can be read. `npm run cc -- backup decrypt <file.db.enc>` turns a copy back into a plain database.
 
 ### When a backup fails
 
@@ -403,7 +403,9 @@ A failing job, or a backup that is missing or more than 36 hours old, shows as a
 
 ### Updating
 
-Stop the daemon, update, rebuild, and start it again:
+`npm run cc -- update --check` shows what an update would change and installs nothing. `npm run cc -- update --release` installs the newest signed release: it runs the tests, builds the dashboard, snapshots the database, restarts the daemon, checks it, and rolls back if anything fails. Plain `npm run cc -- update` does the same for the newest `main`. Restarting needs a logon task, a systemd unit, or you at the keyboard (`CC_UPDATE_RESTART`). The daemon never runs an update itself. Every flag, and the optional scheduled updater, are under Updating in [command-center/README.md](../command-center/README.md), and the release rules are in [releases.md](releases.md).
+
+To update by hand instead, stop the daemon, update, rebuild, and start it again:
 
 ```sh
 git pull --ff-only
@@ -423,7 +425,7 @@ Then restart: `sudo systemctl restart polaris` on Linux, or stop and start the l
 | The daemon exits with `EADDRINUSE` | An old daemon still holds the port | Wait for it to stop, then start again. |
 | The service will not start at boot | Usually something it depends on is not ready yet, such as a network share for backups | Read `journalctl -u polaris -b`. Do not make the service require a network mount: a failed mount should fail the backup job, not Polaris. |
 | "Offline. Showing data from ..." | The dashboard cannot reach the daemon | Check the daemon is running and, from another device, that `tailscale serve status` still shows the proxy. Your task edits are queued meanwhile. |
-| **Connect** fails on the Connection view, or the "Not connected yet" strip stays | The token was refused | Paste the current `api-token`, or check `CC_TAILSCALE_LOGIN` matches your Tailscale login exactly. |
+| **Connect** fails on the Settings view, or the "Not connected yet" strip stays | The token was refused | Paste the current `api-token`, or check `CC_TAILSCALE_LOGIN` matches your Tailscale login exactly. |
 | An empty Polaris on a second computer | The desktop app, `npm run cc`, or stdio MCP was run there and made its own database | Use the browser and MCP over HTTPS on that computer instead. See the second-database trap in section 4. |
 | The Android app cannot connect | The daemon does not allow the app's origin | Set `CC_CORS_ORIGINS=https://localhost` and restart. Use the HTTPS tailnet address. |
 

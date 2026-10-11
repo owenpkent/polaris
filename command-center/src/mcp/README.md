@@ -24,8 +24,11 @@ npm run cc -- mcp tools [--readonly]   # print the tool list
 ```
 
 `--readonly` registers only the search/read tools; no `create_task`, `update_task`,
-etc. are exposed. Nothing is ever written to stdout except MCP protocol traffic;
-startup/shutdown logging goes to stderr.
+etc. are exposed. `node src/mcp/stdio.ts` also takes `--agent-name <name>` (or
+`--agent-name=<name>`): the name this connection gives itself, recorded beside actor `agent`
+on every write it makes (the HTTP transport uses the `X-Agent-Name` header). An invalid name
+is ignored, and a name is never an identity or a permission. Nothing is ever written to
+stdout except MCP protocol traffic; startup/shutdown logging goes to stderr.
 
 By default the server opens the database at `command-center/data/constellation.db`
 (see `../config.ts`). Set `CC_DB` to point at a different file, e.g. for a scratch
@@ -33,7 +36,9 @@ database while testing.
 
 Every write tool records an event, and an open dashboard polls those events, so
 changes made over MCP appear in the dashboard within about 10 seconds. That only
-works when the MCP server and the dashboard's HTTP server share a database. To watch
+works when the MCP server and the dashboard's HTTP server share a database. While
+`cc update` holds its write barrier, every write tool returns an error and the read tools
+keep working. To watch
 MCP writes in the mockup (`npm run mockup`), start the MCP server with `CC_DB` set
 to `%TEMP%\constellation-mockup\constellation.db`.
 
@@ -113,7 +118,7 @@ goal keep their UNTRUSTED-TEXT marking. The goal tools live in `tools-goals.ts`.
 Threads (docs/agent-threads-proposal.md): a task has at most one thread, a list of typed posts
 where several agents and the owner work a hard problem out. `create_thread` opens it or returns
 the one that exists; `post_to_thread` adds one idea, typed claim, evidence, objection, question,
-failed_attempt, summary, or result, with optional confidence and refs; `get_thread` reads it by
+failed_attempt, summary, or result, with optional confidence, refs, and parent_post_id; `get_thread` reads it by
 thread_id or task_id. With no cursor it returns the newest 50 posts (`limit` raises that), oldest
 first, and its header says `posts:M showing the last N` when the window is short; `after` (a post
 id) returns only what was added since, in insertion order, so polling is cheap. Every post is rendered inside a fenced
@@ -130,6 +135,13 @@ first: with type `result` and status `accepted` it is the library of what the ow
 to cite by post id. Judging, pinning, closing, reopening, forking, and the thread settings are
 the owner's, over REST and the command line only. The thread tools live beside the task tools in
 `tools-read.ts` and `tools-write.ts`, and the renderers in `format.ts`.
+
+Projects and checklists: `create_project` makes a project (a name, plus optional type, status,
+description, GitHub repo, and category; a project needs no repo). Agents cannot rename, edit, or
+archive one. `list_checklists` is on both endpoints. `create_checklist` (name, items, notes) and
+`start_checklist` (checklist id or name, optional title, project, due_at, and repeat_items) are on the
+write endpoint only: starting one makes an ordinary open task with one subtask per item, and no tool
+edits or deletes a checklist. These tools live in `tools-projects.ts` and `tools-checklists.ts`.
 
 Resources: `polaris://agenda/today`, `polaris://digest/today`, and the
 template `polaris://projects/{slug}` (slug, id, or name).

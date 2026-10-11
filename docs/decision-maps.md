@@ -17,7 +17,7 @@ This guide assumes an agent connected over MCP (see the README's quick start) an
 | What is waiting, and on what | The `blocked` view, then `get_task` for the blockers | `get_view` with name `blocked` |
 | The flavour of a ticket | The custom field `kind`, mirrored in the first line of the notes | `custom_fields` on `create_task` or `update_task` |
 
-`ready` means startable now: status open, no incomplete blocker, and not under a parent that is finished. `blocked` is the active tasks with at least one incomplete blocker. Both are built in, run from the CLI with `npm run cc -- view ready` and `npm run cc -- view blocked`, and over MCP with `get_view`.
+`ready` means startable now: status open, no incomplete blocker, not under a parent that is finished, and no start date later than today. `blocked` is the open or in-progress tasks with at least one incomplete blocker. Both are built in, run from the CLI with `npm run cc -- view ready` and `npm run cc -- view blocked`, and over MCP with `get_view`.
 
 ## Laying out a map
 
