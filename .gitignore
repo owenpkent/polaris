@@ -69,3 +69,6 @@ desktop/src-tauri/gen/
 desktop/src-tauri/binaries/
 desktop/src-tauri/resources/
 desktop/release/
+
+# Claude Code settings, local to each machine
+.claude/
