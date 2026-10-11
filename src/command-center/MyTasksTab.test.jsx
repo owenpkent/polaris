@@ -153,7 +153,7 @@ describe('MyTasksTab new task sheet', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: `Open ${made.title}` })).toBeTruthy())
       expect(screen.getByRole('button', { name: 'Collapse No due date' })).toBeTruthy()
       expect(screen.queryByRole('dialog', { name: 'New task' })).toBeNull()
-      expect(scrolled).toHaveBeenCalled()
+      await waitFor(() => expect(scrolled).toHaveBeenCalled())
     } finally {
       delete Element.prototype.scrollIntoView
       localStorage.clear()
