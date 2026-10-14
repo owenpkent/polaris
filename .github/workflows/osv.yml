@@ -5,9 +5,9 @@
 # once those are cleared.
 #
 # The pull request gate (fail only on an advisory the pull request introduces) is the `osv` job
-# in test.yml, so that the one `Tests` check covers it; it does not use the reusable pull request
-# workflow, for the reason given there. Keep the scanner version and the lockfile list here in
-# step with that job.
+# in test.yml, so that the one `Tests` check covers it; its steps are in osv-diff.yml, which does
+# not use the reusable pull request workflow, for the reason given there. Keep the scanner version
+# and the lockfile list here in step with osv-diff.yml.
 #
 # What is scanned: the three npm lockfiles (dashboard, command-center, mobile) and the desktop
 # shell's Cargo.lock. Gradle is not scanned; Capacitor pins the Android versions.
