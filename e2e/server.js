@@ -23,6 +23,22 @@ const CC = join(ROOT, 'command-center')
 export const BASE_PORT = Number(process.env.CC_UI_PORT) || 8791
 export const TOKEN = 'ui-test-token'
 
+// Wait for the server to be gone before removing its folder: on Windows a file the process still
+// holds (the database) makes the removal fail with EPERM. That must not fail a run whose tests all
+// passed, nor hide why a server did not start. A folder left in Temp is a nuisance, not a result.
+async function stopAndRemove(server, dataDir) {
+  if (server.exitCode === null && server.signalCode === null) {
+    const exited = new Promise((r) => server.once('exit', r))
+    server.kill()
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))])
+  }
+  try {
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  } catch (err) {
+    console.warn(`The scratch folder ${dataDir} could not be removed: ${err.message}`)
+  }
+}
+
 async function waitForServer(url, attempts = 100) {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -115,8 +131,8 @@ export async function startScratchServer(port) {
   try {
     await Promise.race([waitForServer(`${url}/`), died])
   } catch (err) {
-    server.kill()
-    rmSync(dataDir, { recursive: true, force: true })
+    // The startup error is the result; a failed cleanup must not replace it.
+    await stopAndRemove(server, dataDir)
     throw err
   }
 
@@ -125,17 +141,7 @@ export async function startScratchServer(port) {
     port,
     seededAt,
     async stop() {
-      // Wait for the server to be gone before removing its folder: on Windows a file the process
-      // still holds (the database) makes the removal fail with EPERM, and that must not fail a
-      // run whose tests all passed. A folder left in Temp is a nuisance, not a result.
-      const exited = new Promise((r) => server.once('exit', r))
-      server.kill()
-      await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))])
-      try {
-        rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-      } catch (err) {
-        console.warn(`The scratch folder ${dataDir} could not be removed: ${err.message}`)
-      }
+      await stopAndRemove(server, dataDir)
     },
   }
 }
