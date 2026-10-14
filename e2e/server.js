@@ -39,8 +39,10 @@ async function stopAndRemove(server, dataDir) {
   }
 }
 
-async function waitForServer(url, attempts = 100) {
-  for (let i = 0; i < attempts; i++) {
+// 30 seconds: a busy Windows runner has taken longer than 10 to answer the first request.
+async function waitForServer(url, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
     try {
       const res = await fetch(url)
       if (res.ok) return
