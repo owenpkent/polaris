@@ -88,7 +88,7 @@ jobs:
       - run: npm run test:desktop:ui
       - name: Keep traces, logs, and screenshots from failed desktop UI tests
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-ui-output
           path: desktop-test-output/
