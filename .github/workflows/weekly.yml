@@ -65,7 +65,7 @@ jobs:
       # baseline as it was, so a broken week never becomes the reference.
       - name: Restore last week's screenshot baseline
         if: always()
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .shots/baseline
           key: shots-baseline-${{ github.run_id }}
@@ -87,7 +87,7 @@ jobs:
         run: npm run shots -- --accept
       - name: Save the baseline for next week
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .shots/baseline
           key: shots-baseline-${{ github.run_id }}
