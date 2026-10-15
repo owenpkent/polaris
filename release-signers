@@ -22,3 +22,4 @@
 # then add the public key as a line here, in the form above, with ~/.ssh/polaris-release.pub's key
 # type and key (the second and third fields of that file), and commit it. A fork keeps its own key
 # and its own copy of this file. Lines starting with # are comments.
+polaris-release namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILqqDqiDvDnDm6Cf2PgA9bw/YNR7UNACBhbPc0A9My4t
