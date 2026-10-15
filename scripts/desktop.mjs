@@ -23,12 +23,13 @@
 // alpha-osk's build/windows/sign.py). --unsigned skips that and nothing else. The updater's own
 // signature comes from the minisign key at ~/.tauri/polaris.key, made once with
 // `npx tauri signer generate`; its public half is the pubkey in tauri.conf.json, and every build,
-// signed or not, carries it. Lose that key and no installed copy can ever update again: keep it
-// in the password manager with the backup passphrase.
+// signed or not, carries it. The key has a password, asked for at build time and never read from
+// an env var or a command line. Lose the key or its password and no installed copy can ever
+// update again: keep both in the password manager with the backup passphrase.
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -150,15 +151,30 @@ function certificateInStore(thumbprint) {
 // code signature is what SmartScreen looks at when the installer is run by hand; --unsigned
 // skips it, for builds made while the EV token is not at hand. An unsigned 0.1.0 updates itself
 // to a signed 0.2.0 without trouble: the updater key is the same.
-function updaterEnv() {
+async function updaterEnv() {
   const conf = readConf()
   if (!conf.plugins?.updater?.pubkey || conf.plugins.updater.pubkey === 'PLACEHOLDER') {
     usage('tauri.conf.json has no updater pubkey. Run: npx tauri signer generate -w ~/.tauri/polaris.key, then paste the public key.')
   }
   if (!existsSync(SIGNING_KEY)) usage(`The updater signing key is missing: ${SIGNING_KEY}`)
-  // The CLI reads the key itself from this variable (the _PATH variant is not honoured by every
-  // release). It goes to the child's environment only, never to a command line or a log.
-  return { ...process.env, TAURI_SIGNING_PRIVATE_KEY: readFileSync(SIGNING_KEY, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: '' }
+  const { readSecret } = await import('../command-center/src/prompt.ts')
+  const password = await readSecret(`Password for the updater signing key (${SIGNING_KEY}): `)
+  // The CLI reads the key and its password from these variables (the _PATH variant is not honoured
+  // by every release). They go to the child's environment only, never to a command line or a log.
+  const env = { ...process.env, TAURI_SIGNING_PRIVATE_KEY: readFileSync(SIGNING_KEY, 'utf8').trim(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD: password }
+  // Sign a scratch file first, so a wrong password fails now and not at the end of a long build.
+  const dir = mkdtempSync(join(tmpdir(), 'polaris-sign-check-'))
+  let opened
+  try {
+    const probe = join(dir, 'probe.txt')
+    writeFileSync(probe, 'probe')
+    opened = spawnSync(process.execPath, [TAURI_CLI, 'signer', 'sign', probe], { env, stdio: 'ignore' }).status === 0
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+  // usage() exits, so it comes after the folder is gone.
+  if (!opened) usage('The updater signing key did not open with that password.')
+  return env
 }
 
 function requireCertificate() {
@@ -169,7 +185,6 @@ function requireCertificate() {
 }
 
 async function build(args) {
-  await prepare(args)
   const cliArgs = ['build']
   if (args.debug) cliArgs.push('--debug')
   if (args.unsigned) {
@@ -178,7 +193,10 @@ async function build(args) {
   } else {
     requireCertificate()
   }
-  tauri(cliArgs, updaterEnv())
+  // Asked before the slow part, so a wrong password stops the build before it starts.
+  const env = await updaterEnv()
+  await prepare(args)
+  tauri(cliArgs, env)
   console.log(`\nInstaller folder: ${BUNDLE_DIR}`)
 }
 
