@@ -103,9 +103,15 @@ test('a failed review read sets error and fails the job, never reporting a missi
   assert.doesNotMatch(r.out, /No review on the latest commit/);
 });
 
-test('a token that cannot set the status is a warning, and the decision is still printed', { skip: !haveBash }, () => {
-  const r = gate(['2026-10-15T12:00:00Z COMMENTED owner 1'], { statusFails: true });
-  assert.equal(r.code, 0);
-  assert.equal(r.state, 'success');
-  assert.match(r.out, /::warning::Could not set the Reviewed status/);
+test('a refused status write fails the job, so an earlier success cannot stand', { skip: !haveBash }, () => {
+  // Reviewed was success; then the newest review requests changes (or the only one is dismissed),
+  // and the token cannot write the new value. The status would keep saying success, so the job,
+  // whose check branch protection also requires, has to fail.
+  const revoked = gate(['2026-10-15T12:00:00Z COMMENTED a 1', '2026-10-15T12:05:00Z CHANGES_REQUESTED b 2'], { statusFails: true });
+  assert.equal(revoked.state, 'failure');
+  assert.equal(revoked.code, 1);
+  assert.match(revoked.out, /::error::Could not set the Reviewed status on abc123; an earlier value may still stand/);
+  assert.equal(gate([], { statusFails: true }).code, 1);
+  // A refused write fails the job whatever it decided.
+  assert.equal(gate(['2026-10-15T12:00:00Z COMMENTED owner 1'], { statusFails: true }).code, 1);
 });

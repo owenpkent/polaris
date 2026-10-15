@@ -7,8 +7,10 @@
 # A status, not a check: every push and every review starts a run, and GitHub keeps each run's
 # check, so a failed check from the push stayed on the commit after a later review passed, and
 # branch protection went by the failure. A commit status has one current value per name, the one
-# set last, so the newest run decides. The job itself succeeds whatever it decides; its name is not
-# `Reviewed`, so its own check is never mistaken for the gate.
+# set last, so the newest run decides. The job itself succeeds whatever it decides, and fails only
+# when it cannot read the reviews or write the status. Branch protection requires its check, `Set
+# the Reviewed status`, as well: a write that failed would otherwise leave an earlier success in
+# place (say a review was dismissed), and that failed check blocks merging until the run is re-run.
 #
 # `Reviewed` is success when at least one review (approve, comment, or request changes) with a
 # summary was submitted on the head commit and none in the newest second of them requests changes.
@@ -58,9 +60,12 @@ jobs:
             echo "Reviewed: $1 ($2)"
             if ! gh api -X POST "repos/$REPO/statuses/$HEAD" -f state="$1" -f context=Reviewed \
               -f description="$2" -f target_url="$RUN_URL" > /dev/null; then
-              # A read-only token (a pull request from a fork, or a push by Dependabot) cannot set
-              # it. Merging then stays blocked, which is the safe side.
-              echo "::warning::Could not set the Reviewed status on $HEAD."
+              # The write failed (a read-only token, as on a review of a pull request from a fork,
+              # or an outage), so an earlier Reviewed=success may still stand. Fail the job: its
+              # check is required too, and a failed check stays until this run is re-run, so
+              # merging is blocked even then.
+              echo "::error::Could not set the Reviewed status on $HEAD; an earlier value may still stand. Re-run this workflow once the status can be written."
+              exit 1
             fi
           }
           # Read the reviews on their own, so a failed API call is reported as one and not as
