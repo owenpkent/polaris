@@ -14,7 +14,9 @@ name: Review gate
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` covers a pull request retargeted to main, which otherwise gets no check until its
+    # next push.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   pull_request_review:
     types: [submitted, edited, dismissed]
 
@@ -41,8 +43,15 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
-            --jq '.[] | select(.commit_id == env.HEAD) | select((.body // "") != "") | select(.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED") | "\(.submitted_at) \(.state) \(.user.login)"' | sort)
+          # Read the reviews on their own, so a failed API call is reported as one and not as
+          # "no review". Ordered by id, which GitHub assigns in submission order, so two reviews
+          # in the same second keep their order.
+          if ! all=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '.[] | select(.commit_id == env.HEAD) | select((.body // "") != "") | select(.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED") | "\(.id) \(.state) \(.user.login) \(.submitted_at)"'); then
+            echo "::error::Could not read the reviews of pull request $PR from the GitHub API. Re-run this check."
+            exit 1
+          fi
+          reviews=$(printf '%s\n' "$all" | sed '/^$/d' | sort -n)
           echo "Reviews on $HEAD:"
           echo "${reviews:-  none}"
           if [ -z "$reviews" ]; then
