@@ -19,7 +19,7 @@ function ghHeaders(token: string): Record<string, string> {
     Authorization: `Bearer ${token}`,
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'constellation-command-center',
+    'User-Agent': 'polaris-command-center',
   };
 }
 

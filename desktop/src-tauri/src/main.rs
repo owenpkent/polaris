@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// Constellation desktop: a Tauri shell around the Command Center. It starts the bundled daemon
+// Polaris desktop: a Tauri shell around the Command Center. It starts the bundled daemon
 // (node.exe next to this exe running the server bundle under resources/), waits until the API
 // answers, and points its one window at the daemon's own URL. The dashboard then runs exactly
 // as it does in a browser: same origin, same service worker, same offline copy, no IPC. The api
@@ -121,7 +121,7 @@ fn main() {
     let _ = fs::write(&app_log, "");
     let panic_log = app_log.clone();
     std::panic::set_hook(Box::new(move |info| log_line(&panic_log, &format!("panic: {info}"))));
-    log_line(&app_log, &format!("Constellation {} starting", env!("CARGO_PKG_VERSION")));
+    log_line(&app_log, &format!("Polaris {} starting", env!("CARGO_PKG_VERSION")));
 
     tauri::Builder::default()
         // A second launch would start a second daemon on the same port. Focus the first instead.
@@ -143,7 +143,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("could not build the Constellation app")
+        .expect("could not build the Polaris app")
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 app.state::<Daemon>().stop(true);
@@ -276,7 +276,7 @@ fn boot(app: &AppHandle, window: &WebviewWindow, app_log: &Path) -> Result<url::
     let node = node_exe()?;
     for (what, path) in [("server bundle", script.clone()), ("dashboard", dashboard.join("index.html")), ("node.exe", node.clone())] {
         if !path.exists() {
-            return Err(format!("The {what} is missing from this install: {}. Reinstall Constellation.", path.display()));
+            return Err(format!("The {what} is missing from this install: {}. Reinstall Polaris.", path.display()));
         }
     }
 
@@ -335,7 +335,7 @@ fn boot(app: &AppHandle, window: &WebviewWindow, app_log: &Path) -> Result<url::
     parse_url(daemon::handoff_url(port, &token))
 }
 
-const CLOSING: &str = "Constellation is closing.";
+const CLOSING: &str = "Polaris is closing.";
 
 enum Probe {
     /// The port answered the identity challenge with the proof only the holder of this
@@ -397,7 +397,7 @@ fn port_in_use(port: u16, probe: &Probe, db: &Path) -> String {
     };
     format!(
         "{what}\n\n\
-         If that is the Command Center logon task from the constellation repo, either stop it, or give both \
+         If that is the Polaris Command Center logon task, either stop it, or give both \
          the same database by setting the CC_DB user environment variable to its database file. This app is \
          using {}.\n\nTo run this app on another port instead, set CC_PORT.",
         db.display()
@@ -420,7 +420,7 @@ fn check_for_update(app: AppHandle, app_log: &Path) {
     };
     log_line(app_log, &format!("update available: {}", update.version));
     let message = format!(
-        "Constellation {} is available. This is {}.\n\nInstall it now? The app closes, installs, and opens again.",
+        "Polaris {} is available. This is {}.\n\nInstall it now? The app closes, installs, and opens again.",
         update.version, update.current_version
     );
     let install = app
@@ -438,7 +438,7 @@ fn check_for_update(app: AppHandle, app_log: &Path) {
     if let Err(e) = tauri::async_runtime::block_on(update.download_and_install(|_, _| {}, || {})) {
         log_line(app_log, &format!("update failed: {e}"));
         app.dialog()
-            .message(format!("The update could not be installed: {e}\n\nConstellation opens again as it was."))
+            .message(format!("The update could not be installed: {e}\n\nPolaris opens again as it was."))
             .title("Update failed")
             .kind(MessageDialogKind::Error)
             .blocking_show();

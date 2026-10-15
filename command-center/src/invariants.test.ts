@@ -1318,7 +1318,7 @@ test('11. src/update/run.ts is reached only by a dynamic import, from the update
 function updateScratch(t: { after(fn: () => void): void }): { app: ReturnType<typeof fakeApp>; newer: string } {
   const dir = mkdtempSync(join(tmpdir(), 'cc-invariants-update-'));
   const app = fakeApp();
-  app.config.dbPath = join(dir, 'constellation.db');
+  app.config.dbPath = join(dir, 'polaris.db');
   const [major, minor, patch] = VERSION.split('.').map(Number);
   const newer = `${major}.${minor}.${patch + 1}`;
   writeUpdateStatus(app.config.dbPath, {

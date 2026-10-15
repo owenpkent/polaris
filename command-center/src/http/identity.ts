@@ -24,7 +24,7 @@ export const IDENTITY_PATH = '/api/identity';
 
 /** The message the proof is an HMAC of: a fixed label, the listening port, and the challenge. */
 export function identityProof(apiToken: string, port: number, challenge: string): string {
-  return createHmac('sha256', apiToken).update(`constellation-identity\n${port}\n${challenge}`).digest('hex');
+  return createHmac('sha256', apiToken).update(`polaris-identity\n${port}\n${challenge}`).digest('hex');
 }
 
 /** 32 to 128 hex characters: 16 to 64 random bytes. Anything else is not a challenge. */

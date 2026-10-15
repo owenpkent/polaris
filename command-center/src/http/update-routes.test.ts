@@ -18,7 +18,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 function scratchApp(t: { after(fn: () => void): void }): { app: App; dbPath: string } {
   const dir = mkdtempSync(join(tmpdir(), 'cc-update-routes-'));
   const app = fakeApp();
-  const dbPath = join(dir, 'constellation.db');
+  const dbPath = join(dir, 'polaris.db');
   app.config.dbPath = dbPath;
   t.after(() => { app.close(); rmSync(dir, { recursive: true, force: true }); });
   return { app, dbPath };

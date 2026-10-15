@@ -40,7 +40,7 @@ test('the Windows task repeats every five minutes, as the owner, logged on or no
   assert.match(ps1, /-ExecutionTimeLimit \(New-TimeSpan -Hours 1\)/);
   assert.match(ps1, /\$log = Join-Path \$dataDir 'updater\.log'/);
   assert.match(ps1, /\*>> '\$log'/, 'output is appended to the log');
-  assert.match(ps1, /\[string\]\$TaskName = 'Constellation Updater'/);
+  assert.match(ps1, /\[string\]\$TaskName = 'Polaris Updater'/);
   assert.match(ps1, /\[switch\]\$Uninstall/);
 });
 
@@ -124,28 +124,28 @@ test('the shell installer writes the unit with --port and the environment file f
   const envFile = join(home, '.config', 'polaris', 'updater.env');
   const values = () => readFileSync(envFile, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
 
-  const first = run(['--port', '8790', '--env', 'CC_BACKUP_DIR=/mnt/nas/backups', '--env=CC_UPDATE_AT=06:00'], { CC_DB: '/srv/polaris/constellation.db', CC_UPDATE_AT: '05:30', CC_SECRETS_DIR: '' });
+  const first = run(['--port', '8790', '--env', 'CC_BACKUP_DIR=/mnt/nas/backups', '--env=CC_UPDATE_AT=06:00'], { CC_DB: '/srv/polaris/polaris.db', CC_UPDATE_AT: '05:30', CC_SECRETS_DIR: '' });
   assert.equal(first.status, 0, first.stderr);
   const unit = readFileSync(unitFile, 'utf8');
   assert.match(unit, /^EnvironmentFile=-%h\/\.config\/polaris\/updater\.env$/m);
   assert.match(unit, /^ExecStart=".*node" ".*\/command-center\/src\/cli\.ts" update --auto --port 8790$/m);
   // The mode bits are POSIX: on Windows (Git bash) the file has none to check.
   if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600, 'owner-only');
-  assert.deepEqual(values(), ['CC_DB=/srv/polaris/constellation.db', 'CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00'], 'inherited, then --env, which wins; an empty inherited value is not copied');
+  assert.deepEqual(values(), ['CC_DB=/srv/polaris/polaris.db', 'CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00'], 'inherited, then --env, which wins; an empty inherited value is not copied');
   for (const name of UPDATER_VARS) assert.match(readFileSync(envFile, 'utf8'), new RegExp(`^#${name}=`, 'm'));
   assert.match(first.stdout, /^Environment: .*updater\.env \(set now: CC_DB CC_UPDATE_AT CC_BACKUP_DIR CC_UPDATE_AT\)$/m, 'says where the file is');
   assert.match(first.stdout, /runs 'cc update --auto --port 8790' every five minutes/);
 
   // A rerun keeps what is there and sets only what it is given; without --port the unit has no port.
-  const again = run(['--env', 'CC_DB=/elsewhere/constellation.db']);
+  const again = run(['--env', 'CC_DB=/elsewhere/polaris.db']);
   assert.equal(again.status, 0, again.stderr);
-  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/constellation.db']);
+  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/polaris.db']);
   if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600);
   assert.match(readFileSync(unitFile, 'utf8'), /^ExecStart=.* update --auto$/m);
   const nothing = run([]);
   assert.equal(nothing.status, 0, nothing.stderr);
   assert.match(nothing.stdout, /^Environment: .*updater\.env \(nothing set: the defaults apply/m);
-  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/constellation.db'], 'untouched');
+  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/polaris.db'], 'untouched');
 
   // Bad flags are refused before anything is written.
   for (const args of [['--port'], ['--port', 'eighty'], ['--port', '0'], ['--port=70000'], ['--env'], ['--env', 'FOO=1'], ['--env', 'CC_DB']]) {

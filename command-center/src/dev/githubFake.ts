@@ -195,7 +195,7 @@ export async function startGithubFake(app: App, env: NodeJS.ProcessEnv = process
   if (!env.CC_SECRETS_DIR) {
     throw new Error('CC_GITHUB_FAKE=1 needs CC_SECRETS_DIR set to a scratch folder: the fake sign-in is never written to the real secret store.');
   }
-  const realDb = resolve(app.config.repoRoot, 'command-center', 'data', 'constellation.db');
+  const realDb = resolve(app.config.repoRoot, 'command-center', 'data', 'polaris.db');
   if (!env.CC_DB || resolve(app.config.dbPath) === realDb) {
     throw new Error('CC_GITHUB_FAKE=1 needs CC_DB set to a scratch database: the fake never syncs into the real one.');
   }

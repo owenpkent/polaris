@@ -16,7 +16,7 @@ import type { Router } from './router.ts';
 import { parseBody } from './schemas.ts';
 import type { HttpServerOptions } from './types.ts';
 
-const DATED_BACKUP = /^constellation-\d{4}-\d{2}-\d{2}\.db(\.enc)?$/;
+const DATED_BACKUP = /^polaris-\d{4}-\d{2}-\d{2}\.db(\.enc)?$/;
 
 const encryptionBodySchema = z.object({
   passphrase: z.string().max(1024).refine((p) => passphraseProblem(p) === null, { message: passphraseProblem('') ?? 'too short' }),

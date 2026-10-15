@@ -130,7 +130,7 @@ function defaultRunPowerShell(script: string, stdin: string): Promise<string> {
 
 function defaultBaseDir(): string {
   const appData = process.env.APPDATA;
-  return appData ? join(appData, 'constellation', 'secrets') : join(process.env.USERPROFILE ?? '.', 'AppData', 'Roaming', 'constellation', 'secrets');
+  return appData ? join(appData, 'polaris', 'secrets') : join(process.env.USERPROFILE ?? '.', 'AppData', 'Roaming', 'polaris', 'secrets');
 }
 
 /** DPAPI-CurrentUser encryption via powershell.exe. Ciphertext on disk, plaintext only ever

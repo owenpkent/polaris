@@ -390,7 +390,7 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
   }
 
   /** The one snapshot (step 7), through the backup code, named so the daily copy never replaces
-   *  it: `constellation-pre-update-<version>-<moment>.db`, encrypted when backup encryption is on.
+   *  it: `polaris-pre-update-<version>-<moment>.db`, encrypted when backup encryption is on.
    *  Called with the daemon stopped; a failure here throws out of the restart and rolls back. */
   function takeSnapshot(): void {
     if (!existsSync(opts.dbPath)) {

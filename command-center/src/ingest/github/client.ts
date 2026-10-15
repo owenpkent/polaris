@@ -144,7 +144,7 @@ export class GithubClient {
       Authorization: `Bearer ${this.token}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'constellation-command-center',
+      'User-Agent': 'polaris-command-center',
     };
     if (cached?.etag) headers['If-None-Match'] = cached.etag;
     const res = await this.fetchImpl(url, { headers });

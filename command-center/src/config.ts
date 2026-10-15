@@ -25,7 +25,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const repoRoot = resolve(env.CC_REPO_ROOT ?? join(here, '..', '..'));
   return {
     repoRoot,
-    dbPath: resolve(env.CC_DB ?? join(repoRoot, 'command-center', 'data', 'constellation.db')),
+    dbPath: resolve(env.CC_DB ?? join(repoRoot, 'command-center', 'data', 'polaris.db')),
     timezone: env.CC_TZ ? checkedTimezone(env.CC_TZ) : Intl.DateTimeFormat().resolvedOptions().timeZone,
     dashboardDir: resolve(env.CC_DASHBOARD_DIR ?? join(repoRoot, 'dist')),
     updateRestart: env.CC_UPDATE_RESTART?.trim() || undefined,

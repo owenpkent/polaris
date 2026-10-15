@@ -9,7 +9,7 @@ import { chromium } from '@playwright/test'
 
 // Helpers for driving the real desktop app. Read desktop/e2e/playwright.config.js first.
 //
-// SAFETY. The owner's own Constellation, with their real database, may be running on port 8788.
+// SAFETY. The owner's own Polaris, with their real database, may be running on port 8788.
 // Everything here is built so that cannot be touched:
 //   - The app is started with CC_DB, CC_SECRETS_DIR, CC_BACKUP_DIR, APPDATA, and LOCALAPPDATA
 //     all inside a fresh temp folder, and with CC_PORT set to a free port that is never the
@@ -20,12 +20,12 @@ import { chromium } from '@playwright/test'
 //   - Every inherited CC_* variable is dropped first, so none of the owner's settings leak in.
 //   - A process is killed only if this run started it (the app, which takes the daemon it
 //     started with it, and the servers made here). Nothing is ever found by name and stopped.
-//   - The app is single-instance per user session, so a copy of Constellation the owner has open
+//   - The app is single-instance per user session, so a copy of Polaris the owner has open
 //     would swallow the launch. launchApp refuses to start while one is running.
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
 const CC = join(ROOT, 'command-center')
-export const APP_EXE = join(ROOT, 'desktop', 'src-tauri', 'target', 'debug', 'constellation-desktop.exe')
+export const APP_EXE = join(ROOT, 'desktop', 'src-tauri', 'target', 'debug', 'polaris-desktop.exe')
 // The port the daemon uses when nothing says otherwise (desktop/src-tauri/src/daemon.rs).
 const OWNERS_PORT = 8788
 
@@ -178,12 +178,12 @@ export function processState(app) {
 /** A running copy of the owner's app, or of this debug build, would take over the launch. */
 function assertNoOtherApp() {
   const out = powershell(
-    `Get-Process -Name Constellation,constellation-desktop -ErrorAction SilentlyContinue | Select-Object Id,Path | ConvertTo-Json -Compress`,
+    `Get-Process -Name Polaris,polaris-desktop -ErrorAction SilentlyContinue | Select-Object Id,Path | ConvertTo-Json -Compress`,
   ).trim()
   if (!out) return
   const found = [].concat(JSON.parse(out)).map((p) => `${p.Id} ${p.Path}`)
   throw new Error(
-    `Constellation is already running (${found.join('; ')}). The app allows one copy per user, so a test launch would ` +
+    `Polaris is already running (${found.join('; ')}). The app allows one copy per user, so a test launch would ` +
       'only focus it. Close it and run again. The tests never stop a process they did not start.',
   )
 }
@@ -193,7 +193,7 @@ export function makeScratch() {
   const dir = mkdtempSync(join(tmpdir(), 'cc-desktop-ui-'))
   const scratch = {
     dir,
-    db: join(dir, 'data', 'constellation.db'),
+    db: join(dir, 'data', 'polaris.db'),
     secrets: join(dir, 'secrets'),
     backups: join(dir, 'backups'),
     appData: join(dir, 'appdata'),
@@ -347,7 +347,7 @@ export async function launchApp(scratch, { port, token }) {
     try {
       await until('the app to open its debugging port', async () => {
         if (child.exitCode !== null) {
-          throw new Error(`the app exited with ${child.exitCode} before it was ready. If Constellation is already open, close it.`)
+          throw new Error(`the app exited with ${child.exitCode} before it was ready. If Polaris is already open, close it.`)
         }
         const cdpPort = devToolsPort(scratch)
         if (!cdpPort) throw new Error('no DevToolsActivePort file yet')

@@ -14,7 +14,7 @@
 #>
 param(
   [switch]$Uninstall,
-  [string]$TaskName = 'Constellation Command Center'
+  [string]$TaskName = 'Polaris Command Center'
 )
 
 $ErrorActionPreference = 'Stop'

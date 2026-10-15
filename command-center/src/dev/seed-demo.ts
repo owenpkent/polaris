@@ -8,7 +8,7 @@ import type { Priority, SourceType } from '../core/types.ts';
 import { loadConfig } from '../config.ts';
 
 const config = loadConfig();
-const realDb = resolve(config.repoRoot, 'command-center', 'data', 'constellation.db');
+const realDb = resolve(config.repoRoot, 'command-center', 'data', 'polaris.db');
 if (!process.env.CC_DB || resolve(config.dbPath) === realDb) {
   console.error('Set CC_DB to a scratch database before seeding demo data.');
   process.exit(1);

@@ -11,7 +11,7 @@
 import { connect } from 'node:net';
 import type { Exec } from './exec.ts';
 
-export const WINDOWS_TASK = 'Constellation Command Center';
+export const WINDOWS_TASK = 'Polaris Command Center';
 export const DEFAULT_UNIT = 'polaris';
 
 export type RestartMethod =

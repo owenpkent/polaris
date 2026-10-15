@@ -14,19 +14,19 @@ fn setting(env: Env, name: &str) -> Option<String> {
 }
 
 /// CC_DB if set, so the CLI, the logon task, and this app can share one database. Otherwise
-/// %APPDATA%\constellation\data\constellation.db, beside the secret store the CLI already keeps
-/// under %APPDATA%\constellation (see command-center/src/ingest/secrets.ts).
+/// %APPDATA%\polaris\data\polaris.db, beside the secret store the CLI already keeps
+/// under %APPDATA%\polaris (see command-center/src/ingest/secrets.ts).
 ///
 /// A relative CC_DB is made absolute against `cwd`, the directory the app was launched from.
 /// The daemon is started in the database's own folder, so passing it the relative path as given
-/// would have it resolve the path a second time from there (data\data\constellation.db) and
+/// would have it resolve the path a second time from there (data\data\polaris.db) and
 /// write its token where this app never looks.
 pub fn db_path(env: Env, cwd: &Path) -> PathBuf {
     if let Some(db) = setting(env, "CC_DB") {
         return cwd.join(db);
     }
     let base = setting(env, "APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("constellation").join("data").join("constellation.db")
+    base.join("polaris").join("data").join("polaris.db")
 }
 
 /// CC_PORT, or the daemon's default. Zero would mean "any port", which the window could not find.
@@ -93,8 +93,8 @@ fn sibling(db: &Path, name: &str) -> PathBuf {
     db.parent().unwrap_or_else(|| Path::new(".")).join(name)
 }
 
-/// The arguments after node.exe. The import job reads initiatives/*.md from the constellation
-/// repo, which an installed app does not have unless CC_REPO_ROOT names a checkout, so without
+/// The arguments after node.exe. The import job reads initiatives/*.md from the repo
+/// checkout, which an installed app does not have unless CC_REPO_ROOT names a checkout, so without
 /// one the job is skipped rather than failing every half hour.
 pub fn daemon_args(script: &Path, port: u16, has_repo_root: bool) -> Vec<String> {
     let mut args = vec![
@@ -129,7 +129,7 @@ pub fn handoff_url(port: u16, token: &str) -> String {
 /// the token anywhere. The port in the message stops a process on this port forwarding the
 /// challenge to a real daemon listening on another one.
 pub fn identity_proof(token: &str, port: u16, challenge: &str) -> String {
-    let message = format!("constellation-identity\n{port}\n{challenge}");
+    let message = format!("polaris-identity\n{port}\n{challenge}");
     hex::encode(hmac_sha256(token.as_bytes(), message.as_bytes()))
 }
 
@@ -191,27 +191,27 @@ mod tests {
         let env = env_with(&[("APPDATA", r"C:\Users\sam\AppData\Roaming")]);
         assert_eq!(
             db_path(&env, Path::new(CWD)),
-            PathBuf::from(r"C:\Users\sam\AppData\Roaming\constellation\data\constellation.db")
+            PathBuf::from(r"C:\Users\sam\AppData\Roaming\polaris\data\polaris.db")
         );
     }
 
     #[test]
     fn cc_db_wins_and_blank_cc_db_is_ignored() {
-        let set = env_with(&[("CC_DB", r"D:\cc\constellation.db"), ("APPDATA", r"C:\x")]);
-        assert_eq!(db_path(&set, Path::new(CWD)), PathBuf::from(r"D:\cc\constellation.db"));
+        let set = env_with(&[("CC_DB", r"D:\cc\polaris.db"), ("APPDATA", r"C:\x")]);
+        assert_eq!(db_path(&set, Path::new(CWD)), PathBuf::from(r"D:\cc\polaris.db"));
         let blank = env_with(&[("CC_DB", "   "), ("APPDATA", r"C:\x")]);
-        assert_eq!(db_path(&blank, Path::new(CWD)), PathBuf::from(r"C:\x\constellation\data\constellation.db"));
+        assert_eq!(db_path(&blank, Path::new(CWD)), PathBuf::from(r"C:\x\polaris\data\polaris.db"));
     }
 
     #[test]
     fn a_relative_cc_db_is_resolved_against_the_launch_directory() {
-        let sub = env_with(&[("CC_DB", r"data\constellation.db")]);
+        let sub = env_with(&[("CC_DB", r"data\polaris.db")]);
         let db = db_path(&sub, Path::new(CWD));
-        assert_eq!(db, PathBuf::from(r"C:\launch\data\constellation.db"));
+        assert_eq!(db, PathBuf::from(r"C:\launch\data\polaris.db"));
         assert_eq!(token_file(&db), PathBuf::from(r"C:\launch\data\api-token"));
-        let bare = env_with(&[("CC_DB", "constellation.db")]);
+        let bare = env_with(&[("CC_DB", "polaris.db")]);
         let db = db_path(&bare, Path::new(CWD));
-        assert_eq!(db, PathBuf::from(r"C:\launch\constellation.db"));
+        assert_eq!(db, PathBuf::from(r"C:\launch\polaris.db"));
         assert_eq!(token_file(&db), PathBuf::from(r"C:\launch\api-token"));
         assert!(db.is_absolute());
     }
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn token_and_log_sit_next_to_the_database() {
-        let db = Path::new(r"C:\data\constellation.db");
+        let db = Path::new(r"C:\data\polaris.db");
         assert_eq!(token_file(db), PathBuf::from(r"C:\data\api-token"));
         assert_eq!(log_file(db), PathBuf::from(r"C:\data\daemon.log"));
         assert_eq!(app_log_file(db), PathBuf::from(r"C:\data\desktop.log"));
@@ -291,7 +291,7 @@ mod tests {
         let challenge = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
         assert_eq!(
             identity_proof("test-api-token-0000000000000000", 8788, challenge),
-            "c5645df43c6953e54e585515e6a4e5df0eb628a16ba1d28ec57314c0cf266db6"
+            "b6baf2fe532f97944ad69bd9554bf88263e32fbcf717b4b403984cbc97ca3588"
         );
         assert_ne!(identity_proof("another-token", 8788, challenge), identity_proof("test-api-token-0000000000000000", 8788, challenge));
         assert_ne!(identity_proof("test-api-token-0000000000000000", 8789, challenge), identity_proof("test-api-token-0000000000000000", 8788, challenge));
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn verbatim_prefixes_are_removed() {
-        assert_eq!(strip_verbatim(Path::new(r"\\?\C:\Program Files\Constellation")), PathBuf::from(r"C:\Program Files\Constellation"));
+        assert_eq!(strip_verbatim(Path::new(r"\\?\C:\Program Files\Polaris")), PathBuf::from(r"C:\Program Files\Polaris"));
         assert_eq!(strip_verbatim(Path::new(r"\\?\UNC\nas\share\x")), PathBuf::from(r"\\nas\share\x"));
         assert_eq!(strip_verbatim(Path::new(r"C:\plain")), PathBuf::from(r"C:\plain"));
     }

@@ -20,7 +20,7 @@
 #>
 param(
   [switch]$Uninstall,
-  [string]$TaskName = 'Constellation Updater'
+  [string]$TaskName = 'Polaris Updater'
 )
 
 $ErrorActionPreference = 'Stop'

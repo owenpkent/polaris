@@ -1,4 +1,4 @@
-// Builds, runs, and releases the Constellation desktop app in desktop/ (Tauri, Windows only).
+// Builds, runs, and releases the Polaris desktop app in desktop/ (Tauri, Windows only).
 // The plan and the decisions behind it are in initiatives/desktop-app.md.
 //
 //   node scripts/desktop.mjs prepare              build the dashboard, then stage the server bundle,
@@ -21,7 +21,7 @@
 // elevated) shell, since the token is invisible to elevated processes. Tauri calls signtool itself
 // with the thumbprint, digest, and timestamp server from tauri.conf.json (the same settings as
 // alpha-osk's build/windows/sign.py). --unsigned skips that and nothing else. The updater's own
-// signature comes from the minisign key at ~/.tauri/constellation.key, made once with
+// signature comes from the minisign key at ~/.tauri/polaris.key, made once with
 // `npx tauri signer generate`; its public half is the pubkey in tauri.conf.json, and every build,
 // signed or not, carries it. Lose that key and no installed copy can ever update again: keep it
 // in the password manager with the backup passphrase.
@@ -47,8 +47,8 @@ const TAURI_CLI = join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js')
 const TRIPLE = 'x86_64-pc-windows-msvc'
 // Release binaries live apart from the private source repo, as alpha-osk's do, because the
 // updater fetches latest.json and the installer without any credential.
-const RELEASES_REPO = 'owenpkent/constellation-releases'
-const SIGNING_KEY = join(homedir(), '.tauri', 'constellation.key')
+const RELEASES_REPO = 'owenpkent/polaris-releases'
+const SIGNING_KEY = join(homedir(), '.tauri', 'polaris.key')
 
 function usage(message) {
   if (message) console.error(message)
@@ -153,7 +153,7 @@ function certificateInStore(thumbprint) {
 function updaterEnv() {
   const conf = readConf()
   if (!conf.plugins?.updater?.pubkey || conf.plugins.updater.pubkey === 'PLACEHOLDER') {
-    usage('tauri.conf.json has no updater pubkey. Run: npx tauri signer generate -w ~/.tauri/constellation.key, then paste the public key.')
+    usage('tauri.conf.json has no updater pubkey. Run: npx tauri signer generate -w ~/.tauri/polaris.key, then paste the public key.')
   }
   if (!existsSync(SIGNING_KEY)) usage(`The updater signing key is missing: ${SIGNING_KEY}`)
   // The CLI reads the key itself from this variable (the _PATH variant is not honoured by every
@@ -219,7 +219,7 @@ async function release(args) {
     if (!signtool) usage('signtool.exe not found under Windows Kits; install the Windows SDK to verify the installer.')
     run(signtool, ['verify', '/pa', join(BUNDLE_DIR, exe)])
   }
-  const notes = (args.notes ?? `Constellation ${version}`)
+  const notes = (args.notes ?? `Polaris ${version}`)
     + (args.unsigned ? '\n\nThis build is not code signed. Windows SmartScreen warns when the installer is run by hand; choose More info, then Run anyway. Updates from inside the app check the updater signature and are not affected.' : '')
 
   // The feed the app checks: tauri.conf.json plugins.updater.endpoints points at this file on the
@@ -249,7 +249,7 @@ async function release(args) {
   if (repo.stdout.trim() !== 'PUBLIC') usage(`${RELEASES_REPO} is ${repo.stdout.trim()}; the updater needs it PUBLIC.`)
 
   run('gh', [
-    'release', 'create', `v${version}`, '--repo', RELEASES_REPO, '--title', `Constellation ${version}`, '--notes', latest.notes,
+    'release', 'create', `v${version}`, '--repo', RELEASES_REPO, '--title', `Polaris ${version}`, '--notes', latest.notes,
     join(BUNDLE_DIR, exe), join(BUNDLE_DIR, sig), latestPath,
   ])
   console.log(`\nPublished https://github.com/${RELEASES_REPO}/releases/tag/v${version}`)

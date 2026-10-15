@@ -16,9 +16,9 @@ vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
 const job = { lastRunAt: '2026-09-21T03:15:00Z', lastError: null, running: false }
 const OFF = {
   encryption: false, folder: '\\\\nas\\backups', keep: 14, copies: 1, plainCopies: 1, minPassphraseLength: 12, job,
-  newest: { name: 'constellation-2026-09-21.db', encrypted: false, bytes: 417792, modifiedAt: '2026-09-21T03:15:00Z' },
+  newest: { name: 'polaris-2026-09-21.db', encrypted: false, bytes: 417792, modifiedAt: '2026-09-21T03:15:00Z' },
 }
-const ON = { ...OFF, encryption: true, plainCopies: 0, newest: { ...OFF.newest, name: 'constellation-2026-09-21.db.enc', encrypted: true } }
+const ON = { ...OFF, encryption: true, plainCopies: 0, newest: { ...OFF.newest, name: 'polaris-2026-09-21.db.enc', encrypted: true } }
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
@@ -54,7 +54,7 @@ describe('BackupSettings', () => {
     const card = await screen.findByRole('region', { name: 'Backups' })
     expect(card.textContent).toContain('Off')
     expect(card.textContent).toContain('\\\\nas\\backups')
-    expect(card.textContent).toContain('constellation-2026-09-21.db')
+    expect(card.textContent).toContain('polaris-2026-09-21.db')
     expect(card.textContent).toContain('408 KB')
     expect(card.textContent).toContain('1 of 14')
     expect(button(/Turn on encryption/)).toBeTruthy()
@@ -180,7 +180,7 @@ describe('BackupSettings', () => {
 
   test('Check newest backup reports a good copy and a bad one', async () => {
     api.getBackup.mockResolvedValue(ON)
-    api.checkBackup.mockResolvedValueOnce({ checked: true, ok: true, name: 'constellation-2026-09-21.db.enc', encrypted: true, problems: [], counts: { tasks: 141, projects: 8, events: 292 } })
+    api.checkBackup.mockResolvedValueOnce({ checked: true, ok: true, name: 'polaris-2026-09-21.db.enc', encrypted: true, problems: [], counts: { tasks: 141, projects: 8, events: 292 } })
     render(<BackupSettings />)
     fireEvent.click(await screen.findByRole('button', { name: /Check newest backup/ }))
     await screen.findByText('This backup can be restored.')

@@ -90,7 +90,7 @@ npm run cc -- add "Read the Polaris getting started guide" --priority medium
 npm run cc -- ls
 ```
 
-The first command creates the database at `command-center/data/constellation.db`.
+The first command creates the database at `command-center/data/polaris.db`.
 
 **You should now see** your task in the list. `npm run cc` with no command prints every command, and `npm run cc -- <command> --help` shows its options.
 
@@ -271,7 +271,7 @@ Every device keeps a copy of what it has read. When the host cannot be reached, 
 Only the host should ever open the database. On every other computer, use a browser and MCP over HTTPS, and nothing else:
 
 - The desktop app always starts its own daemon with its own local database.
-- `npm run cc` and the stdio MCP server open `command-center/data/constellation.db` (or `CC_DB`) on the machine they run on.
+- `npm run cc` and the stdio MCP server open `command-center/data/polaris.db` (or `CC_DB`) on the machine they run on.
 
 Run any of those on a second computer and you get a second, empty Polaris that never syncs with the first.
 
@@ -414,7 +414,7 @@ npm --prefix command-center install
 npm run build
 ```
 
-Then restart: `sudo systemctl restart polaris` on Linux, or stop and start the logon task on Windows. If the update changes `command-center/src/core/schema.ts`, copy `command-center/data/constellation.db` somewhere safe first. Migrations run when the database is opened.
+Then restart: `sudo systemctl restart polaris` on Linux, or stop and start the logon task on Windows. If the update changes `command-center/src/core/schema.ts`, copy `command-center/data/polaris.db` somewhere safe first. Migrations run when the database is opened.
 
 ### Troubleshooting
 

@@ -86,7 +86,7 @@ test('cc update --check accepts a tag signed by a pinned key and rejects every o
   const programs: string[] = [];
   const real = realExec();
   const exec: Exec = (cmd, args, opts) => { programs.push(cmd); return real(cmd, args, opts); };
-  const dbPath = join(base, 'data', 'constellation.db');
+  const dbPath = join(base, 'data', 'polaris.db');
   const pinned = pinnedSignersPath(dbPath);
   const check = async () => {
     const out: string[] = [];
@@ -228,7 +228,7 @@ test('a tag signed with OpenPGP by a key in the local keyring does not verify, a
   const programs: string[] = [];
   const real = realExec();
   const exec: Exec = (cmd, args, opts) => { programs.push(cmd); return real(cmd, args, opts); };
-  const dbPath = join(base, 'data', 'constellation.db');
+  const dbPath = join(base, 'data', 'polaris.db');
   const out: string[] = [];
   const err: string[] = [];
   const code = await runUpdate({ repoRoot: clone, dbPath, dashboardDir: join(clone, 'dist'), port: 8790, checkOnly: true, yes: true, restartSpec: 'manual', stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, {
