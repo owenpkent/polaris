@@ -282,15 +282,24 @@ export function fileSecretStore(file: string, deps: FileStoreDeps = {}): SecretS
  *  one instance is visible to every other caller (see github/auth.ts). */
 let cachedDefaultSecretStore: SecretStore | undefined;
 
+export interface DefaultSecretStoreOptions {
+  /** How long one powershell.exe run may take on Windows. Left out, the daemon's 20 seconds. */
+  dpapiTimeoutMs?: number;
+  /** Injectable so a test can see the options the Windows store is built with. */
+  makeDpapi?: typeof windowsDpapiSecretStore;
+}
+
 /** Windows DPAPI on Windows, a 0600 file next to the database everywhere else. There is no env var
- *  store: the GitHub App's refresh token rotates, so the store has to be writable. */
-export function defaultSecretStore(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): SecretStore {
-  if (!cachedDefaultSecretStore) {
-    // CC_SECRETS_DIR moves the store. On Windows it otherwise belongs to the user, not to a
-    // database, so a scratch server (the UI tests, the mockup) would read and write the real one.
-    cachedDefaultSecretStore = platform === 'win32'
-      ? windowsDpapiSecretStore(env.CC_SECRETS_DIR ? { baseDir: env.CC_SECRETS_DIR } : {})
-      : fileSecretStore(join(env.CC_SECRETS_DIR ?? dirname(loadConfig(env).dbPath), 'secrets.json'), { platform });
-  }
-  return cachedDefaultSecretStore;
+ *  store: the GitHub App's refresh token rotates, so the store has to be writable.
+ *  With `opts` the caller gets its own store, not the shared one (the UI test server holds it on its App). */
+export function defaultSecretStore(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, opts?: DefaultSecretStoreOptions): SecretStore {
+  if (!opts && cachedDefaultSecretStore) return cachedDefaultSecretStore;
+  // CC_SECRETS_DIR moves the store. On Windows it otherwise belongs to the user, not to a
+  // database, so a scratch server (the UI tests, the mockup) would read and write the real one.
+  const makeDpapi = opts?.makeDpapi ?? windowsDpapiSecretStore;
+  const store = platform === 'win32'
+    ? makeDpapi({ ...(env.CC_SECRETS_DIR ? { baseDir: env.CC_SECRETS_DIR } : {}), ...(opts?.dpapiTimeoutMs ? { timeoutMs: opts.dpapiTimeoutMs } : {}) })
+    : fileSecretStore(join(env.CC_SECRETS_DIR ?? dirname(loadConfig(env).dbPath), 'secrets.json'), { platform });
+  if (!opts) cachedDefaultSecretStore = store;
+  return store;
 }

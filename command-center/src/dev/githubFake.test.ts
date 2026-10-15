@@ -6,8 +6,9 @@ import { githubFakeFromEnv } from '../http/commands.ts';
 import { api, fakeApp, withServer } from '../http/test-support.ts';
 import { syncGithubRepoFiles } from '../ingest/github/repoFiles.ts';
 import {
-  FAKE_GITHUB_REPOS, FAKE_GITHUB_USER, FAKE_LISTED_REPOS, createGithubFake, fakeIssueTitle, fakeReadmeItems, signInGithubFake,
+  FAKE_DPAPI_TIMEOUT_MS, FAKE_GITHUB_REPOS, FAKE_GITHUB_USER, FAKE_LISTED_REPOS, createGithubFake, fakeIssueTitle, fakeReadmeItems, fakeSecretStore, signInGithubFake,
 } from './githubFake.ts';
+import { defaultSecretStore, memorySecretStore, type DpapiDeps } from '../ingest/secrets.ts';
 
 // The scratch locations the fake insists on. fakeApp() holds its secrets in memory, so nothing is
 // written under CC_SECRETS_DIR here; the value only has to be present.
@@ -152,4 +153,31 @@ test('the fake answers 404 with a JSON body off its fixtures, and 405 to anythin
     `PATCH /repos/${FAKE_GITHUB_REPOS.desktop}/issues`, `DELETE /repos/${FAKE_GITHUB_REPOS.desktop}/issues`,
     'POST /login/oauth/access_token',
   ]);
+});
+
+test('the fake server gets a 60 second DPAPI limit, and the default secret store keeps 20 seconds', () => {
+  // Spies stand in for the Windows store, so no powershell.exe is started.
+  const seen: DpapiDeps[] = [];
+  const makeDpapi = (deps: DpapiDeps = {}) => { seen.push(deps); return memorySecretStore(); };
+  const env = { CC_SECRETS_DIR: '/scratch/secrets' };
+
+  // What the fake asks the store factory for.
+  const asked: unknown[] = [];
+  const make: typeof defaultSecretStore = (platform, e, opts) => {
+    asked.push(opts?.dpapiTimeoutMs);
+    return defaultSecretStore('win32', e, { ...opts, makeDpapi });
+  };
+  fakeSecretStore({ ...fakeApp(), secrets: undefined }, env, make);
+  assert.deepEqual(asked, [FAKE_DPAPI_TIMEOUT_MS]);
+  assert.equal(FAKE_DPAPI_TIMEOUT_MS, 60_000);
+  assert.equal(seen[0]?.timeoutMs, 60_000);
+  assert.equal(seen[0]?.baseDir, '/scratch/secrets');
+
+  // The default store passes no timeout, so windowsDpapiSecretStore keeps its 20 second default.
+  defaultSecretStore('win32', env, { makeDpapi });
+  assert.equal(seen[1]?.timeoutMs, undefined);
+
+  // An App that already holds a store keeps it.
+  const own = memorySecretStore();
+  assert.equal(fakeSecretStore({ ...fakeApp(), secrets: own }, env, make), own);
 });

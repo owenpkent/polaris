@@ -21,8 +21,8 @@ export const test = base.extend({
       await use(server)
       await server.stop()
     },
-    // Longer than the test timeout: seeding plus the server's 30-second readiness wait.
-    { scope: 'worker', auto: true, timeout: 90000 },
+    // Longer than the test timeout: seeding plus the server's 90-second readiness wait.
+    { scope: 'worker', auto: true, timeout: 120000 },
   ],
   baseURL: async ({ scratchServer }, use) => {
     await use(scratchServer.url)

@@ -188,6 +188,15 @@ export interface GithubFakeWiring {
 
 const FAKE_JOB_NAMES = ['github', 'repo-files'];
 
+/** The UI test server's powershell.exe limit for the Windows DPAPI secret store. A busy CI runner has
+ *  taken over the daemon's 20 seconds to start it once. Only this server gets the longer limit. */
+export const FAKE_DPAPI_TIMEOUT_MS = 60_000;
+
+/** The fake server's secret store: the App's own when it has one, else a store with the longer limit. */
+export function fakeSecretStore(app: App, env: NodeJS.ProcessEnv = process.env, make: typeof defaultSecretStore = defaultSecretStore): SecretStore {
+  return app.secrets ?? make(process.platform, env, { dpapiTimeoutMs: FAKE_DPAPI_TIMEOUT_MS });
+}
+
 /**
  * Builds the fake, signs the fixture user in, and returns what `serve` needs. Refuses to run
  * against the real secret store or the real database: both must be scratch, as in e2e/global-setup.js.
@@ -201,8 +210,9 @@ export async function startGithubFake(app: App, env: NodeJS.ProcessEnv = process
     throw new Error('CC_GITHUB_FAKE=1 needs CC_DB set to a scratch database: the fake never syncs into the real one.');
   }
   const fake = createGithubFake();
-  await signInGithubFake(app.secrets ?? defaultSecretStore());
-  const wired: App = { ...app, githubFetch: fake.fetch };
+  const secrets = fakeSecretStore(app, env);
+  await signInGithubFake(secrets);
+  const wired: App = { ...app, secrets, githubFetch: fake.fetch };
   const jobs = JOBS.filter((j) => FAKE_JOB_NAMES.includes(j.name));
   const running = new Set<string>();
   const kv = (key: string): string | null => wired.store.getKv<string | null>(key) ?? null;
@@ -211,7 +221,7 @@ export async function startGithubFake(app: App, env: NodeJS.ProcessEnv = process
     app: wired,
     http: {
       githubFetchImpl: fake.fetch,
-      githubSecrets: app.secrets,
+      githubSecrets: secrets,
       jobs: Object.fromEntries(jobs.map((job) => [job.name, async () => {
         running.add(job.name);
         try {
