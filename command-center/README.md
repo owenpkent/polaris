@@ -200,9 +200,15 @@ The task runs the daemon from this working tree, as you, while you are logged on
 With the default task name, the installer replaces `Constellation Command Center` from before the
 rename. If that task is running or queued, it stops it and waits up to 60 seconds for the task and
 its listener on port 8788 to exit before registering Polaris. A stop or wait failure leaves the
-legacy registration in place and aborts the install. The new task starts at the next logon, or
+legacy registration in place and aborts the install. If that happens after the legacy task was
+stopped (the wait times out, or registering Polaris fails), the error says so and gives the
+`Start-ScheduledTask -TaskName 'Constellation Command Center'` command to bring it back. The new task starts at the next logon, or
 with the `Start-ScheduledTask` command the installer prints. A custom `-TaskName` leaves the
 default and legacy tasks alone.
+
+`-Uninstall` does the same for each task it removes: a running or queued task is stopped, and the
+installer waits for it and port 8788 to clear before unregistering it. If that fails, the task is
+kept and the uninstall stops with an error.
 
 If an older installer already removed the legacy registration while its daemon was running,
 sign out of Windows and back in once. That ends the leftover process and starts the registered

@@ -34,18 +34,23 @@ test('the Windows daemon installer hands off a legacy task only after its proces
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path $PSScriptRoot 'scripts\install-command-center-task.ps1'
 
+# The real cmdlet returns an enum, so the installer's -notin comparison against strings is
+# exercised against one. The model stores plain strings and casts on return.
+enum ScheduledTaskStateDouble { Unknown; Disabled; Queued; Ready; Running }
+
 # Global here means this isolated PowerShell child, so the called installer's script scope
 # cannot hide the model. None of these functions calls the real scheduler or network cmdlet.
 function Get-ScheduledTask {
   [CmdletBinding()] param([string]$TaskName)
   if ($global:taskModel.registered.ContainsKey($TaskName)) {
-    [pscustomobject]@{ TaskName = $TaskName; State = $global:taskModel.registered[$TaskName] }
+    [pscustomobject]@{ TaskName = $TaskName; State = [ScheduledTaskStateDouble]$global:taskModel.registered[$TaskName] }
   }
 }
 function Stop-ScheduledTask {
   [CmdletBinding()] param([string]$TaskName)
   $global:taskModel.events.Add("stop:$TaskName")
-  if ($global:taskModel.scenario -eq 'stop-fails') { throw 'stop refused' }
+  if ($global:taskModel.scenario -in @('stop-fails', 'uninstall-stop-fails')) { throw 'stop refused' }
+  $global:taskModel.target = $TaskName
   $global:taskModel.stopping = $true
 }
 function Unregister-ScheduledTask {
@@ -81,7 +86,7 @@ function Start-Sleep {
   $global:taskModel.elapsedMs += $Milliseconds
   if ($global:taskModel.stopping) {
     if ($global:taskModel.elapsedMs -ge 250 -and $global:taskModel.scenario -ne 'task-stuck') {
-      $global:taskModel.registered['Constellation Command Center'] = 'Ready'
+      $global:taskModel.registered[$global:taskModel.target] = 'Ready'
     }
     # The wrapper can exit before its child releases the port. Make those distinct polls.
     if ($global:taskModel.elapsedMs -ge 500 -and $global:taskModel.scenario -ne 'port-stuck') {
@@ -92,7 +97,7 @@ function Start-Sleep {
 }
 
 $results = @()
-foreach ($scenario in @('running', 'queued', 'inactive', 'fresh', 'custom', 'stop-fails', 'port-stuck', 'task-stuck', 'query-fails', 'register-fails')) {
+foreach ($scenario in @('running', 'queued', 'inactive', 'fresh', 'custom', 'stop-fails', 'port-stuck', 'task-stuck', 'query-fails', 'register-fails', 'uninstall-legacy', 'uninstall-polaris', 'uninstall-stop-fails')) {
   $global:taskModel = @{
     scenario=$scenario; registered=@{}; listener=$true; stopping=$false; elapsedMs=0
     events=[System.Collections.Generic.List[string]]::new()
@@ -110,7 +115,12 @@ foreach ($scenario in @('running', 'queued', 'inactive', 'fresh', 'custom', 'sto
     $global:taskModel.registered['Constellation Command Center'] = 'Queued'
     $global:taskModel.listener = $false
   }
+  if ($scenario -eq 'uninstall-polaris') {
+    $global:taskModel.registered.Remove('Constellation Command Center')
+    $global:taskModel.registered['Polaris Command Center'] = 'Running'
+  }
   $arguments = @{}
+  if ($scenario -like 'uninstall-*') { $arguments.Uninstall = $true }
   if ($scenario -eq 'custom') { $arguments.TaskName = 'Custom Command Center' }
   $failure = $null
   try { & $installer @arguments } catch { $failure = $_.Exception.Message }
@@ -196,15 +206,40 @@ $results | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $PSScri
       if (scenario.endsWith('-stuck')) {
         assert.equal(r.elapsedMs, 60_000, scenario);
         assert.match(r.error, /within 60 seconds/);
+        assert.ok(r.error.includes(`Start-ScheduledTask -TaskName '${LEGACY_WINDOWS_TASK}'`), scenario);
       }
     }
   });
 
   await t.test('a registration failure keeps the stopped legacy task available to restart', () => {
     const r = result('register-fails');
-    assert.equal(r.error, 'registration refused');
+    assert.match(r.error ?? '', /^registration refused/);
+    assert.match(r.error ?? '', /legacy task was stopped/);
+    assert.ok(r.error?.includes(`Start-ScheduledTask -TaskName '${LEGACY_WINDOWS_TASK}'`));
     assert.deepEqual(r.registered, [LEGACY_WINDOWS_TASK]);
     assert.equal(r.listener, false);
     assert.ok(!r.events.some((event) => event.startsWith('unregister:')));
+  });
+
+  await t.test('uninstall stops a running task and clears its listener before unregistering it', () => {
+    const legacy = result('uninstall-legacy');
+    assert.equal(legacy.error, null);
+    assert.deepEqual(legacy.registered, []);
+    assert.equal(legacy.listener, false);
+    assert.deepEqual(legacy.events, [`stop:${LEGACY_WINDOWS_TASK}`, 'listener-exited', `unregister:${LEGACY_WINDOWS_TASK}`]);
+
+    const current = result('uninstall-polaris');
+    assert.equal(current.error, null);
+    assert.deepEqual(current.registered, []);
+    assert.equal(current.listener, false);
+    assert.deepEqual(current.events, [`stop:${WINDOWS_TASK}`, 'listener-exited', `unregister:${WINDOWS_TASK}`]);
+  });
+
+  await t.test('uninstall keeps a registration it could not stop and says so', () => {
+    const r = result('uninstall-stop-fails');
+    assert.match(r.error ?? '', /Could not stop scheduled task 'Constellation Command Center'/);
+    assert.match(r.error ?? '', /stop refused/);
+    assert.deepEqual(r.registered, [LEGACY_WINDOWS_TASK]);
+    assert.ok(r.events.every((event) => !event.startsWith('unregister:')));
   });
 });
