@@ -52,7 +52,8 @@ describe('BackupSettings', () => {
     api.getBackup.mockResolvedValue(OFF)
     render(<BackupSettings />)
     const card = await screen.findByRole('region', { name: 'Backups' })
-    expect(card.textContent).toContain('Off')
+    // The card renders before the load resolves, so wait for the state to land.
+    await waitFor(() => expect(card.textContent).toContain('Off'))
     expect(card.textContent).toContain('\\\\nas\\backups')
     expect(card.textContent).toContain('constellation-2026-09-21.db')
     expect(card.textContent).toContain('408 KB')

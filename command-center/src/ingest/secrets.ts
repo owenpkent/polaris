@@ -71,6 +71,8 @@ export interface DpapiDeps {
   baseDir?: string;
   /** Injectable for tests so no real powershell.exe is ever spawned outside this file. */
   runPowerShell?: (script: string, stdin: string) => Promise<string>;
+  /** How long one powershell.exe run may take. Tests that start the real one on a busy CI runner raise it. */
+  timeoutMs?: number;
 }
 
 // Secrets go over stdin, never argv, and cross the PowerShell boundary as base64 of their UTF-8
@@ -105,19 +107,19 @@ const POWERSHELL_TIMEOUT_MS = 20_000;
 
 // Asynchronous, because PowerShell can take seconds to start and the daemon answers every other
 // request meanwhile.
-function defaultRunPowerShell(script: string, stdin: string): Promise<string> {
+function defaultRunPowerShell(script: string, stdin: string, timeoutMs = POWERSHELL_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       encoding: 'utf8',
       windowsHide: true,
       env: windowsPowerShellEnv(),
-      timeout: POWERSHELL_TIMEOUT_MS,
+      timeout: timeoutMs,
     }, (e, stdout, stderr) => {
       if (!e) { resolve(stdout.trim()); return; }
       // The default message repeats the whole command line and every line PowerShell printed, and it
       // reaches the dashboard. The secret is never in it (it goes over stdin), but one line is enough.
       const firstLine = e.killed
-        ? `powershell.exe did not finish within ${POWERSHELL_TIMEOUT_MS / 1000} seconds`
+        ? `powershell.exe did not finish within ${timeoutMs / 1000} seconds`
         : stderr.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? e.message.split('\n')[0];
       reject(new Error(`Windows could not protect or read the secret (DPAPI through powershell.exe): ${firstLine}`));
     });
@@ -137,7 +139,7 @@ function defaultBaseDir(): string {
  *  passed over stdin to a fixed script -- never on a command line, never logged. */
 export function windowsDpapiSecretStore(deps: DpapiDeps = {}): SecretStore {
   const dir = deps.baseDir ?? defaultBaseDir();
-  const run = deps.runPowerShell ?? defaultRunPowerShell;
+  const run = deps.runPowerShell ?? ((script: string, stdin: string) => defaultRunPowerShell(script, stdin, deps.timeoutMs));
   const fileFor = (key: string) => join(dir, `${key.replace(/[^a-zA-Z0-9_.-]/g, '_')}.bin`);
   const get = async (key: string): Promise<string | undefined> => {
     const file = fileFor(key);

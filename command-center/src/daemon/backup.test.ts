@@ -8,6 +8,9 @@ import { windowsDpapiSecretStore } from '../ingest/secrets.ts';
 import { backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
 import { decryptBuffer, isEncryptedBackup } from './backupCrypto.ts';
 
+// The real powershell.exe can take over the daemon's 20 seconds to start on a busy CI runner.
+const REAL_POWERSHELL_TIMEOUT_MS = 60_000;
+
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'cc-backup-'));
 }
@@ -381,7 +384,7 @@ test('a passphrase with spaces at the ends survives the real Windows secret stor
   const store = openStore(':memory:');
   try {
     const saved = '  what the owner typed and saved  ';
-    const secrets = windowsDpapiSecretStore({ baseDir: secretsDir });
+    const secrets = windowsDpapiSecretStore({ baseDir: secretsDir, timeoutMs: REAL_POWERSHELL_TIMEOUT_MS });
     await secrets.set('backup-passphrase', saved);
     const fromStore = await secrets.get('backup-passphrase');
     assert.equal(fromStore, saved);

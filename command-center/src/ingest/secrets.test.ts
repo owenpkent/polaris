@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { fileSecretStore, memorySecretStore, windowsDpapiSecretStore, windowsPowerShellEnv, type SecretStore } from './secrets.ts';
 
+// The real powershell.exe can take over the daemon's 20 seconds to start on a busy CI runner.
+const REAL_POWERSHELL_TIMEOUT_MS = 60_000;
+
 test('memorySecretStore: basic get/set/delete round trip', async () => {
   const store = memorySecretStore();
   assert.equal(await store.get('k'), undefined);
@@ -228,7 +231,7 @@ test('the real DPAPI store round-trips a value even when PSModulePath points at 
   const saved = process.env.PSModulePath;
   process.env.PSModulePath = `C:\\Program Files\\PowerShell\\7\\Modules;${saved ?? ''}`;
   try {
-    const store = windowsDpapiSecretStore({ baseDir: dir });
+    const store = windowsDpapiSecretStore({ baseDir: dir, timeoutMs: REAL_POWERSHELL_TIMEOUT_MS });
     await store.set('k', 'round trip value');
     assert.equal(await store.get('k'), 'round trip value');
     assert.ok(!readFileSync(join(dir, 'k.bin'), 'utf8').includes('round trip value'), 'what is on disk is not the value');
@@ -360,7 +363,7 @@ test('windowsDpapiSecretStore: a change whose lock was taken over as stale write
 test('the real DPAPI store lets timers run while PowerShell works, and reports a failure in one line', { skip: process.platform !== 'win32' }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cc-dpapi-async-'));
   try {
-    const store = windowsDpapiSecretStore({ baseDir: dir });
+    const store = windowsDpapiSecretStore({ baseDir: dir, timeoutMs: REAL_POWERSHELL_TIMEOUT_MS });
     let ticks = 0;
     const timer = setInterval(() => { ticks++; }, 1);
     try {
