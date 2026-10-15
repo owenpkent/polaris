@@ -36,7 +36,8 @@ describe('AgentSettings', () => {
     const card = await screen.findByRole('region', { name: 'Agents' })
     const input = screen.getByLabelText('Default agent name')
     expect(card.contains(input)).toBe(true)
-    expect(input.value).toBe('claude-code')
+    // The card renders before the load resolves, so wait for the value to land.
+    await waitFor(() => expect(input.value).toBe('claude-code'))
   })
 
   test('text typed before the first load finishes is kept when it lands', async () => {
