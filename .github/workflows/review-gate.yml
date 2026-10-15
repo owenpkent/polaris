@@ -1,0 +1,67 @@
+# A pull request into main needs a review on its latest commit before it can merge. GitHub's own
+# "required approvals" cannot do this here: every pull request is opened from the owner's account
+# and the owner's reviewer posts from it too, and GitHub never counts an author's review as an
+# approval. So this check reads the reviews itself and branch protection requires it by name.
+#
+# It passes when at least one review (approve, comment, or request changes) with a summary was
+# submitted on the head commit and the newest of them is not a request for changes. A review needs
+# a summary to count because a reply to an inline comment is also stored as a review, with an
+# empty body, and a reply is not a review. A push makes the commit new, so the check fails again
+# until that commit is reviewed. It is a process guard, not a security boundary: anyone who can
+# post a review from the owner's account can satisfy it.
+name: Review gate
+
+on:
+  pull_request:
+    branches: [main]
+    # `edited` covers a pull request retargeted to main, which otherwise gets no check until its
+    # next push.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+# One result per pull request: a review that lands while an earlier run is going replaces it.
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  reviewed:
+    name: Reviewed
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check for a review on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Read the reviews on their own, so a failed API call is reported as one and not as
+          # "no review". Ordered by submission time, never by id: a pending review gets its id
+          # when it is started, not when it is submitted. Submission times are whole seconds, so
+          # a request for changes anywhere in the newest second fails the check.
+          # command-center/src/reviewGate.test.ts runs this script with a stand-in for gh.
+          if ! all=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '.[] | select(.commit_id == env.HEAD) | select((.body // "") != "") | select(.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED") | "\(.submitted_at) \(.state) \(.user.login) \(.id)"'); then
+            echo "::error::Could not read the reviews of pull request $PR from the GitHub API. Re-run this check."
+            exit 1
+          fi
+          reviews=$(printf '%s\n' "$all" | sed '/^$/d' | sort)
+          echo "Reviews on $HEAD:"
+          echo "${reviews:-  none}"
+          if [ -z "$reviews" ]; then
+            echo "::error::No review on the latest commit ($HEAD). Review it, then this check passes."
+            exit 1
+          fi
+          newest=$(printf '%s\n' "$reviews" | tail -n 1 | cut -d' ' -f1)
+          if printf '%s\n' "$reviews" | awk -v t="$newest" '$1 == t && $2 == "CHANGES_REQUESTED" { found = 1 } END { exit !found }'; then
+            echo "::error::The newest review on the latest commit requests changes."
+            exit 1
+          fi
