@@ -197,6 +197,17 @@ powershell -ExecutionPolicy Bypass -File ..\scripts\install-command-center-task.
 
 The task runs the daemon from this working tree, as you, while you are logged on. It reads user environment variables (`CC_TZ`, `CC_BACKUP_DIR`), so set those with `[Environment]::SetEnvironmentVariable(name, value, 'User')` and restart the task. Output goes to `data/daemon.log`. After a dashboard change, run `npm run build` at the repo root and restart the task.
 
+With the default task name, the installer replaces `Constellation Command Center` from before the
+rename. If that task is running or queued, it stops it and waits up to 60 seconds for the task and
+its listener on port 8788 to exit before registering Polaris. A stop or wait failure leaves the
+legacy registration in place and aborts the install. The new task starts at the next logon, or
+with the `Start-ScheduledTask` command the installer prints. A custom `-TaskName` leaves the
+default and legacy tasks alone.
+
+If an older installer already removed the legacy registration while its daemon was running,
+sign out of Windows and back in once. That ends the leftover process and starts the registered
+Polaris task under the new name.
+
 To restart it, wait for the old daemon to let go of the port before starting the new one. A daemon started while the old one still listens exits at once with `EADDRINUSE`:
 
 ```powershell

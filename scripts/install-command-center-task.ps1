@@ -33,6 +33,28 @@ function Remove-NamedTask([string]$Name) {
   return $false
 }
 
+# Unregistering a task does not stop its running process. Stop the legacy daemon before
+# registering the new name, otherwise the updater selects Polaris while Constellation still
+# owns the port. On failure, keep the old registration so the daemon can still be controlled.
+function Stop-LegacyDaemon([string]$Name) {
+  $task = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+  if (-not $task -or $task.State -notin @('Running', 'Queued')) { return }
+
+  Stop-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-Null
+  $deadline = (Get-Date).AddSeconds(60)
+  while ($true) {
+    $task = Get-ScheduledTask -TaskName $Name -ErrorAction Stop
+    # This installer invokes `daemon` without --port, which always listens on 8788.
+    # Query without filters so an empty match is not an error, but a query failure still is.
+    $listening = Get-NetTCPConnection -ErrorAction Stop | Where-Object { $_.LocalPort -eq 8788 -and $_.State -eq 'Listen' }
+    if ($task.State -notin @('Running', 'Queued') -and -not $listening) { return }
+    if ((Get-Date) -ge $deadline) {
+      throw "The legacy task '$Name' did not stop or port 8788 did not clear within 60 seconds. Its registration was kept; stop it before retrying this installer."
+    }
+    Start-Sleep -Milliseconds 250
+  }
+}
+
 if ($Uninstall) {
   $removed = $false
   foreach ($name in @($TaskName) + $legacyNames) {
@@ -60,6 +82,7 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
   -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5) -ExecutionTimeLimit ([TimeSpan]::Zero)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 
+foreach ($name in $legacyNames) { Stop-LegacyDaemon $name }
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
 foreach ($name in $legacyNames) { Remove-NamedTask $name | Out-Null }
 Write-Host "Registered '$TaskName'. It starts at next logon. Start it now with:"

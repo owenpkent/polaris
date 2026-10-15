@@ -3,6 +3,12 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- The Windows daemon task installer stops an active pre-rename task and waits for its listener
+  to exit before replacing it with Polaris. A stop or wait failure keeps the old registration,
+  preventing updates from targeting a new task while the old daemon still owns the port.
+
 ## 2.0.0 (2026-10-15)
 
 The first signed release. Everything on `main` to this point is in it; the entries below are what
