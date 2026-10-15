@@ -66,4 +66,22 @@ An install never widens trust on its own: a tag signed by a key the install has 
 
 A fork makes its own key and replaces the lines in `release-signers` with its own. Its installs pin that file on first use and verify the fork's tags against it; upstream's tags, signed by upstream's key, are skipped on those installs, and the fork's tags are skipped on upstream's. An install of a fork that still carries upstream's key would accept upstream's releases, which is a choice the fork's owner makes by leaving the line in.
 
-Until a key is in the file, `cc update --release`, `--to`, and `--check` say that no release can verify and stop. That is the state of a fresh fork and of this repository before its first release.
+Until a key is in the file, `cc update --release`, `--to`, and `--check` say that no release can verify and stop. That is the state of a fresh fork.
+
+## Current keys
+
+The keys in `release-signers` on `main`, for checking a fingerprint before saying yes to `cc update --trust-signers`:
+
+| Principal | Type | Fingerprint | Added |
+|---|---|---|---|
+| polaris-release | ED25519 | `SHA256:SgblxfPsvIrosQE5pPclL9f+jPJDMrh8Nv6I462zpm8` | 2026-10-15 |
+
+A key added or removed later gets a row here in the same change that edits `release-signers`.
+
+## The desktop app's updater key
+
+The desktop app (desktop/, command-center/README.md under "Desktop app") updates through Tauri's own updater, not `cc update`, and has its own key: a minisign key at `~/.tauri/polaris.key`, separate from the release key above. Its public half is the `pubkey` in desktop/src-tauri/tauri.conf.json, so every installed copy carries it and accepts only builds it signed.
+
+- The key has a password. `npm run desktop -- build` and `npm run desktop -- release` ask for it at the terminal before anything slow runs, check it by signing a scratch file, and hand it to the Tauri CLI through the child's environment only. It is never read from an env var or a command line.
+- Keep the key file and its password in the password manager. Lose either and no installed copy can update again: a new key needs a reinstall by hand, because the installed copies only trust the old one.
+- `npm run desktop -- release` publishes to the releases repo, owenpkent/polaris-releases, where the app looks for `latest.json`.

@@ -3,22 +3,7 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
-
-- The leftover Constellation names are now Polaris: the database `polaris.db`, the Windows folder
-  `%APPDATA%\polaris`, backups and pre-update snapshots `polaris-*`, the scheduled tasks
-  `Polaris Command Center` and `Polaris Updater`, the desktop app `com.okstudio.polaris`, and the
-  identity check. New installs only create the Polaris names.
-- An install from before the rename keeps working. Its database, Windows secrets folder (the GitHub
-  sign-in and the backup passphrase), backups and snapshots, and scheduled tasks are still read
-  under the old names when the new ones are absent, and nothing is renamed or moved for you. The
-  two task installers replace the old tasks when run with the default names, so two daemons or two
-  updaters never run, and `-Uninstall` with the default name removes both. The identity check keeps
-  its wire string `constellation-identity`, so a previous release's updater and desktop app still
-  verify the daemon. The desktop app installs beside the old one (new identifier), so uninstall the
-  old one.
-
-## 2.0.0 (2026-10-08)
+## 2.0.0 (2026-10-15)
 
 The first signed release. Everything on `main` to this point is in it; the entries below are what
 an install needs to know before updating onto it.
@@ -41,3 +26,17 @@ an install needs to know before updating onto it.
 - Migrations: 1 through 12. An install that updates from an older `main` gets the ones it lacks after
   the snapshot. Added since the update work: 11 `update_requests` (the dashboard's update requests,
   for the update icon) and 12 `checklists`.
+- The leftover Constellation names are now Polaris: the database `polaris.db`, the Windows folder
+  `%APPDATA%\polaris`, backups and pre-update snapshots `polaris-*`, the scheduled tasks
+  `Polaris Command Center` and `Polaris Updater`, and the desktop app `com.okstudio.polaris`. New
+  installs only create the Polaris names.
+- An install from before the rename keeps working. Its database, Windows secrets folder (the GitHub
+  sign-in and the backup passphrase), backups and snapshots, and scheduled tasks are still read
+  under the old names when the new ones are absent, and nothing is renamed or moved for you. The
+  two task installers replace the old tasks when run with the default names, so two daemons or two
+  updaters never run, and `-Uninstall` with the default name removes both. The identity check keeps
+  its wire string `constellation-identity`, so an updater or desktop app from before the rename
+  still verifies the daemon. The desktop app installs beside the old one (new identifier), so
+  uninstall the old one.
+- `release-signers` carries the first release key, `polaris-release`. Its fingerprint is under
+  "Current keys" in docs/releases.md; check it when an install first pins the file.
