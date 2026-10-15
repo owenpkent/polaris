@@ -8,7 +8,7 @@ Prior art: the owner's alpha-osk updater (a Windows installer-based updater with
 
 ## Where things stand
 
-This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds; no release tag has been cut yet.
+This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds. The first release, v2.0.0, was tagged on 2026-10-15.
 
 - Updating is manual. On every install it is: `git pull`, `npm install` at the root, `npm --prefix command-center install`, `npm run build`, then a restart of the daemon. The owner snapshots the database first when `command-center/src/core/schema.ts` changes.
 - The daemon, the CLI, and the Windows logon task all run `command-center/src/cli.ts` straight from the git working tree with Node. There is no install step and no built server: a `git checkout` changes the code the next process runs. The dashboard is the one built thing, `npm run build` writing `dist/`, which the running daemon serves.
@@ -210,5 +210,5 @@ A new group in command-center/src/invariants.test.ts (built as group 11; the run
 ## Open questions
 
 - Decided for now: the deploy-only checkout stays the recommended pattern, with development always in a second clone, because `cc update` refuses a dirty tree, which a development clone usually is.
-- Release cadence: a release per merged feature, or batched? No release has been cut yet (docs/releases.md is the checklist).
+- Settled: releases are batched, cut when there is something worth installing rather than for every merged feature, because each one needs the owner's signature and a full UI test run (docs/releases.md). The first was v2.0.0 on 2026-10-15.
 - Settled: forks make their own key and replace the lines in `release-signers` (docs/releases.md, "Forks"). `cc update --release` refuses to run until the pinned file has a key.
