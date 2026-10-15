@@ -717,7 +717,8 @@ kbd { color: var(--t1); }
   padding-left: 8px;
 }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
-.mytasks-list { overflow: hidden; }
+/* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
+.mytasks-row > :last-child { padding-right: 4px; }
 .mytasks-section + .mytasks-section { padding-top: 16px; }
 .mytasks-section-header {
   display: flex;
@@ -766,9 +767,16 @@ kbd { color: var(--t1); }
 }
 .task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }
 
-/* Panels that clip their rows (overflow: hidden) would also clip an outward
-   focus ring, so rows draw theirs inside. */
+/* Rows and items that touch their neighbours draw their focus ring inside. An outward ring
+   reaches 4px past the box, where a panel that clips its rows (overflow: hidden), a menu that
+   scrolls (Popover in Menu.jsx), the sticky column header, or the next row's highlight would
+   paint over it (CONTRIBUTING.md, "Nothing is
+   cut off"; e2e/clipping.spec.js measures it). */
 .mytasks-row:focus-visible,
+.mytasks-list :focus-visible,
+.mytasks-colhead :focus-visible,
+.nav-item:focus-visible,
+[data-popover] :focus-visible,
 .surface [role='row']:focus-visible,
 .surface [role='row'] :focus-visible { outline-offset: -2px; }
 
@@ -880,7 +888,11 @@ kbd { color: var(--t1); }
   align-items: flex-start;
   gap: 20px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  /* The strip scrolls, so it clips: 4px of room on every side keeps a card's focus ring inside
+     it, and the matching negative margin keeps the lanes where they were. */
+  padding: 4px 4px 12px;
+  margin: -4px -4px 0;
+  scroll-padding-inline: 4px;
 }
 /* A lane is a header band over its cards, which sit straight on the page. */
 .board-lane {
@@ -1356,6 +1368,9 @@ kbd { color: var(--t1); }
     text-align: center;
   }
   .app-main-full { padding-bottom: calc(32px + 64px + env(safe-area-inset-bottom)); }
+  /* With the New task button over the bottom right, the last row must be able to scroll clear of
+     it, not just of the tab bar: the button's bottom offset, its height, and a gap. */
+  .app-main-full:has(.fab) { padding-bottom: calc(80px + 56px + 16px + env(safe-area-inset-bottom)); }
 
   .mytasks-toolbar-add { display: none; }
   .fab {

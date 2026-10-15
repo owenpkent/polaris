@@ -98,7 +98,9 @@ export function Avatar({ name, size = 24 }) {
 export function ProjectChip({ name }) {
   if (!name) return null
   return (
-    <span className="project-chip">
+    // A narrow column shortens a long name with an ellipsis; the title keeps the whole name a
+    // hover away (CONTRIBUTING.md, "Nothing is cut off").
+    <span className="project-chip" title={name}>
       <span className="project-dot" aria-hidden="true" style={{ background: projectColor(name) }} />
       <span>{name}</span>
     </span>

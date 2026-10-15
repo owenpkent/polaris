@@ -448,7 +448,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } else {
       // 'none': a flat, ungrouped list.
       content = (
-        <div className="flush-last">
+        <div>
           {sortedTasks.map((task) => (
             <TaskRow
               key={task.id}
