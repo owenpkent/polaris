@@ -405,6 +405,8 @@ A failing job, or a backup that is missing or more than 36 hours old, shows as a
 
 `npm run cc -- update --check` shows what an update would change and installs nothing. `npm run cc -- update --release` installs the newest signed release: it runs the tests, builds the dashboard, snapshots the database, restarts the daemon, checks it, and rolls back if anything fails. Plain `npm run cc -- update` does the same for the newest `main`. Restarting needs a logon task, a systemd unit, or you at the keyboard (`CC_UPDATE_RESTART`). The daemon never runs an update itself. Every flag, and the optional scheduled updater, are under Updating in [command-center/README.md](../command-center/README.md), and the release rules are in [releases.md](releases.md).
 
+An install from before the Constellation to Polaris rename has to be updated by hand once, with the renames listed under "Unreleased" in CHANGELOG.md.
+
 To update by hand instead, stop the daemon, update, rebuild, and start it again:
 
 ```sh
