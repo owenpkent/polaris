@@ -7,11 +7,11 @@
 // Run it after seed-demo.ts, so the demo tasks stay without a project. Refuses the real database.
 import { resolve } from 'node:path';
 import { openStore } from '../core/index.ts';
-import { loadConfig } from '../config.ts';
+import { loadConfig, realDbPaths } from '../config.ts';
 
 const config = loadConfig();
-const realDb = resolve(config.repoRoot, 'command-center', 'data', 'polaris.db');
-if (!process.env.CC_DB || resolve(config.dbPath) === realDb) {
+const realDbs = realDbPaths(config.repoRoot);
+if (!process.env.CC_DB || realDbs.includes(resolve(config.dbPath))) {
   console.error('Set CC_DB to a scratch database before seeding UI test data.');
   process.exit(1);
 }

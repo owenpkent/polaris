@@ -22,9 +22,13 @@ import type { Router } from './router.ts';
 
 export const IDENTITY_PATH = '/api/identity';
 
+/** A fixed protocol constant kept from before the Constellation to Polaris rename, so a previous release's
+ *  updater (update/health.ts) and desktop app still verify the daemon. Do not change it. */
+const IDENTITY_DOMAIN = 'constellation-identity';
+
 /** The message the proof is an HMAC of: a fixed label, the listening port, and the challenge. */
 export function identityProof(apiToken: string, port: number, challenge: string): string {
-  return createHmac('sha256', apiToken).update(`polaris-identity\n${port}\n${challenge}`).digest('hex');
+  return createHmac('sha256', apiToken).update(`${IDENTITY_DOMAIN}\n${port}\n${challenge}`).digest('hex');
 }
 
 /** 32 to 128 hex characters: 16 to 64 random bytes. Anything else is not a challenge. */

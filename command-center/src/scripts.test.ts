@@ -189,3 +189,16 @@ test('neither installer carries an emoji or an em dash', () => {
     assert.doesNotMatch(text, /[—\u{1F300}-\u{1FAFF}☀-➿]/u);
   }
 });
+
+test('both Windows installers replace the pre-rename task under the default name, and -Uninstall removes both', () => {
+  for (const [file, current, legacy] of [
+    ['install-updater-task.ps1', 'Polaris Updater', 'Constellation Updater'],
+    ['install-command-center-task.ps1', 'Polaris Command Center', 'Constellation Command Center'],
+  ]) {
+    const text = readFileSync(join(SCRIPTS, file), 'utf8');
+    assert.ok(text.includes(`if ($TaskName -eq '${current}') { $legacyNames = @('${legacy}') }`), file);
+    assert.match(text, /foreach \(\$name in @\(\$TaskName\) \+ \$legacyNames\)/, `${file}: -Uninstall covers both`);
+    assert.match(text, /Register-ScheduledTask[^\n]*\r?\nforeach \(\$name in \$legacyNames\) \{ Remove-NamedTask \$name/, `${file}: the old task goes after the new one is registered`);
+    assert.match(text, /\[string\]\$TaskName = '/, `${file}: -TaskName still overrides`);
+  }
+});

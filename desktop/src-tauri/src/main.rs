@@ -154,7 +154,7 @@ fn main() {
 /// The database this app uses, with a relative CC_DB taken from the launch directory.
 fn db_path() -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    daemon::db_path(&|name| std::env::var(name).ok(), &cwd)
+    daemon::db_path(&|name| std::env::var(name).ok(), &cwd, &|p| p.exists())
 }
 
 /// The one window, built here rather than by tauri.conf.json (where it is marked create: false)

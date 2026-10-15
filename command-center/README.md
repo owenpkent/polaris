@@ -174,7 +174,7 @@ The daemon's `backup` job copies the database once a day, to `data/backups` or t
 
 - **Every copy is checked.** It is made with SQLite's `VACUUM INTO` in a temp folder on the local disk, then checked: `integrity_check`, `foreign_key_check`, the schema version, and the row counts against the live database. Only the finished file is written to the backup folder, and it is read back and compared before it gets its dated name. A copy that fails is deleted and the job fails.
 - **When something stops.** A failing job, or a backup that never ran or is over 36 hours old, shows as a red strip under the dashboard's top bar (`warnings` on `GET /api/sync`, which also carries a failed or stopped update).
-- **Encryption is your choice.** It is off until a passphrase is set, from the Backups card on the dashboard's Settings tab or with `npm run cc -- backup encrypt`. From then on the copies are `polaris-YYYY-MM-DD.db.enc`. The passphrase is kept in the secret store, never in the database, an environment variable, or a log, and the server never sends it back. Save it in a password manager: without it no encrypted backup can be read, on this machine or any other. `backup encrypt --status`, `--replace`, and `--off` do what they say; copies made before a change still need the old passphrase.
+- **Encryption is your choice.** It is off until a passphrase is set, from the Backups card on the dashboard's Settings tab or with `npm run cc -- backup encrypt`. From then on the copies are `polaris-YYYY-MM-DD.db.enc`. Copies named `constellation-*`, from before the rename, are still counted, pruned, and checked, ordered by the date in the name. The passphrase is kept in the secret store, never in the database, an environment variable, or a log, and the server never sends it back. Save it in a password manager: without it no encrypted backup can be read, on this machine or any other. `backup encrypt --status`, `--replace`, and `--off` do what they say; copies made before a change still need the old passphrase.
 - **The restore drill.** `npm run cc -- backup check [file]` proves a copy can be read back. It never opens the store (the live database is only described, for comparison, when it can be read), so it works on a recovery machine, and it asks for the passphrase when the secret store has none.
 - **Restoring.** Stop the daemon. For an encrypted copy, run `npm run cc -- backup decrypt <file.db.enc> [output.db]`, which never overwrites. Put the SQLite file where `CC_DB` points and start the daemon. An older copy is migrated when it is opened.
 - **Format.** scrypt (N=2^17, r=8, p=1), then ChaCha20-Poly1305, from `node:crypto` alone. The byte layout is at the top of `src/daemon/backupCrypto.ts`, so a copy can be read without this code.
@@ -297,13 +297,13 @@ The updater's environment. It must see the same `CC_*` variables the daemon runs
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | CC_REPO_ROOT | repo root (two directories above `command-center/src`) | The repo whose initiatives/*.md `cc import` reads and where `cc export` writes PROJECT_STATUS.md. Optional: without an initiatives/ folder the import does nothing |
-| CC_DB | data/polaris.db | Database file |
+| CC_DB | data/polaris.db (data/constellation.db when only that exists, for installs from before the rename) | Database file |
 | CC_TZ | system timezone | Timezone for "today", recurrence, and the daily jobs. An IANA name such as America/Chicago; a name the machine does not know stops the start |
 | CC_DIGEST_AT | 07:30 | Daily digest time |
 | CC_BACKUP_AT | 03:15 | Daily backup time |
 | CC_BACKUP_DIR | data/backups | Where backups go. Another machine or disk is the point |
 | CC_BACKUP_KEEP | 14 | How many dated copies to keep |
-| CC_SECRETS_DIR | %APPDATA%\polaris\secrets on Windows, the database's folder elsewhere | Where the secret store lives |
+| CC_SECRETS_DIR | %APPDATA%\polaris\secrets on Windows (%APPDATA%\constellation\secrets when only that exists), the database's folder elsewhere | Where the secret store lives |
 | CC_API_TOKEN, CC_MCP_TOKEN, CC_MCP_READONLY_TOKEN | generated | Bearer token overrides |
 | CC_CORS_ORIGINS | http://localhost:5173,http://127.0.0.1:5173 | Comma-separated dashboard origins allowed to call the API |
 | CC_TAILSCALE_LOGIN | unset | Your Tailscale login. A dashboard opened through `tailscale serve` on this machine then needs no token (docs/tailscale-identity.md). Never applies to MCP |

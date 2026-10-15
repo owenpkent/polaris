@@ -3,20 +3,18 @@
 // in the browser, which has to show it to them anyway, so the server never has a reason to send one.
 // These are REST routes only. There is no MCP tool for any of this: an agent must not be able to
 // turn encryption off, or set a passphrase the owner does not have.
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { z } from 'zod';
 import type { App } from '../app.ts';
 import { MIGRATIONS } from '../core/schema.ts';
-import { BACKUP_PASSPHRASE_KEY, DEFAULT_BACKUP_KEEP, backupDir, inspectBackup, newestBackup, soundnessProblems } from '../daemon/backup.ts';
+import { BACKUP_PASSPHRASE_KEY, DEFAULT_BACKUP_KEEP, backupDir, datedBackupNames, inspectBackup, newestBackup, soundnessProblems } from '../daemon/backup.ts';
 import { BackupDecryptError, ENCRYPTED_SUFFIX, MIN_PASSPHRASE_LENGTH, isEncryptedBackup, passphraseProblem } from '../daemon/backupCrypto.ts';
 import { defaultSecretStore } from '../ingest/secrets.ts';
 import { HttpError, sendJson } from './errors.ts';
 import type { Router } from './router.ts';
 import { parseBody } from './schemas.ts';
 import type { HttpServerOptions } from './types.ts';
-
-const DATED_BACKUP = /^polaris-\d{4}-\d{2}-\d{2}\.db(\.enc)?$/;
 
 const encryptionBodySchema = z.object({
   passphrase: z.string().max(1024).refine((p) => passphraseProblem(p) === null, { message: passphraseProblem('') ?? 'too short' }),
@@ -30,7 +28,7 @@ export function registerBackupRoutes(router: Router, app: App, opts: HttpServerO
 
   async function status() {
     const dir = folder();
-    const names = dir && existsSync(dir) ? readdirSync(dir).filter((name) => DATED_BACKUP.test(name)).sort() : [];
+    const names = dir && existsSync(dir) ? datedBackupNames(dir) : [];
     const newest = dir ? newestBackup(dir) : undefined;
     const job = opts.getJobStatus?.().backup ?? null;
     return {

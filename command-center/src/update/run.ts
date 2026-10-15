@@ -29,7 +29,7 @@ import { npmProgram, realExec, type Exec } from './exec.ts';
 import { git, LOCKFILES, SCHEMA_FILE, type Git } from './git.ts';
 import { waitForHealthy } from './health.ts';
 import { releaseTag, releaseTags, sanitizeNotes, type ReleaseTag } from './releases.ts';
-import { canRestart, describeRestart, detectRestart, parseRestartSpec, realPortListening, restartDaemon, restartProblem, type RestartMethod } from './restart.ts';
+import { canRestart, describeRestart, detectRestart, parseRestartSpec, realPortListening, resolveRestartTask, restartDaemon, restartProblem, type RestartMethod } from './restart.ts';
 import { RELEASE_SIGNERS_FILE, committedSignersPath, describeSigners, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, type Signer } from './signers.ts';
 import { readUpdateStatus, writeUpdateStatus } from './status.ts';
 import { compareVersions, isNewerVersion, isVersion, packageVersion, parseVersion } from './version.ts';
@@ -205,7 +205,7 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
     }
     running = packageVersion(readFileSync(join(opts.repoRoot, 'package.json'), 'utf8')) ?? '';
     if (!isVersion(running)) throw new Refused(`package.json's version "${running}" is not MAJOR.MINOR.PATCH, so nothing can be newer than it.`);
-    method = opts.restartSpec !== undefined ? parseRestartSpec(opts.restartSpec) : await detectRestart(deps.exec, deps.platform);
+    method = opts.restartSpec !== undefined ? await resolveRestartTask(parseRestartSpec(opts.restartSpec), deps.exec) : await detectRestart(deps.exec, deps.platform);
     log(`Restart: ${describeRestart(method)}`);
     if (!opts.checkOnly) {
       const problem = await restartProblem(method, deps.exec);

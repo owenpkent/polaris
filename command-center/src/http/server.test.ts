@@ -7,8 +7,8 @@ import { memorySecretStore } from '../ingest/secrets.ts';
 import { identityProof } from './identity.ts';
 import { TEST_TOKENS, api, authHeaders, fakeApp, withServer } from './test-support.ts';
 
-/** HMAC-SHA256 over "polaris-identity\n8788\n<challenge>" keyed with the test api token. */
-const IDENTITY_VECTOR = 'b6baf2fe532f97944ad69bd9554bf88263e32fbcf717b4b403984cbc97ca3588';
+/** HMAC-SHA256 over "constellation-identity\n8788\n<challenge>" keyed with the test api token. */
+const IDENTITY_VECTOR = 'c5645df43c6953e54e585515e6a4e5df0eb628a16ba1d28ec57314c0cf266db6';
 
 test('requires a bearer token on /api routes', async (t) => {
   const app = fakeApp();

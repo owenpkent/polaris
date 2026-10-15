@@ -4,8 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/index.ts';
-import { windowsDpapiSecretStore } from '../ingest/secrets.ts';
-import { backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
+import { defaultBaseDir, windowsDpapiSecretStore } from '../ingest/secrets.ts';
+import { BACKUP_PASSPHRASE_KEY, backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
 import { decryptBuffer, isEncryptedBackup } from './backupCrypto.ts';
 
 function tempDir(): string {
@@ -554,6 +554,69 @@ test('restoreDatabaseFile refuses a file that is not a sound database and leaves
     }
   } finally {
     try { store.db.close(); } catch { /* closed above */ }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A pre-rename install keeps its passphrase in %APPDATA%\constellation\secrets. Resolved to the
+// legacy folder, the stored passphrase is found and the next backup is encrypted, not plain.
+test('a passphrase kept only in the legacy Windows secrets folder still encrypts the backup', async () => {
+  const appData = tempDir();
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    const legacy = join(appData, 'constellation', 'secrets');
+    const fake = async (_script: string, stdin: string): Promise<string> => stdin.trim();
+    await windowsDpapiSecretStore({ baseDir: legacy, runPowerShell: fake }).set(BACKUP_PASSPHRASE_KEY, 'correct horse battery staple');
+    const baseDir = defaultBaseDir({ APPDATA: appData });
+    assert.equal(baseDir, legacy);
+    const passphrase = await windowsDpapiSecretStore({ baseDir, runPowerShell: fake }).get(BACKUP_PASSPHRASE_KEY);
+    assert.equal(passphrase, 'correct horse battery staple');
+    const { file } = backupDatabase(store, dir, '2026-09-21', 14, new Date(), { passphrase, logN: 10 });
+    assert.equal(file, join(dir, 'polaris-2026-09-21.db.enc'));
+    assert.ok(isEncryptedBackup(file));
+  } finally {
+    store.db.close();
+    rmSync(appData, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy constellation-named backups and snapshots are found, ordered by date, and pruned', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    writeFileSync(join(dir, 'constellation-2026-09-20.db'), 'x');
+    writeFileSync(join(dir, 'constellation-2026-09-22.db'), 'x');
+    // Newer by date although "constellation" sorts before "polaris" by name.
+    backupDatabase(store, dir, '2026-09-21', 14);
+    assert.equal(newestBackup(dir), join(dir, 'constellation-2026-09-22.db'));
+    // keep=1: only the newest by date stays, whatever the prefix.
+    backupDatabase(store, dir, '2026-09-23', 1);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-23.db']);
+
+    // A legacy plaintext copy ages out behind a newer polaris encrypted one.
+    writeFileSync(join(dir, 'constellation-2026-09-24.db'), 'x');
+    const r = backupDatabase(store, dir, '2026-09-25', 1, new Date(), { passphrase: 'a long enough passphrase', logN: 10 });
+    assert.ok(r.removed.includes('constellation-2026-09-24.db'));
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-25.db.enc']);
+
+    // Same day under the old prefix is replaced, not duplicated.
+    writeFileSync(join(dir, 'constellation-2026-09-26.db'), 'x');
+    backupDatabase(store, dir, '2026-09-26', 14);
+    assert.ok(!existsSync(join(dir, 'constellation-2026-09-26.db')));
+
+    // Snapshots: both prefixes are listed in timestamp order and count toward snapshot retention.
+    const legacySnap = 'constellation-pre-update-1.0.0-2026-09-01T10-00-00.db';
+    writeFileSync(join(dir, legacySnap), 'x');
+    const newSnap = snapshotName('1.1.0', new Date('2026-09-02T10:00:00Z'));
+    snapshotDatabase(store, dir, newSnap, { keep: 3 });
+    assert.deepEqual(listSnapshots(dir).map((f) => f.slice(dir.length + 1)), [legacySnap, newSnap]);
+    assert.ok(isSnapshotFile(legacySnap));
+    snapshotDatabase(store, dir, snapshotName('1.2.0', new Date('2026-09-03T10:00:00Z')), { keep: 2 });
+    assert.ok(!existsSync(join(dir, legacySnap)));
+  } finally {
+    store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

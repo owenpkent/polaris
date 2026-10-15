@@ -25,13 +25,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if ($Uninstall) {
-  if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Removed scheduled task '$TaskName'."
-  } else {
-    Write-Host "No scheduled task named '$TaskName'."
+# For installs from before the Constellation to Polaris rename: with the default name, the task
+# registered under the old name is replaced too, so two copies never run.
+$legacyNames = @()
+if ($TaskName -eq 'Polaris Updater') { $legacyNames = @('Constellation Updater') }
+
+function Remove-NamedTask([string]$Name) {
+  if (Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $Name -Confirm:$false
+    Write-Host "Removed scheduled task '$Name'."
+    return $true
   }
+  return $false
+}
+
+if ($Uninstall) {
+  $removed = $false
+  foreach ($name in @($TaskName) + $legacyNames) {
+    if (Remove-NamedTask $name) { $removed = $true }
+  }
+  if (-not $removed) { Write-Host "No scheduled task named '$TaskName'." }
   return
 }
 
@@ -66,6 +79,7 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Limited
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+foreach ($name in $legacyNames) { Remove-NamedTask $name | Out-Null }
 Write-Host "Registered '$TaskName': runs 'cc update --auto' every five minutes as $env:USERNAME, logged on or not."
 Write-Host "Log: $log"
 Write-Host "Remove it with:"

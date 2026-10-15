@@ -15,18 +15,22 @@ fn setting(env: Env, name: &str) -> Option<String> {
 
 /// CC_DB if set, so the CLI, the logon task, and this app can share one database. Otherwise
 /// %APPDATA%\polaris\data\polaris.db, beside the secret store the CLI already keeps
-/// under %APPDATA%\polaris (see command-center/src/ingest/secrets.ts).
+/// under %APPDATA%\polaris (see command-center/src/ingest/secrets.ts). For installs from before the
+/// Constellation to Polaris rename, %APPDATA%\constellation\data\constellation.db is used when the
+/// new file does not exist and that one does (`exists` is the file check, injectable for tests).
 ///
 /// A relative CC_DB is made absolute against `cwd`, the directory the app was launched from.
 /// The daemon is started in the database's own folder, so passing it the relative path as given
 /// would have it resolve the path a second time from there (data\data\polaris.db) and
 /// write its token where this app never looks.
-pub fn db_path(env: Env, cwd: &Path) -> PathBuf {
+pub fn db_path(env: Env, cwd: &Path, exists: &dyn Fn(&Path) -> bool) -> PathBuf {
     if let Some(db) = setting(env, "CC_DB") {
         return cwd.join(db);
     }
     let base = setting(env, "APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("polaris").join("data").join("polaris.db")
+    let current = base.join("polaris").join("data").join("polaris.db");
+    let legacy = base.join("constellation").join("data").join("constellation.db");
+    if !exists(&current) && exists(&legacy) { legacy } else { current }
 }
 
 /// CC_PORT, or the daemon's default. Zero would mean "any port", which the window could not find.
@@ -122,6 +126,10 @@ pub fn handoff_url(port: u16, token: &str) -> String {
     format!("{base}/#{query}")
 }
 
+/// A fixed protocol constant kept from before the Constellation to Polaris rename, so a previous
+/// release's updater (update/health.ts) and desktop app still verify the daemon. Do not change it.
+const IDENTITY_DOMAIN: &str = "constellation-identity";
+
 /// The answer the daemon gives to an identity challenge (command-center/src/http/identity.ts):
 /// HMAC-SHA256 over a fixed label, the port the request reached, and the challenge, keyed with
 /// the api token. Only a process that holds the token can produce it, so the shell can tell the
@@ -129,7 +137,7 @@ pub fn handoff_url(port: u16, token: &str) -> String {
 /// the token anywhere. The port in the message stops a process on this port forwarding the
 /// challenge to a real daemon listening on another one.
 pub fn identity_proof(token: &str, port: u16, challenge: &str) -> String {
-    let message = format!("polaris-identity\n{port}\n{challenge}");
+    let message = format!("{IDENTITY_DOMAIN}\n{port}\n{challenge}");
     hex::encode(hmac_sha256(token.as_bytes(), message.as_bytes()))
 }
 
@@ -186,11 +194,27 @@ mod tests {
 
     const CWD: &str = r"C:\launch";
 
+    fn none(_: &Path) -> bool {
+        false
+    }
+
+    #[test]
+    fn a_pre_rename_install_keeps_its_constellation_database_until_a_polaris_one_exists() {
+        let env = env_with(&[("APPDATA", r"C:\x")]);
+        let legacy = PathBuf::from(r"C:\x\constellation\data\constellation.db");
+        let current = PathBuf::from(r"C:\x\polaris\data\polaris.db");
+        let only_legacy = |p: &Path| p == legacy.as_path();
+        assert_eq!(db_path(&env, Path::new(CWD), &only_legacy), legacy);
+        let both = |p: &Path| p == legacy.as_path() || p == current.as_path();
+        assert_eq!(db_path(&env, Path::new(CWD), &both), current);
+        assert_eq!(db_path(&env, Path::new(CWD), &none), current);
+    }
+
     #[test]
     fn database_defaults_to_appdata_beside_the_secret_store() {
         let env = env_with(&[("APPDATA", r"C:\Users\sam\AppData\Roaming")]);
         assert_eq!(
-            db_path(&env, Path::new(CWD)),
+            db_path(&env, Path::new(CWD), &none),
             PathBuf::from(r"C:\Users\sam\AppData\Roaming\polaris\data\polaris.db")
         );
     }
@@ -198,19 +222,19 @@ mod tests {
     #[test]
     fn cc_db_wins_and_blank_cc_db_is_ignored() {
         let set = env_with(&[("CC_DB", r"D:\cc\polaris.db"), ("APPDATA", r"C:\x")]);
-        assert_eq!(db_path(&set, Path::new(CWD)), PathBuf::from(r"D:\cc\polaris.db"));
+        assert_eq!(db_path(&set, Path::new(CWD), &none), PathBuf::from(r"D:\cc\polaris.db"));
         let blank = env_with(&[("CC_DB", "   "), ("APPDATA", r"C:\x")]);
-        assert_eq!(db_path(&blank, Path::new(CWD)), PathBuf::from(r"C:\x\polaris\data\polaris.db"));
+        assert_eq!(db_path(&blank, Path::new(CWD), &none), PathBuf::from(r"C:\x\polaris\data\polaris.db"));
     }
 
     #[test]
     fn a_relative_cc_db_is_resolved_against_the_launch_directory() {
         let sub = env_with(&[("CC_DB", r"data\polaris.db")]);
-        let db = db_path(&sub, Path::new(CWD));
+        let db = db_path(&sub, Path::new(CWD), &none);
         assert_eq!(db, PathBuf::from(r"C:\launch\data\polaris.db"));
         assert_eq!(token_file(&db), PathBuf::from(r"C:\launch\data\api-token"));
         let bare = env_with(&[("CC_DB", "polaris.db")]);
-        let db = db_path(&bare, Path::new(CWD));
+        let db = db_path(&bare, Path::new(CWD), &none);
         assert_eq!(db, PathBuf::from(r"C:\launch\polaris.db"));
         assert_eq!(token_file(&db), PathBuf::from(r"C:\launch\api-token"));
         assert!(db.is_absolute());
@@ -291,7 +315,7 @@ mod tests {
         let challenge = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
         assert_eq!(
             identity_proof("test-api-token-0000000000000000", 8788, challenge),
-            "b6baf2fe532f97944ad69bd9554bf88263e32fbcf717b4b403984cbc97ca3588"
+            "c5645df43c6953e54e585515e6a4e5df0eb628a16ba1d28ec57314c0cf266db6"
         );
         assert_ne!(identity_proof("another-token", 8788, challenge), identity_proof("test-api-token-0000000000000000", 8788, challenge));
         assert_ne!(identity_proof("test-api-token-0000000000000000", 8789, challenge), identity_proof("test-api-token-0000000000000000", 8788, challenge));

@@ -128,9 +128,13 @@ function defaultRunPowerShell(script: string, stdin: string): Promise<string> {
   });
 }
 
-function defaultBaseDir(): string {
-  const appData = process.env.APPDATA;
-  return appData ? join(appData, 'polaris', 'secrets') : join(process.env.USERPROFILE ?? '.', 'AppData', 'Roaming', 'polaris', 'secrets');
+/** The Windows secrets folder: `polaris\secrets` under APPDATA, or the `constellation\secrets` folder when only
+ *  that exists (an install from before the Constellation to Polaris rename). Nothing is moved. */
+export function defaultBaseDir(env: NodeJS.ProcessEnv = process.env, exists: (path: string) => boolean = existsSync): string {
+  const appData = env.APPDATA ?? join(env.USERPROFILE ?? '.', 'AppData', 'Roaming');
+  const current = join(appData, 'polaris', 'secrets');
+  const legacy = join(appData, 'constellation', 'secrets');
+  return !exists(current) && exists(legacy) ? legacy : current;
 }
 
 /** DPAPI-CurrentUser encryption via powershell.exe. Ciphertext on disk, plaintext only ever

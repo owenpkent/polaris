@@ -206,3 +206,23 @@ test('no MCP tool can read or change backup encryption: an agent must not be abl
   assert.ok(names.length > 0);
   for (const name of names) assert.ok(!/backup|passphrase|encrypt/i.test(name), name);
 });
+
+test('GET /api/backup: a legacy constellation-named plain copy is counted until a newer polaris encrypted copy prunes it', async (t) => {
+  const dir = scratchBackupDir(t);
+  const app = fakeApp();
+  t.after(() => app.close());
+  writeFileSync(join(dir, 'constellation-2026-09-20.db'), 'legacy');
+  await withServer(app, {}, async (base) => {
+    const { json } = await api(base, 'GET', '/api/backup');
+    assert.equal(json.copies, 1);
+    assert.equal(json.plainCopies, 1);
+    assert.equal(json.newest.name, 'constellation-2026-09-20.db');
+  });
+  backupDatabase(app.store, dir, '2026-09-21', 1, new Date(), { passphrase: PASS, logN: 10 });
+  assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db.enc']);
+  await withServer(app, {}, async (base) => {
+    const { json } = await api(base, 'GET', '/api/backup');
+    assert.equal(json.plainCopies, 0);
+    assert.equal(json.newest.name, 'polaris-2026-09-21.db.enc');
+  });
+});
