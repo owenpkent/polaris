@@ -1,0 +1,56 @@
+# A pull request into main needs a review on its latest commit before it can merge. GitHub's own
+# "required approvals" cannot do this here: every pull request is opened from the owner's account
+# and the owner's reviewer posts from it too, and GitHub never counts an author's review as an
+# approval. So this check reads the reviews itself and branch protection requires it by name.
+#
+# It passes when at least one review (approve, comment, or request changes) with a summary was
+# submitted on the head commit and the newest of them is not a request for changes. A review needs
+# a summary to count because a reply to an inline comment is also stored as a review, with an
+# empty body, and a reply is not a review. A push makes the commit new, so the check fails again
+# until that commit is reviewed. It is a process guard, not a security boundary: anyone who can
+# post a review from the owner's account can satisfy it.
+name: Review gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+# One result per pull request: a review that lands while an earlier run is going replaces it.
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  reviewed:
+    name: Reviewed
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check for a review on the head commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '.[] | select(.commit_id == env.HEAD) | select((.body // "") != "") | select(.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED") | "\(.submitted_at) \(.state) \(.user.login)"' | sort)
+          echo "Reviews on $HEAD:"
+          echo "${reviews:-  none}"
+          if [ -z "$reviews" ]; then
+            echo "::error::No review on the latest commit ($HEAD). Review it, then this check passes."
+            exit 1
+          fi
+          latest=$(echo "$reviews" | tail -n 1 | cut -d' ' -f2)
+          if [ "$latest" = "CHANGES_REQUESTED" ]; then
+            echo "::error::The newest review on the latest commit requests changes."
+            exit 1
+          fi
