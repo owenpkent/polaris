@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { UPDATE_INSTALLED, VIEWS, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
+import { UPDATE_INSTALLED, VIEWS, clippedContent, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -50,7 +50,11 @@ async function shot(page, testInfo, view, state, mask = []) {
       if (existsSync(diff)) copyFileSync(diff, join(DIRS.diff, `${name}.png`))
     }
   }
-  writeFileSync(join(DIRS.status, `${name}.json`), JSON.stringify({ name, view, state, variant: variant(testInfo), status }))
+  // What the shot cannot show in full (CONTRIBUTING.md, "Nothing is cut off"), listed by the run
+  // beside the pixel changes. Measured after the screenshot, since the check scrolls controls.
+  // The focus ring check is left to e2e/clipping.spec.js: it photographs every control.
+  const clipped = [...(await clippedContent(page)), ...(await danglingLines(page))]
+  writeFileSync(join(DIRS.status, `${name}.json`), JSON.stringify({ name, view, state, variant: variant(testInfo), status, clipped }))
   return status
 }
 

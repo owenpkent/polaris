@@ -445,3 +445,389 @@ export const UPDATE_INSTALLED = {
 export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
   await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))
 }
+
+// Content the user cannot see in full (CONTRIBUTING.md, "Nothing is cut off"). Returns readable
+// strings, one per problem, so a failure names each one:
+//
+// - text clipped by a box that hides overflow, sideways or downwards, unless it is an ellipsis on
+//   text whose full wording is still on the page in a `title` or an accessible name above it;
+// - text or a control that sits outside the viewport sideways, or outside a scroll box's
+//   scrollable area (overflow to the left or top of a scroller can never be scrolled to);
+// - a control that, scrolled to the middle of the screen as far as it will go, is still cut off by
+//   a box, runs off the screen, or has something else drawn over its middle (a sticky bar, the
+//   bottom tab bar, the floating New task button, a sheet).
+//
+// Positioned elements are only clipped by the boxes that really clip them: an absolute element
+// escapes static ancestors up to its containing block, a fixed one escapes all of them. Text that
+// is visually hidden on purpose (the 1px sr-only pattern, `clip`, `clip-path`) is skipped.
+// Every scroll position it moves is put back before it returns.
+export async function clippedContent(page, scope = page.locator('body')) {
+  return scope.evaluate((root) => {
+    // With a menu or a modal open, only that layer is checked: whatever it covers is meant to be
+    // covered. A menu or popover (Menu.jsx marks its portal data-popover) wins over the dialog it
+    // opened from.
+    if (root === document.body) {
+      const open = (sel) => [...document.querySelectorAll(sel)].filter((n) => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden')
+      root = open('[data-popover], [role="menu"], [role="listbox"]').pop() || open('[aria-modal="true"]').pop() || root
+    }
+    const TOL = 1
+    const TOL_Y = 3 // a glyph's ascent and descent can poke past a tight line box
+    const vw = document.documentElement.clientWidth
+    const vh = window.innerHeight
+    const out = []
+    const seen = new Set()
+    const report = (msg) => { if (!seen.has(msg)) { seen.add(msg); out.push(msg) } }
+    const name = (el) => {
+      const label = el.getAttribute('aria-label') || el.getAttribute('title') || (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+      return `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[${el.getAttribute('role')}]` : ''} "${label}"`
+    }
+    const box = (el) => {
+      const cls = typeof el.className === 'string' && el.className.trim() ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : ''
+      return `${el.tagName.toLowerCase()}${cls}`
+    }
+
+    // Hidden on purpose: not rendered, transparent, or the sr-only clip.
+    const hidden = (el) => {
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        const s = getComputedStyle(n)
+        if (s.display === 'none' || s.visibility === 'hidden' || s.visibility === 'collapse') return true
+        if (Number(s.opacity) === 0) return true
+        if (s.clip && s.clip !== 'auto') return true
+        if (s.clipPath && s.clipPath !== 'none') return true
+        const r = n.getBoundingClientRect()
+        if (s.overflow !== 'visible' && (r.width <= 1 || r.height <= 1)) return true
+      }
+      return false
+    }
+
+    // The boxes that clip `el`, nearest first, honouring containing blocks. Text is clipped by its
+    // own element too (`self`); a control's box is the thing measured, so its own overflow is not.
+    const clippers = (el, self) => {
+      const list = []
+      const modeOf = (p) => (p === 'absolute' || p === 'fixed' ? p : 'flow')
+      let mode = self ? 'flow' : modeOf(getComputedStyle(el).position)
+      for (let n = self ? el : el.parentElement; n && n !== document.documentElement; n = n.parentElement) {
+        const s = getComputedStyle(n)
+        const containing = s.transform !== 'none' || s.filter !== 'none' || /paint|layout|strict|content/.test(s.contain) || s.willChange.includes('transform')
+        const holds = mode === 'flow' || (mode === 'absolute' && (s.position !== 'static' || containing)) || (mode === 'fixed' && containing)
+        if (holds) {
+          if (s.overflowX !== 'visible' || s.overflowY !== 'visible') list.push({ el: n, s })
+          mode = modeOf(s.position)
+        }
+      }
+      return list
+    }
+    // The nearest fixed ancestor of el, if any: such content does not move
+    // with the page, so the viewport's bottom edge is a hard edge for it.
+    const fixedLayer = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (getComputedStyle(n).position === 'fixed') return n
+      }
+      return null
+    }
+    const scrolls = (v) => v === 'auto' || v === 'scroll'
+    const padBox = (n) => {
+      const r = n.getBoundingClientRect()
+      const left = r.left + n.clientLeft
+      const top = r.top + n.clientTop
+      return { left, top, right: left + n.clientWidth, bottom: top + n.clientHeight }
+    }
+
+    // Checks one rectangle against its clipping boxes. `scrolled` says the owner was just
+    // scrolled into view, so a scroll box is held to its visible area, not its scrollable one.
+    // Once a box has clipped (and the clip reported or excused), the rectangle is cut down to what
+    // that box shows, so the boxes around it are not blamed for the same overflow.
+    const check = (r0, el, what, scrolled) => {
+      const problems = []
+      const self = !scrolled
+      let r = { left: r0.left, right: r0.right, top: r0.top, bottom: r0.bottom }
+      for (const { el: c, s } of clippers(el, self)) {
+        const b = padBox(c)
+        for (const axis of ['x', 'y']) {
+          const ov = axis === 'x' ? s.overflowX : s.overflowY
+          if (ov === 'visible') continue
+          const [lo, hi, rlo, rhi, tol] = axis === 'x' ? [b.left, b.right, r.left, r.right, TOL] : [b.top, b.bottom, r.top, r.bottom, TOL_Y]
+          if (scrolls(ov)) {
+            const before = axis === 'x' ? c.scrollLeft : c.scrollTop
+            const extent = axis === 'x' ? c.scrollWidth : c.scrollHeight
+            const start = rlo - lo + before
+            if (start < -tol) problems.push(`${what} starts ${Math.round(-start)}px before the scrollable area of ${box(c)}, where it can never be scrolled to`)
+            else if (scrolled && rhi - rlo <= hi - lo && (rlo < lo - tol || rhi > hi + tol)) problems.push(`${what} cannot be scrolled fully into view inside ${box(c)}`)
+            else if (start + (rhi - rlo) > extent + tol) problems.push(`${what} ends past the scrollable area of ${box(c)}`)
+          } else if (rlo < lo - tol || rhi > hi + tol) {
+            const by = Math.round(Math.max(lo - rlo, rhi - hi))
+            // A line clamp draws its own ellipsis on the last line it keeps.
+            const ellipsis = axis === 'x' ? s.textOverflow === 'ellipsis' : (s.webkitLineClamp || 'none') !== 'none'
+            problems.push({ ellipsis, c, msg: `${what} is cut off ${by}px ${axis === 'x' ? 'sideways' : 'at the top or bottom'} by ${box(c)}${ellipsis ? ' (ellipsis)' : ''}` })
+            if (axis === 'x') r = { ...r, left: Math.max(r.left, lo), right: Math.min(r.right, hi) }
+            else r = { ...r, top: Math.max(r.top, lo), bottom: Math.min(r.bottom, hi) }
+          }
+        }
+      }
+      // The page itself never scrolls sideways, so the viewport's sides are hard edges. Content in
+      // a sideways scroll box only has to be reachable in it, so the box is held to the edges.
+      // Content in a fixed layer does not move with the page, so the top and bottom are hard
+      // edges for it too, or for the scroll box inside the layer that holds it.
+      const list = clippers(el, self)
+      const xBox = scrolled ? null : list.filter(({ s }) => scrolls(s.overflowX)).pop()
+      const x = xBox ? xBox.el.getBoundingClientRect() : r
+      if (x.left < -TOL || x.right > vw + TOL) problems.push(`${xBox ? `the scroll box ${box(xBox.el)} holding ${what}` : what} runs ${Math.round(Math.max(-x.left, x.right - vw))}px off the side of the screen`)
+      const layer = fixedLayer(el)
+      if (layer) {
+        const yBox = scrolled ? null : list.find(({ el: c, s }) => scrolls(s.overflowY) && layer.contains(c))
+        const y = yBox ? yBox.el.getBoundingClientRect() : r
+        if (y.bottom - y.top <= vh && (y.top < -TOL_Y || y.bottom > vh + TOL_Y)) problems.push(`${yBox ? `the scroll box ${box(yBox.el)} holding ${what}` : what} runs ${Math.round(Math.max(-y.top, y.bottom - vh))}px off the top or bottom of the screen`)
+      }
+      return problems
+    }
+
+    // An ellipsis is allowed when the full text is still exposed: a title on the clipping box or
+    // above it, or an accessible name above it that contains the text.
+    const fullTextExposed = (text, c) => {
+      for (let n = c; n && n !== document.body; n = n.parentElement) {
+        const t = n.getAttribute('title') || n.getAttribute('aria-label') || ''
+        if (t.includes(text)) return true
+      }
+      return false
+    }
+
+    // Remember every scroll position, so the checks leave the page as they found it.
+    const saved = [...document.querySelectorAll('*')].filter((n) => n.scrollTop || n.scrollLeft).map((n) => [n, n.scrollTop, n.scrollLeft])
+    const page = [window.scrollX, window.scrollY]
+
+    // Text first, measured where it is now against each box's scrollable area.
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      const text = t.textContent.trim()
+      if (!text) continue
+      const el = t.parentElement
+      if (!el || hidden(el) || el.closest('script, style, noscript, svg, option')) continue
+      const range = document.createRange()
+      range.selectNodeContents(t)
+      const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+      if (!rects.length) continue
+      const union = rects.reduce((a, r) => ({ left: Math.min(a.left, r.left), right: Math.max(a.right, r.right), top: Math.min(a.top, r.top), bottom: Math.max(a.bottom, r.bottom) }))
+      // One line at a time vertically (a long paragraph is taller than its scroller by design),
+      // and the whole run sideways.
+      const problems = [...check(union, el, `text "${text.slice(0, 40)}"`, false).filter((p) => typeof p === 'string' || !p.msg.includes('top or bottom')),
+        ...rects.flatMap((r) => check(r, el, `text "${text.slice(0, 40)}"`, false).filter((p) => typeof p !== 'string' && p.msg.includes('top or bottom')))]
+      for (const p of problems) {
+        if (typeof p === 'string') report(p)
+        else if (!(p.ellipsis && fullTextExposed(text, p.c))) report(p.msg)
+      }
+    }
+
+    // Then controls, each scrolled to the middle of the screen first.
+    const controls = root.querySelectorAll('button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"], [role="radio"]')
+    for (const el of controls) {
+      if (hidden(el)) continue
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 || r.height === 0) continue
+      for (const p of check(r, el, name(el), true)) report(typeof p === 'string' ? p : p.msg)
+      if (r.bottom - r.top > vh || r.right - r.left > vw) continue
+      const cx = Math.min(Math.max((r.left + r.right) / 2, 0), vw - 1)
+      const cy = Math.min(Math.max((r.top + r.bottom) / 2, 0), vh - 1)
+      const hit = document.elementFromPoint(cx, cy)
+      if (hit && !el.contains(hit) && !hit.contains(el) && !(el.labels && [...el.labels].some((l) => l.contains(hit)))) {
+        report(`${name(el)} is covered by ${box(hit)} ${name(hit)}`)
+      }
+    }
+
+    for (const [n, top, left] of saved) { n.scrollTop = top; n.scrollLeft = left }
+    for (const n of document.querySelectorAll('*')) {
+      if (!saved.some(([s]) => s === n) && (n.scrollTop || n.scrollLeft)) { n.scrollTop = 0; n.scrollLeft = 0 }
+    }
+    window.scrollTo({ left: page[0], top: page[1], behavior: 'instant' })
+    return out
+  })
+}
+
+// Focus rings that do not show in full (CONTRIBUTING.md, "Nothing is cut off"). Measured on the
+// rendered pixels, since a ring can be lost in ways no style reveals: clipped by a box that hides
+// overflow, painted over by the next row's background or a sticky header, or run off the screen.
+// Each control in `scope` (or in the open menu, popover, or modal, as clippedContent picks) is
+// scrolled to the middle of the screen, focused as from the keyboard, and photographed with its
+// ring and with the ring made transparent; along each straight side of the ring, the share of positions where nothing
+// changed is the share of the ring that is hidden. Returns one line per side hidden by more than
+// a tenth, and puts focus and scrolling back as they were.
+export async function hiddenFocusRings(page, scope = page.locator('body'), selector = 'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"], [role="radio"], [tabindex="0"]') {
+  // A key press makes the next programmatic focus count as keyboard focus (:focus-visible).
+  await page.keyboard.press('Shift')
+  const layer = await scope.evaluateHandle((root) => {
+    if (root !== document.body) return root
+    const open = (sel) => [...document.querySelectorAll(sel)].filter((n) => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden')
+    return open('[data-popover], [role="menu"], [role="listbox"]').pop() || open('[aria-modal="true"]').pop() || root
+  })
+  const state = await page.evaluateHandle(() => ({
+    active: document.activeElement,
+    scrolls: [...document.querySelectorAll('*')].filter((n) => n.scrollTop || n.scrollLeft).map((n) => [n, n.scrollTop, n.scrollLeft]),
+    page: [window.scrollX, window.scrollY],
+  }))
+  const controls = await layer.evaluateHandle((root, sel) => [...root.querySelectorAll(sel)], selector)
+  const count = await controls.evaluate((list) => list.length)
+  const out = []
+  for (let i = 0; i < count; i++) {
+    const ring = await controls.evaluate((list, i) => {
+      const el = list[i]
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+        const s = getComputedStyle(n)
+        if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return null
+      }
+      if (el.disabled || el.getAttribute('aria-hidden') === 'true') return null
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+      el.focus({ preventScroll: true })
+      if (document.activeElement !== el || !el.matches(':focus-visible')) return null
+      const s = getComputedStyle(el)
+      const width = parseFloat(s.outlineWidth) || 0
+      if (s.outlineStyle === 'none' || width === 0) return null
+      const offset = parseFloat(s.outlineOffset) || 0
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 || r.height === 0) return null
+      const radius = parseFloat(s.borderTopLeftRadius) || 0
+      const label = el.getAttribute('aria-label') || (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) || el.tagName.toLowerCase()
+      return {
+        label: `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[${el.getAttribute('role')}]` : ''} "${label}"`,
+        outer: { left: r.left - offset - width, top: r.top - offset - width, right: r.right + offset + width, bottom: r.bottom + offset + width },
+        width,
+        colour: (s.outlineColor.match(/[\d.]+/g) || []).slice(0, 3).map(Number),
+        corner: Math.max(0, radius + offset) + width + 2,
+        vw: document.documentElement.clientWidth,
+        vh: window.innerHeight,
+      }
+    }, i)
+    if (!ring) continue
+    const { outer, vw, vh } = ring
+    const clip = {
+      x: Math.max(0, Math.floor(outer.left) - 2),
+      y: Math.max(0, Math.floor(outer.top) - 2),
+    }
+    clip.width = Math.min(vw, Math.ceil(outer.right) + 2) - clip.x
+    clip.height = Math.min(vh, Math.ceil(outer.bottom) + 2) - clip.y
+    if (clip.width <= 0 || clip.height <= 0) {
+      out.push(`focus ring of ${ring.label} is off the screen`)
+      continue
+    }
+    const focused = (await page.screenshot({ clip, scale: 'css', animations: 'disabled', caret: 'hide' })).toString('base64')
+    // The same moment without the ring: still focused, so nothing else that focus changes (a
+    // border colour, a :focus-within highlight) counts as ring. Blurring would not do: a field
+    // that takes focus back would photograph the same twice.
+    const before = await controls.evaluate((list, i) => {
+      const el = list[i]
+      const prior = [el.style.getPropertyValue('outline-color'), el.style.getPropertyPriority('outline-color')]
+      el.style.setProperty('outline-color', 'transparent', 'important')
+      return prior
+    }, i)
+    const plain = (await page.screenshot({ clip, scale: 'css', animations: 'disabled', caret: 'hide' })).toString('base64')
+    await controls.evaluate((list, [i, [value, priority]]) => {
+      list[i].style.removeProperty('outline-color')
+      if (value) list[i].style.setProperty('outline-color', value, priority)
+      list[i].blur()
+    }, [i, before])
+    const hidden = await page.evaluate(async ({ focused, plain, ring, clip }) => {
+      const decode = async (b64) => {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+        const canvas = new OffscreenCanvas(bmp.width, bmp.height)
+        const g = canvas.getContext('2d')
+        g.drawImage(bmp, 0, 0)
+        return g.getImageData(0, 0, bmp.width, bmp.height)
+      }
+      const [a, b] = await Promise.all([decode(focused), decode(plain)])
+      const changed = (x, y) => {
+        // Outside the photo is outside the screen: nothing of the ring shows there.
+        if (x < 0 || y < 0 || x >= a.width || y >= a.height) return false
+        const k = (y * a.width + x) * 4
+        const far = (d, c) => Math.max(Math.abs(d[k] - c[0]), Math.abs(d[k + 1] - c[1]), Math.abs(d[k + 2] - c[2]))
+        // Shown: the ring changed the pixel, or the pixel is the ring's colour already (a ring
+        // drawn over a line of its own colour changes nothing and is still seen).
+        return far(a.data, [b.data[k], b.data[k + 1], b.data[k + 2]]) >= 40 || (ring.colour.length === 3 && far(a.data, ring.colour) < 24)
+      }
+      // Local coordinates of the ring's outer edge in the photo.
+      const L = ring.outer.left - clip.x, T = ring.outer.top - clip.y, R = ring.outer.right - clip.x, B = ring.outer.bottom - clip.y
+      const band = Math.ceil(ring.width) + 1
+      const side = (along, across) => {
+        let seen = 0, total = 0
+        for (const p of along) {
+          total++
+          if (across.some(([x, y]) => changed(Math.round(x(p)), Math.round(y(p))))) seen++
+        }
+        return total ? 1 - seen / total : 0
+      }
+      const range = (from, to) => { const out = []; for (let v = Math.ceil(from); v <= Math.floor(to); v++) out.push(v); return out }
+      const xs = range(L + ring.corner, R - ring.corner)
+      const ys = range(T + ring.corner, B - ring.corner)
+      const offsets = range(-1, band - 1)
+      const result = {}
+      if (xs.length) {
+        result.top = side(xs, offsets.map((d) => [(p) => p, () => T + d]))
+        result.bottom = side(xs, offsets.map((d) => [(p) => p, () => B - 1 - d]))
+      }
+      if (ys.length) {
+        result.left = side(ys, offsets.map((d) => [() => L + d, (p) => p]))
+        result.right = side(ys, offsets.map((d) => [() => R - 1 - d, (p) => p]))
+      }
+      return result
+    }, { focused, plain, ring, clip })
+    for (const [name, share] of Object.entries(hidden)) {
+      if (share > 0.1) out.push(`focus ring of ${ring.label} is ${Math.round(share * 100)}% hidden along its ${name} side`)
+    }
+  }
+  await state.evaluate(({ active, scrolls, page: [x, y] }) => {
+    for (const n of document.querySelectorAll('*')) if (n.scrollTop || n.scrollLeft) { n.scrollTop = 0; n.scrollLeft = 0 }
+    for (const [n, top, left] of scrolls) { n.scrollTop = top; n.scrollLeft = left }
+    window.scrollTo({ left: x, top: y, behavior: 'instant' })
+    if (active && active !== document.body) active.focus({ preventScroll: true })
+    else document.activeElement?.blur()
+  })
+  return out
+}
+
+// Lines that end in the air (CONTRIBUTING.md, "Nothing is cut off"): a row whose cells draw
+// column lines must be closed by a line under it, its own bottom border, the next row's top
+// border, or the edge of a bordered box it ends on. Returns one line per open row.
+export async function danglingLines(page, scope = page.locator('body')) {
+  return scope.evaluate((root) => {
+    if (root === document.body) {
+      const open = (sel) => [...document.querySelectorAll(sel)].filter((n) => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden')
+      root = open('[data-popover], [role="menu"], [role="listbox"]').pop() || open('[aria-modal="true"]').pop() || root
+    }
+    const drawn = (s, side) => {
+      const w = parseFloat(s[`border${side}Width`]) || 0
+      const c = s[`border${side}Color`].match(/[\d.]+/g)?.map(Number) || []
+      return w > 0 && s[`border${side}Style`] !== 'none' && s[`border${side}Style`] !== 'hidden' && (c.length < 4 || c[3] > 0)
+    }
+    const shown = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    const out = []
+    for (const row of root.querySelectorAll('*')) {
+      if (!shown(row)) continue
+      const kids = [...row.children].filter(shown)
+      const r = row.getBoundingClientRect()
+      if (r.height < 20) continue
+      // A column line is a left border on its own, as tall as the row; a bordered box is not one.
+      const line = (k) => {
+        const s = getComputedStyle(k)
+        return drawn(s, 'Left') && !drawn(s, 'Top') && !drawn(s, 'Right') && !drawn(s, 'Bottom') && k.getBoundingClientRect().height >= r.height - 2
+      }
+      if (!kids.some(line)) continue
+      if (drawn(getComputedStyle(row), 'Bottom')) continue
+      let next = row.nextElementSibling
+      while (next && !shown(next)) next = next.nextElementSibling
+      if (next && Math.abs(next.getBoundingClientRect().top - r.bottom) <= 1.5 && drawn(getComputedStyle(next), 'Top')) continue
+      let closed = false
+      for (let a = row.parentElement; a && a !== document.body && !closed; a = a.parentElement) {
+        const b = a.getBoundingClientRect()
+        if (Math.abs(b.bottom - r.bottom) > 1.5) break
+        closed = drawn(getComputedStyle(a), 'Bottom')
+        if (!closed && a.nextElementSibling && shown(a.nextElementSibling)) {
+          const n = a.nextElementSibling
+          closed = Math.abs(n.getBoundingClientRect().top - b.bottom) <= 1.5 && drawn(getComputedStyle(n), 'Top')
+        }
+      }
+      if (closed) continue
+      const label = row.getAttribute('aria-label') || (row.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+      out.push(`the column lines of the row "${label}" end with no line under it`)
+    }
+    return out
+  })
+}
