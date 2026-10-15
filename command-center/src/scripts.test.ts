@@ -198,7 +198,7 @@ test('both Windows installers replace the pre-rename task under the default name
     const text = readFileSync(join(SCRIPTS, file), 'utf8');
     assert.ok(text.includes(`if ($TaskName -eq '${current}') { $legacyNames = @('${legacy}') }`), file);
     assert.match(text, /foreach \(\$name in @\(\$TaskName\) \+ \$legacyNames\)/, `${file}: -Uninstall covers both`);
-    assert.match(text, /Register-ScheduledTask[^\n]*\r?\nforeach \(\$name in \$legacyNames\) \{ Remove-NamedTask \$name/, `${file}: the old task goes after the new one is registered`);
+    assert.match(text, /Register-ScheduledTask[^\n]*\r?\n(?:[^\n]*\r?\n){0,8}?foreach \(\$name in \$legacyNames\) \{ Remove-NamedTask \$name/, `${file}: the old task goes after the new one is registered`);
     assert.match(text, /\[string\]\$TaskName = '/, `${file}: -TaskName still overrides`);
   }
 });
