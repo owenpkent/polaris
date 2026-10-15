@@ -139,7 +139,7 @@ try {
     stdio: ['ignore', 'ignore', 'inherit'],
     env: {
       ...process.env,
-      CC_DB: join(scratch, 'constellation.db'),
+      CC_DB: join(scratch, 'polaris.db'),
       CC_API_TOKEN: token,
       CC_SECRETS_DIR: join(scratch, 'secrets'),
       CC_BACKUP_DIR: join(scratch, 'backups'),

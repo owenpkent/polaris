@@ -12,6 +12,7 @@
 // real auth code (ingest/github/auth.ts) runs unchanged on it and never enters its refresh path,
 // so the fake needs no answer for the token endpoint (a POST, which it would refuse anyway).
 import { resolve } from 'node:path';
+import { realDbPaths } from '../config.ts';
 import type { App } from '../app.ts';
 import { JOBS, runJob } from '../daemon/jobs.ts';
 import type { HttpServerOptions, JobStatus } from '../http/types.ts';
@@ -195,8 +196,8 @@ export async function startGithubFake(app: App, env: NodeJS.ProcessEnv = process
   if (!env.CC_SECRETS_DIR) {
     throw new Error('CC_GITHUB_FAKE=1 needs CC_SECRETS_DIR set to a scratch folder: the fake sign-in is never written to the real secret store.');
   }
-  const realDb = resolve(app.config.repoRoot, 'command-center', 'data', 'constellation.db');
-  if (!env.CC_DB || resolve(app.config.dbPath) === realDb) {
+  const realDbs = realDbPaths(app.config.repoRoot);
+  if (!env.CC_DB || realDbs.includes(resolve(app.config.dbPath))) {
     throw new Error('CC_GITHUB_FAKE=1 needs CC_DB set to a scratch database: the fake never syncs into the real one.');
   }
   const fake = createGithubFake();

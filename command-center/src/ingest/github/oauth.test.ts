@@ -15,7 +15,7 @@ function json(body: unknown, status = 200): Response {
 test('buildManifest matches the ADR-006 spec exactly, using the given port for redirect_url only', () => {
   const manifest = buildManifest(54321);
   assert.equal(manifest.name, 'Polaris Command Center');
-  assert.equal(manifest.url, 'https://github.com/owenpkent/constellation');
+  assert.equal(manifest.url, 'https://github.com/owenpkent/polaris');
   // GitHub refuses a manifest with a hook url it cannot reach, even an inactive one.
   assert.equal('hook_attributes' in manifest, false);
   assert.equal(manifest.redirect_url, 'http://127.0.0.1:54321/api/github/app/callback');

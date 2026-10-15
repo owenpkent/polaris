@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CC = join(ROOT, 'command-center')
-const DATA_DIR = join(tmpdir(), 'constellation-mockup')
-const DB_PATH = join(DATA_DIR, 'constellation.db')
+const DATA_DIR = join(tmpdir(), 'polaris-mockup')
+const DB_PATH = join(DATA_DIR, 'polaris.db')
 const DASHBOARD_URL = 'http://localhost:5173'
 
 function parseArgs(argv) {

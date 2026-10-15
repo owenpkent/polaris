@@ -19,7 +19,7 @@ function scratch(t: { after(fn: () => void): void }): string {
 
 test('the committed file is at the repo root and the pinned copy next to the database', () => {
   assert.equal(committedSignersPath('/srv/polaris'), join('/srv/polaris', 'release-signers'));
-  assert.equal(pinnedSignersPath('/srv/polaris/command-center/data/constellation.db'), join('/srv/polaris/command-center/data', 'release-signers'));
+  assert.equal(pinnedSignersPath('/srv/polaris/command-center/data/polaris.db'), join('/srv/polaris/command-center/data', 'release-signers'));
 });
 
 test('parseAllowedSigners reads principal, options, key type, key, and comment, and skips comments and blank lines', () => {

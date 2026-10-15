@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Constellation",
+  "productName": "Polaris",
   "version": "0.1.0",
-  "identifier": "com.okstudio.constellation",
+  "identifier": "com.okstudio.polaris",
   "build": {
     "frontendDist": "../ui"
   },
@@ -12,7 +12,7 @@
       {
         "label": "main",
         "create": false,
-        "title": "Constellation",
+        "title": "Polaris",
         "width": 1280,
         "height": 860,
         "minWidth": 390,
@@ -33,7 +33,7 @@
     "publisher": "OK Studio Inc.",
     "copyright": "OK Studio Inc.",
     "category": "Productivity",
-    "shortDescription": "Constellation Command Center",
+    "shortDescription": "Polaris Command Center",
     "longDescription": "A single-user task command center: the Command Center daemon, its dashboard, and its MCP endpoint in one desktop app.",
     "icon": [
       "icons/32x32.png",
@@ -60,9 +60,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RDNFQTgyOUE3MUJDRDgKUldUWXZIR2FndXJUaUI5cTIwQm5tRG5FNVgvT2JIVCtuWDJIMWcxS1grQkZwZ05LWlF6WGl4K0gK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1MzEwOEExODBCODQ1QUQKUldTdFJiaUFvUWd4Slg0WUFGMytkTlpVL2dZbWFvSEoxOWhRSndpTG1kYm4xTy9rWTBPU0ZPaFEK",
       "endpoints": [
-        "https://github.com/owenpkent/constellation-releases/releases/latest/download/latest.json"
+        "https://github.com/owenpkent/polaris-releases/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

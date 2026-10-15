@@ -98,7 +98,7 @@ test('daemon startup: a database that was never backed up gets a checked backup 
   try {
     const lines = await runBackupOnlyDaemon(app, dir);
     assert.ok(lines.some((l) => l.includes('backup: wrote')), lines.join('\n'));
-    assert.deepEqual(readdirSync(dir), [`constellation-${app.today()}.db`]);
+    assert.deepEqual(readdirSync(dir), [`polaris-${app.today()}.db`]);
     assert.ok(app.store.getKv('sync.backup.lastAt'));
     assert.equal(app.store.getKv('sync.backup.lastError'), null);
   } finally {
@@ -129,7 +129,7 @@ test('daemon backup: with a passphrase in the secret store the copy is encrypted
     const lines = await runBackupOnlyDaemon(app, dir);
     assert.ok(lines.some((l) => l.includes('.db.enc (encrypted)')), lines.join(' | '));
     const files = readdirSync(dir);
-    assert.deepEqual(files, [`constellation-${app.today()}.db.enc`]);
+    assert.deepEqual(files, [`polaris-${app.today()}.db.enc`]);
     assert.equal(isEncryptedBackup(join(dir, files[0])), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });

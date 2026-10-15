@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { fileSecretStore, memorySecretStore, windowsDpapiSecretStore, windowsPowerShellEnv, type SecretStore } from './secrets.ts';
+import { defaultBaseDir, fileSecretStore, memorySecretStore, windowsDpapiSecretStore, windowsPowerShellEnv, type SecretStore } from './secrets.ts';
 
 // The real powershell.exe can take over the daemon's 20 seconds to start on a busy CI runner.
 const REAL_POWERSHELL_TIMEOUT_MS = 60_000;
@@ -423,5 +423,19 @@ test('exclusive: a second caller waits for the first, also from another instance
     assert.deepEqual(readdirSync(join(dir, 'dpapi')), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('defaultBaseDir prefers the polaris folder and falls back to constellation only when that is all there is (pre-rename install)', () => {
+  const appData = mkdtempSync(join(tmpdir(), 'cc-appdata-'));
+  try {
+    const env = { APPDATA: appData };
+    assert.equal(defaultBaseDir(env), join(appData, 'polaris', 'secrets'));
+    mkdirSync(join(appData, 'constellation', 'secrets'), { recursive: true });
+    assert.equal(defaultBaseDir(env), join(appData, 'constellation', 'secrets'));
+    mkdirSync(join(appData, 'polaris', 'secrets'), { recursive: true });
+    assert.equal(defaultBaseDir(env), join(appData, 'polaris', 'secrets'));
+  } finally {
+    rmSync(appData, { recursive: true, force: true });
   }
 });

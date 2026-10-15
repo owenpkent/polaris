@@ -79,7 +79,7 @@ export async function startScratchServer(port) {
   // and real backup folder: the settings test sets a backup passphrase.
   const env = {
     ...process.env,
-    CC_DB: join(dataDir, 'constellation.db'),
+    CC_DB: join(dataDir, 'polaris.db'),
     CC_API_TOKEN: TOKEN,
     CC_SECRETS_DIR: join(dataDir, 'secrets'),
     CC_BACKUP_DIR: join(dataDir, 'backups'),

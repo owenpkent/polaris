@@ -5,11 +5,11 @@
 import { resolve } from 'node:path';
 import { openStore } from '../core/index.ts';
 import type { Priority, SourceType } from '../core/types.ts';
-import { loadConfig } from '../config.ts';
+import { loadConfig, realDbPaths } from '../config.ts';
 
 const config = loadConfig();
-const realDb = resolve(config.repoRoot, 'command-center', 'data', 'constellation.db');
-if (!process.env.CC_DB || resolve(config.dbPath) === realDb) {
+const realDbs = realDbPaths(config.repoRoot);
+if (!process.env.CC_DB || realDbs.includes(resolve(config.dbPath))) {
   console.error('Set CC_DB to a scratch database before seeding demo data.');
   process.exit(1);
 }

@@ -89,7 +89,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const target = s.target ?? '2.1.0';
   const dataDir = join(root, 'command-center', 'data');
   mkdirSync(dataDir, { recursive: true });
-  const dbPath = join(dataDir, 'constellation.db');
+  const dbPath = join(dataDir, 'polaris.db');
   const store = openStore(dbPath);
   store.createTask({ title: 'before the update' });
   store.db.close();
@@ -379,7 +379,7 @@ test('the happy path: checkout, npm ci, tests, staged build, restart with the sn
   assert.equal(existsSync(`${h.dist}.next`), false);
   const snapshots = listSnapshots(join(h.dataDir, 'backups'));
   assert.equal(snapshots.length, 1);
-  assert.match(snapshots[0], /constellation-pre-update-2\.0\.0-2026-10-06T04-\d{2}-\d{2}\.db$/);
+  assert.match(snapshots[0], /polaris-pre-update-2\.0\.0-2026-10-06T04-\d{2}-\d{2}\.db$/);
   const status = readUpdateStatus(h.dbPath);
   assert.equal(status.updaterInstalled, false);
   assert.equal(status.running, '2.1.0');
@@ -460,7 +460,7 @@ test('a failing health check after the new code migrated the database restores t
   assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length, 'the schema is back where the old code knows it');
   assert.equal(existsSync(`${h.dbPath}-wal`), false);
   assert.deepEqual(h.tasks(), ['before the update']);
-  assert.match(h.log(), /Restored the database from .*constellation-pre-update-2\.0\.0-/);
+  assert.match(h.log(), /Restored the database from .*polaris-pre-update-2\.0\.0-/);
   assert.equal(h.version(), '2.0.0');
   assert.equal(h.distFile('dist'), 'old');
   assert.equal(h.state.daemonVersion, '2.0.0');
@@ -477,7 +477,7 @@ test('a rollback that fails is loud and leaves the previous commit and the snaps
   const text = h.err.join('\n');
   assert.match(text, /ROLLBACK FAILED: git reset --hard .* disk full/);
   assert.match(text, new RegExp(`The previous commit is ${PREVIOUS}`));
-  assert.match(text, /The database snapshot is .*constellation-pre-update-2\.0\.0-/);
+  assert.match(text, /The database snapshot is .*polaris-pre-update-2\.0\.0-/);
   assert.match(text, /To finish by hand/);
   const status = readUpdateStatus(h.dbPath);
   assert.equal(status.lastResult?.ok, false);
@@ -601,7 +601,7 @@ test('a task written while the tests run survives a migrated update whose health
     },
   });
   assert.equal(code, 1);
-  assert.match(h.log(), /Restored the database from .*constellation-pre-update-2\.0\.0-/);
+  assert.match(h.log(), /Restored the database from .*polaris-pre-update-2\.0\.0-/);
   assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length, 'the migration was undone');
   assert.deepEqual(h.tasks().sort(), ['before the update', 'during the update'], 'the write taken before the stop is in the snapshot the rollback restored');
   assert.equal(h.state.snapshotsAtStart, 1);

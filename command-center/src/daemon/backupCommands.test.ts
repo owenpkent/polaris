@@ -147,7 +147,7 @@ test('backup check: an encrypted backup opens with the stored passphrase, nobody
   assert.equal(s.out[0], file);
   assert.match(s.out.join(' '), /encrypted, and the passphrase opens it.*tasks 1;.*ok: this backup can be restored/);
   assert.deepEqual(s.asked, []);
-  assert.deepEqual(readdirSync(s.backups), ['constellation-2026-09-21.db.enc']);
+  assert.deepEqual(readdirSync(s.backups), ['polaris-2026-09-21.db.enc']);
 });
 
 test('backup check: on a recovery host with an empty secret store the passphrase is asked for', async (t) => {

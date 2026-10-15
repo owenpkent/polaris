@@ -30,7 +30,7 @@ on every write it makes (the HTTP transport uses the `X-Agent-Name` header). An 
 is ignored, and a name is never an identity or a permission. Nothing is ever written to
 stdout except MCP protocol traffic; startup/shutdown logging goes to stderr.
 
-By default the server opens the database at `command-center/data/constellation.db`
+By default the server opens the database at `command-center/data/polaris.db`
 (see `../config.ts`). Set `CC_DB` to point at a different file, e.g. for a scratch
 database while testing.
 
@@ -40,7 +40,7 @@ works when the MCP server and the dashboard's HTTP server share a database. Whil
 `cc update` holds its write barrier, every write tool returns an error and the read tools
 keep working. To watch
 MCP writes in the mockup (`npm run mockup`), start the MCP server with `CC_DB` set
-to `%TEMP%\constellation-mockup\constellation.db`.
+to `%TEMP%\polaris-mockup\polaris.db`.
 
 ## Registering in Claude Code
 

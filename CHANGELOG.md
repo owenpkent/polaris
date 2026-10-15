@@ -3,6 +3,21 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- The leftover Constellation names are now Polaris: the database `polaris.db`, the Windows folder
+  `%APPDATA%\polaris`, backups and pre-update snapshots `polaris-*`, the scheduled tasks
+  `Polaris Command Center` and `Polaris Updater`, the desktop app `com.okstudio.polaris`, and the
+  identity check. New installs only create the Polaris names.
+- An install from before the rename keeps working. Its database, Windows secrets folder (the GitHub
+  sign-in and the backup passphrase), backups and snapshots, and scheduled tasks are still read
+  under the old names when the new ones are absent, and nothing is renamed or moved for you. The
+  two task installers replace the old tasks when run with the default names, so two daemons or two
+  updaters never run, and `-Uninstall` with the default name removes both. The identity check keeps
+  its wire string `constellation-identity`, so a previous release's updater and desktop app still
+  verify the daemon. The desktop app installs beside the old one (new identifier), so uninstall the
+  old one.
+
 ## 2.0.0 (2026-10-08)
 
 The first signed release. Everything on `main` to this point is in it; the entries below are what

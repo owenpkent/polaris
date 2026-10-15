@@ -11,7 +11,9 @@
 import { connect } from 'node:net';
 import type { Exec } from './exec.ts';
 
-export const WINDOWS_TASK = 'Constellation Command Center';
+export const WINDOWS_TASK = 'Polaris Command Center';
+/** The task's name before the Constellation to Polaris rename, still used by installs from before it. */
+export const LEGACY_WINDOWS_TASK = 'Constellation Command Center';
 export const DEFAULT_UNIT = 'polaris';
 
 export type RestartMethod =
@@ -56,12 +58,29 @@ export function canRestart(method: RestartMethod): boolean {
   return method.kind !== 'manual';
 }
 
+/** The scheduled task that exists: the Polaris one, else the pre-rename one (installs from before the
+ *  Constellation to Polaris rename), else undefined. */
+async function installedWindowsTask(exec: Exec): Promise<string | undefined> {
+  for (const task of [WINDOWS_TASK, LEGACY_WINDOWS_TASK]) {
+    const r = await exec('powershell.exe', powershellArgs(`if (Get-ScheduledTask -TaskName '${task}' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }`));
+    if (r.code === 0) return task;
+  }
+  return undefined;
+}
+
+/** `CC_UPDATE_RESTART=task` names the default task; on a pre-rename install that means the old one. */
+export async function resolveRestartTask(method: RestartMethod, exec: Exec): Promise<RestartMethod> {
+  if (method.kind !== 'task' || method.task !== WINDOWS_TASK) return method;
+  const found = await installedWindowsTask(exec);
+  return found ? { kind: 'task', task: found } : method;
+}
+
 /** The detection order of section 1A: the logon task on Windows, then the system unit, then the
  *  user unit, otherwise manual. Each probe is a program that may not exist, which reads as "no". */
 export async function detectRestart(exec: Exec, platform: NodeJS.Platform): Promise<RestartMethod> {
   if (platform === 'win32') {
-    const r = await exec('powershell.exe', powershellArgs(`if (Get-ScheduledTask -TaskName '${WINDOWS_TASK}' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }`));
-    return r.code === 0 ? { kind: 'task', task: WINDOWS_TASK } : { kind: 'manual' };
+    const task = await installedWindowsTask(exec);
+    return task ? { kind: 'task', task } : { kind: 'manual' };
   }
   if (platform === 'linux') {
     if ((await exec('systemctl', ['is-active', '--quiet', DEFAULT_UNIT])).code === 0) return { kind: 'systemd', unit: DEFAULT_UNIT };
