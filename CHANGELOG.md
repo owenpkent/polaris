@@ -8,6 +8,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
 - The Windows daemon task installer stops an active pre-rename task and waits for its listener
   to exit before replacing it with Polaris. A stop or wait failure keeps the old registration,
   preventing updates from targeting a new task while the old daemon still owns the port.
+- `-Uninstall` on the daemon task installer stops a running daemon, Polaris or pre-rename, and
+  waits for port 8788 to clear before it removes that task, so no daemon is left running with
+  nothing to stop it. A stop that fails keeps the task registered.
 
 ## 2.0.0 (2026-10-15)
 
@@ -40,8 +43,7 @@ an install needs to know before updating onto it.
   sign-in and the backup passphrase), backups and snapshots, and scheduled tasks are still read
   under the old names when the new ones are absent, and nothing is renamed or moved for you. The
   two task installers replace the old tasks when run with the default names, so two daemons or two
-  updaters never run, and `-Uninstall` with the default name removes both, stopping either one first if its daemon is running. The identity
-  check keeps
+  updaters never run, and `-Uninstall` with the default name removes both. The identity check keeps
   its wire string `constellation-identity`, so an updater or desktop app from before the rename
   still verifies the daemon. The desktop app installs beside the old one (new identifier), so
   uninstall the old one.
