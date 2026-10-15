@@ -34,6 +34,8 @@ git tag -d test-signing
 
 ## Release checklist
 
+Releases are batched: one is cut when there is something worth installing, not for every merged pull request, because each needs the owner's signature and a full UI test run.
+
 1. CI is green on the commit on `main` that becomes the release.
 2. `npm run test:ui` has run on it (CI runs `npm run test:fast`; the UI tests are the release gate).
 3. The version is bumped in both `package.json` and `command-center/package.json`, to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). Nothing after the patch: a prerelease or build suffix is not a version and never installs.
