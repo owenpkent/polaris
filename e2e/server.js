@@ -39,8 +39,9 @@ async function stopAndRemove(server, dataDir) {
   }
 }
 
-// 30 seconds: a busy Windows runner has taken longer than 10 to answer the first request.
-async function waitForServer(url, timeoutMs = 30000) {
+// 90 seconds: a busy Windows runner has taken longer than 10 to answer the first request, and the
+// first start can wait out the 60 second DPAPI limit the fake server allows (githubFake.ts) before it boots.
+async function waitForServer(url, timeoutMs = 90000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
