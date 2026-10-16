@@ -5,10 +5,12 @@ import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fak
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
 // the side of the screen or out of a scroll box's reach, and a control that cannot be scrolled
-// into full view or has something drawn over it. The tags run it in every viewport project:
-// desktop and phone (@a11y), 320px (@narrow), and a phone turned sideways (@landscape). The
+// into full view or has something drawn over it. @all-widths runs a group in every viewport
+// project: desktop and phone, which take any test not tagged for an extra project, plus 320px and
+// a phone turned sideways, whose projects select it by that tag (playwright.config.js). The
 // widths between the breakpoint and the desktop viewport, where a sidebar and a full toolbar
-// share the least room, are covered by the last group.
+// share the least room, are covered by the last group. e2e/conventions.test.js lists the suite
+// per project and fails if these groups stop running at any of the four sizes.
 
 // The long and awkward titles of the "UI Test Text" project (command-center/src/dev/seed-ui-test.ts).
 const URL_TITLE =
@@ -24,7 +26,7 @@ async function expectNothingCutOff(page) {
   expect([...(await clippedContent(page)), ...(await danglingLines(page)), ...(await hiddenFocusRings(page))]).toEqual([])
 }
 
-test.describe('nothing is cut off', { tag: ['@a11y', '@narrow', '@landscape'] }, () => {
+test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   for (const view of VIEWS) {
     test(`${view.label}`, async ({ page }) => {
       await openView(page, view.id)
@@ -56,6 +58,38 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@narrow', '@landscape'] },
     await openView(page)
     await page.getByRole('button', { name: 'Expand No due date' }).click()
     await openTask(page, URL_TITLE)
+    await expectNothingCutOff(page)
+  })
+
+  // Switching task reloads the panel, which unmounts the title and assignee boxes and mounts new
+  // ones. A new box with the same text as the last must still be fitted to it (useFitToText.js
+  // follows the box, not a ref): a subtask with its parent's assignee is the everyday case. The
+  // fit must then hold through a change of width.
+  test('the task panel after opening a subtask with the same long assignee', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const assignee = 'Someone whose name is long enough to wrap onto several lines of the assignee box'
+    const parentTitle = await createTask(request, testInfo, 'shared assignee parent', { assignee })
+    const listed = await request.get('/api/tasks', { headers })
+    expect(listed.ok()).toBeTruthy()
+    const parent = (await listed.json()).tasks.find((t) => t.title === parentTitle)
+    const subtaskTitle = `${parentTitle} subtask`
+    const created = await request.post('/api/tasks', { headers, data: { title: subtaskTitle, assignee, parentId: parent.id } })
+    expect(created.ok(), `create subtask failed: ${created.status()}`).toBeTruthy()
+
+    await openView(page)
+    await openTask(page, parentTitle)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectNothingCutOff(page)
+
+    await panel.getByRole('button', { name: subtaskTitle, exact: true }).click()
+    await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(subtaskTitle)
+    await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectNothingCutOff(page)
+
+    const { width, height } = testInfo.project.use.viewport
+    await page.setViewportSize({ width: Math.max(320, width - 70), height })
+    await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
     await expectNothingCutOff(page)
   })
 
@@ -184,7 +218,7 @@ const PANELS = [
 ]
 
 for (const long of [false, true]) {
-  test.describe(long ? 'nothing is cut off with long names' : 'nothing is cut off with the task panel open', { tag: ['@a11y', '@narrow', '@landscape'] }, () => {
+  test.describe(long ? 'nothing is cut off with long names' : 'nothing is cut off with the task panel open', { tag: ['@a11y', '@all-widths'] }, () => {
     for (const panel of PANELS) {
       test(`the task panel ${panel.name}`, async ({ page, request }, testInfo) => {
         if (long) await longNames(page)

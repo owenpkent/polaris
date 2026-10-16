@@ -981,7 +981,7 @@ kbd { color: var(--t1); }
   .repo-table .repo-row { padding: 8px 0; }
   .repo-table td { padding: 2px 8px !important; }
   .repo-table .repo-name { font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
-  .repo-table .repo-cell-label { display: inline; margin-right: 8px; color: var(--t2); }
+  .repo-table .repo-cell-label { display: inline; margin-right: 4px; color: var(--t2); }
   .repo-table .repo-switch {
     display: flex;
     align-items: center;

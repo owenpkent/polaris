@@ -48,8 +48,9 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   const titleRef = useRef(null)
   const wasOpenRef = useRef(open)
   const openingRef = useRef(0)
-  // Measured once the sheet is open (the box only exists then), and as the title changes.
-  useFitToText(titleRef, open ? title : null)
+  // Measured when the box mounts (the sheet opening) and as the title changes; titleRef is for
+  // focusing it.
+  const attachTitle = useFitToText(title, titleRef)
 
   // A fresh form each time it opens or is reseeded, with the title focused.
   useEffect(() => {
@@ -154,7 +155,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
               task as it would from a one-line box. */}
           <textarea
             id="new-task-title"
-            ref={titleRef}
+            ref={attachTitle}
             rows={1}
             value={title}
             onChange={(e) => setTitle(oneLine(e.target.value))}

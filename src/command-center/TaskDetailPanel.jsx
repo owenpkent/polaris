@@ -380,11 +380,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [error, setError] = useState(null)
   const [saveError, setSaveError] = useState(null)
   const [form, setForm] = useState(null)
-  // The title box is as tall as its text (the textarea under the action buttons).
-  const titleRef = useRef(null)
-  useFitToText(titleRef, form?.title)
-  const assigneeRef = useRef(null)
-  useFitToText(assigneeRef, form?.assignee)
+  // The title box is as tall as its text (the textarea under the action buttons), and so is the
+  // assignee box. The hook returns the ref to put on each, and follows the box itself: a load
+  // unmounts both and mounts new ones, which must be measured even when the text is the same.
+  const titleRef = useFitToText(form?.title)
+  const assigneeRef = useFitToText(form?.assignee)
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   const [moreOpen, setMoreOpen] = useState(false)

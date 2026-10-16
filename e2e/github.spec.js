@@ -85,7 +85,9 @@ test.describe('GitHub', { tag: ['@flow'] }, () => {
     const fullName = ownRepo(testInfo)
     await openView(page, 'github')
     await setSwitch(trackSwitch(page, fullName), true)
-    await expect(page.getByRole('cell', { name: repoName(fullName), exact: true })).toBeVisible()
+    // The project's name is plain text: on a phone, where the card layout has no column header,
+    // its label is read with it, so a screen reader still hears what that name is.
+    await expect(page.getByRole('cell', { name: isPhone(testInfo) ? `Project ${repoName(fullName)}` : repoName(fullName), exact: true })).toBeVisible()
     await expect(syncIssuesSwitch(page, fullName)).toBeEnabled()
 
     await openView(page, 'projects')

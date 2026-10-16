@@ -181,13 +181,14 @@ function RepoRow({ repo, error, onToggle }) {
     <>
       {/* On a phone the row is a card (.repo-table in index.css): each cell on its own line, and
           each switch beside the label its column header gives it on a wide screen, so nothing
-          sits past the edge of a sideways-scrolling table. The labels are for the eye only;
-          every switch already names itself. */}
+          sits past the edge of a sideways-scrolling table. The switch labels are for the eye
+          only, since every switch names itself; the project label is read too, because the card
+          has no column header to say what that name is. */}
       <tr className="repo-row" style={{ borderBottom: '1px solid var(--bd)' }}>
         <td className="repo-name" style={{ padding: '8px' }}>{repo.fullName}</td>
         <td style={{ padding: '8px', color: 'var(--t2)' }}>{repo.private ? 'Private' : 'Public'}</td>
         <td style={{ padding: '8px', color: 'var(--t2)' }}>
-          {repo.project?.name && <span className="repo-cell-label" aria-hidden="true">Project</span>}
+          {repo.project?.name && <span className="repo-cell-label">Project </span>}
           {repo.project?.name || ''}
         </td>
         <td className="repo-switch" style={{ padding: '8px' }}>

@@ -66,11 +66,13 @@ export default defineConfig({
     { name: 'desktop-hc', use: { ...DESKTOP, forcedColors: 'active' }, testIgnore: SHOTS, grep: /@theme/ },
     // A phone turned sideways (phase 7): 844px wide, so the desktop layout, but only 390px tall.
     // Runs the panel, sheet, and drawer tests tagged @landscape: the close control must be on
-    // screen without scrolling and Esc must still work.
-    { name: 'phone-landscape', use: { viewport: { width: 844, height: 390 }, hasTouch: true }, testIgnore: SHOTS, grep: /@landscape/ },
-    // 320px reflow (phase 7): runs only e2e/narrow.spec.js, tagged @narrow. isPhone in e2e/support.js
-    // reads the viewport width, so this project gets the phone expectations.
-    { name: 'phone-320', use: PHONE_320, testIgnore: SHOTS, grep: /@narrow/ },
+    // screen without scrolling and Esc must still work. @all-widths (e2e/clipping.spec.js) runs
+    // here and at 320px as well as in the desktop and phone projects, which take it as any other
+    // test: a test tagged @landscape or @narrow runs in that extra project alone.
+    { name: 'phone-landscape', use: { viewport: { width: 844, height: 390 }, hasTouch: true }, testIgnore: SHOTS, grep: /@landscape|@all-widths/ },
+    // 320px reflow (phase 7): e2e/narrow.spec.js, tagged @narrow, and the @all-widths groups.
+    // isPhone in e2e/support.js reads the viewport width, so this project gets the phone expectations.
+    { name: 'phone-320', use: PHONE_320, testIgnore: SHOTS, grep: /@narrow|@all-widths/ },
     // Report-only perceived-performance timings (initiatives/ui-ux-testing.md, "Perceived
     // performance, report only"). Desktop only, and run on request, not by npm run test:ui:
     // `CC_UI_PERF=1 npx playwright test --project perf`. e2e/perf.spec.js skips itself when

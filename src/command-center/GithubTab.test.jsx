@@ -81,7 +81,7 @@ describe('GithubTab', () => {
   })
 
   // On a phone each repo is a card and each switch sits beside a label (CONTRIBUTING.md, "Nothing
-  // is cut off"); the labels are for the eye only, since every switch names itself.
+  // is cut off"); the switch labels are for the eye only, since every switch names itself.
   test('each switch has a label beside it for the phone card, hidden from screen readers', async () => {
     api.githubRepos.mockResolvedValue({ repos: [repo({ tracked: true, project: { slug: 'octavium', name: 'Octavium' } })] })
     render(<GithubTab />)
@@ -96,6 +96,22 @@ describe('GithubTab', () => {
       expect(shown.textContent).toBe(label)
       expect(shown.getAttribute('aria-hidden')).toBe('true')
     }
+  })
+
+  // The project name is plain text with nothing else to say what it is once the card layout hides
+  // the column header, so its label is read: the cell says "Project Octavium" on a phone. On a
+  // wide screen the label is display: none (index.css), and the column header does the job.
+  test('the project name keeps its label for screen readers in the phone card', async () => {
+    api.githubRepos.mockResolvedValue({ repos: [repo({ tracked: true, project: { slug: 'octavium', name: 'Octavium' } })] })
+    render(<GithubTab />)
+    await screen.findByText('owenpkent/Octavium')
+    const cell = screen.getByText('Octavium', { exact: true }).closest('td')
+    const label = cell.querySelector('.repo-cell-label')
+    // The space is in the text: an inline label and a text node join with nothing between them
+    // in the accessible name, and the CSS margin is not read.
+    expect(label.textContent).toBe('Project ')
+    expect(label.hasAttribute('aria-hidden')).toBe(false)
+    expect(cell.textContent).toBe('Project Octavium')
   })
 
   test('switching on Track as project PATCHes tracked:true and reflects the returned project', async () => {
