@@ -478,7 +478,7 @@ export async function clippedContent(page, scope = page.locator('body')) {
     const seen = new Set()
     const report = (msg) => { if (!seen.has(msg)) { seen.add(msg); out.push(msg) } }
     const name = (el) => {
-      const label = el.getAttribute('aria-label') || el.getAttribute('title') || (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
+      const label = el.getAttribute('aria-label') || el.labels?.[0]?.textContent.trim() || el.getAttribute('title') || (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40)
       return `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[${el.getAttribute('role')}]` : ''} "${label}"`
     }
     const box = (el) => {
@@ -582,8 +582,10 @@ export async function clippedContent(page, scope = page.locator('body')) {
     }
 
     // An ellipsis is allowed when the full text is still exposed: a title on the clipping box or
-    // above it, or an accessible name above it that contains the text.
+    // above it, or an accessible name above it that contains the text. Never inside a dialog.
     const fullTextExposed = (text, c) => {
+      // A panel or dialog is where text is read in full, so nothing in one is excused.
+      if (c.closest('[role="dialog"]')) return false
       for (let n = c; n && n !== document.body; n = n.parentElement) {
         const t = n.getAttribute('title') || n.getAttribute('aria-label') || ''
         if (t.includes(text)) return true
@@ -614,6 +616,27 @@ export async function clippedContent(page, scope = page.locator('body')) {
       for (const p of problems) {
         if (typeof p === 'string') report(p)
         else if (!(p.ellipsis && fullTextExposed(text, p.c))) report(p.msg)
+      }
+    }
+
+    // Form fields hold their text in a value, not a text node. A text box that grows with its text
+    // (overflow hidden) must show every line, and in a panel or dialog, where text is read in full,
+    // a one-line field's value must fit its box.
+    const TEXTY = new Set(['', 'text', 'search', 'url', 'email', 'tel'])
+    for (const field of root.querySelectorAll('textarea, input')) {
+      // Squeezed shut (a flex column shrinking an overflow: hidden box): as wide as ever, but no
+      // taller than a hairline. Not the 1px sr-only pattern, which is narrow too.
+      const fr = field.getBoundingClientRect()
+      if (fr.width > 8 && fr.height < 2 && field.parentElement && !hidden(field.parentElement) && getComputedStyle(field).position !== 'absolute') {
+        report(`${name(field)} is squeezed to ${Math.round(fr.height)}px tall`)
+        continue
+      }
+      if (hidden(field) || !field.value) continue
+      const s = getComputedStyle(field)
+      if (field.tagName === 'TEXTAREA') {
+        if (!scrolls(s.overflowY) && field.scrollHeight > field.clientHeight + 1) report(`the text in ${name(field)} is cut off ${field.scrollHeight - field.clientHeight}px at the bottom`)
+      } else if (TEXTY.has(field.type) && field.closest('[role="dialog"]') && field.scrollWidth > field.clientWidth + 1) {
+        report(`the value of ${name(field)} is cut off ${field.scrollWidth - field.clientWidth}px sideways`)
       }
     }
 
@@ -830,4 +853,33 @@ export async function danglingLines(page, scope = page.locator('body')) {
     }
     return out
   })
+}
+
+// Long names everywhere, without touching the shared database: every GET under /api has its
+// names lengthened on the way to the page (the same route trick the digest shots use). A name
+// keeps its own start, so a test can still find it with a regular expression, and gains
+// ordinary words and one long unbroken word, the two ways a real name outgrows its box.
+export const LONG_SUFFIX = ' with a much longer name than anyone plans for Unbrokenwordthatkeepsgoingwithoutanyplacetobreak'
+const LONG_KEYS = new Set(['title', 'name', 'assignee', 'description'])
+const LONG_SKIP = new Set(['/api/events', '/api/health', '/api/update', '/api/identity', '/api/sync'])
+export async function longNames(page) {
+  const lengthen = (value) => {
+    if (Array.isArray(value)) return value.forEach(lengthen)
+    if (!value || typeof value !== 'object') return
+    for (const [key, v] of Object.entries(value)) {
+      if (LONG_KEYS.has(key) && typeof v === 'string' && v.trim()) value[key] = v + LONG_SUFFIX
+      else lengthen(v)
+    }
+  }
+  await page.route(
+    (url) => url.pathname.startsWith('/api/') && !LONG_SKIP.has(url.pathname),
+    async (route) => {
+      if (!isGet(route)) return route.fallback()
+      const response = await route.fetch()
+      if (!(response.headers()['content-type'] || '').includes('json')) return route.fulfill({ response })
+      const body = await response.json()
+      lengthen(body)
+      return route.fulfill({ response, json: body })
+    }
+  )
 }

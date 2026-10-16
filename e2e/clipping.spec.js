@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures.js'
-import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, openTask, openView } from './support.js'
+import { TOKEN } from './server.js'
+import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -134,6 +135,87 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@narrow', '@landscape'] },
   })
 })
 
+// The task panel opens from four views; each is checked with it open. Names are matched by their
+// start, so the same steps work with longNames on.
+const startsWith = (text) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+let made = 0
+const PANELS = [
+  {
+    name: 'from My tasks',
+    open: async (page) => {
+      await openView(page)
+      await page.getByRole('button', { name: startsWith('Open Reply to accessibility audit feedback') }).getByText(startsWith('Reply to accessibility')).click()
+    },
+  },
+  {
+    // The seed assigns this one, so the Assignee field and the Assigned to label hold a name.
+    name: 'for an assigned task',
+    open: async (page) => {
+      await openView(page)
+      await page.getByRole('button', { name: startsWith('Open Draft ADR-003 hosting options') }).getByText(startsWith('Draft ADR-003')).click()
+    },
+  },
+  {
+    name: 'from the Board',
+    open: async (page) => {
+      await openView(page, 'board')
+      await page.getByRole('button', { name: startsWith('Board card gamma') }).click()
+    },
+  },
+  {
+    name: 'from Threads',
+    open: async (page, request, testInfo) => {
+      const { title } = await seedThread(request, testInfo, 'clip', [{ type: 'claim', body: 'A claim long enough to wrap onto a second line in the panel at every width.', confidence: 'medium' }])
+      await openView(page, 'threads')
+      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).click()
+    },
+  },
+  {
+    name: 'from Checklists',
+    open: async (page, request, testInfo) => {
+      const name = `UI test checklist clip ${testInfo.project.name} ${++made}`
+      const res = await request.post('/api/checklists', { headers: { Authorization: `Bearer ${TOKEN}` }, data: { name, items: ['Passport', 'Phone charger'] } })
+      expect(res.ok(), `create checklist failed: ${res.status()}`).toBeTruthy()
+      await openView(page, 'checklists')
+      await page.getByRole('button', { name: startsWith(`Start ${name}`) }).click()
+      await page.getByRole('form', { name: startsWith(`Start ${name}`) }).getByRole('button', { name: 'Start', exact: true }).click()
+    },
+  },
+]
+
+for (const long of [false, true]) {
+  test.describe(long ? 'nothing is cut off with long names' : 'nothing is cut off with the task panel open', { tag: ['@a11y', '@narrow', '@landscape'] }, () => {
+    for (const panel of PANELS) {
+      test(`the task panel ${panel.name}`, async ({ page, request }, testInfo) => {
+        if (long) await longNames(page)
+        await panel.open(page, request, testInfo)
+        await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
+        await expectNothingCutOff(page)
+      })
+    }
+    if (!long) return
+    for (const view of [...VIEWS.map((v) => v.id), 'settings']) {
+      test(`${view}`, async ({ page }) => {
+        await longNames(page)
+        await openView(page, view)
+        await expectNothingCutOff(page)
+      })
+    }
+    test('My tasks with every group open', async ({ page }) => {
+      await longNames(page)
+      await openView(page)
+      for (const name of ['Expand Later', 'Expand No due date']) await page.getByRole('button', { name, exact: true }).click()
+      await expectNothingCutOff(page)
+    })
+    test('the Board on the long titles', async ({ page }) => {
+      await longNames(page)
+      await openView(page, 'board')
+      await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: `UI Test Text${LONG_SUFFIX}` })
+      await expectNothingCutOff(page)
+    })
+  })
+}
+
 // Just over the breakpoint the sidebar is in and the content column is at its narrowest; a
 // toolbar or a table that fits at 1280 runs out of room here first. Desktop project only.
 test.describe('nothing is cut off between the breakpoint and the desktop width', { tag: ['@a11y'] }, () => {
@@ -189,6 +271,8 @@ test.describe('the cut-off check', { tag: ['@a11y'] }, () => {
       <span class="sr">Read by screen readers only, never shown</span>
       <div style="position: fixed; top: 200px; left: 0; width: 120px"><button>Menu item one</button><br><button>Menu item two</button><br><button>Menu item three</button><br><button>Menu item four</button><br><button>Menu item five</button></div>
       <button style="position: fixed; right: 0; bottom: 10px">Under the bar</button>
+      <div style="display: flex; flex-direction: column; height: 10px"><div style="height: 30px; flex: none"></div><textarea aria-label="Squeezed box" style="overflow: hidden; height: 30px; padding: 0; border: 0">Shut</textarea></div>
+      <div role="dialog" aria-label="Panel"><input aria-label="Long value" style="width: 80px" value="A value far too long for its box"><textarea aria-label="Grown box" rows="1" style="overflow: hidden; height: 20px; width: 80px">Line one of several lines that need more room than one row</textarea></div>
       <div class="bar"></div>
     `)
     const found = [...(await clippedContent(page)), ...(await danglingLines(page)), ...(await hiddenFocusRings(page))].join('\n')
@@ -206,5 +290,8 @@ test.describe('the cut-off check', { tag: ['@a11y'] }, () => {
     expect(found).toContain('focus ring of button "Ring under the next row" is 100% hidden along its bottom side')
     expect(found).toContain('row "aRow left open"')
     expect(found).not.toContain('Row closed by a line')
+    expect(found).toContain('the value of input "Long value" is cut off')
+    expect(found).toContain('the text in textarea "Grown box" is cut off')
+    expect(found).toContain('textarea "Squeezed box" is squeezed to 0px tall')
   })
 })

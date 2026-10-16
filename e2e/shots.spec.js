@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { UPDATE_INSTALLED, VIEWS, clippedContent, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, clippedContent, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -256,6 +256,35 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'drawer')
   })
 
+  // Every name lengthened on its way to the page (longNames in e2e/support.js), so a layout that
+  // only holds for short names shows up here as well as in e2e/clipping.spec.js.
+  test('longnames: mytasks', async ({ page }, testInfo) => {
+    await longNames(page)
+    await openView(page)
+    await shot(page, testInfo, 'longnames', 'mytasks')
+  })
+
+  test('longnames: board', async ({ page }, testInfo) => {
+    await longNames(page)
+    await openView(page, 'board')
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: `UI Test Text${LONG_SUFFIX}` })
+    await shot(page, testInfo, 'longnames', 'board')
+  })
+
+  test('longnames: projects', async ({ page }, testInfo) => {
+    await longNames(page)
+    await openView(page, 'projects')
+    await shot(page, testInfo, 'longnames', 'projects')
+  })
+
+  test('longnames: panel', async ({ page }, testInfo) => {
+    await longNames(page)
+    await openView(page)
+    await page.getByRole('button', { name: /^Open Draft ADR-003 hosting options/ }).getByText(/^Draft ADR-003/).click()
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
+    await shot(page, testInfo, 'longnames', 'panel')
+  })
+
   test('inbox: list', async ({ page }, testInfo) => {
     await openView(page, 'inbox')
     await shot(page, testInfo, 'inbox', 'list')
@@ -395,11 +424,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await card.getByRole('checkbox', { name: 'Remind me on the day a task is due' }).check()
     await expect(card.getByLabel('Time')).toBeEnabled()
     // The card sits below the connection and agent cards, under the fold at both widths. The
-    // scroll leaves room for the sticky top bar, which would otherwise cover the card's heading.
-    await card.evaluate((el) => {
-      el.scrollIntoView({ block: 'start' })
-      window.scrollBy(0, -72)
-    })
+    // page's scroll-padding-top (src/index.css) keeps it clear of the sticky top bar.
+    await card.evaluate((el) => el.scrollIntoView({ block: 'start' }))
     const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
     await shot(page, testInfo, 'settings', 'reminders', [values])
   })
@@ -413,10 +439,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await card.getByRole('button', { name: 'Preview' }).click()
     await expect(card.getByRole('list', { name: 'Problems' })).toBeVisible()
     // Scrolled to the buttons, so the preview under them is in the shot.
-    await card.getByRole('button', { name: 'Preview' }).evaluate((el) => {
-      el.scrollIntoView({ block: 'start' })
-      window.scrollBy(0, -72)
-    })
+    await card.getByRole('button', { name: 'Preview' }).evaluate((el) => el.scrollIntoView({ block: 'start' }))
     await shot(page, testInfo, 'settings', 'import-preview')
   })
 })
