@@ -101,6 +101,15 @@ function summarize(statuses, playwrightStatus) {
     }
     console.log('\nRead every changed shot. Then fix the layout, or `npm run shots -- --accept`.')
   }
+  const clipped = statuses.filter((s) => s.clipped?.length)
+  if (clipped.length) {
+    console.log('\nCut off (CONTRIBUTING.md, "Nothing is cut off"):')
+    for (const s of clipped) {
+      console.log(`  ${s.name}`)
+      for (const c of s.clipped) console.log(`      ${c}`)
+    }
+    console.log('\nFix each one; e2e/clipping.spec.js fails on the same check.')
+  }
   if (playwrightStatus) {
     console.log(`\nPlaywright exited with ${playwrightStatus}: at least one state could not be reached, so its shot is missing or stale. See .playwright/ for the trace.`)
   }

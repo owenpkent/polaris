@@ -135,5 +135,7 @@ export default function SafeMarkdown({ text }) {
     key++
   }
 
-  return <div>{blocks}</div>
+  // A URL or an id is one long word; it breaks anywhere rather than pushing the page sideways.
+  // Code blocks keep their lines and scroll inside their own box instead.
+  return <div style={{ overflowWrap: 'anywhere' }}>{blocks}</div>
 }

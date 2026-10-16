@@ -347,16 +347,18 @@ function InboxRow({ item, selected, striped, stacked, expandedType, onExpand, pr
         boxShadow: selected && !expanded ? 'inset 3px 0 0 var(--blue)' : 'none',
       }}
     >
+      {/* A dense row shortens a long title with an ellipsis; the whole text is one step away, in
+          the title (CONTRIBUTING.md, "Nothing is cut off"), since an inbox row opens no panel. */}
       <div role="cell" style={{ minWidth: 0, paddingRight: 16 }}>
         {safeLink ? (
-          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ ...titleStyle, textDecoration: 'none' }}>
+          <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" title={displayTitle(item, meta)} style={{ ...titleStyle, textDecoration: 'none' }}>
             {displayTitle(item, meta)}
           </a>
         ) : (
-          <span style={titleStyle}>{displayTitle(item, meta)}</span>
+          <span title={displayTitle(item, meta)} style={titleStyle}>{displayTitle(item, meta)}</span>
         )}
         {meta && (
-          <div style={{ fontSize: 13, color: 'var(--t2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div title={meta} style={{ fontSize: 13, color: 'var(--t2)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {meta}
           </div>
         )}

@@ -183,6 +183,10 @@ body {
   color: var(--t1);
   font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   line-height: 1.45;
+  /* A word longer than its line (a URL, an id, a name typed without spaces) breaks rather than
+     running out of its box. Flex and grid items also need min-width: 0 to shrink, and get
+     overflow-wrap: anywhere where they hold user text (CONTRIBUTING.md, "Nothing is cut off"). */
+  overflow-wrap: break-word;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -191,6 +195,13 @@ body {
 
 /* Scrollbars are wide enough to grab with a mouse. */
 html { scrollbar-color: var(--bd-strong) var(--bg); }
+/* Whatever is scrolled into view (a control reached with Tab, a search hit) lands clear of the
+   sticky top bar and, on a phone, the tab bar, instead of under them (CONTRIBUTING.md, "Nothing
+   is cut off"). */
+html { scroll-padding-top: 64px; }
+@media (max-width: 640px) {
+  html { scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+}
 ::-webkit-scrollbar { width: 14px; height: 14px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -294,6 +305,10 @@ kbd { color: var(--t1); }
   white-space: nowrap;
 }
 .project-chip > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Wrapped, the chip grows taller than its row, so it keeps 6px off the neighbours above and below,
+   whose focus rings reach 4px out. */
+.project-chip.is-wrapping { white-space: normal; border-radius: 12px; margin: 6px 0; }
+.project-chip.is-wrapping > span:last-child { overflow: visible; overflow-wrap: anywhere; }
 .project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .project-avatar {
   display: inline-flex;
@@ -717,7 +732,8 @@ kbd { color: var(--t1); }
   padding-left: 8px;
 }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
-.mytasks-list { overflow: hidden; }
+/* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
+.mytasks-row > :last-child { padding-right: 4px; }
 .mytasks-section + .mytasks-section { padding-top: 16px; }
 .mytasks-section-header {
   display: flex;
@@ -766,9 +782,16 @@ kbd { color: var(--t1); }
 }
 .task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }
 
-/* Panels that clip their rows (overflow: hidden) would also clip an outward
-   focus ring, so rows draw theirs inside. */
+/* Rows and items that touch their neighbours draw their focus ring inside. An outward ring
+   reaches 4px past the box, where a panel that clips its rows (overflow: hidden), a menu that
+   scrolls (Popover in Menu.jsx), the sticky column header, or the next row's highlight would
+   paint over it (CONTRIBUTING.md, "Nothing is
+   cut off"; e2e/clipping.spec.js measures it). */
 .mytasks-row:focus-visible,
+.mytasks-list :focus-visible,
+.mytasks-colhead :focus-visible,
+.nav-item:focus-visible,
+[data-popover] :focus-visible,
 .surface [role='row']:focus-visible,
 .surface [role='row'] :focus-visible { outline-offset: -2px; }
 
@@ -880,7 +903,11 @@ kbd { color: var(--t1); }
   align-items: flex-start;
   gap: 20px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  /* The strip scrolls, so it clips: 4px of room on every side keeps a card's focus ring inside
+     it, and the matching negative margin keeps the lanes where they were. */
+  padding: 4px 4px 12px;
+  margin: -4px -4px 0;
+  scroll-padding-inline: 4px;
 }
 /* A lane is a header band over its cards, which sit straight on the page. */
 .board-lane {
@@ -938,6 +965,31 @@ kbd { color: var(--t1); }
     top: 0;
     right: 0;
   }
+}
+
+/* GitHub repos (GithubTab.jsx): a table on a wide screen. On a phone each repo is a card, cells on
+   their own lines and each switch beside its label, so no switch sits past the edge of a table
+   that would have to be scrolled sideways (CONTRIBUTING.md, "Nothing is cut off"). The markup
+   stays a table, so the rows and cells keep their roles. */
+.repo-cell-label { display: none; }
+@media (max-width: 640px) {
+  .repo-table thead { display: none; }
+  .repo-table,
+  .repo-table tbody,
+  .repo-table tr,
+  .repo-table td { display: block; width: 100%; }
+  .repo-table .repo-row { padding: 8px 0; }
+  .repo-table td { padding: 2px 8px !important; }
+  .repo-table .repo-name { font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+  .repo-table .repo-cell-label { display: inline; margin-right: 4px; color: var(--t2); }
+  .repo-table .repo-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: var(--target);
+  }
+  .repo-table .repo-switch .repo-cell-label { color: var(--t1); }
 }
 
 @media (max-width: 640px) {
@@ -1074,6 +1126,7 @@ kbd { color: var(--t1); }
   font-size: 14px;
   overflow-wrap: break-word;
 }
+.project-name > span:not(.badge) { min-width: 0; overflow-wrap: anywhere; }
 .project-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1356,6 +1409,9 @@ kbd { color: var(--t1); }
     text-align: center;
   }
   .app-main-full { padding-bottom: calc(32px + 64px + env(safe-area-inset-bottom)); }
+  /* With the New task button over the bottom right, the last row must be able to scroll clear of
+     it, not just of the tab bar: the button's bottom offset, its height, and a gap. */
+  .app-main-full:has(.fab) { padding-bottom: calc(80px + 56px + 16px + env(safe-area-inset-bottom)); }
 
   .mytasks-toolbar-add { display: none; }
   .fab {

@@ -372,7 +372,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 72 }}>
-        <div style={{ position: 'relative', display: 'inline-flex' }}>
+        <div style={{ position: 'relative', display: 'inline-flex', minWidth: 0, maxWidth: '100%' }}>
           <select
             id="board-project"
             aria-label="Project"
@@ -383,7 +383,12 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
               WebkitAppearance: 'none',
               MozAppearance: 'none',
               height: 44,
+              // A native select is as wide as its longest option; a long project name would
+              // otherwise push the page sideways, so it stops at the row's width (and 220px is less than
+              // the narrowest phone's row). The open list shows every name in full.
               minWidth: 220,
+              maxWidth: '100%',
+              textOverflow: 'ellipsis',
               padding: '0 36px 0 14px',
               border: '1px solid var(--bd-strong)',
               borderRadius: 'var(--radius)',

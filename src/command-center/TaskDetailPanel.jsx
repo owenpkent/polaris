@@ -5,6 +5,7 @@ import { useEventRefresh } from './useEvents'
 import { Loading, ErrorBanner, StatusChip, ProjectChip, Avatar, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
 import { SOURCE_LABELS } from './TaskRow'
 import DueDateMenu from './DueDateMenu'
+import { oneLine, useFitToText } from './useFitToText'
 import { formatDueCell, getDueBounds, repeatLabel } from './dueDates'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
@@ -155,7 +156,7 @@ function GoalsField({ taskId, goals, disabled, onChanged, onError }) {
             background: 'var(--bg-hover)',
           }}
         >
-          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.title}</span>
+          <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{g.title}</span>
           <button
             type="button"
             className="hover-surface"
@@ -379,6 +380,11 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [error, setError] = useState(null)
   const [saveError, setSaveError] = useState(null)
   const [form, setForm] = useState(null)
+  // The title box is as tall as its text (the textarea under the action buttons), and so is the
+  // assignee box. The hook returns the ref to put on each, and follows the box itself: a load
+  // unmounts both and mounts new ones, which must be measured even when the text is the same.
+  const titleRef = useFitToText(form?.title)
+  const assigneeRef = useFitToText(form?.assignee)
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   const [moreOpen, setMoreOpen] = useState(false)
@@ -767,7 +773,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   <span
                     className="badge badge-software"
                     title={data.task.assignee}
-                    style={{ maxWidth: '100%', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    style={{ maxWidth: '100%', display: 'inline-block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}
                   >
                     Assigned to {data.task.assignee}
                   </span>
@@ -817,16 +823,31 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             </div>
           )}
 
-          <input
+          {/* A textarea that grows with its text, so a long title is read in full here rather
+              than cut at the panel's edge (CONTRIBUTING.md, "Nothing is cut off"). It is still
+              one line of meaning: Enter saves, and a pasted line break becomes a space. */}
+          <textarea
+            ref={titleRef}
+            rows={1}
             value={form.title}
-            onChange={(e) => { const { value } = e.target; setForm((f) => ({ ...f, title: value })) }}
+            onChange={(e) => { const value = oneLine(e.target.value); setForm((f) => ({ ...f, title: value })) }}
             onBlur={() => {
               const trimmed = form.title.trim()
               if (trimmed && trimmed !== data.task.title) patchTask({ title: trimmed }, { title: form.title })
             }}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              e.currentTarget.blur()
+            }}
             aria-label="Task title"
             style={{
+              resize: 'none',
+              overflow: 'hidden',
+              display: 'block',
+              // A flex column may shrink an overflow: hidden box to nothing; this one keeps its height.
+              flexShrink: 0,
+              overflowWrap: 'anywhere',
               background: 'transparent',
               border: 'none',
               boxShadow: 'none',
@@ -864,7 +885,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             </FieldRow>
             <FieldRow label="Project">
               {projectName ? (
-                <ProjectChip name={projectName} />
+                <ProjectChip name={projectName} wrap />
               ) : (
                 <span style={{ color: 'var(--t2)' }}>None</span>
               )}
@@ -911,18 +932,25 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             </FieldRow>
             <FieldRow label="Assignee" htmlFor={assigneeInputId}>
               {form.assignee.trim() ? <Avatar name={form.assignee} /> : null}
-              <input
+              {/* Grows with its text like the title, so a long name is read whole here. */}
+              <textarea
+                ref={assigneeRef}
+                rows={1}
                 id={assigneeInputId}
                 value={form.assignee}
-                onChange={(e) => { const { value } = e.target; setForm((f) => ({ ...f, assignee: value })) }}
+                onChange={(e) => { const value = oneLine(e.target.value); setForm((f) => ({ ...f, assignee: value })) }}
                 onBlur={() => {
                   const next = form.assignee.trim() || null
                   if (next !== (data.task.assignee || null)) patchTask({ assignee: next }, { assignee: form.assignee })
                 }}
-                onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  e.currentTarget.blur()
+                }}
                 placeholder="Unassigned"
                 autoComplete="off"
-                style={blendInputStyle}
+                style={{ ...blendInputStyle, width: undefined, flex: '1 1 0', minWidth: 0, display: 'block', resize: 'none', overflow: 'hidden', overflowWrap: 'anywhere' }}
               />
               {(form.assignee || data.task.assignee) && (
                 <button
@@ -966,12 +994,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                     href={data.task.sourceUrl}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: 'var(--blue)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    style={{ color: 'var(--blue)', minWidth: 0, overflowWrap: 'anywhere' }}
                   >
                     {data.task.sourceUrl}
                   </a>
                 ) : (
-                  <span style={{ color: 'var(--t2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ color: 'var(--t2)', minWidth: 0, overflowWrap: 'anywhere' }}>
                     {data.task.sourceUrl}
                   </span>
                 )
@@ -1079,9 +1107,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                       display: 'flex',
                       alignItems: 'center',
                       minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      // The panel is where a title is read in full, so a subtask wraps.
+                      overflowWrap: 'anywhere',
                     }}
                   >
                     {s.title}

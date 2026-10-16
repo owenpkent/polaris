@@ -622,3 +622,55 @@ describe('the due date menu and the focus trap', () => {
     expect(dialog.contains(document.activeElement)).toBe(true)
   })
 })
+
+// The title is a textarea that grows with its text, so a long title is read in full in the panel
+// (CONTRIBUTING.md, "Nothing is cut off"). It still behaves as one line.
+describe('TaskDetailPanel title box', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  test('is a textarea, so a long title wraps instead of being cut at the edge', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const title = await screen.findByRole('textbox', { name: 'Task title' })
+    expect(title.tagName).toBe('TEXTAREA')
+    expect(title.style.overflowWrap).toBe('anywhere')
+  })
+
+  test('Enter saves the title instead of starting a new line', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: { ...TASK, title: 'Renamed' } })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const title = await screen.findByRole('textbox', { name: 'Task title' })
+    await userEvent.clear(title)
+    await userEvent.type(title, 'Renamed{Enter}')
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { title: 'Renamed' }))
+    expect(title.value).not.toContain('\n')
+  })
+
+  test('a pasted line break becomes a space', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const title = await screen.findByRole('textbox', { name: 'Task title' })
+    fireEvent.change(title, { target: { value: 'First line\nsecond line' } })
+    expect(title.value).toBe('First line second line')
+  })
+})
+
+describe('TaskDetailPanel assignee box', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  test('grows with its text like the title, and Enter saves', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: { ...TASK, assignee: 'reviewer' } })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const box = await screen.findByRole('textbox', { name: 'Assignee' })
+    expect(box.tagName).toBe('TEXTAREA')
+    await userEvent.type(box, 'reviewer{Enter}')
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'reviewer' }))
+    expect(box.value).not.toContain('\n')
+  })
+})

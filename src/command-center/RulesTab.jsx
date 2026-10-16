@@ -61,7 +61,7 @@ function RuleCard({ rule, onToggle, onDelete, onRunDry }) {
   return (
     <div className="card" style={{ marginBottom: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 220px' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.3rem' }}>{rule.name}</div>
           <div style={{ fontSize: '0.75rem', color: 'var(--t2)' }}>Created {formatDate(rule.createdAt)}</div>
         </div>

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { execSync } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -40,4 +41,46 @@ describe('UI test conventions', () => {
       expect(text).toMatch(/tag: \[/)
     })
   }
+})
+
+// Which project runs which test is decided by tags against the grep and grepInvert of each project
+// in playwright.config.js, and a green run says nothing about what was left out: a group tagged
+// for an extra project (@narrow, @landscape) is excluded from desktop and phone. So the suite's
+// own list, as Playwright selects it, is checked for the cases that must run at every size.
+describe('UI test selection', () => {
+  const sizes = ['desktop', 'phone', 'phone-320', 'phone-landscape']
+  const listed = execSync(`npx playwright test --list ${sizes.map((p) => `--project ${p}`).join(' ')}`, {
+    cwd: join(dir, '..'),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 60000,
+  })
+  const titles = listed.split(/\r?\n/).filter((line) => line.includes(' \u203a ')).map((line) => line.trim())
+  const inProject = (project, text) => titles.filter((t) => t.startsWith(`[${project}]`) && t.includes(text))
+
+  it('lists tests', () => {
+    expect(titles.length).toBeGreaterThan(0)
+  })
+
+  for (const project of sizes) {
+    it(`${project} runs the cut-off checks on a view, the task panel, and the long names`, () => {
+      const clipping = (text) => inProject(project, 'clipping.spec.js').filter((t) => t.includes(text))
+      expect(clipping('\u203a nothing is cut off \u203a My tasks'), 'a view').not.toEqual([])
+      expect(clipping('\u203a nothing is cut off \u203a the task panel'), 'the task panel').not.toEqual([])
+      expect(clipping('\u203a nothing is cut off with the task panel open \u203a'), 'the panel from each view').not.toEqual([])
+      expect(clipping('\u203a nothing is cut off with long names \u203a'), 'long names').not.toEqual([])
+    })
+  }
+
+  it('only the desktop project runs the widths between the breakpoint and the desktop width', () => {
+    const between = (project) => inProject(project, 'between the breakpoint and the desktop width')
+    expect(between('desktop')).not.toEqual([])
+    for (const project of ['phone-320', 'phone-landscape']) expect(between(project), project).toEqual([])
+  })
+
+  it('a test tagged for an extra project stays out of desktop and phone', () => {
+    for (const project of ['desktop', 'phone']) {
+      expect(inProject(project, 'narrow.spec.js'), `${project} and @narrow`).toEqual([])
+    }
+  })
 })

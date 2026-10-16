@@ -35,11 +35,11 @@ function ThreadRow({ row, onOpenTask }) {
   return (
     <article className="card" aria-label={row.thread.title} style={{ marginBottom: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 220px' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0, overflowWrap: 'anywhere' }}>
           {row.thread.title !== row.taskTitle && (
             <div style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.3rem' }}>{row.thread.title}</div>
           )}
-          <button type="button" className="btn btn-ghost" style={{ marginLeft: -10 }} onClick={() => onOpenTask(row.thread.taskId)}>
+          <button type="button" className="btn btn-ghost" style={{ marginLeft: -10, maxWidth: 'calc(100% + 10px)', textAlign: 'left' }} onClick={() => onOpenTask(row.thread.taskId)}>
             Open {row.taskTitle}
           </button>
         </div>

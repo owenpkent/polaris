@@ -19,7 +19,7 @@ This section is the install as it was when the proposal was written. Since the b
 - The migration loop in src/core/db.ts runs any migration the database is missing and does nothing when the database is ahead of the code. Only `cc backup check` and `POST /api/backup/check` notice a database newer than the code.
 - The CLI opens the store directly for every task command, so the daemon has never been the database's only writer. The daemon and the CLI are separate processes and share the database through SQLite and the lock files in src/core.
 - A failing job reaches the dashboard as `warnings` on `GET /api/sync` (src/http/warnings.ts), shown by src/JobWarningsBanner.jsx.
-- No signing key exists yet on the owner's machines. Phase B needs one (section 2).
+- The owner's signing key exists and is in `release-signers` (docs/releases.md has the setup). It was made for phase B (section 2).
 
 ## Why not follow `main` automatically
 

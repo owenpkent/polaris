@@ -415,3 +415,17 @@ describe('isSafeHref as the sourceUrl gate', () => {
     expect(isSafeHref('file:///etc/passwd')).toBe(false)
   })
 })
+
+describe('SafeMarkdown long words', () => {
+  // A URL or an id is one long word; at 320px it pushed the digest past the screen's edge
+  // (CONTRIBUTING.md, "Nothing is cut off"). The root lets such a word break anywhere.
+  test('the root breaks long words anywhere', () => {
+    const { container } = render(<SafeMarkdown text={'- [t_abc] https://github.com/example/demo/issues/101'} />)
+    expect(container.firstChild.style.overflowWrap).toBe('anywhere')
+  })
+
+  test('a code block keeps its lines and scrolls in its own box', () => {
+    const { container } = render(<SafeMarkdown text={'```\nconst a = 1\n```'} />)
+    expect(container.querySelector('pre').style.overflowX).toBe('auto')
+  })
+})

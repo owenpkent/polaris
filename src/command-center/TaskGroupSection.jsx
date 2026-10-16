@@ -49,7 +49,7 @@ export default function TaskGroupSection({
       </div>
 
       {!collapsed && (
-        <div className="flush-last">
+        <div>
           {inlineAdd?.position === 'top' && (
             <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} />
           )}
