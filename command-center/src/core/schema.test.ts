@@ -85,7 +85,7 @@ test('migrate() trusts the stored version counter: rolling it back replays exact
 
 test('opening the same file twice is idempotent: the second open does not re-run migrations or lose data', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cc-schema-test-'));
-  const dbPath = join(dir, 'constellation.db');
+  const dbPath = join(dir, 'polaris.db');
   try {
     const first = openNodeDriver(dbPath);
     first.run(
@@ -113,7 +113,7 @@ test('opening the same file twice is idempotent: the second open does not re-run
 
 test('reopening the same file a third time still leaves exactly one schema_version row', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cc-schema-test-'));
-  const dbPath = join(dir, 'constellation.db');
+  const dbPath = join(dir, 'polaris.db');
   try {
     openNodeDriver(dbPath).close();
     openNodeDriver(dbPath).close();

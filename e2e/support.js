@@ -406,6 +406,26 @@ export async function holdRequest(page, request) {
   await page.route(request, (route) => (isGet(route) ? new Promise(() => {}) : route.fallback()))
 }
 
+// Holds every GET matching `request` until the test calls the returned release(), then answers
+// each with the real response. Unlike delayRequest there is no clock: the loading state lasts as
+// long as the test needs to see it, however late a cold browser draws it. Best effort after
+// release, like delayRequest, because the page may have dropped the request meanwhile.
+export async function gateRequest(page, request) {
+  let open
+  const opened = new Promise((resolve) => { open = resolve })
+  await page.route(request, async (route) => {
+    if (!isGet(route)) return route.fallback()
+    await opened
+    try {
+      const response = await route.fetch()
+      await route.fulfill({ response })
+    } catch {
+      // gone
+    }
+  })
+  return () => open()
+}
+
 export async function failRequest(page, request) {
   await page.route(request, (route) => (isGet(route) ? fulfilJson(route, 500, FAILURE) : route.fallback()))
 }

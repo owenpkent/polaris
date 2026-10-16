@@ -11,7 +11,7 @@ function ghHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'constellation-command-center',
+    'User-Agent': 'polaris-command-center',
     ...extra,
   };
 }
@@ -37,7 +37,7 @@ export interface GithubManifest {
 export function buildManifest(port: number): GithubManifest {
   return {
     name: 'Polaris Command Center',
-    url: 'https://github.com/owenpkent/constellation',
+    url: 'https://github.com/owenpkent/polaris',
     redirect_url: `http://127.0.0.1:${port}/api/github/app/callback`,
     callback_urls: ['http://127.0.0.1/api/github/callback'],
     public: true,

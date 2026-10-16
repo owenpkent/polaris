@@ -1,4 +1,5 @@
 // Runtime configuration. Everything is overridable by environment variables.
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,11 +22,25 @@ export interface Config {
   updateAt?: string;
 }
 
+/** The two database files an install can have under command-center/data: the current name and the one
+ *  from before the Constellation to Polaris rename. The dev seeders refuse to touch either. */
+export function realDbPaths(repoRoot: string): string[] {
+  const data = join(repoRoot, 'command-center', 'data');
+  return [resolve(data, 'polaris.db'), resolve(data, 'constellation.db')];
+}
+
+/** The default database: polaris.db, or constellation.db when only that exists (an install from before the
+ *  Constellation to Polaris rename). Nothing is renamed or moved. */
+export function defaultDbPath(repoRoot: string, exists: (path: string) => boolean = existsSync): string {
+  const [current, legacy] = realDbPaths(repoRoot);
+  return !exists(current) && exists(legacy) ? legacy : current;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const repoRoot = resolve(env.CC_REPO_ROOT ?? join(here, '..', '..'));
   return {
     repoRoot,
-    dbPath: resolve(env.CC_DB ?? join(repoRoot, 'command-center', 'data', 'constellation.db')),
+    dbPath: resolve(env.CC_DB ?? defaultDbPath(repoRoot)),
     timezone: env.CC_TZ ? checkedTimezone(env.CC_TZ) : Intl.DateTimeFormat().resolvedOptions().timeZone,
     dashboardDir: resolve(env.CC_DASHBOARD_DIR ?? join(repoRoot, 'dist')),
     updateRestart: env.CC_UPDATE_RESTART?.trim() || undefined,

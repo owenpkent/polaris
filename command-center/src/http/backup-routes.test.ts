@@ -51,7 +51,7 @@ test('GET /api/backup: counts plain and encrypted copies, names the newest, and 
     const { json } = await api(base, 'GET', '/api/backup');
     assert.equal(json.copies, 2);
     assert.equal(json.plainCopies, 1);
-    assert.equal(json.newest.name, 'constellation-2026-09-21.db.enc');
+    assert.equal(json.newest.name, 'polaris-2026-09-21.db.enc');
     assert.equal(json.newest.encrypted, true);
     assert.ok(json.newest.bytes > 0);
     assert.deepEqual(json.job, job);
@@ -166,10 +166,10 @@ test('POST /api/backup/check: no backup yet, a good plain one, and a good encryp
     await app.secrets!.set(BACKUP_PASSPHRASE_KEY, PASS);
     backupDatabase(app.store, dir, '2026-09-21', 14, new Date(), { passphrase: PASS, logN: 10 });
     const enc = await api(base, 'POST', '/api/backup/check');
-    assert.equal(enc.json.name, 'constellation-2026-09-21.db.enc');
+    assert.equal(enc.json.name, 'polaris-2026-09-21.db.enc');
     assert.equal(enc.json.ok, true);
     assert.equal(enc.json.encrypted, true);
-    assert.deepEqual(readdirSync(dir).sort(), ['constellation-2026-09-20.db', 'constellation-2026-09-21.db.enc'], 'checking leaves no readable copy behind');
+    assert.deepEqual(readdirSync(dir).sort(), ['polaris-2026-09-20.db', 'polaris-2026-09-21.db.enc'], 'checking leaves no readable copy behind');
   });
 });
 
@@ -205,4 +205,24 @@ test('no MCP tool can read or change backup encryption: an agent must not be abl
   const names = TOOL_CATALOG.map((tool) => tool.name);
   assert.ok(names.length > 0);
   for (const name of names) assert.ok(!/backup|passphrase|encrypt/i.test(name), name);
+});
+
+test('GET /api/backup: a legacy constellation-named plain copy is counted until a newer polaris encrypted copy prunes it', async (t) => {
+  const dir = scratchBackupDir(t);
+  const app = fakeApp();
+  t.after(() => app.close());
+  writeFileSync(join(dir, 'constellation-2026-09-20.db'), 'legacy');
+  await withServer(app, {}, async (base) => {
+    const { json } = await api(base, 'GET', '/api/backup');
+    assert.equal(json.copies, 1);
+    assert.equal(json.plainCopies, 1);
+    assert.equal(json.newest.name, 'constellation-2026-09-20.db');
+  });
+  backupDatabase(app.store, dir, '2026-09-21', 1, new Date(), { passphrase: PASS, logN: 10 });
+  assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db.enc']);
+  await withServer(app, {}, async (base) => {
+    const { json } = await api(base, 'GET', '/api/backup');
+    assert.equal(json.plainCopies, 0);
+    assert.equal(json.newest.name, 'polaris-2026-09-21.db.enc');
+  });
 });

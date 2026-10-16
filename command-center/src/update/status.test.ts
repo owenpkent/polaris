@@ -16,7 +16,7 @@ import {
 } from './status.ts';
 
 function scratchDb(): string {
-  return join(mkdtempSync(join(tmpdir(), 'cc-update-status-')), 'constellation.db');
+  return join(mkdtempSync(join(tmpdir(), 'cc-update-status-')), 'polaris.db');
 }
 
 test('a missing status file reads as the empty status', () => {

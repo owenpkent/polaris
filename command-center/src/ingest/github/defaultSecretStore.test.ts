@@ -10,7 +10,7 @@ import { defaultGithubSecretStore } from './app.ts';
 test('off Windows the default store is a secrets.json next to the database, shared by every caller', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cc-default-secrets-'));
   try {
-    const env = { CC_DB: join(dir, 'constellation.db') };
+    const env = { CC_DB: join(dir, 'polaris.db') };
     const store = defaultGithubSecretStore('linux', env);
     await store.set('github-app', '{"clientId":"abc"}');
 

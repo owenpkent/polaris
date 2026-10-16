@@ -39,8 +39,9 @@ async function stopAndRemove(server, dataDir) {
   }
 }
 
-// 30 seconds: a busy Windows runner has taken longer than 10 to answer the first request.
-async function waitForServer(url, timeoutMs = 30000) {
+// 90 seconds: a busy Windows runner has taken longer than 10 to answer the first request, and the
+// first start can wait out the 60 second DPAPI limit the fake server allows (githubFake.ts) before it boots.
+async function waitForServer(url, timeoutMs = 90000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     try {
@@ -79,7 +80,7 @@ export async function startScratchServer(port) {
   // and real backup folder: the settings test sets a backup passphrase.
   const env = {
     ...process.env,
-    CC_DB: join(dataDir, 'constellation.db'),
+    CC_DB: join(dataDir, 'polaris.db'),
     CC_API_TOKEN: TOKEN,
     CC_SECRETS_DIR: join(dataDir, 'secrets'),
     CC_BACKUP_DIR: join(dataDir, 'backups'),

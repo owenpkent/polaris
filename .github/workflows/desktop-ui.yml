@@ -78,7 +78,7 @@ jobs:
         run: |
           $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
           New-Item -Path $key -Force | Out-Null
-          foreach ($app in 'com.okstudio.constellation', 'constellation-desktop.exe', '*') {
+          foreach ($app in 'com.okstudio.polaris', 'polaris-desktop.exe', '*') {
             New-ItemProperty -Path $key -Name $app -Value '--remote-debugging-port=0' -PropertyType String -Force | Out-Null
           }
           Get-ItemProperty -Path $key | Format-List

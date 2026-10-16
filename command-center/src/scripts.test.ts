@@ -40,7 +40,7 @@ test('the Windows task repeats every five minutes, as the owner, logged on or no
   assert.match(ps1, /-ExecutionTimeLimit \(New-TimeSpan -Hours 1\)/);
   assert.match(ps1, /\$log = Join-Path \$dataDir 'updater\.log'/);
   assert.match(ps1, /\*>> '\$log'/, 'output is appended to the log');
-  assert.match(ps1, /\[string\]\$TaskName = 'Constellation Updater'/);
+  assert.match(ps1, /\[string\]\$TaskName = 'Polaris Updater'/);
   assert.match(ps1, /\[switch\]\$Uninstall/);
 });
 
@@ -124,28 +124,28 @@ test('the shell installer writes the unit with --port and the environment file f
   const envFile = join(home, '.config', 'polaris', 'updater.env');
   const values = () => readFileSync(envFile, 'utf8').split('\n').filter((l) => l && !l.startsWith('#'));
 
-  const first = run(['--port', '8790', '--env', 'CC_BACKUP_DIR=/mnt/nas/backups', '--env=CC_UPDATE_AT=06:00'], { CC_DB: '/srv/polaris/constellation.db', CC_UPDATE_AT: '05:30', CC_SECRETS_DIR: '' });
+  const first = run(['--port', '8790', '--env', 'CC_BACKUP_DIR=/mnt/nas/backups', '--env=CC_UPDATE_AT=06:00'], { CC_DB: '/srv/polaris/polaris.db', CC_UPDATE_AT: '05:30', CC_SECRETS_DIR: '' });
   assert.equal(first.status, 0, first.stderr);
   const unit = readFileSync(unitFile, 'utf8');
   assert.match(unit, /^EnvironmentFile=-%h\/\.config\/polaris\/updater\.env$/m);
   assert.match(unit, /^ExecStart=".*node" ".*\/command-center\/src\/cli\.ts" update --auto --port 8790$/m);
   // The mode bits are POSIX: on Windows (Git bash) the file has none to check.
   if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600, 'owner-only');
-  assert.deepEqual(values(), ['CC_DB=/srv/polaris/constellation.db', 'CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00'], 'inherited, then --env, which wins; an empty inherited value is not copied');
+  assert.deepEqual(values(), ['CC_DB=/srv/polaris/polaris.db', 'CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00'], 'inherited, then --env, which wins; an empty inherited value is not copied');
   for (const name of UPDATER_VARS) assert.match(readFileSync(envFile, 'utf8'), new RegExp(`^#${name}=`, 'm'));
   assert.match(first.stdout, /^Environment: .*updater\.env \(set now: CC_DB CC_UPDATE_AT CC_BACKUP_DIR CC_UPDATE_AT\)$/m, 'says where the file is');
   assert.match(first.stdout, /runs 'cc update --auto --port 8790' every five minutes/);
 
   // A rerun keeps what is there and sets only what it is given; without --port the unit has no port.
-  const again = run(['--env', 'CC_DB=/elsewhere/constellation.db']);
+  const again = run(['--env', 'CC_DB=/elsewhere/polaris.db']);
   assert.equal(again.status, 0, again.stderr);
-  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/constellation.db']);
+  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/polaris.db']);
   if (process.platform !== 'win32') assert.equal(statSync(envFile).mode & 0o777, 0o600);
   assert.match(readFileSync(unitFile, 'utf8'), /^ExecStart=.* update --auto$/m);
   const nothing = run([]);
   assert.equal(nothing.status, 0, nothing.stderr);
   assert.match(nothing.stdout, /^Environment: .*updater\.env \(nothing set: the defaults apply/m);
-  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/constellation.db'], 'untouched');
+  assert.deepEqual(values(), ['CC_BACKUP_DIR=/mnt/nas/backups', 'CC_UPDATE_AT=06:00', 'CC_DB=/elsewhere/polaris.db'], 'untouched');
 
   // Bad flags are refused before anything is written.
   for (const args of [['--port'], ['--port', 'eighty'], ['--port', '0'], ['--port=70000'], ['--env'], ['--env', 'FOO=1'], ['--env', 'CC_DB']]) {
@@ -187,5 +187,18 @@ test('the shell installer is executable and parses', (t) => {
 test('neither installer carries an emoji or an em dash', () => {
   for (const text of [ps1, sh]) {
     assert.doesNotMatch(text, /[—\u{1F300}-\u{1FAFF}☀-➿]/u);
+  }
+});
+
+test('both Windows installers replace the pre-rename task under the default name, and -Uninstall removes both', () => {
+  for (const [file, current, legacy] of [
+    ['install-updater-task.ps1', 'Polaris Updater', 'Constellation Updater'],
+    ['install-command-center-task.ps1', 'Polaris Command Center', 'Constellation Command Center'],
+  ]) {
+    const text = readFileSync(join(SCRIPTS, file), 'utf8');
+    assert.ok(text.includes(`if ($TaskName -eq '${current}') { $legacyNames = @('${legacy}') }`), file);
+    assert.match(text, /foreach \(\$name in @\(\$TaskName\) \+ \$legacyNames\)/, `${file}: -Uninstall covers both`);
+    assert.match(text, /Register-ScheduledTask[^\n]*\r?\n(?:[^\n]*\r?\n){0,8}?foreach \(\$name in \$legacyNames\) \{ Remove-NamedTask \$name/, `${file}: the old task goes after the new one is registered`);
+    assert.match(text, /\[string\]\$TaskName = '/, `${file}: -TaskName still overrides`);
   }
 });

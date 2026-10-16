@@ -16,7 +16,7 @@ function withTempDir(fn: (dir: string) => void): void {
 
 test('creates all three token files on first use when no env vars are set', () => {
   withTempDir((dir) => {
-    const dbPath = join(dir, 'constellation.db');
+    const dbPath = join(dir, 'polaris.db');
     const tokens = resolveTokens(dbPath, {});
     assert.equal(typeof tokens.api, 'string');
     assert.equal(typeof tokens.mcp, 'string');
@@ -113,7 +113,7 @@ test('an existing but empty token file is treated as missing and regenerated', (
 test('tokens are resolved relative to the directory containing the db path, not the db path itself', () => {
   withTempDir((dir) => {
     const nested = join(dir, 'nested', 'sub');
-    const dbPath = join(nested, 'constellation.db');
+    const dbPath = join(nested, 'polaris.db');
     const tokens = resolveTokens(dbPath, {});
     assert.equal(readFileSync(join(nested, 'api-token'), 'utf8'), tokens.api);
   });

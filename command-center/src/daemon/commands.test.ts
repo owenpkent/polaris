@@ -147,7 +147,7 @@ test('backup check only reads: the data folder and the backup folder hold the sa
   const before = [readdirSync(s.dir).sort(), readdirSync(s.backups)];
   await backupCheck.run([], s.ctx);
   assert.deepEqual([readdirSync(s.dir).sort(), readdirSync(s.backups)], before);
-  assert.deepEqual(before, [['backups', 'test.db'], ['constellation-2026-09-21.db']]);
+  assert.deepEqual(before, [['backups', 'test.db'], ['polaris-2026-09-21.db']]);
 });
 
 test('jobsForSync: a bare sync runs every interval job and no daily one; a named daily job still runs', () => {

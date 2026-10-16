@@ -4,9 +4,12 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/index.ts';
-import { windowsDpapiSecretStore } from '../ingest/secrets.ts';
-import { backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
+import { defaultBaseDir, windowsDpapiSecretStore } from '../ingest/secrets.ts';
+import { BACKUP_PASSPHRASE_KEY, backupDatabase, backupDir, inspectBackup, isSnapshotFile, listSnapshots, newestBackup, restoreDatabaseFile, snapshotDatabase, snapshotName, verifyBackup } from './backup.ts';
 import { decryptBuffer, isEncryptedBackup } from './backupCrypto.ts';
+
+// The real powershell.exe can take over the daemon's 20 seconds to start on a busy CI runner.
+const REAL_POWERSHELL_TIMEOUT_MS = 60_000;
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), 'cc-backup-'));
@@ -19,7 +22,7 @@ test('backupDatabase writes a copy that opens and holds the same tasks', () => {
     const project = store.createProject({ name: 'Backup test' });
     store.createTask({ title: 'Survives the backup', projectId: project.id });
     const { file, removed } = backupDatabase(store, dir, '2026-09-21');
-    assert.equal(file, join(dir, 'constellation-2026-09-21.db'));
+    assert.equal(file, join(dir, 'polaris-2026-09-21.db'));
     assert.deepEqual(removed, []);
 
     const copy = openStore(file);
@@ -40,7 +43,7 @@ test('a second backup on the same day replaces the first', () => {
   try {
     backupDatabase(store, dir, '2026-09-21');
     backupDatabase(store, dir, '2026-09-21');
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db']);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db']);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -67,7 +70,7 @@ test('two overlapping attempts both succeed and leave one readable copy and noth
     const a = backupDatabase(store, dir, '2026-09-21');
 
     assert.equal(nestedResult, a.file, 'B ran inside A and published the same dated name');
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db']);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db']);
     const copy = openStore(a.file);
     try {
       assert.deepEqual(copy.searchAllTasks().map((t) => t.title), ['kept']);
@@ -84,14 +87,14 @@ test('a staging file is only cleared once it is a day old: a younger one may bel
   const dir = tempDir();
   const store = openStore(':memory:');
   try {
-    const young = join(dir, 'constellation-2026-09-21.db.4242.aaaaaa.partial');
-    const old = join(dir, 'constellation-2026-09-19.db.4242.bbbbbb.partial');
+    const young = join(dir, 'polaris-2026-09-21.db.4242.aaaaaa.partial');
+    const old = join(dir, 'polaris-2026-09-19.db.4242.bbbbbb.partial');
     writeFileSync(young, 'in use');
     writeFileSync(old, 'left by a crash');
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60_000);
     utimesSync(old, twoDaysAgo, twoDaysAgo);
     backupDatabase(store, dir, '2026-09-21');
-    assert.deepEqual(readdirSync(dir).sort(), ['constellation-2026-09-21.db', 'constellation-2026-09-21.db.4242.aaaaaa.partial']);
+    assert.deepEqual(readdirSync(dir).sort(), ['polaris-2026-09-21.db', 'polaris-2026-09-21.db.4242.aaaaaa.partial']);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -103,13 +106,13 @@ test('only the newest `keep` dated copies stay, and other files are never touche
   const store = openStore(':memory:');
   try {
     writeFileSync(join(dir, 'notes.txt'), 'not a backup');
-    writeFileSync(join(dir, 'constellation-manual.db'), 'not a dated backup');
+    writeFileSync(join(dir, 'polaris-manual.db'), 'not a dated backup');
     for (const day of ['2026-09-18', '2026-09-19', '2026-09-20']) backupDatabase(store, dir, day, 3);
     const { removed } = backupDatabase(store, dir, '2026-09-21', 3);
-    assert.deepEqual(removed, ['constellation-2026-09-18.db']);
+    assert.deepEqual(removed, ['polaris-2026-09-18.db']);
     assert.deepEqual(readdirSync(dir).sort(), [
-      'constellation-2026-09-19.db', 'constellation-2026-09-20.db', 'constellation-2026-09-21.db',
-      'constellation-manual.db', 'notes.txt',
+      'notes.txt', 'polaris-2026-09-19.db', 'polaris-2026-09-20.db', 'polaris-2026-09-21.db',
+      'polaris-manual.db',
     ]);
   } finally {
     store.db.close();
@@ -122,7 +125,7 @@ test('keep below 1 is refused before anything is written', () => {
   const store = openStore(':memory:');
   try {
     assert.throws(() => backupDatabase(store, dir, '2026-09-21', 0), /keep must be/);
-    assert.equal(existsSync(join(dir, 'constellation-2026-09-21.db')), false);
+    assert.equal(existsSync(join(dir, 'polaris-2026-09-21.db')), false);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -185,8 +188,8 @@ test('backupDatabase: a copy that fails its check is deleted, the job fails, and
     backupDatabase(store, dir, '2026-09-20');
     store.backupTo = (file: string) => writeFileSync(file, 'disk went bad halfway');
     assert.throws(() => backupDatabase(store, dir, '2026-09-21', 1), /failed its check and was deleted/);
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-20.db']);
-    assert.equal(newestBackup(dir), join(dir, 'constellation-2026-09-20.db'));
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-20.db']);
+    assert.equal(newestBackup(dir), join(dir, 'polaris-2026-09-20.db'));
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -196,8 +199,8 @@ test('backupDatabase: a copy that fails its check is deleted, the job fails, and
 // ---- where backups live ----
 
 test('backupDir: CC_BACKUP_DIR wins, the default is next to the database, and an in-memory database has none', () => {
-  assert.equal(backupDir(join('data', 'constellation.db'), {}), join('data', 'backups'));
-  assert.equal(backupDir(join('data', 'constellation.db'), { CC_BACKUP_DIR: 'D:/synced' }), 'D:/synced');
+  assert.equal(backupDir(join('data', 'polaris.db'), {}), join('data', 'backups'));
+  assert.equal(backupDir(join('data', 'polaris.db'), { CC_BACKUP_DIR: 'D:/synced' }), 'D:/synced');
   assert.equal(backupDir(':memory:', {}), undefined);
   assert.equal(backupDir(':memory:', { CC_BACKUP_DIR: 'D:/synced' }), 'D:/synced');
 });
@@ -207,10 +210,10 @@ test('newestBackup: the latest dated copy by name, ignoring partial and undated 
   try {
     assert.equal(newestBackup(join(dir, 'no-such-folder')), undefined);
     assert.equal(newestBackup(dir), undefined);
-    for (const f of ['constellation-2026-09-09.db', 'constellation-2026-09-21.db', 'constellation-2026-09-22.db.partial', 'constellation-manual.db', 'zzz.db']) {
+    for (const f of ['polaris-2026-09-09.db', 'polaris-2026-09-21.db', 'polaris-2026-09-22.db.partial', 'polaris-manual.db', 'zzz.db']) {
       writeFileSync(join(dir, f), '');
     }
-    assert.equal(newestBackup(dir), join(dir, 'constellation-2026-09-21.db'));
+    assert.equal(newestBackup(dir), join(dir, 'polaris-2026-09-21.db'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -228,8 +231,8 @@ test('with a passphrase the published copy is encrypted, opens with it, and hold
     store.createTask({ title: 'a title nobody else should read', projectId: project.id });
     const { file } = backupDatabase(store, dir, '2026-09-21', 14, new Date(), ENC);
 
-    assert.equal(file, join(dir, 'constellation-2026-09-21.db.enc'));
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db.enc']);
+    assert.equal(file, join(dir, 'polaris-2026-09-21.db.enc'));
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db.enc']);
     assert.equal(isEncryptedBackup(file), true);
     assert.equal(readFileSync(file).includes('nobody else should read'), false);
     assert.equal(decryptBuffer(file, ENC.passphrase).subarray(0, 15).toString(), 'SQLite format 3');
@@ -270,9 +273,9 @@ test('turning encryption on replaces the plain copy of that day, and turning it 
   try {
     backupDatabase(store, dir, '2026-09-21');
     backupDatabase(store, dir, '2026-09-21', 14, new Date(), ENC);
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db.enc']);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db.enc']);
     backupDatabase(store, dir, '2026-09-21');
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db']);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db']);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -286,9 +289,9 @@ test('retention and newestBackup count plain and encrypted copies alike', () => 
     backupDatabase(store, dir, '2026-09-19', 2);
     backupDatabase(store, dir, '2026-09-20', 2, new Date(), ENC);
     const { removed } = backupDatabase(store, dir, '2026-09-21', 2, new Date(), ENC);
-    assert.deepEqual(removed, ['constellation-2026-09-19.db']);
-    assert.deepEqual(readdirSync(dir).sort(), ['constellation-2026-09-20.db.enc', 'constellation-2026-09-21.db.enc']);
-    assert.equal(newestBackup(dir), join(dir, 'constellation-2026-09-21.db.enc'));
+    assert.deepEqual(removed, ['polaris-2026-09-19.db']);
+    assert.deepEqual(readdirSync(dir).sort(), ['polaris-2026-09-20.db.enc', 'polaris-2026-09-21.db.enc']);
+    assert.equal(newestBackup(dir), join(dir, 'polaris-2026-09-21.db.enc'));
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -332,8 +335,8 @@ test('two attempts in different modes, one inside the other, end with exactly on
     };
     const outer = backupDatabase(store, dir, '2026-09-21');
 
-    assert.equal(inner, join(dir, 'constellation-2026-09-21.db.enc'));
-    assert.equal(outer.file, join(dir, 'constellation-2026-09-21.db'));
+    assert.equal(inner, join(dir, 'polaris-2026-09-21.db.enc'));
+    assert.equal(outer.file, join(dir, 'polaris-2026-09-21.db'));
     const left = readdirSync(dir);
     assert.equal(left.length, 1, `one copy of the day, got ${left.join(', ')}`);
     const survivor = join(dir, left[0]);
@@ -349,9 +352,9 @@ test('a live lock from another attempt makes this one give up, with its staging 
   const store = openStore(':memory:');
   try {
     backupDatabase(store, dir, '2026-09-21', 14, new Date(), ENC);
-    writeFileSync(join(dir, 'constellation-2026-09-21.lock'), '');
+    writeFileSync(join(dir, 'polaris-2026-09-21.lock'), '');
     assert.throws(() => backupDatabase(store, dir, '2026-09-21', 14, new Date(), { lockTimeoutMs: 150 }), /locked by another process/);
-    assert.deepEqual(readdirSync(dir).sort(), ['constellation-2026-09-21.db.enc', 'constellation-2026-09-21.lock']);
+    assert.deepEqual(readdirSync(dir).sort(), ['polaris-2026-09-21.db.enc', 'polaris-2026-09-21.lock']);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -362,12 +365,12 @@ test('a lock left by a dead attempt is taken over, and the lock is gone afterwar
   const dir = tempDir();
   const store = openStore(':memory:');
   try {
-    const lock = join(dir, 'constellation-2026-09-21.lock');
+    const lock = join(dir, 'polaris-2026-09-21.lock');
     writeFileSync(lock, '');
     const old = new Date(Date.now() - 5 * 60_000);
     utimesSync(lock, old, old);
     backupDatabase(store, dir, '2026-09-21', 14, new Date(), { lockTimeoutMs: 150 });
-    assert.deepEqual(readdirSync(dir), ['constellation-2026-09-21.db']);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db']);
   } finally {
     store.db.close();
     rmSync(dir, { recursive: true, force: true });
@@ -381,7 +384,7 @@ test('a passphrase with spaces at the ends survives the real Windows secret stor
   const store = openStore(':memory:');
   try {
     const saved = '  what the owner typed and saved  ';
-    const secrets = windowsDpapiSecretStore({ baseDir: secretsDir });
+    const secrets = windowsDpapiSecretStore({ baseDir: secretsDir, timeoutMs: REAL_POWERSHELL_TIMEOUT_MS });
     await secrets.set('backup-passphrase', saved);
     const fromStore = await secrets.get('backup-passphrase');
     assert.equal(fromStore, saved);
@@ -401,7 +404,7 @@ test('snapshotName carries the running version and the moment, and snapshotDatab
   const store = openStore(':memory:');
   try {
     const name = snapshotName('2.0.0', new Date('2026-10-06T04:05:06.789Z'));
-    assert.equal(name, 'constellation-pre-update-2.0.0-2026-10-06T04-05-06.db');
+    assert.equal(name, 'polaris-pre-update-2.0.0-2026-10-06T04-05-06.db');
     assert.equal(isSnapshotFile(name), true);
     const project = store.createProject({ name: 'Snapshot test' });
     store.createTask({ title: 'Survives the update', projectId: project.id });
@@ -425,8 +428,8 @@ test('a snapshot needs a snapshot name', () => {
   const dir = tempDir();
   const store = openStore(':memory:');
   try {
-    assert.throws(() => snapshotDatabase(store, dir, 'constellation-2026-10-06.db'), /not a snapshot name/);
-    assert.throws(() => snapshotDatabase(store, dir, 'constellation-pre-update-2.0.0-2026-10-06T04-05-06.db.enc'), /not a snapshot name/);
+    assert.throws(() => snapshotDatabase(store, dir, 'polaris-2026-10-06.db'), /not a snapshot name/);
+    assert.throws(() => snapshotDatabase(store, dir, 'polaris-pre-update-2.0.0-2026-10-06T04-05-06.db.enc'), /not a snapshot name/);
     assert.throws(() => snapshotDatabase(store, dir, snapshotName('2.0.0', new Date()), { keep: 0 }), /keep must be/);
     assert.deepEqual(readdirSync(dir), []);
   } finally {
@@ -492,7 +495,7 @@ test('the daily backup never counts, replaces, or removes a snapshot, and newest
     assert.equal(newestBackup(dir), undefined, 'a snapshot is not a dated copy');
     backupDatabase(store, dir, '2026-10-05', 1);
     const { file, removed } = backupDatabase(store, dir, '2026-10-06', 1);
-    assert.deepEqual(removed, [`constellation-2026-10-05.db`], 'retention saw only the dated copies');
+    assert.deepEqual(removed, [`polaris-2026-10-05.db`], 'retention saw only the dated copies');
     assert.equal(newestBackup(dir), file);
     assert.ok(existsSync(snapshot), 'the snapshot is still there');
     // And a snapshot's own retention leaves the dated copies alone.
@@ -554,6 +557,69 @@ test('restoreDatabaseFile refuses a file that is not a sound database and leaves
     }
   } finally {
     try { store.db.close(); } catch { /* closed above */ }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A pre-rename install keeps its passphrase in %APPDATA%\constellation\secrets. Resolved to the
+// legacy folder, the stored passphrase is found and the next backup is encrypted, not plain.
+test('a passphrase kept only in the legacy Windows secrets folder still encrypts the backup', async () => {
+  const appData = tempDir();
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    const legacy = join(appData, 'constellation', 'secrets');
+    const fake = async (_script: string, stdin: string): Promise<string> => stdin.trim();
+    await windowsDpapiSecretStore({ baseDir: legacy, runPowerShell: fake }).set(BACKUP_PASSPHRASE_KEY, 'correct horse battery staple');
+    const baseDir = defaultBaseDir({ APPDATA: appData });
+    assert.equal(baseDir, legacy);
+    const passphrase = await windowsDpapiSecretStore({ baseDir, runPowerShell: fake }).get(BACKUP_PASSPHRASE_KEY);
+    assert.equal(passphrase, 'correct horse battery staple');
+    const { file } = backupDatabase(store, dir, '2026-09-21', 14, new Date(), { passphrase, logN: 10 });
+    assert.equal(file, join(dir, 'polaris-2026-09-21.db.enc'));
+    assert.ok(isEncryptedBackup(file));
+  } finally {
+    store.db.close();
+    rmSync(appData, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy constellation-named backups and snapshots are found, ordered by date, and pruned', () => {
+  const dir = tempDir();
+  const store = openStore(':memory:');
+  try {
+    writeFileSync(join(dir, 'constellation-2026-09-20.db'), 'x');
+    writeFileSync(join(dir, 'constellation-2026-09-22.db'), 'x');
+    // Newer by date although "constellation" sorts before "polaris" by name.
+    backupDatabase(store, dir, '2026-09-21', 14);
+    assert.equal(newestBackup(dir), join(dir, 'constellation-2026-09-22.db'));
+    // keep=1: only the newest by date stays, whatever the prefix.
+    backupDatabase(store, dir, '2026-09-23', 1);
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-23.db']);
+
+    // A legacy plaintext copy ages out behind a newer polaris encrypted one.
+    writeFileSync(join(dir, 'constellation-2026-09-24.db'), 'x');
+    const r = backupDatabase(store, dir, '2026-09-25', 1, new Date(), { passphrase: 'a long enough passphrase', logN: 10 });
+    assert.ok(r.removed.includes('constellation-2026-09-24.db'));
+    assert.deepEqual(readdirSync(dir), ['polaris-2026-09-25.db.enc']);
+
+    // Same day under the old prefix is replaced, not duplicated.
+    writeFileSync(join(dir, 'constellation-2026-09-26.db'), 'x');
+    backupDatabase(store, dir, '2026-09-26', 14);
+    assert.ok(!existsSync(join(dir, 'constellation-2026-09-26.db')));
+
+    // Snapshots: both prefixes are listed in timestamp order and count toward snapshot retention.
+    const legacySnap = 'constellation-pre-update-1.0.0-2026-09-01T10-00-00.db';
+    writeFileSync(join(dir, legacySnap), 'x');
+    const newSnap = snapshotName('1.1.0', new Date('2026-09-02T10:00:00Z'));
+    snapshotDatabase(store, dir, newSnap, { keep: 3 });
+    assert.deepEqual(listSnapshots(dir).map((f) => f.slice(dir.length + 1)), [legacySnap, newSnap]);
+    assert.ok(isSnapshotFile(legacySnap));
+    snapshotDatabase(store, dir, snapshotName('1.2.0', new Date('2026-09-03T10:00:00Z')), { keep: 2 });
+    assert.ok(!existsSync(join(dir, legacySnap)));
+  } finally {
+    store.db.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

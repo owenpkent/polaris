@@ -55,7 +55,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario, at = OUTSIDE) 
   const running = s.running ?? '2.0.0';
   const dataDir = join(root, 'command-center', 'data');
   mkdirSync(dataDir, { recursive: true });
-  const dbPath = join(dataDir, 'constellation.db');
+  const dbPath = join(dataDir, 'polaris.db');
   const store = openStore(dbPath);
   store.createTask({ title: 'before the update' });
   store.db.close();

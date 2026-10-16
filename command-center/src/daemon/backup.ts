@@ -19,12 +19,14 @@ export const BACKUP_PASSPHRASE_KEY = 'backup-passphrase';
 
 const sha256 = (data: Buffer) => createHash('sha256').update(data).digest();
 
-const BACKUP_FILE = /^constellation-\d{4}-\d{2}-\d{2}\.db(\.enc)?$/;
+// Names written before the Constellation to Polaris rename (`constellation-`) are still recognized, so an
+// install from before the rename keeps its backups counted, pruned, and found. New files are always `polaris-`.
+const BACKUP_FILE = /^(?:polaris|constellation)-(\d{4}-\d{2}-\d{2})\.db(\.enc)?$/;
 /** A dated copy's or a snapshot's staging file. */
-const PARTIAL_FILE = /^constellation-.+\.db(\.enc)?\..+\.partial$/;
+const PARTIAL_FILE = /^(?:polaris|constellation)-.+\.db(\.enc)?\..+\.partial$/;
 /** A pre-update snapshot (`cc update`). Its name is not a date, so the daily copy never replaces it
  *  and the daily retention never counts it; it has its own retention (SNAPSHOT_KEEP). */
-const SNAPSHOT_FILE = /^constellation-pre-update-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.db(\.enc)?$/;
+const SNAPSHOT_FILE = /^(?:polaris|constellation)-pre-update-(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})\.db(\.enc)?$/;
 export const SNAPSHOT_KEEP = 3;
 /** A staging file this old belongs to an attempt that died: a copy takes seconds. A younger one may still be in use. */
 const ABANDONED_PARTIAL_MS = 24 * 60 * 60_000;
@@ -43,10 +45,17 @@ export function backupDir(dbPath: string, env: NodeJS.ProcessEnv = process.env):
   return dbPath === ':memory:' ? undefined : join(dirname(dbPath), 'backups');
 }
 
+/** Dated copies in `dir` (either prefix, for installs from before the Constellation to Polaris rename),
+ *  oldest first by the date inside the name, never by the prefix. */
+export function datedBackupNames(dir: string): string[] {
+  const date = (name: string) => BACKUP_FILE.exec(name)![1];
+  return readdirSync(dir).filter((f) => BACKUP_FILE.test(f)).sort((a, b) => date(a).localeCompare(date(b)) || a.localeCompare(b));
+}
+
 /** The newest dated copy in `dir`, or undefined. */
 export function newestBackup(dir: string): string | undefined {
   if (!existsSync(dir)) return undefined;
-  const newest = readdirSync(dir).filter((f) => BACKUP_FILE.test(f)).sort().at(-1);
+  const newest = datedBackupNames(dir).at(-1);
   return newest && join(dir, newest);
 }
 
@@ -65,7 +74,7 @@ export interface BackupOptions {
 export function backupDatabase(store: Store, dir: string, today: string, keep: number = DEFAULT_BACKUP_KEEP, now: Date = new Date(), opts: BackupOptions = {}): BackupResult {
   if (!Number.isInteger(keep) || keep < 1) throw new Error(`backup: keep must be a whole number of 1 or more, got ${keep}`);
   mkdirSync(dir, { recursive: true });
-  const plainName = `constellation-${today}.db`;
+  const plainName = `polaris-${today}.db`;
   const file = join(dir, opts.passphrase ? plainName + ENCRYPTED_SUFFIX : plainName);
   // The copy is made and checked on this machine's own disk. `dir` may be a NAS or a synced
   // folder: a readable database must never sit there, even for a moment, when encryption is on,
@@ -81,16 +90,20 @@ export function backupDatabase(store: Store, dir: string, today: string, keep: n
   // removal of the other format's copy of the same day, and retention. Two attempts (the daemon and
   // a `cc sync backup`, possibly with encryption switched between their reads of the secret store)
   // could otherwise each delete the other's finished copy and both report success over an empty folder.
-  const lockFile = join(dir, `constellation-${today}.lock`);
+  const lockFile = join(dir, `polaris-${today}.lock`);
   let removed: string[];
   try {
     removed = withFileLockSync(lockFile, () => {
       renameSync(partial, file);
-      // One copy per day. Turning encryption on must not leave that day's readable copy beside it.
-      const sibling = join(dir, opts.passphrase ? plainName : plainName + ENCRYPTED_SUFFIX);
-      try { unlinkSync(sibling); } catch { /* there was none */ }
+      // One copy per day. Turning encryption on must not leave that day's readable copy beside it,
+      // and a copy of the same day under the pre-rename prefix is replaced too.
+      for (const f of readdirSync(dir)) {
+        if (join(dir, f) !== file && BACKUP_FILE.exec(f)?.[1] === today) {
+          try { unlinkSync(join(dir, f)); } catch { /* gone already */ }
+        }
+      }
       removeAbandonedPartials(dir, now);
-      const dated = readdirSync(dir).filter((f) => BACKUP_FILE.test(f)).sort();
+      const dated = datedBackupNames(dir);
       const old = dated.slice(0, Math.max(0, dated.length - keep));
       for (const f of old) unlinkSync(join(dir, f));
       return old;
@@ -131,7 +144,7 @@ function stageCheckedCopy(store: Store, local: string, plainName: string, partia
  *  running and the moment, so the daily copy (named by date alone) never replaces it. */
 export function snapshotName(version: string, at: Date): string {
   const stamp = at.toISOString().slice(0, 19).replace(/:/g, '-');
-  return `constellation-pre-update-${version}-${stamp}.db`;
+  return `polaris-pre-update-${version}-${stamp}.db`;
 }
 
 export function isSnapshotFile(name: string): boolean {
@@ -171,7 +184,7 @@ export function snapshotDatabase(store: Store, dir: string, name: string, opts: 
   const partial = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.partial`;
   stageCheckedCopy(store, local, name, partial, opts);
 
-  const lockFile = join(dir, 'constellation-pre-update.lock');
+  const lockFile = join(dir, 'polaris-pre-update.lock');
   let removed: string[];
   try {
     removed = withFileLockSync(lockFile, () => {

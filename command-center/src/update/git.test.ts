@@ -136,7 +136,7 @@ test('with the real git, each refusal stops before any other program runs', asyn
   const programs: string[] = [];
   const real = realExec();
   const exec: Exec = (cmd, args, opts) => { programs.push(cmd); return real(cmd, args, opts); };
-  const dbPath = join(r.base, 'data', 'constellation.db');
+  const dbPath = join(r.base, 'data', 'polaris.db');
   const run = async () => {
     const out: string[] = [];
     const err: string[] = [];

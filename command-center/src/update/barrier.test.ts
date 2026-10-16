@@ -17,7 +17,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 function scratch(t: { after(fn: () => void): void }): { dir: string; dbPath: string } {
   const dir = mkdtempSync(join(tmpdir(), 'cc-barrier-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { dir, dbPath: join(dir, 'data', 'constellation.db') };
+  return { dir, dbPath: join(dir, 'data', 'polaris.db') };
 }
 
 test('the barrier is written next to the database, owner-only, with this pid, the moment, and the version', (t) => {

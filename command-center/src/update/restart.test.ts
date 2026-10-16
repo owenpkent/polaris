@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Exec, ExecResult } from './exec.ts';
-import { canRestart, describeRestart, detectRestart, parseRestartSpec, restartDaemon, restartProblem, sudoersLine, waitForPort, WINDOWS_TASK, type RestartMethod } from './restart.ts';
+import { LEGACY_WINDOWS_TASK, resolveRestartTask, canRestart, describeRestart, detectRestart, parseRestartSpec, restartDaemon, restartProblem, sudoersLine, waitForPort, WINDOWS_TASK, type RestartMethod } from './restart.ts';
 
 const ok = (stdout = ''): ExecResult => ({ code: 0, stdout, stderr: '' });
 const no = (code = 1): ExecResult => ({ code, stdout: '', stderr: '' });
@@ -140,4 +140,13 @@ test('a failed stop runs no swap, a failed start is reported, and a wait that ru
 test('every method is covered by describeRestart', () => {
   const methods: RestartMethod[] = [{ kind: 'task', task: WINDOWS_TASK }, { kind: 'systemd', unit: 'u' }, { kind: 'systemd-user', unit: 'u' }, { kind: 'manual' }];
   for (const m of methods) assert.ok(describeRestart(m).length > 10, m.kind);
+});
+
+test('a pre-rename install: only the Constellation task exists, and detection and CC_UPDATE_RESTART=task both use it', async () => {
+  const legacyOnly = () => scripted((line) => (line.startsWith('powershell.exe') && line.includes(`Get-ScheduledTask -TaskName '${LEGACY_WINDOWS_TASK}'`) ? ok() : no()));
+  assert.deepEqual(await detectRestart(legacyOnly().exec, 'win32'), { kind: 'task', task: LEGACY_WINDOWS_TASK });
+  assert.deepEqual(await resolveRestartTask(parseRestartSpec('task'), legacyOnly().exec), { kind: 'task', task: LEGACY_WINDOWS_TASK });
+  const both = scripted(() => ok());
+  assert.deepEqual(await detectRestart(both.exec, 'win32'), { kind: 'task', task: WINDOWS_TASK });
+  assert.deepEqual(await resolveRestartTask(parseRestartSpec('task'), scripted(() => no()).exec), { kind: 'task', task: WINDOWS_TASK });
 });

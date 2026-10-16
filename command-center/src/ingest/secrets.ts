@@ -71,6 +71,8 @@ export interface DpapiDeps {
   baseDir?: string;
   /** Injectable for tests so no real powershell.exe is ever spawned outside this file. */
   runPowerShell?: (script: string, stdin: string) => Promise<string>;
+  /** How long one powershell.exe run may take. Tests that start the real one on a busy CI runner raise it. */
+  timeoutMs?: number;
 }
 
 // Secrets go over stdin, never argv, and cross the PowerShell boundary as base64 of their UTF-8
@@ -105,19 +107,19 @@ const POWERSHELL_TIMEOUT_MS = 20_000;
 
 // Asynchronous, because PowerShell can take seconds to start and the daemon answers every other
 // request meanwhile.
-function defaultRunPowerShell(script: string, stdin: string): Promise<string> {
+function defaultRunPowerShell(script: string, stdin: string, timeoutMs = POWERSHELL_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], {
       encoding: 'utf8',
       windowsHide: true,
       env: windowsPowerShellEnv(),
-      timeout: POWERSHELL_TIMEOUT_MS,
+      timeout: timeoutMs,
     }, (e, stdout, stderr) => {
       if (!e) { resolve(stdout.trim()); return; }
       // The default message repeats the whole command line and every line PowerShell printed, and it
       // reaches the dashboard. The secret is never in it (it goes over stdin), but one line is enough.
       const firstLine = e.killed
-        ? `powershell.exe did not finish within ${POWERSHELL_TIMEOUT_MS / 1000} seconds`
+        ? `powershell.exe did not finish within ${timeoutMs / 1000} seconds`
         : stderr.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? e.message.split('\n')[0];
       reject(new Error(`Windows could not protect or read the secret (DPAPI through powershell.exe): ${firstLine}`));
     });
@@ -128,16 +130,20 @@ function defaultRunPowerShell(script: string, stdin: string): Promise<string> {
   });
 }
 
-function defaultBaseDir(): string {
-  const appData = process.env.APPDATA;
-  return appData ? join(appData, 'constellation', 'secrets') : join(process.env.USERPROFILE ?? '.', 'AppData', 'Roaming', 'constellation', 'secrets');
+/** The Windows secrets folder: `polaris\secrets` under APPDATA, or the `constellation\secrets` folder when only
+ *  that exists (an install from before the Constellation to Polaris rename). Nothing is moved. */
+export function defaultBaseDir(env: NodeJS.ProcessEnv = process.env, exists: (path: string) => boolean = existsSync): string {
+  const appData = env.APPDATA ?? join(env.USERPROFILE ?? '.', 'AppData', 'Roaming');
+  const current = join(appData, 'polaris', 'secrets');
+  const legacy = join(appData, 'constellation', 'secrets');
+  return !exists(current) && exists(legacy) ? legacy : current;
 }
 
 /** DPAPI-CurrentUser encryption via powershell.exe. Ciphertext on disk, plaintext only ever
  *  passed over stdin to a fixed script -- never on a command line, never logged. */
 export function windowsDpapiSecretStore(deps: DpapiDeps = {}): SecretStore {
   const dir = deps.baseDir ?? defaultBaseDir();
-  const run = deps.runPowerShell ?? defaultRunPowerShell;
+  const run = deps.runPowerShell ?? ((script: string, stdin: string) => defaultRunPowerShell(script, stdin, deps.timeoutMs));
   const fileFor = (key: string) => join(dir, `${key.replace(/[^a-zA-Z0-9_.-]/g, '_')}.bin`);
   const get = async (key: string): Promise<string | undefined> => {
     const file = fileFor(key);
@@ -276,15 +282,24 @@ export function fileSecretStore(file: string, deps: FileStoreDeps = {}): SecretS
  *  one instance is visible to every other caller (see github/auth.ts). */
 let cachedDefaultSecretStore: SecretStore | undefined;
 
+export interface DefaultSecretStoreOptions {
+  /** How long one powershell.exe run may take on Windows. Left out, the daemon's 20 seconds. */
+  dpapiTimeoutMs?: number;
+  /** Injectable so a test can see the options the Windows store is built with. */
+  makeDpapi?: typeof windowsDpapiSecretStore;
+}
+
 /** Windows DPAPI on Windows, a 0600 file next to the database everywhere else. There is no env var
- *  store: the GitHub App's refresh token rotates, so the store has to be writable. */
-export function defaultSecretStore(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env): SecretStore {
-  if (!cachedDefaultSecretStore) {
-    // CC_SECRETS_DIR moves the store. On Windows it otherwise belongs to the user, not to a
-    // database, so a scratch server (the UI tests, the mockup) would read and write the real one.
-    cachedDefaultSecretStore = platform === 'win32'
-      ? windowsDpapiSecretStore(env.CC_SECRETS_DIR ? { baseDir: env.CC_SECRETS_DIR } : {})
-      : fileSecretStore(join(env.CC_SECRETS_DIR ?? dirname(loadConfig(env).dbPath), 'secrets.json'), { platform });
-  }
-  return cachedDefaultSecretStore;
+ *  store: the GitHub App's refresh token rotates, so the store has to be writable.
+ *  With `opts` the caller gets its own store, not the shared one (the UI test server holds it on its App). */
+export function defaultSecretStore(platform: NodeJS.Platform = process.platform, env: NodeJS.ProcessEnv = process.env, opts?: DefaultSecretStoreOptions): SecretStore {
+  if (!opts && cachedDefaultSecretStore) return cachedDefaultSecretStore;
+  // CC_SECRETS_DIR moves the store. On Windows it otherwise belongs to the user, not to a
+  // database, so a scratch server (the UI tests, the mockup) would read and write the real one.
+  const makeDpapi = opts?.makeDpapi ?? windowsDpapiSecretStore;
+  const store = platform === 'win32'
+    ? makeDpapi({ ...(env.CC_SECRETS_DIR ? { baseDir: env.CC_SECRETS_DIR } : {}), ...(opts?.dpapiTimeoutMs ? { timeoutMs: opts.dpapiTimeoutMs } : {}) })
+    : fileSecretStore(join(env.CC_SECRETS_DIR ?? dirname(loadConfig(env).dbPath), 'secrets.json'), { platform });
+  if (!opts) cachedDefaultSecretStore = store;
+  return store;
 }

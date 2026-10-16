@@ -71,8 +71,11 @@ jobs:
         working-directory: command-center
 
   ui:
-    name: UI tests in Edge, part ${{ matrix.shard }} of 4
-    if: github.event_name == 'pull_request'
+    name: UI tests in Edge, part ${{ matrix.shard }} of 6
+    needs: changes
+    # Skipped when the pull request touches nothing the dashboard or its server is built from
+    # (the `ui` filter in `changes` below). `ui-passed` and `tests` accept that skip, and only that one.
+    if: github.event_name == 'pull_request' && needs.changes.outputs.ui == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:
@@ -85,9 +88,12 @@ jobs:
         # double); four on 2026-09-26 when one worker a part took ten minutes. On 2026-09-27
         # workers inside a part were measured on this four-core runner: four workers contended
         # until tests timed out, and two workers took 14 minutes a part against 9 with one, so a
-        # part stays at one worker and the parallelism is the parts. To change it, change this
-        # list, the "of 4" above, and the --shard below together.
-        shard: [1, 2, 3, 4]
+        # part stays at one worker and the parallelism is the parts. Six on 2026-10-15: the slowest
+        # of four parts took eight minutes and set the pace for the whole run, and the repository
+        # is public, so a part costs runner time and nothing else. Playwright splits by test count
+        # (fullyParallel), not by duration, so the parts stay somewhat uneven. To change it, change
+        # this list, the "of 6" above, and the --shard below together.
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -102,7 +108,7 @@ jobs:
         working-directory: command-center
       # windows-latest ships Microsoft Edge, which playwright.config.js drives through
       # channel 'msedge', so no browser download is needed.
-      - run: npm run test:ui -- --shard=${{ matrix.shard }}/4
+      - run: npm run test:ui -- --shard=${{ matrix.shard }}/6
       - name: Keep traces and screenshots from failed UI tests
         if: failure()
         uses: actions/upload-artifact@v7
@@ -113,24 +119,31 @@ jobs:
 
   # One check that speaks for every part, under the name the single job used to have. A part
   # that was cancelled or skipped is not a failure to GitHub, so without this a pull request
-  # could look green with half the UI tests never run. Linux, because it only reads results.
+  # could look green with half the UI tests never run. Linux, because it only reads results. The
+  # parts may be skipped only when `changes` said nothing they test was touched; if `changes`
+  # failed, its output is empty and a skip is a failure.
   ui-passed:
     name: UI tests in Edge at desktop and phone widths
-    needs: ui
+    needs: [changes, ui]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Check that every part passed
+      - name: Check that every part passed, or that none was needed
         run: |
-          echo "UI test parts: ${{ needs.ui.result }}"
-          [ "${{ needs.ui.result }}" = "success" ] || exit 1
+          echo "UI test parts: ${{ needs.ui.result }} (needed: ${{ needs.changes.outputs.ui }})"
+          [ "${{ needs.ui.result }}" = "success" ] && exit 0
+          [ "${{ needs.ui.result }}" = "skipped" ] && [ "${{ needs.changes.outputs.ui }}" = "false" ] && exit 0
+          exit 1
 
   # Which parts of the tree a pull request touches, for jobs that only matter when they change.
-  # Nothing uses these outputs yet: .github/workflows/android.yml and desktop-ui.yml are
-  # path-filtered at the workflow level on their open pull requests, and are meant to become jobs
-  # here gated with `if: needs.changes.outputs.android == 'true'`. Keep these lists in step with
-  # the paths those workflows use. Pull requests only, because a push run has no base to compare.
+  # `ui` gates the UI test parts. It is written as everything except a list of paths that cannot
+  # change what the UI tests run, so a new file anywhere else runs them: add a path to the
+  # exclusions only when that is certain. The other two outputs are not used yet:
+  # .github/workflows/android.yml and desktop-ui.yml are path-filtered at the workflow level on
+  # their open pull requests, and are meant to become jobs here gated with
+  # `if: needs.changes.outputs.android == 'true'`. Keep those lists in step with the paths those
+  # workflows use. Pull requests only, because a push run has no base to compare.
   changes:
     name: Which paths changed
     if: github.event_name == 'pull_request'
@@ -140,9 +153,32 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
+      ui: ${{ steps.ui-filter.outputs.ui }}
       android: ${{ steps.filter.outputs.android }}
       desktop: ${{ steps.filter.outputs.desktop }}
     steps:
+      # A step of its own, because `every` applies to all the filters in a step: a file counts
+      # only when it matches every pattern, which is what lets `ui` say "anything but these".
+      - uses: dorny/paths-filter@v4
+        id: ui-filter
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            ui:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!desktop/**'
+              - '!mobile/**'
+              - '!scripts/desktop.mjs'
+              - '!scripts/install-*'
+              - '!release-signers'
+              - '!LICENSE'
+              - '!.github/dependabot.yml'
+              - '!.github/workflows/android.yml'
+              - '!.github/workflows/desktop-ui.yml'
+              - '!.github/workflows/nightly-properties.yml'
+              - '!.github/workflows/weekly.yml'
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -180,8 +216,9 @@ jobs:
   # after this has run green on a pull request or two; until then the two older names above keep
   # working unchanged, so nothing blocks during the switch. A job that was cancelled or skipped
   # is not a failure to GitHub, so this job reads every result itself and fails on anything but
-  # success. Every job here runs on every pull request, so none may be skipped: there is no
-  # exception for skips, and this job itself only runs on pull requests. To add a job to the gate:
+  # success. The one skip it accepts is the UI test parts when `changes` said nothing they test
+  # was touched; every other job runs on every pull request. This job itself only runs on pull
+  # requests. To add a job to the gate:
   # add the job, add it to `needs`, and add one line to the check below (`must_pass` for a job
   # that always runs, `gated` for a job that only runs when `changes` says its paths were touched).
   tests:
@@ -210,7 +247,7 @@ jobs:
           must_pass changes "${{ needs.changes.result }}"
           must_pass fast "${{ needs.fast.result }}"
           must_pass coverage "${{ needs.coverage.result }}"
-          must_pass ui "${{ needs.ui.result }}"
+          gated ui "${{ needs.ui.result }}" "${{ needs.changes.outputs.ui }}"
           must_pass ui-passed "${{ needs.ui-passed.result }}"
           must_pass osv "${{ needs.osv.result }}"
           exit $bad

@@ -7,6 +7,7 @@ import {
   expectNoHorizontalOverflow,
   failRequest,
   failureBanner,
+  gateRequest,
   gotoView,
   isPhone,
   openNavigation,
@@ -23,7 +24,7 @@ import {
 // answers that warm-up copy. That is harmless: the warm-up throws its answers away and swallows
 // failures, and the retry checks below wait for the request that follows the click.
 //
-// VIEWS and the route helpers (delayRequest, failRequest, emptyRequest, gotoView) live in
+// VIEWS and the route helpers (gateRequest, delayRequest, failRequest, emptyRequest, gotoView) live in
 // support.js, shared with the screenshots of these same states in e2e/shots.spec.js.
 
 // A delayed handler may still be sleeping when a test ends; it must not report into the next one.
@@ -38,7 +39,8 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
     const next = VIEWS[(index + 1) % VIEWS.length]
 
     test(`${view.label}: a slow answer shows the loading state and the top bar still works`, async ({ page }, testInfo) => {
-      await delayRequest(page, view.request)
+      // Held, not delayed: a fixed delay can end before a cold browser draws the loading text.
+      const release = await gateRequest(page, view.request)
       await gotoView(page, view.id)
 
       const main = page.getByRole('main')
@@ -53,6 +55,7 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
         await expect(nav).toBeHidden()
       }
 
+      release()
       await expect(view.ready(page, testInfo)).toBeVisible({ timeout: SLOW_MS + 10000 })
       await expect(loading).toHaveCount(0)
     })

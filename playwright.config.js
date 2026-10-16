@@ -38,7 +38,7 @@ export default defineConfig({
   // time, and any test may run in any worker: the suite never shared state between tests. The
   // CI runner has four cores and no headroom for more than one Edge and one server: four workers
   // made the median test take ten seconds instead of four and the slowest time out, and two
-  // workers took longer a part than one, so CI runs one worker in four parts (test.yml). The PC
+  // workers took longer a part than one, so CI runs one worker in each of six parts (test.yml). The PC
   // has the cores for four. Pass --workers to choose.
   fullyParallel: true,
   workers: process.env.CI ? 1 : 4,

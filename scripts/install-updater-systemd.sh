@@ -91,7 +91,7 @@ if [ ! -f "$env_file" ]; then
 # EnvironmentFile. One NAME=value per line, no quotes and no shell expansion. Set the same values
 # the daemon runs with, so the updater finds the same database, backups, and secrets. Uncomment a
 # line to set it; the next run reads the file.
-#CC_DB=/path/to/command-center/data/constellation.db   the database (default: command-center/data/constellation.db)
+#CC_DB=/path/to/command-center/data/polaris.db   the database (default: command-center/data/polaris.db)
 #CC_BACKUP_DIR=/path/to/backups                        where the daily backups and the pre-update snapshots go (default: data/backups)
 #CC_SECRETS_DIR=/path/to/secrets                       where secrets.json lives (default: next to the database)
 #CC_UPDATE_RESTART=systemd:polaris                     how the daemon is restarted: task, systemd:<unit>, systemd-user:<unit> (default: detected)
