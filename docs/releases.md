@@ -35,7 +35,7 @@ git tag -d test-signing
 ## Release checklist
 
 1. CI is green on the commit on `main` that becomes the release.
-2. `npm run test:ui` has run on it (CI runs `npm run test:fast`; the UI tests are the release gate).
+2. `npm run test:ui` has run on it. CI runs the UI tests on every pull request into `main`, but the release is the commit on `main`, and that run is yours to check.
 3. The version is bumped in both `package.json` and `command-center/package.json`, to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). Nothing after the patch: a prerelease or build suffix is not a version and never installs.
 4. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
 5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most):

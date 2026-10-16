@@ -3,7 +3,7 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## 2.0.0 (2026-10-08)
+## 2.0.0 (2026-10-15)
 
 The first signed release. Everything on `main` to this point is in it; the entries below are what
 an install needs to know before updating onto it.

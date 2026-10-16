@@ -8,7 +8,7 @@ Prior art: the owner's alpha-osk updater (a Windows installer-based updater with
 
 ## Where things stand
 
-This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds; no release tag has been cut yet.
+This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds; the first release, v2.0.0, was tagged on 2026-10-15.
 
 - Updating is manual. On every install it is: `git pull`, `npm install` at the root, `npm --prefix command-center install`, `npm run build`, then a restart of the daemon. The owner snapshots the database first when `command-center/src/core/schema.ts` changes.
 - The daemon, the CLI, and the Windows logon task all run `command-center/src/cli.ts` straight from the git working tree with Node. There is no install step and no built server: a `git checkout` changes the code the next process runs. The dashboard is the one built thing, `npm run build` writing `dist/`, which the running daemon serves.
@@ -19,7 +19,7 @@ This section is the install as it was when the proposal was written. Since the b
 - The migration loop in src/core/db.ts runs any migration the database is missing and does nothing when the database is ahead of the code. Only `cc backup check` and `POST /api/backup/check` notice a database newer than the code.
 - The CLI opens the store directly for every task command, so the daemon has never been the database's only writer. The daemon and the CLI are separate processes and share the database through SQLite and the lock files in src/core.
 - A failing job reaches the dashboard as `warnings` on `GET /api/sync` (src/http/warnings.ts), shown by src/JobWarningsBanner.jsx.
-- No signing key exists yet on the owner's machines. Phase B needs one (section 2).
+- The owner's signing key exists and is in `release-signers` (docs/releases.md has the setup). It was made for phase B (section 2).
 
 ## Why not follow `main` automatically
 
@@ -210,5 +210,5 @@ A new group in command-center/src/invariants.test.ts (built as group 11; the run
 ## Open questions
 
 - Decided for now: the deploy-only checkout stays the recommended pattern, with development always in a second clone, because `cc update` refuses a dirty tree, which a development clone usually is.
-- Release cadence: a release per merged feature, or batched? No release has been cut yet (docs/releases.md is the checklist).
+- Release cadence: batched. A release is cut when something is worth installing; v2.0.0 was the first, on 2026-10-15 (docs/releases.md is the checklist).
 - Settled: forks make their own key and replace the lines in `release-signers` (docs/releases.md, "Forks"). `cc update --release` refuses to run until the pinned file has a key.
