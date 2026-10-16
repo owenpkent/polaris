@@ -32,3 +32,10 @@ describe('ProjectChip', () => {
     expect(container.innerHTML).toBe('')
   })
 })
+
+describe('ProjectChip in the task panel', () => {
+  test('wraps a long name instead of shortening it', () => {
+    const { container } = render(<ProjectChip name="A long project name" wrap />)
+    expect(container.firstChild.className).toBe('project-chip is-wrapping')
+  })
+})

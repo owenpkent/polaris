@@ -183,6 +183,10 @@ body {
   color: var(--t1);
   font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   line-height: 1.45;
+  /* A word longer than its line (a URL, an id, a name typed without spaces) breaks rather than
+     running out of its box. Flex and grid items also need min-width: 0 to shrink, and get
+     overflow-wrap: anywhere where they hold user text (CONTRIBUTING.md, "Nothing is cut off"). */
+  overflow-wrap: break-word;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -191,6 +195,13 @@ body {
 
 /* Scrollbars are wide enough to grab with a mouse. */
 html { scrollbar-color: var(--bd-strong) var(--bg); }
+/* Whatever is scrolled into view (a control reached with Tab, a search hit) lands clear of the
+   sticky top bar and, on a phone, the tab bar, instead of under them (CONTRIBUTING.md, "Nothing
+   is cut off"). */
+html { scroll-padding-top: 64px; }
+@media (max-width: 640px) {
+  html { scroll-padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+}
 ::-webkit-scrollbar { width: 14px; height: 14px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -294,6 +305,10 @@ kbd { color: var(--t1); }
   white-space: nowrap;
 }
 .project-chip > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Wrapped, the chip grows taller than its row, so it keeps 6px off the neighbours above and below,
+   whose focus rings reach 4px out. */
+.project-chip.is-wrapping { white-space: normal; border-radius: 12px; margin: 6px 0; }
+.project-chip.is-wrapping > span:last-child { overflow: visible; overflow-wrap: anywhere; }
 .project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .project-avatar {
   display: inline-flex;
@@ -952,6 +967,31 @@ kbd { color: var(--t1); }
   }
 }
 
+/* GitHub repos (GithubTab.jsx): a table on a wide screen. On a phone each repo is a card, cells on
+   their own lines and each switch beside its label, so no switch sits past the edge of a table
+   that would have to be scrolled sideways (CONTRIBUTING.md, "Nothing is cut off"). The markup
+   stays a table, so the rows and cells keep their roles. */
+.repo-cell-label { display: none; }
+@media (max-width: 640px) {
+  .repo-table thead { display: none; }
+  .repo-table,
+  .repo-table tbody,
+  .repo-table tr,
+  .repo-table td { display: block; width: 100%; }
+  .repo-table .repo-row { padding: 8px 0; }
+  .repo-table td { padding: 2px 8px !important; }
+  .repo-table .repo-name { font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+  .repo-table .repo-cell-label { display: inline; margin-right: 8px; color: var(--t2); }
+  .repo-table .repo-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: var(--target);
+  }
+  .repo-table .repo-switch .repo-cell-label { color: var(--t1); }
+}
+
 @media (max-width: 640px) {
   .board-lanes {
     scroll-snap-type: x mandatory;
@@ -1086,6 +1126,7 @@ kbd { color: var(--t1); }
   font-size: 14px;
   overflow-wrap: break-word;
 }
+.project-name > span:not(.badge) { min-width: 0; overflow-wrap: anywhere; }
 .project-meta {
   display: flex;
   flex-wrap: wrap;

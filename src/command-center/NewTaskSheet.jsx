@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { getDueBounds, localIso, addDays } from './dueDates'
+import { oneLine, useFitToText } from './useFitToText'
 
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)'
 
@@ -47,6 +48,8 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   const titleRef = useRef(null)
   const wasOpenRef = useRef(open)
   const openingRef = useRef(0)
+  // Measured once the sheet is open (the box only exists then), and as the title changes.
+  useFitToText(titleRef, open ? title : null)
 
   // A fresh form each time it opens or is reseeded, with the title focused.
   useEffect(() => {
@@ -147,15 +150,25 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
 
         <div className="field">
           <label htmlFor="new-task-title">Title</label>
-          <input
+          {/* Grows with its text, so a long title is seen whole while it is typed; Enter adds the
+              task as it would from a one-line box. */}
+          <textarea
             id="new-task-title"
             ref={titleRef}
+            rows={1}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => setTitle(oneLine(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }}
             disabled={busy}
             placeholder="Task name"
             aria-label="New task name"
             autoComplete="off"
+            // minHeight: the sheet gives its text boxes room for notes; a title starts one 44px line.
+            style={{ resize: 'none', overflow: 'hidden', overflowWrap: 'anywhere', flexShrink: 0, minHeight: 'var(--target)' }}
           />
         </div>
 

@@ -223,3 +223,22 @@ describe('.flush-last only on a bordered panel', () => {
     })
   }
 })
+
+// -- rule 7: long words break, and nothing scrolls into view under a sticky bar --------------------
+
+describe('long words break and scrolled-to content clears the sticky bars', () => {
+  const rules = cssRules(css)
+
+  it('body breaks a word longer than its line', () => {
+    const body = rules.find((r) => r.selector === 'body')
+    expect(decl(body.body, 'overflow-wrap')).toMatch(/^(break-word|anywhere)$/)
+  })
+
+  it('the page scroll padding clears the top bar, and on a phone the tab bar', () => {
+    const top = rules.filter((r) => r.selector === 'html').map((r) => decl(r.body, 'scroll-padding-top')).find(Boolean)
+    const bottom = rules.filter((r) => r.selector === 'html').map((r) => decl(r.body, 'scroll-padding-bottom')).find(Boolean)
+    // The top bar is 56px (the My tasks column header sticks at top: 56) and the tab bar 64px.
+    expect(px(top || '')).toBeGreaterThanOrEqual(56)
+    expect(px(bottom || '')).toBeGreaterThanOrEqual(64)
+  })
+})

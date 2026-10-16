@@ -179,18 +179,27 @@ function RepoRow({ repo, error, onToggle }) {
   const tracked = Boolean(repo.tracked)
   return (
     <>
-      <tr style={{ borderBottom: '1px solid var(--bd)' }}>
-        <td style={{ padding: '8px' }}>{repo.fullName}</td>
+      {/* On a phone the row is a card (.repo-table in index.css): each cell on its own line, and
+          each switch beside the label its column header gives it on a wide screen, so nothing
+          sits past the edge of a sideways-scrolling table. The labels are for the eye only;
+          every switch already names itself. */}
+      <tr className="repo-row" style={{ borderBottom: '1px solid var(--bd)' }}>
+        <td className="repo-name" style={{ padding: '8px' }}>{repo.fullName}</td>
         <td style={{ padding: '8px', color: 'var(--t2)' }}>{repo.private ? 'Private' : 'Public'}</td>
-        <td style={{ padding: '8px', color: 'var(--t2)' }}>{repo.project?.name || ''}</td>
-        <td style={{ padding: '8px' }}>
+        <td style={{ padding: '8px', color: 'var(--t2)' }}>
+          {repo.project?.name && <span className="repo-cell-label" aria-hidden="true">Project</span>}
+          {repo.project?.name || ''}
+        </td>
+        <td className="repo-switch" style={{ padding: '8px' }}>
+          <span className="repo-cell-label" aria-hidden="true">Track as project</span>
           <ToggleSwitch
             checked={tracked}
             onChange={(next) => onToggle(repo.fullName, 'tracked', next)}
             label={`Track ${repo.fullName} as a project`}
           />
         </td>
-        <td style={{ padding: '8px' }}>
+        <td className="repo-switch" style={{ padding: '8px' }}>
+          <span className="repo-cell-label" aria-hidden="true">Sync issues and PRs</span>
           <ToggleSwitch
             checked={Boolean(repo.syncIssues)}
             onChange={(next) => onToggle(repo.fullName, 'syncIssues', next)}
@@ -198,7 +207,8 @@ function RepoRow({ repo, error, onToggle }) {
             disabled={!tracked}
           />
         </td>
-        <td style={{ padding: '8px' }}>
+        <td className="repo-switch" style={{ padding: '8px' }}>
+          <span className="repo-cell-label" aria-hidden="true">Read checklists</span>
           <ToggleSwitch
             checked={Boolean(repo.readChecklists)}
             onChange={(next) => onToggle(repo.fullName, 'readChecklists', next)}
@@ -436,6 +446,8 @@ export default function GithubTab() {
                       alignItems: 'center',
                       color: 'var(--blue)',
                       fontSize: 14,
+                      minWidth: 0,
+                      overflowWrap: 'anywhere',
                     }}
                   >
                     {status.app.name}
@@ -588,7 +600,7 @@ export default function GithubTab() {
                 <Loading label="Loading repos…" />
               ) : (
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <table className="repo-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid var(--bd)' }}>
                         <th style={thStyle}>Repo</th>

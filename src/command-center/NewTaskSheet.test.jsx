@@ -164,3 +164,24 @@ describe('NewTaskSheet', () => {
     button.remove()
   })
 })
+
+// The title box grows with its text so a long title is seen whole while it is typed (CONTRIBUTING.md,
+// "Nothing is cut off"), and Enter still adds the task.
+describe('NewTaskSheet title box', () => {
+  test('is a textarea, and Enter adds the task', async () => {
+    const { onCreate } = renderSheet()
+    const title = screen.getByRole('textbox', { name: 'New task name' })
+    expect(title.tagName).toBe('TEXTAREA')
+    fireEvent.change(title, { target: { value: 'Book the van service' } })
+    fireEvent.keyDown(title, { key: 'Enter' })
+    await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0][0].title).toBe('Book the van service')
+  })
+
+  test('a pasted line break becomes a space', () => {
+    renderSheet()
+    const title = screen.getByRole('textbox', { name: 'New task name' })
+    fireEvent.change(title, { target: { value: 'Book the van\nservice' } })
+    expect(title.value).toBe('Book the van service')
+  })
+})

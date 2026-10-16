@@ -94,13 +94,14 @@ export function Avatar({ name, size = 24 }) {
   )
 }
 
-// A project named in a list cell: its colour dot and its name on a soft pill.
-export function ProjectChip({ name }) {
+// A project named in a list cell: its colour dot and its name on a soft pill. In a list a narrow
+// column shortens a long name with an ellipsis, and the title keeps the whole name a hover away;
+// `wrap` (the task panel, where a name is read in full) lets it run onto more lines instead
+// (CONTRIBUTING.md, "Nothing is cut off").
+export function ProjectChip({ name, wrap = false }) {
   if (!name) return null
   return (
-    // A narrow column shortens a long name with an ellipsis; the title keeps the whole name a
-    // hover away (CONTRIBUTING.md, "Nothing is cut off").
-    <span className="project-chip" title={name}>
+    <span className={wrap ? 'project-chip is-wrapping' : 'project-chip'} title={name}>
       <span className="project-dot" aria-hidden="true" style={{ background: projectColor(name) }} />
       <span>{name}</span>
     </span>
