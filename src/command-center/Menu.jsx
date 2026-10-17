@@ -34,7 +34,9 @@ export function useRovingFocus(containerRef) {
 // near the right edge of the page) is never clipped by either. Handles the
 // behavior every dropdown needs: focuses its first item on open, closes on
 // Esc (returning focus to the trigger) or on an outside click, and
-// repositions itself if the page scrolls or resizes while it's open.
+// repositions itself if the page scrolls or resizes while it's open. `gutter` is the least room
+// kept between it and the window's sides; the add-task date step (InlineTaskInput.jsx) passes 0,
+// so seven 44px days still fit on a 320px screen.
 export function Popover({
   anchorRef,
   open,
@@ -43,6 +45,7 @@ export function Popover({
   align = 'start',
   minWidth = 200,
   focusSelector = '[data-menu-item]:not(:disabled)',
+  gutter = 8,
 }) {
   const popRef = useRef(null)
   const [pos, setPos] = useState(null)
@@ -55,7 +58,7 @@ export function Popover({
     const vh = window.innerHeight
     const width = Math.max(minWidth, popRef.current?.offsetWidth || minWidth)
     let left = align === 'end' ? a.right - width : a.left
-    left = Math.max(8, Math.min(left, vw - width - 8))
+    left = Math.max(gutter, Math.min(left, vw - width - gutter))
     const spaceBelow = vh - a.bottom
     const spaceAbove = a.top
     const openUp = spaceBelow < 160 && spaceAbove > spaceBelow
@@ -65,7 +68,7 @@ export function Popover({
       bottom: openUp ? vh - a.top + 4 : null,
       maxHeight: Math.max(120, (openUp ? spaceAbove : spaceBelow) - 12),
     })
-  }, [anchorRef, align, minWidth])
+  }, [anchorRef, align, minWidth, gutter])
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return }
@@ -145,7 +148,7 @@ export function Popover({
         top: pos.top ?? undefined,
         bottom: pos.bottom ?? undefined,
         minWidth,
-        maxWidth: 'calc(100vw - 16px)',
+        maxWidth: `calc(100vw - ${2 * gutter}px)`,
         maxHeight: pos.maxHeight,
         overflowY: 'auto',
         background: 'var(--bg3)',

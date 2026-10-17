@@ -741,3 +741,37 @@ test('POST /api/tasks/import: CSV project and section columns override the defau
     assert.equal(json.created[0].sectionId, app.store.listSections(a.id)[0].id);
   });
 });
+
+test('POST /api/tasks/:id/skip moves the due date, and refuses what cannot be skipped', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'weekly sync', dueAt: '2026-09-10', recurrence: 'FREQ=WEEKLY' }, 'human');
+  const plain = app.store.createTask({ title: 'once', dueAt: '2026-09-10' }, 'human');
+  await withServer(app, {}, async (base) => {
+    const ok = await api(base, 'POST', `/api/tasks/${task.id}/skip`);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.task.dueAt, '2026-09-17');
+    assert.equal(ok.json.task.status, 'open');
+    const bad = await api(base, 'POST', `/api/tasks/${plain.id}/skip`);
+    assert.equal(bad.status, 400);
+  });
+});
+
+test('GET /api/recurrence/preview lists the next dates, and answers 400 for a bad rule or count', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const ok = await api(base, 'GET', '/api/recurrence/preview?rule=weekly&from=2026-09-10&count=2');
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.json, { dates: ['2026-09-17', '2026-09-24'] });
+    const dflt = await api(base, 'GET', '/api/recurrence/preview?rule=daily');
+    assert.deepEqual(dflt.json.dates, ['2026-09-13', '2026-09-14', '2026-09-15']);
+    const ended = await api(base, 'GET', '/api/recurrence/preview?rule=FREQ%3DWEEKLY%3BUNTIL%3D20260901&from=2026-09-10');
+    assert.deepEqual(ended.json, { dates: [] });
+    const bad = await api(base, 'GET', '/api/recurrence/preview?rule=every%20other%20tuesday');
+    assert.equal(bad.status, 400);
+    assert.ok(bad.json.message || bad.json.error);
+    assert.equal((await api(base, 'GET', '/api/recurrence/preview?rule=daily&count=11')).status, 400);
+    assert.equal((await api(base, 'GET', '/api/recurrence/preview')).status, 400);
+  });
+});

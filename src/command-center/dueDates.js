@@ -1,3 +1,5 @@
+import { describeRule } from './recurrenceRules'
+
 // Local-timezone date helpers for the My Tasks list.
 //
 // Bucketing and comparisons always happen on YYYY-MM-DD strings, never on
@@ -69,18 +71,11 @@ export function groupTasks(tasks, bounds) {
 
 // Display text + color for the Due date cell. Independent of which group the
 // row is rendered in -- computed purely from the date's relation to bounds.
-// How a task's recurrence reads after "Repeats": the friendly aliases the server accepts
-// (automation/recurrence.ts) and its "every N units" form get their own words, and anything
-// else (a raw RRULE) is a custom rule. Null when the task does not repeat.
-const REPEAT_WORDS = { daily: 'daily', weekdays: 'on weekdays', weekly: 'weekly', monthly: 'monthly', yearly: 'yearly' }
-
+// How a task's recurrence reads after "Repeats" (recurrenceRules.js): the aliases and every rule
+// the builder can make get their own words, and anything else is a custom rule. Null when the task
+// does not repeat.
 export function repeatLabel(recurrence) {
-  const lower = String(recurrence || '').trim().toLowerCase()
-  if (!lower) return null
-  if (REPEAT_WORDS[lower]) return REPEAT_WORDS[lower]
-  const every = /^every\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)$/.exec(lower)
-  if (every) return `every ${every[1]} ${every[2]}`
-  return 'by a custom rule'
+  return describeRule(recurrence)
 }
 
 export function formatDueCell(dueAt, bounds) {

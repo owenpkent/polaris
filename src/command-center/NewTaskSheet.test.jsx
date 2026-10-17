@@ -70,11 +70,54 @@ describe('NewTaskSheet', () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Quick one', dueAt: null }))
   })
 
-  test('the date field picks any other day and unpresses the chips', () => {
+  test('Pick a date opens the calendar, and a day picked there is shown and unpresses the chips', () => {
     renderSheet()
-    fireEvent.change(screen.getByLabelText('Other date'), { target: { value: '2030-01-02' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Dentist' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    expect(screen.getByRole('heading', { name: 'When is it due?' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    const day = screen.getAllByRole('button').find((b) => b.dataset.date?.endsWith('-15'))
+    fireEvent.click(day)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Create' }))
     expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'Pick a date' })).toBeNull()
+  })
+
+  test('Esc in the date step goes back to the form and keeps the sheet open', () => {
+    const { onClose } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Walk' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'New task name' }), { key: 'Enter' })
+    expect(screen.getByRole('heading', { name: 'When is it due?' })).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Walk')
+  })
+
+  test('a repeat chosen on the form is sent with the task', async () => {
+    const { onCreate } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: getDueBounds().today, recurrence: 'weekly' }))
+  })
+
+  test('Custom repeat opens the builder, and the weekdays tapped there make the rule', async () => {
+    const { onCreate } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Gym' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    for (const name of ['Monday', 'Wednesday', 'Friday']) {
+      const day = screen.getByRole('button', { name })
+      if (day.getAttribute('aria-pressed') !== 'true') fireEvent.click(day)
+    }
+    for (const name of ['Tuesday', 'Thursday', 'Saturday', 'Sunday']) {
+      const day = screen.getByRole('button', { name })
+      if (day.getAttribute('aria-pressed') === 'true') fireEvent.click(day)
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0][0].recurrence).toBe('FREQ=WEEKLY;BYDAY=MO,WE,FR')
   })
 
   test('Create stays disabled until there is a title', () => {
@@ -166,15 +209,20 @@ describe('NewTaskSheet', () => {
 })
 
 // The title box grows with its text so a long title is seen whole while it is typed (CONTRIBUTING.md,
-// "Nothing is cut off"), and Enter still adds the task.
+// "Nothing is cut off"), and Enter goes on to the due date, where Enter again keeps the one picked.
 describe('NewTaskSheet title box', () => {
-  test('is a textarea, and Enter adds the task', async () => {
+  test('is a textarea, and Enter goes on to the due date, then Enter on the day and Create add the task', async () => {
     const { onCreate } = renderSheet()
     const title = screen.getByRole('textbox', { name: 'New task name' })
     expect(title.tagName).toBe('TEXTAREA')
     fireEvent.change(title, { target: { value: 'Book the van service' } })
     fireEvent.keyDown(title, { key: 'Enter' })
+    expect(screen.getByRole('heading', { name: 'When is it due?' })).toBeTruthy()
+    expect(document.activeElement.dataset.date).toBe(getDueBounds().today)
+    fireEvent.click(document.activeElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0][0].dueAt).toBe(getDueBounds().today)
     expect(onCreate.mock.calls[0][0].title).toBe('Book the van service')
   })
 

@@ -265,3 +265,19 @@ export function nextOccurrence(rrule: string, previousDue: string, today: string
   const dateStr = occurrence.toISOString().slice(0, 10);
   return timePart ? `${dateStr}T${timePart}${zonePart}` : dateStr;
 }
+
+/**
+ * The next `count` occurrences after `from`, each chained from the one before. Stops early when the
+ * series ends, so the result can be shorter than `count` or empty. Throws on an invalid rule.
+ */
+export function previewOccurrences(rrule: string, from: string, today: string, count: number): string[] {
+  const dates: string[] = [];
+  let cursor = from;
+  for (let i = 0; i < count; i++) {
+    const next = nextOccurrence(rrule, cursor, today);
+    if (!next) break;
+    dates.push(next);
+    cursor = next;
+  }
+  return dates;
+}

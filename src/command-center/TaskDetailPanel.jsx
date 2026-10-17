@@ -10,7 +10,9 @@ import { formatDueCell, getDueBounds, repeatLabel } from './dueDates'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
-import { Menu } from './Menu'
+import { Menu, Popover } from './Menu'
+import RepeatBuilder, { useRecurrencePreview } from './RepeatBuilder'
+import { parseRule } from './recurrenceRules'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 import ThreadSection from './ThreadSection'
 
@@ -286,8 +288,10 @@ function DueDateField({ value, onChange }) {
 }
 
 // The repeat choices offered beside the due date: the server's friendly aliases
-// (automation/recurrence.ts). Anything else, such as a raw RRULE, is a custom rule and is typed
-// into the Recurrence box under More details, which Custom rule opens.
+// (automation/recurrence.ts), and Custom, which opens the builder (RepeatBuilder.jsx) to tap out
+// any other rule: every N units, the weekdays of a weekly rule, the day of a monthly one. A rule
+// the builder cannot show (a raw RRULE with BYMONTH, say) is edited in the Recurrence box under
+// More details instead, which Custom then opens.
 const REPEAT_OPTIONS = [
   ['', 'Never'],
   ['daily', 'Daily'],
@@ -297,8 +301,10 @@ const REPEAT_OPTIONS = [
   ['yearly', 'Yearly'],
 ]
 
-function RepeatField({ value, onChange, onCustom }) {
+function RepeatField({ value, dueIso, onChange, onTypeRule, api, disabled }) {
   const [open, setOpen] = useState(false)
+  const [building, setBuilding] = useState(false)
+  const [draft, setDraft] = useState('')
   const btnRef = useRef(null)
   const label = repeatLabel(value)
   const current = String(value || '').trim().toLowerCase()
@@ -313,10 +319,15 @@ function RepeatField({ value, onChange, onCustom }) {
     { type: 'separator', key: 'sep-custom' },
     {
       key: 'custom',
-      label: 'Custom rule',
+      label: 'Custom',
       radio: true,
       checked: Boolean(current) && !REPEAT_OPTIONS.some(([option]) => option === current),
-      onSelect: onCustom,
+      onSelect: () => {
+        if (value && !parseRule(value, dueIso)) { onTypeRule(); return }
+        setDraft(value || '')
+        // After the menu has closed and handed focus back to the button.
+        requestAnimationFrame(() => setBuilding(true))
+      },
     },
   ]
   return (
@@ -326,7 +337,7 @@ function RepeatField({ value, onChange, onCustom }) {
         ref={btnRef}
         className="due-field"
         aria-haspopup="menu"
-        aria-expanded={open}
+        aria-expanded={open || building}
         aria-label={label ? `Repeat, ${label}` : 'Repeat, never'}
         onClick={() => setOpen((v) => !v)}
         style={{ marginLeft: 0 }}
@@ -335,7 +346,46 @@ function RepeatField({ value, onChange, onCustom }) {
         <span style={{ color: label ? 'var(--t1)' : 'var(--t2)' }}>{label ? `Repeats ${label}` : 'Repeat'}</span>
       </button>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
+      <Popover anchorRef={btnRef} open={building} onClose={() => setBuilding(false)} minWidth={300} focusSelector="button:not(:disabled), select">
+        <div role="dialog" aria-label="Custom repeat" style={{ padding: 12 }}>
+          <RepeatBuilder value={draft} dueIso={dueIso} onChange={setDraft} api={api} />
+          <div className="sheet-actions" style={{ marginTop: 12 }}>
+            <button type="button" className="btn" onClick={() => { setBuilding(false); btnRef.current?.focus() }}>Cancel</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={disabled || !draft}
+              onClick={() => { setBuilding(false); btnRef.current?.focus(); onChange(draft) }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Popover>
     </>
+  )
+}
+
+function formatLongDate(iso) {
+  const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// Under the due date of an open repeating task: the date completing it will bring the next one
+// to, and Skip this one, which moves the task to that date without completing it. Skip is
+// live-only (api.js), so it is off while offline, and so is the date, which the server works out.
+function NextOccurrenceRow({ rule, dueAt, api, offline, onSkip, busy }) {
+  const dates = useRecurrencePreview(api, rule, dueAt, 1)
+  const text = !dates ? null : dates.length ? `Next: ${formatLongDate(dates[0])}` : 'This is the last one.'
+  return (
+    <FieldRow label="Next">
+      <span style={{ color: 'var(--t2)' }}>{text || (offline ? 'Shown when online.' : '')}</span>
+      {dates?.length > 0 && (
+        <button type="button" className="btn" disabled={offline || busy} onClick={onSkip}>
+          Skip this one
+        </button>
+      )}
+    </FieldRow>
   )
 }
 
@@ -388,11 +438,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   const [moreOpen, setMoreOpen] = useState(false)
-  // The Recurrence box under More details, which the Repeat menu's Custom rule jumps to.
+  // The Recurrence box under More details, which the Repeat menu's Custom opens for a rule the builder cannot show.
   const recurrenceRef = useRef(null)
   const [commentDraft, setCommentDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [actionNotice, setActionNotice] = useState(null)
+  const [skipBusy, setSkipBusy] = useState(false)
   const [restoring, setRestoring] = useState(null)
   // Save as checklist: busy while the request is out, then the line that says where it went.
   const [checklistBusy, setChecklistBusy] = useState(false)
@@ -589,12 +640,29 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       if (data.task.status === 'done') {
         await api.reopenTask(taskId)
       } else {
-        await api.completeTask(taskId)
+        const res = await api.completeTask(taskId)
+        // Queued offline there is no answer yet, and so no next date to name.
+        if (res?.next?.dueAt) setActionNotice({ text: `Done. The next one is due ${formatLongDate(res.next.dueAt.slice(0, 10))}.` })
       }
       await load({ quiet: true })
       onChanged?.()
     } catch (err) {
       setSaveError(err.message || 'Could not update completion.')
+    }
+  }
+
+  async function handleSkip() {
+    setSaveError(null)
+    setSkipBusy(true)
+    try {
+      const res = await api.skipOccurrence(taskId)
+      if (res?.task?.dueAt) setActionNotice({ text: `Skipped. Now due ${formatLongDate(res.task.dueAt.slice(0, 10))}.` })
+      await load({ quiet: true })
+      onChanged?.()
+    } catch (err) {
+      setSaveError(err.message || 'Could not skip this one.')
+    } finally {
+      setSkipBusy(false)
     }
   }
 
@@ -812,7 +880,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
           </div>
 
           {actionNotice && (
-            <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <div role="status" style={{ fontSize: 13, color: 'var(--t2)' }}>
               {actionNotice.href ? (
                 <a href={actionNotice.href} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)' }}>
                   {actionNotice.text}
@@ -872,17 +940,29 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               />
               <RepeatField
                 value={form.recurrence}
+                dueIso={form.dueAt ? form.dueAt.slice(0, 10) : null}
+                api={api}
                 onChange={(value) => {
                   setForm((f) => ({ ...f, recurrence: value }))
                   patchTask({ recurrence: value || null }, { recurrence: value })
                 }}
-                onCustom={() => {
+                onTypeRule={() => {
                   setMoreOpen(true)
                   // The box is rendered by the More details section, so it exists after this render.
                   requestAnimationFrame(() => recurrenceRef.current?.focus())
                 }}
               />
             </FieldRow>
+            {data.task.recurrence && data.task.status !== 'done' && data.task.status !== 'dropped' && (
+              <NextOccurrenceRow
+                rule={data.task.recurrence}
+                dueAt={data.task.dueAt ? data.task.dueAt.slice(0, 10) : null}
+                api={api}
+                offline={offline}
+                busy={skipBusy}
+                onSkip={handleSkip}
+              />
+            )}
             <FieldRow label="Project">
               {projectName ? (
                 <ProjectChip name={projectName} wrap />

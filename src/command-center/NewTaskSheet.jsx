@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
-import { getDueBounds, localIso, addDays } from './dueDates'
+import { X, Calendar } from 'lucide-react'
+import { getDueBounds } from './dueDates'
 import { oneLine, useFitToText } from './useFitToText'
+import AddDuePanel, { nextMondayIso } from './AddDuePanel'
+import { RepeatSelect } from './RepeatBuilder'
 
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)'
 
-// The next Monday as a local YYYY-MM-DD, never today.
-function nextMondayIso(now = new Date()) {
-  const days = ((1 - now.getDay() + 7) % 7) || 7
-  return localIso(addDays(now, days))
+function dateLabel(iso) {
+  const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // A link shown as host and path; the full address is in the line's title.
@@ -23,8 +24,10 @@ function linkLabel(url) {
 }
 
 // The phone's "new task" dialog, opened by the floating Add task button on My tasks. Title, a due
-// date picked from chips or the date field, project, and notes; Enter in the title creates the
-// task like the desktop's inline row does. Esc closes it, Tab stays inside, and focus goes back
+// date picked from chips or the calendar, a repeat rule, project, and notes. Enter in the title
+// opens "When is it due?" (AddDuePanel.jsx) in place of the form, as the desktop's inline row does;
+// a tap there sets the date and comes back to the form with Create focused, and Esc or Back comes
+// back without changing it. Esc on the form closes it, Tab stays inside, and focus goes back
 // to the button that opened it. `onCreate` receives the create payload and may throw. When it
 // resolves the sheet closes itself through `onClose`. Each opening is numbered, and a create that
 // finishes after the sheet was closed and opened again leaves the new draft alone: it neither
@@ -34,9 +37,15 @@ function linkLabel(url) {
 // Its link is kept with the draft, shown as one read-only line, and sent as `sourceUrl`. A new
 // `seed` while the sheet is open starts the draft again from the current `initial`, as a new
 // opening: a create still in flight for the old draft then leaves the new one alone.
-export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef, initial = null, seed = 0 }) {
+export default function NewTaskSheet({ open, onClose, onCreate, projects = [], openButtonRef, initial = null, seed = 0, api }) {
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState(null)
+  const [recurrence, setRecurrence] = useState('')
+  const [step, setStep] = useState('form')
+  const createRef = useRef(null)
+  const pickRef = useRef(null)
+  // Where focus goes when the date step closes: Create after a pick, the button that opened it otherwise.
+  const returnFocusRef = useRef(null)
   const [projectId, setProjectId] = useState('')
   const [notes, setNotes] = useState('')
   const [sourceUrl, setSourceUrl] = useState(null)
@@ -58,6 +67,8 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     openingRef.current += 1
     setTitle(initialRef.current?.title || '')
     setDueAt(null)
+    setRecurrence('')
+    setStep('form')
     setProjectId('')
     setNotes(initialRef.current?.notes || '')
     setSourceUrl(initialRef.current?.sourceUrl || null)
@@ -76,7 +87,8 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     function handleKeyDown(e) {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        if (step === 'date') closeDateStep()
+        else onClose()
         return
       }
       if (e.key !== 'Tab' || !containerRef.current) return
@@ -98,7 +110,37 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
+  }, [open, onClose, step])
+
+  // The date step opens on the day already picked (or today), focused, so Enter keeps it.
+  useEffect(() => {
+    if (step === 'date') containerRef.current?.querySelector('[data-cal-focus]')?.focus()
+  }, [step])
+
+  // Back on the form, focus goes where the date step said: Create after a pick, else its opener.
+  useEffect(() => {
+    if (step !== 'form' || !returnFocusRef.current) return
+    returnFocusRef.current.current?.focus()
+    returnFocusRef.current = null
+  }, [step])
+
+  function openDateStep(fromRef) {
+    returnFocusRef.current = fromRef
+    setStep('date')
+  }
+
+  // A pick (a date, or null for No date) is the whole choice, so Create is next, once there is a
+  // title to create with.
+  function pickDate(value) {
+    setDueAt(value)
+    returnFocusRef.current = title.trim() ? createRef : pickRef
+    setStep('form')
+  }
+
+  // Back, or Esc: the date stays as it was.
+  function closeDateStep() {
+    setStep('form')
+  }
 
   if (!open) return null
 
@@ -117,6 +159,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setBusy(true)
     setError(null)
     const payload = { title: trimmed, dueAt }
+    if (recurrence) payload.recurrence = recurrence
     if (projectId) payload.projectId = projectId
     if (notes.trim()) payload.notes = notes.trim()
     if (sourceUrl) payload.sourceUrl = sourceUrl
@@ -139,9 +182,25 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         role="dialog"
         aria-modal="true"
         aria-label="New task"
-        className="sheet"
+        className={step === 'date' ? 'sheet sheet-cal' : 'sheet'}
         onSubmit={submit}
       >
+        {step === 'date' ? (
+          <>
+            <div className="sheet-header">
+              <h2 className="sheet-title">New task</h2>
+              <button type="button" className="icon-btn" aria-label="Close new task" onClick={onClose} style={{ color: 'var(--t1)' }}>
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <p className="sheet-draft-title">{title.trim()}</p>
+            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} />
+            <div className="sheet-actions">
+              <button type="button" className="btn" onClick={closeDateStep}>Back</button>
+            </div>
+          </>
+        ) : (
+        <>
         <div className="sheet-header">
           <h2 className="sheet-title">New task</h2>
           <button type="button" className="icon-btn" aria-label="Close new task" onClick={onClose} style={{ color: 'var(--t1)' }}>
@@ -151,8 +210,8 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
 
         <div className="field">
           <label htmlFor="new-task-title">Title</label>
-          {/* Grows with its text, so a long title is seen whole while it is typed; Enter adds the
-              task as it would from a one-line box. */}
+          {/* Grows with its text, so a long title is seen whole while it is typed; Enter goes on to
+              the due date, as it does in the desktop's add row. */}
           <textarea
             id="new-task-title"
             ref={attachTitle}
@@ -162,7 +221,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
             onKeyDown={(e) => {
               if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
               e.preventDefault()
-              e.currentTarget.form?.requestSubmit()
+              if (title.trim() && !busy) openDateStep(titleRef)
             }}
             disabled={busy}
             placeholder="Task name"
@@ -189,13 +248,21 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
               </button>
             ))}
           </div>
-          <input
-            type="date"
-            aria-label="Other date"
-            value={dueAt || ''}
+          <button
+            type="button"
+            ref={pickRef}
+            className="btn sheet-pick-date"
             disabled={busy}
-            onChange={(e) => setDueAt(e.target.value || null)}
-          />
+            onClick={() => openDateStep(pickRef)}
+          >
+            <Calendar size={16} aria-hidden="true" />
+            <span>{dueAt && !chips.some((chip) => chip.value === dueAt) ? dateLabel(dueAt) : 'Pick a date'}</span>
+          </button>
+        </div>
+
+        <div className="field">
+          <label htmlFor="new-task-repeat">Repeat</label>
+          <RepeatSelect id="new-task-repeat" value={recurrence} onChange={setRecurrence} dueIso={dueAt} api={api} disabled={busy} />
         </div>
 
         <div className="field">
@@ -221,8 +288,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
 
         <div className="sheet-actions">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !title.trim()}>Create</button>
+          <button type="submit" ref={createRef} className="btn btn-primary" disabled={busy || !title.trim()}>Create</button>
         </div>
+        </>
+        )}
       </form>
     </>
   )

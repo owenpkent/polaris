@@ -31,9 +31,18 @@ describe('repeatLabel', () => {
     expect(repeatLabel('Every 3 days')).toBe('every 3 days')
   })
 
+  test('words the rules the builder makes', () => {
+    expect(repeatLabel('FREQ=WEEKLY;BYDAY=MO')).toBe('weekly on Mon')
+    expect(repeatLabel('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR')).toBe('every 2 weeks on Mon, Wed and Fri')
+    expect(repeatLabel('FREQ=MONTHLY;BYMONTHDAY=15')).toBe('monthly on the 15th')
+    expect(repeatLabel('FREQ=MONTHLY;BYMONTHDAY=-1')).toBe('monthly on the last day')
+    expect(repeatLabel('FREQ=MONTHLY;INTERVAL=3;BYDAY=2TU')).toBe('every 3 months on the second Tuesday')
+    expect(repeatLabel('RRULE:FREQ=DAILY')).toBe('daily')
+  })
+
   test('anything else is a custom rule', () => {
-    expect(repeatLabel('FREQ=WEEKLY;BYDAY=MO')).toBe('by a custom rule')
-    expect(repeatLabel('RRULE:FREQ=DAILY')).toBe('by a custom rule')
+    expect(repeatLabel('FREQ=YEARLY;BYMONTH=3')).toBe('by a custom rule')
+    expect(repeatLabel('FREQ=WEEKLY;COUNT=4')).toBe('by a custom rule')
   })
 })
 

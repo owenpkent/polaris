@@ -296,3 +296,29 @@ test('addComment carries authorName when the actor input names the same author; 
   const mismatched = s.addComment(t.id, 'a system note caused by a named agent', 'system', { actor: 'agent', name: 'scribe' });
   assert.equal(mismatched.authorName, null);
 });
+
+test('skipOccurrence moves a weekly task forward without completing it', () => {
+  const s = fresh();
+  const t = s.createTask({ title: 'Weekly sync', dueAt: '2026-09-14', startAt: '2026-09-12', recurrence: 'FREQ=WEEKLY' });
+  const after = s.skipOccurrence(t.id);
+  assert.equal(after.dueAt, '2026-09-21');
+  assert.equal(after.startAt, '2026-09-19');
+  assert.equal(after.status, 'open');
+  assert.equal(after.title, 'Weekly sync');
+  assert.equal(after.recurrence, 'FREQ=WEEKLY');
+  assert.ok(s.listComments(t.id).some((c) => c.body === 'Skipped the occurrence due 2026-09-14.'));
+  assert.equal(s.countTasks(), 1);
+});
+
+test('skipOccurrence refuses non-recurring, closed, and ended series', () => {
+  const s = fresh();
+  const plain = s.createTask({ title: 'once', dueAt: '2026-09-14' });
+  assert.throws(() => s.skipOccurrence(plain.id), ValidationError);
+  const done = s.createTask({ title: 'done', dueAt: '2026-09-14', recurrence: 'FREQ=WEEKLY' });
+  s.completeTask(done.id);
+  assert.throws(() => s.skipOccurrence(done.id), ValidationError);
+  const ended = openStore(':memory:', { nextOccurrence: () => null });
+  const e = ended.createTask({ title: 'last one', dueAt: '2026-09-14', recurrence: 'FREQ=WEEKLY;UNTIL=20260915' });
+  assert.throws(() => ended.skipOccurrence(e.id), /no later occurrence/);
+  assert.equal(ended.getTask(e.id)?.dueAt, '2026-09-14');
+});
