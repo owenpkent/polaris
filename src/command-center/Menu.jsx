@@ -144,8 +144,15 @@ export function Popover({
         left: pos.left,
         top: pos.top ?? undefined,
         bottom: pos.bottom ?? undefined,
+        // The width comes from the content alone, never from where the popover sits. Left to
+        // shrink-to-fit, a fixed box with a label longer than the room takes all of it, from
+        // `left` to the screen's edge, so each reposition (any scroll, a focused item scrolled
+        // into view included) measured a wider box and moved it 8px further left: it crept
+        // across the screen with its right edge on the screen's. A label longer than the cap
+        // wraps (MenuRow).
+        width: 'max-content',
         minWidth,
-        maxWidth: 'calc(100vw - 16px)',
+        maxWidth: 'min(400px, calc(100vw - 16px))',
         maxHeight: pos.maxHeight,
         overflowY: 'auto',
         background: 'var(--bg3)',
@@ -193,7 +200,7 @@ function MenuRow({ item }) {
         gap: 10,
         width: '100%',
         minHeight: 44,
-        padding: '0 14px',
+        padding: '10px 14px',
         background: 'transparent',
         border: 'none',
         textAlign: 'left',
@@ -203,7 +210,8 @@ function MenuRow({ item }) {
         cursor: item.disabled ? 'default' : 'pointer',
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {/* A long label (a project or goal name) wraps: a menu shows every word. */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflowWrap: 'anywhere' }}>
         {item.icon}
         {item.label}
       </span>
