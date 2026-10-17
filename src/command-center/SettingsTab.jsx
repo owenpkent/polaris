@@ -5,6 +5,7 @@ import BackupSettings from './BackupSettings'
 import ReminderSettings from './ReminderSettings'
 import ImportTasks from './ImportTasks'
 import AppearanceSettings from './AppearanceSettings'
+import AboutSettings from './AboutSettings'
 import { isNativeApp } from './nativeApp'
 
 // Every setting on one page, one card per area, with a row of jump buttons at the top so a long
@@ -20,6 +21,7 @@ export default function SettingsTab({ theme, onThemeChange }) {
     ...(isNativeApp() ? [{ id: 'reminders', label: 'Reminders', node: <ReminderSettings /> }] : []),
     { id: 'backups', label: 'Backups', node: <BackupSettings /> },
     { id: 'import', label: 'Import tasks', node: <ImportTasks /> },
+    { id: 'about', label: 'About', node: <AboutSettings /> },
   ]
 
   function jump(id) {

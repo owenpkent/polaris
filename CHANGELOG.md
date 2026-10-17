@@ -5,6 +5,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- Settings has an About card: the dashboard's build (version, commit, and build time, recorded by
+  `npm run build`) and the server's version, so a cached or bundled dashboard is easy to tell apart
+  from the server it talks to.
 - The Windows daemon task installer stops an active pre-rename task and waits for its listener
   to exit before replacing it with Polaris. A stop or wait failure keeps the old registration,
   preventing updates from targeting a new task while the old daemon still owns the port.

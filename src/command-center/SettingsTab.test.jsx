@@ -7,6 +7,7 @@ vi.mock('./AgentSettings', () => ({ default: () => <div>agents card</div> }))
 vi.mock('./BackupSettings', () => ({ default: () => <div>backups card</div> }))
 vi.mock('./ReminderSettings', () => ({ default: () => <div>reminders card</div> }))
 vi.mock('./ImportTasks', () => ({ default: () => <div>import card</div> }))
+vi.mock('./AboutSettings', () => ({ default: () => <div>about card</div> }))
 
 afterEach(() => {
   cleanup()
@@ -20,7 +21,7 @@ describe('SettingsTab', () => {
     render(<SettingsTab theme="system" onThemeChange={() => {}} />)
     const nav = screen.getByRole('navigation', { name: 'Settings sections' })
     const names = Array.from(nav.querySelectorAll('button')).map((b) => b.textContent)
-    expect(names).toEqual(['Connection', 'Appearance', 'Agents', 'Backups', 'Import tasks'])
+    expect(names).toEqual(['Connection', 'Appearance', 'Agents', 'Backups', 'Import tasks', 'About'])
 
     fireEvent.click(screen.getByRole('button', { name: 'Import tasks' }))
     expect(document.activeElement.id).toBe('settings-import')
