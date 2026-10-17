@@ -656,6 +656,25 @@ export class Store {
     });
   }
 
+  /**
+   * Skip one occurrence of an open recurring task: the due date moves to the next occurrence and the
+   * task stays the same task. Nothing is completed and no task is created.
+   */
+  skipOccurrence(id: string, actor: ActorInput = 'human'): Task {
+    return this.db.transaction(() => {
+      const before = this.requireTask(id);
+      if (before.status === 'done' || before.status === 'dropped') throw new ValidationError('Only an open task can be skipped.');
+      if (!before.recurrence) throw new ValidationError('This task does not repeat.');
+      if (!this.nextOccurrence) throw new ValidationError('Repeating tasks are not available.');
+      const from = before.dueAt ?? this.now().slice(0, 10);
+      const nextDue = this.nextOccurrence(before.recurrence, from);
+      if (!nextDue) throw new ValidationError('This repeating task has no later occurrence.');
+      const task = this.updateTask(id, { dueAt: nextDue, startAt: shiftStartAt(before.startAt, before.dueAt, nextDue) }, actor);
+      this.addComment(id, `Skipped the occurrence due ${before.dueAt ?? from}.`, 'system');
+      return task;
+    });
+  }
+
   reopenTask(id: string, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
       const before = this.requireTask(id);

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread } from './support.js'
+import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -135,6 +135,43 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+    await expectNothingCutOff(page)
+  })
+
+  // "When is it due?" after a title (AddDuePanel.jsx): the desktop row's popover, which spans a
+  // 320px window, and the phone sheet's date step, with the custom repeat builder open in both.
+  test('the due date step of a new task', async ({ page }, testInfo) => {
+    await openView(page)
+    let scope
+    if (isPhone(testInfo)) {
+      await page.getByRole('button', { name: 'New task' }).click()
+      scope = page.getByRole('dialog', { name: 'New task' })
+      await scope.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+      await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    } else {
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      scope = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
+    }
+    await expect(scope.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    await expectNothingCutOff(page)
+    await scope.getByRole('combobox', { name: 'Repeat' }).selectOption('custom')
+    await scope.getByRole('combobox', { name: 'Repeat unit' }).selectOption('month')
+    await expect(scope.getByRole('combobox', { name: 'Day of the month' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  // A group's Add task row is there on a phone too, and its date step is a popover that has to
+  // fit seven 44px days at 320px (the Popover's gutter of 0 in InlineTaskInput.jsx).
+  test('the due date step from an Add task row', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
+    await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    expect(await smallTargets(due, 'button, select')).toEqual([])
     await expectNothingCutOff(page)
   })
 

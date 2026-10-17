@@ -42,8 +42,51 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(input).toBeFocused()
     await input.fill(title)
     await input.press('Enter')
+    // "When is it due?" opens on the row's date with that day focused, so Enter again keeps it.
+    const due = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label'))).toBe(`Due date for ${title}`)
+    await page.keyboard.press('Enter')
     await expect(row(page, title)).toBeVisible()
+    await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toHaveText('Today')
     expect(await listTaskTitles(request)).toContain(title)
+  })
+
+  test('Add task asks when it is due, and a repeat and a day picked there are saved', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test repeat add ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await input.press('Enter')
+    const due = page.getByRole('dialog', { name: `Due date for ${title}` })
+    expect(await smallTargets(due, 'button, select')).toEqual([])
+    await due.getByRole('combobox', { name: 'Repeat' }).selectOption('weekly')
+    await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await expect(due).toHaveCount(0)
+    await expect(page.getByRole('button', { name: `Change due date for ${title}, repeats weekly` })).toHaveText('Tomorrow')
+    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const created = (await res.json()).tasks.find((t) => t.title === title)
+    expect(created.recurrence).toBe('weekly')
+  })
+
+  test('Esc on the due step goes back to the title without adding anything', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    await openView(page)
+    const before = (await listTaskTitles(request)).length
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill('UI test not yet')
+    await input.press('Enter')
+    const due = page.getByRole('dialog', { name: 'Due date for UI test not yet' })
+    await expect(due).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(due).toHaveCount(0)
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('UI test not yet')
+    await input.press('Escape')
+    expect((await listTaskTitles(request)).length).toBe(before)
   })
 
   test('Esc cancels Add task without creating anything', async ({ page, request }) => {
@@ -127,7 +170,11 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const later = `UI test later date ${testInfo.project.name}`
     await page.getByRole('button', { name: 'New task' }).click()
     await sheet.getByRole('textbox', { name: 'New task name' }).fill(later)
-    await sheet.getByLabel('Other date').fill('2031-01-15')
+    // The 15th of next month is always past the next seven days.
+    await sheet.getByRole('button', { name: 'Pick a date' }).click()
+    await sheet.getByRole('button', { name: 'Next month' }).click()
+    await sheet.getByRole('grid').getByRole('button', { name: /\b15, \d{4}$/ }).click()
+    await expect(sheet.getByRole('button', { name: 'Create' })).toBeFocused()
     await sheet.getByRole('button', { name: 'Create' }).click()
     await expect(sheet).toHaveCount(0)
     await expect(row(page, later)).toBeVisible()

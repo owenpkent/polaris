@@ -136,6 +136,8 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | PATCH | `/api/tasks/:id` | Body: `TaskPatch` fields (status included). `{ task }` |
 | POST | `/api/tasks/:id/restore` | Body: `{ eventId }`, an entry in the task's history. Puts back what that entry changed (title, notes, priority, dates, estimate, or recurrence) as an ordinary edit, so it is recorded and can itself be put back. `{ task }`. `400` when the entry is not in the task's history or has nothing to put back. Live-only: no outbox op kind. |
 | POST | `/api/tasks/:id/complete` | `{ task, next }` |
+| POST | `/api/tasks/:id/skip` | Skips one occurrence of an open repeating task: the due date (and start date) move to the next occurrence, a system comment is added, and the task is neither completed nor copied. `{ task }`. `400` when the task is not open, does not repeat, or has no later occurrence. Live-only and owner-only: no MCP tool, no outbox op kind. |
+| GET | `/api/recurrence/preview` | Query: `rule`, optional `from` (`YYYY-MM-DD` or ISO datetime, default today), optional `count` (1 to 10, default 3). `{ dates }`: the next occurrences, each chained from the one before; shorter or empty when the series ends. `400` for an invalid rule. |
 | POST | `/api/tasks/:id/reopen` | `{ task }` |
 | POST | `/api/tasks/:id/move` | Body: `{ project?, section?, parentId?, position? }`. `{ task }` |
 | POST | `/api/tasks/:id/comments` | Body: `{ body, opId?, deviceId? }`, the op identity as for a create. `201 { comment }` |

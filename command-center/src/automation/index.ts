@@ -9,7 +9,7 @@ export function todayIn(timezone: string, now: Date = new Date()): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-export { nextOccurrence } from './recurrence.ts';
+export { nextOccurrence, previewOccurrences } from './recurrence.ts';
 
 export { builtinViews, runView, type ViewDefinition, type ViewResult } from './views.ts';
 

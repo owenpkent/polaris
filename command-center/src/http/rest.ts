@@ -7,7 +7,7 @@ import {
   NotFoundError, POST_STATUSES, POST_TYPES, TASK_STATUSES, ValidationError, applyOnlineOnce, applyOutbox, DEFAULT_AGENT_NAME_KEY, defaultAgentName, normalizeAgentName, restoreFromHistory, restorePatch,
   type Json, type MoveTarget, type OutboxOp, type PostStatus, type PostType, type Priority, type SourceType, type Store, type Task, type TaskFilter, type TaskPatch, type TaskStatus,
 } from '../core/index.ts';
-import { buildDigest, builtinViews, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
+import { buildDigest, builtinViews, previewOccurrences, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
 import { ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES, resolveProject, resolveSectionWrite } from '../mcp/shared.ts';
 import { importTasks } from '../importer/taskImport.ts';
 import { HttpError, sendJson, sendNoContent } from './errors.ts';
@@ -315,6 +315,31 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
   router.add('POST', '/api/tasks/:id/complete', (ctx) => {
     const { task, next } = store.completeTask(ctx.params.id, 'human');
     sendJson(ctx.res, 200, { task, next });
+  });
+
+  // Live-only and owner-only: no MCP tool, no outbox op kind. The task is not completed.
+  router.add('POST', '/api/tasks/:id/skip', (ctx) => {
+    const task = store.skipOccurrence(ctx.params.id, 'human');
+    sendJson(ctx.res, 200, { task });
+  });
+
+  // A pure read: the next few dates a recurrence rule produces.
+  router.add('GET', '/api/recurrence/preview', (ctx) => {
+    const q = ctx.url.searchParams;
+    const rule = q.get('rule')?.trim();
+    if (!rule) throw new ValidationError('rule is required');
+    const from = q.get('from') || app.today();
+    if (!/^\d{4}-\d{2}-\d{2}(T.*)?$/.test(from) || Number.isNaN(Date.parse(from.slice(0, 10)))) throw new ValidationError('from must be YYYY-MM-DD or an ISO datetime');
+    const rawCount = q.get('count');
+    const count = rawCount === null || rawCount === '' ? 3 : Number(rawCount);
+    if (!Number.isInteger(count) || count < 1 || count > 10) throw new ValidationError('count must be a whole number from 1 to 10');
+    let dates: string[];
+    try {
+      dates = previewOccurrences(rule, from, app.today(), count);
+    } catch (e) {
+      throw new ValidationError(e instanceof Error ? e.message : String(e));
+    }
+    sendJson(ctx.res, 200, { dates });
   });
 
   router.add('POST', '/api/tasks/:id/reopen', (ctx) => {

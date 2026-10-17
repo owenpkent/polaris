@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, clippedContent, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -204,6 +204,38 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await expect(sheet.getByRole('textbox', { name: 'New task name' })).toHaveValue('Book the van service')
     await expect(sheet.getByText('Link: example.com/garage/book')).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'new-from-share')
+  })
+
+  // "When is it due?" after a new task's title: the desktop row's popover, the phone sheet's step.
+  test('mytasks: new due step', async ({ page }, testInfo) => {
+    await openView(page)
+    if (phone(testInfo)) {
+      await page.getByRole('button', { name: 'New task' }).click()
+      const sheet = page.getByRole('dialog', { name: 'New task' })
+      await sheet.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
+      await sheet.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await expect(sheet.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    } else {
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      await page.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
+      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await expect(page.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    }
+    await shot(page, testInfo, 'mytasks', 'new-due-step')
+  })
+
+  // The custom repeat builder on a weekly rule, with its next dates.
+  test('task: custom repeat', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'custom repeat', { recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel.getByText(/^Next: /)).toBeVisible()
+    await panel.getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('dialog', { name: 'Custom repeat' })
+    await expect(builder.getByRole('status')).toHaveText(/^Next: /)
+    await shot(page, testInfo, 'task', 'custom-repeat')
   })
 
   test('mytasks: due menu', async ({ page }, testInfo) => {

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import rrulePkg from 'rrule';
 import { openApp } from '../app.ts';
-import { nextOccurrence } from './recurrence.ts';
+import { nextOccurrence, previewOccurrences } from './recurrence.ts';
 
 // rrule is the reference the walk in recurrence.ts is checked against (see DIFFERENTIAL below).
 const { RRule } = rrulePkg;
@@ -235,4 +235,18 @@ test('a rule that is valid but never comes up again within the horizon ends the 
   // start the first such day is 2204-02-29, at the far end of the walk, and it is found at once.
   assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=3;BYMONTH=2;BYMONTHDAY=29', '2026-09-11', '2026-09-12'), '2204-02-29');
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started}ms`);
+});
+
+test('previewOccurrences chains from each result', () => {
+  assert.deepEqual(previewOccurrences('weekly', '2026-09-10', '2026-09-10', 3), ['2026-09-17', '2026-09-24', '2026-10-01']);
+  assert.deepEqual(previewOccurrences('FREQ=DAILY', '2026-09-10T09:00', '2026-09-10', 2), ['2026-09-11T09:00', '2026-09-12T09:00']);
+});
+
+test('previewOccurrences stops when the series ends, and can be empty', () => {
+  assert.deepEqual(previewOccurrences('FREQ=WEEKLY;UNTIL=20260925', '2026-09-10', '2026-09-10', 5), ['2026-09-17', '2026-09-24']);
+  assert.deepEqual(previewOccurrences('FREQ=WEEKLY;UNTIL=20260901', '2026-09-10', '2026-09-10', 5), []);
+});
+
+test('previewOccurrences throws on an invalid rule', () => {
+  assert.throws(() => previewOccurrences('every other tuesday', '2026-09-10', '2026-09-10', 3));
 });

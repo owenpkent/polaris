@@ -192,6 +192,12 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),
     reopenTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/reopen`, { method: 'POST', offline: { kind: 'reopen_task', taskId: id } }),
+    // Live only, with no `offline` kind (outbox.js has a closed list of op kinds): the server works
+    // out the next date, so a skip made offline would have nothing to move the task to.
+    skipOccurrence: (id) => call(`/api/tasks/${encodeURIComponent(id)}/skip`, { method: 'POST' }),
+    // The next dates a repeat rule gives after `from` (the rule builder's preview, and a task's
+    // "Next" line). A plain read with no side effect.
+    previewRecurrence: (rule, from, count = 3) => call('/api/recurrence/preview', { query: { rule, count, ...(from ? { from } : {}) } }),
     // Not queued offline: it reads the server's history, so it has no offline op kind.
     restoreTask: (id, eventId) => call(`/api/tasks/${encodeURIComponent(id)}/restore`, { method: 'POST', body: { eventId } }),
     // Bulk import from pasted text or a file (POST /api/tasks/import). dryRun answers with the
