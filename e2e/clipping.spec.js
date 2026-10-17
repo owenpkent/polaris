@@ -171,6 +171,16 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
     const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    // Seen as it opens, before the cut-off check scrolls any control into view: the popover is not
+    // scrolled sideways, and the heading and Today sit inside it (review on #67, where a 400px cap
+    // left the date step scrolled 142px with its left side out of sight).
+    expect(await due.evaluate((el) => {
+      const pop = el.closest('[data-popover]')
+      const box = pop.getBoundingClientRect()
+      const inside = (node) => { const r = node.getBoundingClientRect(); return r.left >= box.left - 0.5 && r.right <= box.right + 0.5 }
+      const today = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Today')
+      return { scrollLeft: pop.scrollLeft, heading: inside(el.querySelector('h3')), today: inside(today) }
+    })).toEqual({ scrollLeft: 0, heading: true, today: true })
     expect(await smallTargets(due, 'button, select')).toEqual([])
     await expectNothingCutOff(page)
   })

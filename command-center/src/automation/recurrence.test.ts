@@ -250,3 +250,10 @@ test('previewOccurrences stops when the series ends, and can be empty', () => {
 test('previewOccurrences throws on an invalid rule', () => {
   assert.throws(() => previewOccurrences('every other tuesday', '2026-09-10', '2026-09-10', 3));
 });
+
+// The dashboard's rule builder writes the weekday it shows (RepeatBuilder.jsx): a Wednesday rule
+// whose first due date is a Friday still comes back on the Wednesday after.
+test('a weekly rule with its own BYDAY keeps that weekday whatever day it starts from', () => {
+  assert.equal(nextOccurrence('FREQ=WEEKLY;BYDAY=WE', '2026-10-16', '2026-10-16'), '2026-10-21');
+  assert.equal(nextOccurrence('FREQ=WEEKLY;INTERVAL=2;BYDAY=WE', '2026-10-14', '2026-10-14'), '2026-10-28');
+});

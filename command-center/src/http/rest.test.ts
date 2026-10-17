@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TEST_TOKEN, api, fakeApp, withServer } from './test-support.ts';
+import { openStore } from '../core/index.ts';
+import { nextOccurrence } from '../automation/index.ts';
+import { memorySecretStore } from '../ingest/secrets.ts';
+import type { App } from '../app.ts';
 
 test('GET /api/health reports counts for the seeded store', async (t) => {
   const app = fakeApp();
@@ -755,6 +759,41 @@ test('POST /api/tasks/:id/skip moves the due date, and refuses what cannot be sk
     const bad = await api(base, 'POST', `/api/tasks/${plain.id}/skip`);
     assert.equal(bad.status, 400);
   });
+});
+
+// An app whose clock is `nowIso` (UTC) and whose configured local day is `today`, with the real
+// recurrence calculation, so preview and Skip are checked against each other across midnight.
+function clockApp(nowIso: string, today: string): App {
+  const store = openStore(':memory:', {
+    now: () => nowIso,
+    nextOccurrence: (rule, prev) => nextOccurrence(rule, prev, today),
+    today: () => today,
+  });
+  return {
+    config: { repoRoot: '', dbPath: ':memory:', timezone: 'UTC', dashboardDir: '' },
+    store,
+    secrets: memorySecretStore(),
+    today: () => today,
+    close: () => store.db.close(),
+  };
+}
+
+test('an undated repeating task skips and completes to the day the preview names, on both sides of UTC midnight', async (t) => {
+  // Denver evening (UTC already the next day), then Tokyo morning (UTC still the day before).
+  for (const [nowIso, today, expected] of [['2026-09-13T01:00:00Z', '2026-09-12', '2026-09-13'], ['2026-09-12T23:00:00Z', '2026-09-13', '2026-09-14']]) {
+    const app = clockApp(nowIso, today);
+    t.after(() => app.close());
+    const skipped = app.store.createTask({ title: 'water the plants', recurrence: 'daily' }, 'human');
+    const completed = app.store.createTask({ title: 'stretch', recurrence: 'daily' }, 'human');
+    await withServer(app, {}, async (base) => {
+      const preview = await api(base, 'GET', '/api/recurrence/preview?rule=daily&count=1');
+      assert.deepEqual(preview.json.dates, [expected], `preview at ${nowIso}`);
+      const skip = await api(base, 'POST', `/api/tasks/${skipped.id}/skip`);
+      assert.equal(skip.json.task.dueAt, expected, `skip at ${nowIso}`);
+      const done = await api(base, 'POST', `/api/tasks/${completed.id}/complete`);
+      assert.equal(done.json.next.dueAt, expected, `next occurrence at ${nowIso}`);
+    });
+  }
 });
 
 test('GET /api/recurrence/preview lists the next dates, and answers 400 for a bad rule or count', async (t) => {

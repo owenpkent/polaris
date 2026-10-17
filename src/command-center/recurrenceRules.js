@@ -103,9 +103,10 @@ export function parseRule(rule, dueIso) {
 }
 
 // The shortest string the server accepts for a shape: an alias where one fits, else an RRULE.
-// `dueIso` decides whether a weekly rule on the due date's own weekday needs its BYDAY spelled out
-// (it does not: a plain weekly rule repeats on the weekday of the date it starts from).
-export function buildRule(shape, dueIso) {
+// A weekly rule always names the weekdays the builder shows pressed, even one that is the due
+// date's own: a plain "weekly" follows the due date, which the add-task step can still change
+// after the rule is built, and a Wednesday picked here must stay Wednesday.
+export function buildRule(shape) {
   const { unit } = shape
   const interval = Math.min(Math.max(Math.trunc(shape.interval) || 1, 1), MAX_INTERVAL[unit])
   const plain = interval === 1 ? { day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly' }[unit] : `every ${interval} ${unit}s`
@@ -113,7 +114,7 @@ export function buildRule(shape, dueIso) {
   if (unit === 'week') {
     const days = sortDays(shape.weekdays || [])
     if (interval === 1 && days.join() === WORKDAYS.join()) return 'weekdays'
-    if (days.length === 0 || (days.length === 1 && days[0] === weekdayOf(dueIso))) return plain
+    if (days.length === 0) return plain
     return `${freq};BYDAY=${days.join(',')}`
   }
   if (unit === 'month') {

@@ -31,42 +31,46 @@ describe('round trips', () => {
     test(`${rule}`, () => {
       const shape = parseRule(rule, DUE)
       expect(shape).not.toBeNull()
-      const built = buildRule(shape, DUE)
+      const built = buildRule(shape)
       expect(parseRule(built, DUE)).toEqual(shape)
     })
   }
 
   test('aliases and explicit rules come back as written when already shortest', () => {
-    for (const rule of ['daily', 'weekly', 'weekdays', 'yearly', 'every 2 weeks', 'FREQ=WEEKLY;BYDAY=MO,WE', 'FREQ=MONTHLY;BYMONTHDAY=-1', 'FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR']) {
-      expect(buildRule(parseRule(rule, DUE), DUE)).toBe(rule)
+    for (const rule of ['daily', 'weekdays', 'yearly', 'FREQ=WEEKLY;BYDAY=MO,WE', 'FREQ=MONTHLY;BYMONTHDAY=-1', 'FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR']) {
+      expect(buildRule(parseRule(rule, DUE))).toBe(rule)
     }
   })
 
   test('monthly becomes a day-of-month rule on the due day', () => {
-    expect(buildRule(parseRule('monthly', DUE), DUE)).toBe('FREQ=MONTHLY;BYMONTHDAY=14')
+    expect(buildRule(parseRule('monthly', DUE))).toBe('FREQ=MONTHLY;BYMONTHDAY=14')
   })
 })
 
 describe('building', () => {
-  test('weekly on the due date weekday collapses to weekly', () => {
-    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=WE', DUE), DUE)).toBe('weekly')
+  // A plain "weekly" follows the due date, which the add-task step can change after the rule is
+  // built, so the builder always writes the weekday it shows.
+  test('a weekly rule names its weekday, even the due date\'s own', () => {
+    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=WE', DUE))).toBe('FREQ=WEEKLY;BYDAY=WE')
+    expect(buildRule(parseRule('weekly', DUE))).toBe('FREQ=WEEKLY;BYDAY=WE')
+    expect(buildRule(parseRule('every 2 weeks', DUE))).toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=WE')
   })
 
   test('weekly on another weekday keeps BYDAY', () => {
-    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=TU', DUE), DUE)).toBe('FREQ=WEEKLY;BYDAY=TU')
+    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=TU', DUE))).toBe('FREQ=WEEKLY;BYDAY=TU')
   })
 
   test('Monday to Friday every week becomes weekdays', () => {
-    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=FR,MO,TU,WE,TH', DUE), DUE)).toBe('weekdays')
+    expect(buildRule(parseRule('FREQ=WEEKLY;BYDAY=FR,MO,TU,WE,TH', DUE))).toBe('weekdays')
   })
 
   test('Monday to Friday every 2 weeks stays an RRULE', () => {
-    expect(buildRule(parseRule('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU,WE,TH,FR', DUE), DUE))
+    expect(buildRule(parseRule('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU,WE,TH,FR', DUE)))
       .toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU,WE,TH,FR')
   })
 
   test('interval is clamped to the unit maximum', () => {
-    expect(buildRule({ ...defaultShape(DUE), unit: 'year', interval: 99 }, DUE)).toBe('every 10 years')
+    expect(buildRule({ ...defaultShape(DUE), unit: 'year', interval: 99 })).toBe('every 10 years')
   })
 })
 

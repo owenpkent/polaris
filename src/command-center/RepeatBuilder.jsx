@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
+import { useOffline } from './offlineStatus'
 import {
   WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, UNITS,
   buildRule, defaultShape, parseRule,
@@ -14,9 +15,12 @@ function formatShort(iso) {
 }
 
 // The next few dates a rule gives, asked of the server so the words and the dates can never
-// disagree with what completing the task will do. Nothing is shown while offline or on an error.
+// disagree with what completing the task will do. Nothing is shown while offline or on an error,
+// and the request goes again when the connection comes back, so a panel opened offline fills in
+// its Next line and Skip without being reopened.
 export function useRecurrencePreview(api, rule, from, count = 3) {
   const [dates, setDates] = useState(null)
+  const offline = useOffline()
   useEffect(() => {
     if (!api?.previewRecurrence || !rule) { setDates(null); return undefined }
     let live = true
@@ -26,7 +30,7 @@ export function useRecurrencePreview(api, rule, from, count = 3) {
         .catch(() => { if (live) setDates(null) })
     }, 150)
     return () => { live = false; clearTimeout(id) }
-  }, [api, rule, from, count])
+  }, [api, rule, from, count, offline])
   return dates
 }
 
@@ -49,7 +53,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   // A rule changed from outside (the task reloaded) is shown; one this builder just wrote is not
   // parsed back, so a half-made choice (no weekday picked yet) is not snapped back.
   useEffect(() => {
-    if (value && buildRule(shape, dueIso) !== value) {
+    if (value && buildRule(shape) !== value) {
       const parsed = parseRule(value, dueIso)
       if (parsed) setShape(parsed)
     }
@@ -59,7 +63,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   function update(patch) {
     const next = { ...shape, ...patch }
     setShape(next)
-    onChange(buildRule(next, dueIso))
+    onChange(buildRule(next))
   }
 
   const max = MAX_INTERVAL[shape.unit]
@@ -201,7 +205,9 @@ export function RepeatSelect({ value, onChange, dueIso, api, disabled = false, i
           const next = e.target.value
           if (next === 'custom') {
             setCustom(true)
-            onChange(current || buildRule(defaultShape(dueIso), dueIso))
+            // Written out in full (a preset's "weekly" becomes this week's day as a BYDAY), so the
+            // builder shows exactly the rule that is saved, whatever due date is picked next.
+            onChange(buildRule(parseRule(current, dueIso) || defaultShape(dueIso)))
           } else {
             setCustom(false)
             onChange(next)

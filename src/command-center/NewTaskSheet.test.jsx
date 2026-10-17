@@ -2,6 +2,7 @@ import { describe, test, expect, vi, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import NewTaskSheet from './NewTaskSheet'
 import { getDueBounds } from './dueDates'
+import { weekdayOf } from './recurrenceRules'
 
 const PROJECTS = [{ id: 'p1', name: 'Alpha' }]
 
@@ -101,6 +102,19 @@ describe('NewTaskSheet', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'weekly' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: getDueBounds().today, recurrence: 'weekly' }))
+  })
+
+  // Today, then Custom (today's weekday pressed), then Tomorrow: the rule keeps today's weekday
+  // rather than a plain weekly that would follow the new date (review on #66).
+  test('a custom weekday stays when the due date changes after it', async () => {
+    const { onCreate } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Laundry' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0][0]).toMatchObject({ dueAt: getDueBounds().tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` })
   })
 
   test('Custom repeat opens the builder, and the weekdays tapped there make the rule', async () => {

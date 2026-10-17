@@ -26,10 +26,10 @@ describe('RepeatBuilder', () => {
     const onChange = vi.fn()
     render(<Host onChange={onChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
-    expect(onChange).toHaveBeenLastCalledWith('every 2 weeks')
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;INTERVAL=2;BYDAY=WE')
     expect(screen.getByRole('button', { name: 'Fewer' }).disabled).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Fewer' }))
-    expect(onChange).toHaveBeenLastCalledWith('weekly')
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=WE')
   })
 
   test('Fewer is disabled at 1', () => {

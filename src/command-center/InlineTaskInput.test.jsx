@@ -80,6 +80,18 @@ describe('InlineTaskInput', () => {
     expect(day.getAttribute('aria-pressed')).toBe('true')
   })
 
+  // A weekday picked in Custom stays that weekday when the first due date is another day: the rule
+  // names it, rather than a plain weekly that would follow the date (review on #66).
+  test('a custom weekday stays when a different first day is picked', async () => {
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    expect(screen.getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][1]).toEqual({ dueAt: '2026-10-16', recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
+  })
+
   test('a failed submit shows the error and keeps the title', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new Error('Nope'))
     const { input } = setup({ onSubmit })

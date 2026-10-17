@@ -2,8 +2,9 @@ import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TaskDetailPanel from './TaskDetailPanel'
-import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { markOffline, markOnline, resetOfflineStatus } from './offlineStatus'
 import { resetDefaultAgentNameCache } from './defaultAgentName'
+import { weekdayOf } from './recurrenceRules'
 
 const api = {
   getTask: vi.fn(),
@@ -693,7 +694,8 @@ describe('TaskDetailPanel repeating tasks', () => {
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'every 2 weeks' }))
+    // No due date, so the builder starts on today's weekday and writes it out.
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: `FREQ=WEEKLY;INTERVAL=2;BYDAY=${weekdayOf(null)}` }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Custom repeat' })).toBeNull())
   })
 
@@ -708,6 +710,25 @@ describe('TaskDetailPanel repeating tasks', () => {
 
     await waitFor(() => expect(api.skipOccurrence).toHaveBeenCalledWith('t_1'))
     expect(await screen.findByText('Skipped. Now due Sat, Oct 24.')).toBeTruthy()
+  })
+
+  // Opened offline with nothing cached, the preview fails; when the server is back the Next line
+  // and Skip fill in without the panel being closed and opened again (review on #66).
+  test('a preview that failed offline is asked again once back online', async () => {
+    api.getTask.mockResolvedValue(detail(REPEATING, []))
+    api.previewRecurrence.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ dates: ['2026-10-24'] })
+    act(() => markOffline())
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+      expect(await screen.findByText('Shown when online.')).toBeTruthy()
+      await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalledTimes(1))
+      act(() => markOnline())
+      expect(await screen.findByText('Next: Sat, Oct 24')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Skip this one' }).disabled).toBe(false)
+      expect(api.previewRecurrence).toHaveBeenCalledTimes(2)
+    } finally {
+      resetOfflineStatus()
+    }
   })
 
   test('no Next row for a task that does not repeat', async () => {
