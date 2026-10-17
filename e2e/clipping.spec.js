@@ -185,6 +185,26 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // The custom repeat builder grows while it is open (day to week adds the weekday buttons), and
+  // its popover has to move to stay on screen, with Save whole, before anything scrolls (review on
+  // #66: it widened in place and put Save 53px off a 390px screen).
+  test('the custom repeat builder after its unit changes', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat resize', { recurrence: 'daily' })
+    await openView(page)
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('dialog', { name: 'Custom repeat' })
+    await builder.getByRole('combobox', { name: 'Repeat unit' }).selectOption('week')
+    await expect(builder.getByRole('button', { name: 'Sunday' })).toBeVisible()
+    await expect.poll(() => builder.evaluate((el) => {
+      const pop = el.closest('[data-popover]').getBoundingClientRect()
+      const save = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save').getBoundingClientRect()
+      return pop.left >= 0 && pop.right <= window.innerWidth && save.left >= 0 && save.right <= window.innerWidth
+    })).toBe(true)
+    await expectNothingCutOff(page)
+  })
+
   test('the navigation drawer', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'the drawer is the phone navigation')
     await openView(page)
@@ -283,6 +303,10 @@ for (const long of [false, true]) {
       })
     }
     test('My tasks with every group open', async ({ page }) => {
+      // Every row of every group, each name made long, checked one element at a time: on CI's
+      // Windows runner it took about 21s of the 30s limit on main, and the rows other tests in the
+      // same worker add push it over. The check is the point, so it gets the time, not a cut.
+      test.slow()
       await longNames(page)
       await openView(page)
       for (const name of ['Expand Later', 'Expand No due date']) await page.getByRole('button', { name, exact: true }).click()

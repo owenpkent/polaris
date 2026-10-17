@@ -85,6 +85,17 @@ export function Popover({
     return () => cancelAnimationFrame(id)
   }, [open, reposition])
 
+  // Sized by its content, the popover grows when that content does (the repeat builder showing
+  // its weekday buttons), so it is placed again whenever its own size changes; otherwise it widens
+  // from where it stood and runs off the screen. jsdom has no ResizeObserver.
+  const mounted = pos !== null
+  useEffect(() => {
+    if (!open || !mounted || typeof ResizeObserver === 'undefined' || !popRef.current) return undefined
+    const observer = new ResizeObserver(() => reposition())
+    observer.observe(popRef.current)
+    return () => observer.disconnect()
+  }, [open, mounted, reposition])
+
   useEffect(() => {
     if (!open) return undefined
     window.addEventListener('resize', reposition)
