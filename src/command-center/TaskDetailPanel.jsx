@@ -346,7 +346,7 @@ function RepeatField({ value, dueIso, onChange, onTypeRule, api, disabled }) {
         <span style={{ color: label ? 'var(--t1)' : 'var(--t2)' }}>{label ? `Repeats ${label}` : 'Repeat'}</span>
       </button>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
-      <Popover anchorRef={btnRef} open={building} onClose={() => setBuilding(false)} minWidth={300} focusSelector="button:not(:disabled), select">
+      <Popover anchorRef={btnRef} open={building} onClose={() => setBuilding(false)} minWidth={300} maxWidth={440} focusSelector="button:not(:disabled), select">
         <div role="dialog" aria-label="Custom repeat" style={{ padding: 12 }}>
           <RepeatBuilder value={draft} dueIso={dueIso} onChange={setDraft} api={api} />
           <div className="sheet-actions" style={{ marginTop: 12 }}>

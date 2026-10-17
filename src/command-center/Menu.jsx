@@ -34,9 +34,10 @@ export function useRovingFocus(containerRef) {
 // near the right edge of the page) is never clipped by either. Handles the
 // behavior every dropdown needs: focuses its first item on open, closes on
 // Esc (returning focus to the trigger) or on an outside click, and
-// repositions itself if the page scrolls or resizes while it's open. `gutter` is the least room
-// kept between it and the window's sides; the add-task date step (InlineTaskInput.jsx) passes 0,
-// so seven 44px days still fit on a 320px screen.
+// repositions itself if the page scrolls or resizes while it's open. `maxWidth` caps its width,
+// past which a menu's labels wrap; a popover holding a form (the add-task date step, the repeat
+// builder) passes more. `gutter` is the least room kept between it and the window's sides; the
+// add-task date step (InlineTaskInput.jsx) passes 0, so seven 44px days fit on a 320px screen.
 export function Popover({
   anchorRef,
   open,
@@ -46,6 +47,7 @@ export function Popover({
   minWidth = 200,
   focusSelector = '[data-menu-item]:not(:disabled)',
   gutter = 8,
+  maxWidth = 400,
 }) {
   const popRef = useRef(null)
   const [pos, setPos] = useState(null)
@@ -147,8 +149,15 @@ export function Popover({
         left: pos.left,
         top: pos.top ?? undefined,
         bottom: pos.bottom ?? undefined,
+        // The width comes from the content alone, never from where the popover sits. Left to
+        // shrink-to-fit, a fixed box with a label longer than the room takes all of it, from
+        // `left` to the screen's edge, so each reposition (any scroll, a focused item scrolled
+        // into view included) measured a wider box and moved it 8px further left: it crept
+        // across the screen with its right edge on the screen's. A label longer than the cap
+        // wraps (MenuRow).
+        width: 'max-content',
         minWidth,
-        maxWidth: `calc(100vw - ${2 * gutter}px)`,
+        maxWidth: `min(${maxWidth}px, calc(100vw - ${2 * gutter}px))`,
         maxHeight: pos.maxHeight,
         overflowY: 'auto',
         background: 'var(--bg3)',
@@ -196,7 +205,7 @@ function MenuRow({ item }) {
         gap: 10,
         width: '100%',
         minHeight: 44,
-        padding: '0 14px',
+        padding: '10px 14px',
         background: 'transparent',
         border: 'none',
         textAlign: 'left',
@@ -206,7 +215,8 @@ function MenuRow({ item }) {
         cursor: item.disabled ? 'default' : 'pointer',
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {/* A long label (a project or goal name) wraps: a menu shows every word. */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflowWrap: 'anywhere' }}>
         {item.icon}
         {item.label}
       </span>

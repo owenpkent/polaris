@@ -76,7 +76,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
           {error}
         </span>
       )}
-      <Popover anchorRef={inputRef} open={picking} onClose={() => setPicking(false)} minWidth={320} gutter={0} focusSelector="[data-cal-focus]">
+      <Popover anchorRef={inputRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={540} gutter={0} focusSelector="[data-cal-focus]">
         <div role="dialog" aria-label={`Due date for ${title.trim()}`} className="add-due-pop">
           <AddDuePanel dueAt={defaultDueAt} onPick={commit} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} />
         </div>
