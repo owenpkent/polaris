@@ -34,7 +34,10 @@ export function useRovingFocus(containerRef) {
 // near the right edge of the page) is never clipped by either. Handles the
 // behavior every dropdown needs: focuses its first item on open, closes on
 // Esc (returning focus to the trigger) or on an outside click, and
-// repositions itself if the page scrolls or resizes while it's open.
+// repositions itself if the page scrolls or resizes while it's open. `maxWidth` caps its width,
+// past which a menu's labels wrap; a popover holding a form (the add-task date step, the repeat
+// builder) passes more. `gutter` is the least room kept between it and the window's sides; the
+// add-task date step (InlineTaskInput.jsx) passes 0, so seven 44px days fit on a 320px screen.
 export function Popover({
   anchorRef,
   open,
@@ -43,6 +46,8 @@ export function Popover({
   align = 'start',
   minWidth = 200,
   focusSelector = '[data-menu-item]:not(:disabled)',
+  gutter = 8,
+  maxWidth = 400,
 }) {
   const popRef = useRef(null)
   const [pos, setPos] = useState(null)
@@ -55,7 +60,7 @@ export function Popover({
     const vh = window.innerHeight
     const width = Math.max(minWidth, popRef.current?.offsetWidth || minWidth)
     let left = align === 'end' ? a.right - width : a.left
-    left = Math.max(8, Math.min(left, vw - width - 8))
+    left = Math.max(gutter, Math.min(left, vw - width - gutter))
     const spaceBelow = vh - a.bottom
     const spaceAbove = a.top
     const openUp = spaceBelow < 160 && spaceAbove > spaceBelow
@@ -65,7 +70,7 @@ export function Popover({
       bottom: openUp ? vh - a.top + 4 : null,
       maxHeight: Math.max(120, (openUp ? spaceAbove : spaceBelow) - 12),
     })
-  }, [anchorRef, align, minWidth])
+  }, [anchorRef, align, minWidth, gutter])
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return }
@@ -79,6 +84,17 @@ export function Popover({
     const id = requestAnimationFrame(reposition)
     return () => cancelAnimationFrame(id)
   }, [open, reposition])
+
+  // Sized by its content, the popover grows when that content does (the repeat builder showing
+  // its weekday buttons), so it is placed again whenever its own size changes; otherwise it widens
+  // from where it stood and runs off the screen. jsdom has no ResizeObserver.
+  const mounted = pos !== null
+  useEffect(() => {
+    if (!open || !mounted || typeof ResizeObserver === 'undefined' || !popRef.current) return undefined
+    const observer = new ResizeObserver(() => reposition())
+    observer.observe(popRef.current)
+    return () => observer.disconnect()
+  }, [open, mounted, reposition])
 
   useEffect(() => {
     if (!open) return undefined
@@ -152,7 +168,7 @@ export function Popover({
         // wraps (MenuRow).
         width: 'max-content',
         minWidth,
-        maxWidth: 'min(400px, calc(100vw - 16px))',
+        maxWidth: `min(${maxWidth}px, calc(100vw - ${2 * gutter}px))`,
         maxHeight: pos.maxHeight,
         overflowY: 'auto',
         background: 'var(--bg3)',
