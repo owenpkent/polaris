@@ -66,7 +66,7 @@ test('store: a time is kept as written, with no zone added', () => {
 });
 
 test('toLocalDue turns a zoned value into floating local time in the timezone, and leaves the rest alone', () => {
-  assert.equal(toLocalDue('2026-10-20T00:00:00.000Z', 'America/Chicago'), '2026-10-19T19:00');
+  assert.equal(toLocalDue('2026-10-20T01:00:00.000Z', 'America/Chicago'), '2026-10-19T20:00');
   assert.equal(toLocalDue('2026-10-20T07:30:00Z', 'Europe/Berlin'), '2026-10-20T09:30');
   assert.equal(toLocalDue('2026-10-20T09:30+02:00', 'UTC'), '2026-10-20T07:30');
   assert.equal(toLocalDue('2026-10-20T09:30+0200', 'UTC'), '2026-10-20T07:30');
@@ -77,8 +77,8 @@ test('toLocalDue turns a zoned value into floating local time in the timezone, a
 
 test('store: a zoned due date is stored as floating local time in the configured timezone, on create, update, and accept', () => {
   const s = openStore(':memory:', { timezone: 'America/Chicago' });
-  const t = s.createTask({ title: 'From an agent', dueAt: '2026-10-20T00:00:00.000Z' });
-  assert.equal(t.dueAt, '2026-10-19T19:00');
+  const t = s.createTask({ title: 'From an agent', dueAt: '2026-10-20T01:00:00.000Z' });
+  assert.equal(t.dueAt, '2026-10-19T20:00');
   assert.equal(s.updateTask(t.id, { dueAt: '2026-10-21T14:00:00Z' }).dueAt, '2026-10-21T09:00');
   const inbox = s.createTask({ title: 'Suggestion', status: 'inbox' });
   assert.equal(s.acceptInboxItem(inbox.id, { dueAt: '2026-10-22T12:00:00-05:00' }).dueAt, '2026-10-22T12:00');
@@ -90,4 +90,19 @@ test('store: a zoned due date is stored as floating local time in the configured
 test('store: without a timezone a zoned due date is stored as UTC floating time', () => {
   const s = openStore(':memory:');
   assert.equal(s.createTask({ title: 'x', dueAt: '2026-10-20T09:00:00.000+02:00' }).dueAt, '2026-10-20T07:00');
+});
+
+test('toLocalDue reads midnight UTC as the plain date it came from, in every zone and form', () => {
+  for (const v of ['2026-10-20T00:00Z', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00.000Z', '2026-10-20T00:00+00:00', '2026-10-20T00:00:00.000+0000']) {
+    assert.equal(toLocalDue(v, 'America/Chicago'), '2026-10-20', v);
+    assert.equal(toLocalDue(v, 'Pacific/Kiritimati'), '2026-10-20', v);
+  }
+  // Midnight at another offset is a moment like any other.
+  assert.equal(toLocalDue('2026-10-20T00:00:00+02:00', 'UTC'), '2026-10-19T22:00');
+  assert.equal(toLocalDue('2026-10-20T00:00:01Z', 'UTC'), '2026-10-20T00:00:01');
+});
+
+test('store: an agent\'s toISOString() of a plain date is stored as that date', () => {
+  const s = openStore(':memory:', { timezone: 'America/Chicago' });
+  assert.equal(s.createTask({ title: 'x', dueAt: '2026-10-20T00:00:00.000Z' }).dueAt, '2026-10-20');
 });

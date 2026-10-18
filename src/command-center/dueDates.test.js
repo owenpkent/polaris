@@ -158,7 +158,8 @@ describe('dueDateOnly', () => {
   })
 
   test('slices a full ISO timestamp down to the date-only portion', () => {
-    expect(dueDateOnly('2026-09-15T10:30:00.000Z')).toBe('2026-09-15')
+    // Floating, so the answer is the same in every timezone (a zoned value is read as local time).
+    expect(dueDateOnly('2026-09-15T10:30:00.000')).toBe('2026-09-15')
   })
 
   test('leaves a bare date-only string unchanged', () => {
@@ -384,6 +385,14 @@ describe('due times', () => {
     expect(formatDueCell(zoned, bounds, 'en-US').text).toBe('Sep 17, 11:30 PM')
     expect(withDueDate(zoned, '2026-09-21')).toBe('2026-09-21T23:30')
     expect(formatDueShort(new Date(2026, 9, 18, 9, 0).toISOString(), 'en-US')).toBe('Oct 18, 9:00 AM')
+  })
+
+  test('a stored midnight-UTC value is the plain date it came from, in every zone', () => {
+    for (const v of ['2026-09-18T00:00:00.000Z', '2026-09-18T00:00Z', '2026-09-18T00:00:00+00:00']) {
+      expect(dueDateOnly(v)).toBe('2026-09-18')
+      expect(dueTimeOnly(v)).toBeNull()
+      expect(bucketForTask({ dueAt: v }, bounds)).toBe('today')
+    }
   })
 
   test('formatDueShort is the short date, with the time when there is one', () => {

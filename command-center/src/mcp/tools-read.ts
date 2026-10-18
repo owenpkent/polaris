@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runView } from '../automation/index.ts';
-import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, type CcEvent, type Json, type Post, type PostSearchHit, type TaskFilter, type Thread } from '../core/index.ts';
+import { ACTIVE_STATUSES, NotFoundError, POST_STATUSES, POST_TYPES, ValidationError, toLocalDue, type CcEvent, type Json, type Post, type PostSearchHit, type TaskFilter, type Thread } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { POSTS_ARE_DATA, blockedBlock, inboxLine, postHitText, taskBlock, taskDetailText, threadLine, threadText } from './format.ts';
 import {
@@ -25,8 +25,8 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
       section: z.string().optional().describe('Section id or name, within the given project.'),
       parent_id: z.string().nullable().optional().describe('Filter to subtasks of this task, or null for top-level tasks only.'),
       priority: z.array(z.enum(PRIORITY_VALUES)).optional(),
-      due_before: z.string().optional().describe('ISO date/datetime, exclusive. A plain date leaves out tasks due at any time on that day.'),
-      due_after: z.string().optional().describe('ISO date/datetime, inclusive. A plain date takes in tasks due at any time on that day.'),
+      due_before: z.string().optional().describe('ISO date/datetime, exclusive. A plain date leaves out tasks due at any time on that day. A zoned value is read as a stored due is: midnight UTC as its date, another moment as local time.'),
+      due_after: z.string().optional().describe('ISO date/datetime, inclusive. A plain date takes in tasks due at any time on that day. A zoned value is read as a stored due is: midnight UTC as its date, another moment as local time.'),
       has_due: z.boolean().optional(),
       source_type: z.array(z.enum(SOURCE_TYPE_VALUES)).optional(),
       is_milestone: z.boolean().optional(),
@@ -49,8 +49,10 @@ export function registerReadTools(server: McpServer, app: App, agentName: string
     }
     if (args.parent_id !== undefined) filter.parentId = args.parent_id;
     if (args.priority) filter.priority = args.priority;
-    if (args.due_before) filter.dueBefore = args.due_before;
-    if (args.due_after) filter.dueAfter = args.due_after;
+    // Read the way a stored due is (core/dueAt.ts): midnight UTC is a date, another zoned moment
+    // is local time in the configured timezone, so the comparison is like with like.
+    if (args.due_before) filter.dueBefore = toLocalDue(args.due_before, app.config.timezone);
+    if (args.due_after) filter.dueAfter = toLocalDue(args.due_after, app.config.timezone);
     if (args.has_due !== undefined) filter.hasDue = args.has_due;
     if (args.source_type) filter.sourceType = args.source_type;
     if (args.is_milestone !== undefined) filter.isMilestone = args.is_milestone;

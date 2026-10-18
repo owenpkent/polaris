@@ -9,7 +9,8 @@ carries, because `cc update` snapshots the database before one and a rollback re
   the task panel's Due date field, and Add time in "When is it due?" for a new task, and shown
   after the day in rows, board cards, and the panel ("Today 9:00 AM"). It is stored as floating
   local time (`YYYY-MM-DDTHH:MM`, no zone); a value sent with a zone or an offset is stored as
-  the local time of that moment in `CC_TZ`. A task due at a time counts as its day for Today,
+  the local time of that moment in `CC_TZ`, and exactly midnight UTC (a plain date through
+  `toISOString()`) as that date. A task due at a time counts as its day for Today,
   Overdue, the digest, rules, and the CLI, and sorts after that day's untimed tasks. `cc add
   --due "YYYY-MM-DD HH:MM"` takes one, and the digest, MCP text, and CLI write it as
   `2026-10-18 09:00`. No migration: `due_at` already held a datetime.

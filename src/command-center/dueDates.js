@@ -34,8 +34,12 @@ export function addDays(date, n) {
 // moment, so the list, the picker, and a reminder agree; an edit then saves the floating form.
 // A day or a floating time is returned as it is.
 const ZONED_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+// Exactly midnight UTC is what toISOString() makes of a plain date, so it reads as that date, as
+// the server stores it (command-center/src/core/dueAt.ts).
+const MIDNIGHT_UTC_RE = /T00:00(:00(\.0+)?)?(Z|[+-]00:?00)$/
 export function localDue(dueAt) {
   if (!dueAt || !ZONED_RE.test(dueAt)) return dueAt
+  if (MIDNIGHT_UTC_RE.test(dueAt)) return dueAt.slice(0, 10)
   const d = new Date(dueAt.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
   if (Number.isNaN(d.getTime())) return dueAt
   return `${localIso(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`

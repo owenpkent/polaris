@@ -8,7 +8,9 @@
 // A value that names a zone or an offset ('2026-10-20T00:00:00.000Z', the toISOString() an agent
 // sends, or '+02:00') is a moment, not a time on the owner's clock. The store turns it into
 // floating local time in the configured timezone on the way in (toLocalDue), so every reader sees
-// the same day and the same time, and a reminder fires at the time the list shows.
+// the same day and the same time, and a reminder fires at the time the list shows. Exactly
+// midnight UTC is the exception: it is what JavaScript's toISOString() makes of a plain date, so it
+// is stored as that date ('2026-10-20T00:00:00.000Z' is '2026-10-20'), never as the evening before.
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(:\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
@@ -53,14 +55,18 @@ export function parseDueInput(raw: string): string {
   return `${m[1]}T${String(hour).padStart(2, '0')}:${m[3]}`;
 }
 
+const MIDNIGHT_UTC = /^T00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)$/;
+
 /**
- * A due value as the store keeps it: a day or a floating local time passes through unchanged; one
- * with a zone or an offset becomes floating local time in `timezone` ('YYYY-MM-DDTHH:MM', with
- * ':SS' only when the seconds are not zero). Anything else passes through for validation to judge.
+ * A due value as the store keeps it, and how a due filter is read: a day or a floating local time
+ * passes through unchanged; exactly midnight UTC becomes its date; any other value with a zone or
+ * an offset becomes floating local time in `timezone` ('YYYY-MM-DDTHH:MM', with ':SS' only when
+ * the seconds are not zero). Anything else passes through for validation to judge.
  */
 export function toLocalDue(value: string, timezone: string): string {
   const m = DATETIME.exec(value);
   if (!m || !m[4]) return value;
+  if (MIDNIGHT_UTC.test(value.slice(10))) return m[1];
   const zone = m[4] === 'Z' ? 'Z' : m[4].length === 5 ? `${m[4].slice(0, 3)}:${m[4].slice(3)}` : m[4];
   const instant = Date.parse(`${m[1]}T${m[2]}${m[3] ?? ''}${zone}`);
   if (Number.isNaN(instant)) return value;
