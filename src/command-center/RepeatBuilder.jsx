@@ -2,8 +2,8 @@ import { useEffect, useId, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { useOffline } from './offlineStatus'
 import {
-  WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, UNITS,
-  buildRule, defaultShape, parseRule,
+  WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, MAX_COUNT, UNITS,
+  buildRule, defaultShape, parseRule, quickPicks, matchQuickPick,
 } from './recurrenceRules'
 
 const UNIT_WORDS = { day: ['day', 'days'], week: ['week', 'weeks'], month: ['month', 'months'], year: ['year', 'years'] }
@@ -34,15 +34,19 @@ export function useRecurrencePreview(api, rule, from, count = 3) {
   return dates
 }
 
-export function previewText(dates) {
+// The preview line. A rule counted from the finish has no fixed next dates, so its preview says
+// what they would be if each one were finished on the day it is due.
+export function previewText(dates, fromCompletion = false) {
   if (!dates) return null
   if (dates.length === 0) return 'No later dates: this is the last one.'
-  return `Next: ${dates.map(formatShort).join('; ')}`
+  return `${fromCompletion ? 'If each is finished on its due date, next: ' : 'Next: '}${dates.map(formatShort).join('; ')}`
 }
 
 // Builds a repeat rule by tapping, with nothing to type: every N days, weeks, months, or years;
-// which weekdays for a weekly rule; and a day of the month or "the second Tuesday" for a monthly
-// one. `value` is the rule string and `onChange` gets the new one (recurrenceRules.js picks the
+// whether the next one counts from the due date or from the day the task is finished; which
+// weekdays for a weekly rule; a day of the month (or the last day) or "the second Tuesday" (or the
+// last one) for a monthly one; and when it ends: never, on a date, or after a number of times.
+// `value` is the rule string and `onChange` gets the new one (recurrenceRules.js picks the
 // shortest form the server accepts). `dueIso` is the task's due date, which the rule starts from.
 // With `api`, the next three dates are shown under it.
 export default function RepeatBuilder({ value, dueIso, onChange, api, disabled = false }) {
@@ -67,6 +71,8 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   }
 
   const max = MAX_INTERVAL[shape.unit]
+  const unitWord = shape.interval === 1 ? `a ${UNIT_WORDS[shape.unit][0]}` : `${shape.interval} ${UNIT_WORDS[shape.unit][1]}`
+  const countOptions = Array.from({ length: Math.max(MAX_COUNT, shape.count) }, (_, i) => i + 1)
 
   return (
     <div className="repeat-builder">
@@ -108,7 +114,23 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         </select>
       </div>
 
-      {shape.unit === 'week' && (
+      <fieldset className="repeat-month">
+        <legend className="field-label">Next one counts from</legend>
+        <label className="repeat-choice">
+          <input type="radio" name={`${uid}-from`} checked={!shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: false })} />
+          <span>The due date</span>
+        </label>
+        <label className="repeat-choice">
+          <input type="radio" name={`${uid}-from`} checked={shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: true })} />
+          <span>The day I finish it</span>
+        </label>
+      </fieldset>
+
+      {shape.fromCompletion && (
+        <p className="repeat-note">{`Each one is due ${unitWord} after the day you finish the one before.`}</p>
+      )}
+
+      {!shape.fromCompletion && shape.unit === 'week' && (
         <div className="repeat-row">
           <span className="field-label" id={`${uid}-on`}>On</span>
           <div className="repeat-days" role="group" aria-labelledby={`${uid}-on`}>
@@ -134,7 +156,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         </div>
       )}
 
-      {shape.unit === 'month' && (
+      {!shape.fromCompletion && shape.unit === 'month' && (
         <fieldset className="repeat-month">
           <legend className="field-label">On</legend>
           <label className="repeat-choice">
@@ -172,34 +194,63 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         </fieldset>
       )}
 
-      {shape.unit === 'year' && <p className="field-label">On the due date's day and month.</p>}
+      {!shape.fromCompletion && shape.unit === 'year' && <p className="repeat-note">On the due date's day and month.</p>}
 
-      {previewText(dates) && <p className="repeat-preview" role="status">{previewText(dates)}</p>}
+      <fieldset className="repeat-month">
+        <legend className="field-label">Ends</legend>
+        <label className="repeat-choice">
+          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'never'} disabled={disabled} onChange={() => update({ ends: 'never' })} />
+          <span>Never</span>
+        </label>
+        <label className="repeat-choice">
+          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'on'} disabled={disabled} onChange={() => update({ ends: 'on' })} />
+          <span>On</span>
+          <input
+            type="date"
+            aria-label="End date"
+            value={shape.until}
+            min={dueIso || undefined}
+            disabled={disabled}
+            // A cleared box keeps the last date: an end with no date would silently mean never.
+            onChange={(e) => { if (e.target.value) update({ ends: 'on', until: e.target.value }) }}
+          />
+        </label>
+        <label className="repeat-choice">
+          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'after'} disabled={disabled} onChange={() => update({ ends: 'after' })} />
+          <span>After</span>
+          <select
+            aria-label="Number of times"
+            value={shape.count}
+            disabled={disabled}
+            onChange={(e) => update({ ends: 'after', count: Number(e.target.value) })}
+          >
+            {countOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span>{shape.count === 1 ? 'time' : 'times'}</span>
+        </label>
+      </fieldset>
+
+      {previewText(dates, shape.fromCompletion) && <p className="repeat-preview" role="status">{previewText(dates, shape.fromCompletion)}</p>}
     </div>
   )
 }
 
-const PRESETS = [
-  ['', 'Never'],
-  ['daily', 'Daily'],
-  ['weekdays', 'Weekdays'],
-  ['weekly', 'Weekly'],
-  ['monthly', 'Monthly'],
-  ['yearly', 'Yearly'],
-]
-
-// A Repeat choice for a task being added: the common rules in one list, and Custom, which opens
-// the builder under it. `value` is the rule ('' for none) and `onChange` gets the new one.
+// A Repeat choice for a task being added: the quick picks worded from the due date (or today),
+// as Google Calendar lists them, and Custom, which opens the builder under it. `value` is the rule
+// ('' for none) and `onChange` gets the new one. A pick writes its rule in full (buildRule), so the
+// rule saved is the one its words describe whatever due date is picked next; an alias such as
+// "weekly" shows as the pick it means for the due date, and any other rule shows as Custom.
 export function RepeatSelect({ value, onChange, dueIso, api, disabled = false, id }) {
-  const current = String(value || '').trim().toLowerCase()
-  const preset = PRESETS.some(([option]) => option === current)
-  const [custom, setCustom] = useState(!preset)
-  const showBuilder = custom || !preset
+  const current = String(value || '').trim()
+  const picks = quickPicks(dueIso)
+  const matched = matchQuickPick(current, dueIso)
+  const [custom, setCustom] = useState(matched === null)
+  const showBuilder = custom || matched === null
   return (
     <>
       <select
         id={id}
-        value={showBuilder ? 'custom' : current}
+        value={showBuilder ? 'custom' : matched}
         disabled={disabled}
         onChange={(e) => {
           const next = e.target.value
@@ -214,7 +265,7 @@ export function RepeatSelect({ value, onChange, dueIso, api, disabled = false, i
           }
         }}
       >
-        {PRESETS.map(([option, text]) => <option key={option || 'never'} value={option}>{text}</option>)}
+        {picks.map((pick) => <option key={pick.rule || 'never'} value={pick.rule}>{pick.label}</option>)}
         <option value="custom">Custom</option>
       </select>
       {showBuilder && <RepeatBuilder value={value} dueIso={dueIso} onChange={onChange} api={api} disabled={disabled} />}

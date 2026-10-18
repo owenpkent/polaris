@@ -99,9 +99,9 @@ describe('NewTaskSheet', () => {
     const { onCreate } = renderSheet()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'weekly' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
-    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: getDueBounds().today, recurrence: 'weekly' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: getDueBounds().today, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` }))
   })
 
   // Today, then Custom (today's weekday pressed), then Tomorrow: the rule keeps today's weekday

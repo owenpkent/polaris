@@ -243,6 +243,32 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'task', 'custom-repeat')
   })
 
+  // The Repeat menu's quick picks, worded from a Wednesday, October 14 due date.
+  test('task: repeat menu', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat menu', { dueAt: '2026-10-14' })
+    await openView(page)
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: 'Repeat, never' }).click()
+    await expect(page.getByRole('menuitemradio', { name: 'Monthly on the second Wednesday' })).toBeVisible()
+    await shot(page, testInfo, 'task', 'repeat-menu')
+  })
+
+  // The custom builder counting from the finish, with an end date: the day choices give way to a
+  // note, and Ends shows its date box.
+  test('task: custom repeat from the finish', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat from finish', { recurrence: 'FREQ=DAILY;INTERVAL=3;UNTIL=20261231;X-FROM=COMPLETION' })
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await expect(builder.getByRole('radio', { name: 'The day I finish it' })).toBeChecked()
+    await expect(builder.getByRole('status')).toHaveText(/^If each is finished on its due date, next: /)
+    await builder.getByRole('group', { name: 'Ends' }).scrollIntoViewIfNeeded()
+    await shot(page, testInfo, 'task', 'custom-repeat-finish')
+  })
+
   test('mytasks: due menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Reply to accessibility audit feedback' }).click()

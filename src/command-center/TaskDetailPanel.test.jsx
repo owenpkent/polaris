@@ -771,6 +771,40 @@ describe('TaskDetailPanel repeating tasks', () => {
     }
   })
 
+  // 2026-10-17 is the third Saturday of October.
+  test('the Repeat menu offers quick picks worded from the due date, and an alias shows as its pick', async () => {
+    api.getTask.mockResolvedValue(detail(REPEATING, []))
+    api.updateTask.mockResolvedValue({ task: REPEATING })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, weekly' }))
+    const items = await screen.findAllByRole('menuitemradio')
+    expect(items.map((i) => i.textContent)).toEqual([
+      'Does not repeat', 'Daily', 'Every weekday (Monday to Friday)', 'Weekends', 'Weekly on Saturday',
+      'Every 2 weeks on Saturday', 'Monthly on day 17', 'Monthly on the third Saturday', 'Every 3 months on day 17',
+      'Annually on October 17', 'Custom',
+    ])
+    expect(screen.getByRole('menuitemradio', { name: 'Weekly on Saturday' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Monthly on the third Saturday' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'FREQ=MONTHLY;BYDAY=3SA' }))
+  })
+
+  test('a rule with an end shows as Custom in the Repeat menu', async () => {
+    api.getTask.mockResolvedValue(detail({ ...REPEATING, recurrence: 'FREQ=WEEKLY;BYDAY=SA;COUNT=3' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, weekly on Sat, 3 more times' }))
+    expect((await screen.findByRole('menuitemradio', { name: 'Custom' })).getAttribute('aria-checked')).toBe('true')
+  })
+
+  test('a rule counted from the finish says so on the Next row, with the date a skip moves it to', async () => {
+    api.getTask.mockResolvedValue(detail({ ...REPEATING, recurrence: 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION' }, []))
+    api.previewRecurrence.mockResolvedValue({ dates: ['2026-10-20'] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    expect(await screen.findByText('Counted from the day you finish it. Skipping moves it to Tue, Oct 20.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Repeat, every 3 days after you finish it' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Skip this one' })).toBeTruthy()
+  })
+
   test('no Next row for a task that does not repeat', async () => {
     api.getTask.mockResolvedValue(detail(TASK, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)

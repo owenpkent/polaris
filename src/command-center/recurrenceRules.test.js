@@ -1,5 +1,7 @@
-import { describe, test, expect } from 'vitest'
-import { parseRule, buildRule, describeRule, defaultShape, weekdayOf } from './recurrenceRules'
+import { describe, test, expect, vi, afterEach } from 'vitest'
+import {
+  parseRule, buildRule, describeRule, defaultShape, weekdayOf, quickPicks, matchQuickPick, countsFromCompletion,
+} from './recurrenceRules'
 
 // 2026-10-14 is a Wednesday.
 const DUE = '2026-10-14'
@@ -14,11 +16,17 @@ describe('weekdayOf and defaultShape', () => {
   test('defaultShape is weekly on the due date', () => {
     expect(defaultShape(DUE)).toEqual({
       interval: 1, unit: 'week', weekdays: ['WE'], monthMode: 'day', monthDay: 14, nth: 2, nthWeekday: 'WE',
+      ends: 'never', until: '2027-01-14', count: 10, fromCompletion: false,
     })
   })
 
   test('defaultShape caps the nth week at 4', () => {
     expect(defaultShape('2026-10-31').nth).toBe(4)
+  })
+
+  test('the end date it offers is three months on, held to the end of a shorter month', () => {
+    expect(defaultShape('2026-11-30').until).toBe('2027-02-28')
+    expect(defaultShape('2027-11-30').until).toBe('2028-02-29')
   })
 })
 
@@ -26,6 +34,10 @@ describe('round trips', () => {
   const cases = [
     'daily', 'weekly', 'weekdays', 'monthly', 'yearly', 'every 2 weeks',
     'FREQ=WEEKLY;BYDAY=MO,WE', 'FREQ=MONTHLY;BYMONTHDAY=-1', 'FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR',
+    'FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231', 'FREQ=DAILY;COUNT=5', 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION',
+    'FREQ=WEEKLY;INTERVAL=2;COUNT=4;X-FROM=COMPLETION', 'FREQ=MONTHLY;BYDAY=-1FR;UNTIL=20270630',
+    'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;COUNT=3', 'FREQ=YEARLY;UNTIL=20300101', 'FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12',
+    'FREQ=MONTHLY;X-FROM=COMPLETION', 'FREQ=YEARLY;UNTIL=20301231;X-FROM=COMPLETION', 'FREQ=WEEKLY;BYDAY=SA,SU',
   ]
   for (const rule of cases) {
     test(`${rule}`, () => {
@@ -37,7 +49,11 @@ describe('round trips', () => {
   }
 
   test('aliases and explicit rules come back as written when already shortest', () => {
-    for (const rule of ['daily', 'weekdays', 'yearly', 'FREQ=WEEKLY;BYDAY=MO,WE', 'FREQ=MONTHLY;BYMONTHDAY=-1', 'FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR']) {
+    for (const rule of [
+      'daily', 'weekdays', 'yearly', 'FREQ=WEEKLY;BYDAY=MO,WE', 'FREQ=MONTHLY;BYMONTHDAY=-1', 'FREQ=MONTHLY;INTERVAL=2;BYDAY=-1FR',
+      'FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231', 'FREQ=DAILY;COUNT=5', 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION',
+      'FREQ=WEEKLY;INTERVAL=2;COUNT=4;X-FROM=COMPLETION', 'FREQ=MONTHLY;BYDAY=-1FR;UNTIL=20270630',
+    ]) {
       expect(buildRule(parseRule(rule, DUE))).toBe(rule)
     }
   })
@@ -72,13 +88,55 @@ describe('building', () => {
   test('interval is clamped to the unit maximum', () => {
     expect(buildRule({ ...defaultShape(DUE), unit: 'year', interval: 99 })).toBe('every 10 years')
   })
+
+  test('an end turns an alias into an RRULE with COUNT or UNTIL after the rest', () => {
+    const base = defaultShape(DUE)
+    expect(buildRule({ ...base, unit: 'day', ends: 'after', count: 5 })).toBe('FREQ=DAILY;COUNT=5')
+    expect(buildRule({ ...base, unit: 'day', interval: 2, ends: 'on', until: '2026-12-31' })).toBe('FREQ=DAILY;INTERVAL=2;UNTIL=20261231')
+    expect(buildRule({ ...base, unit: 'week', weekdays: ['MO', 'TU', 'WE', 'TH', 'FR'], ends: 'on', until: '2026-12-31' }))
+      .toBe('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20261231')
+    expect(buildRule({ ...base, unit: 'year', ends: 'after', count: 3 })).toBe('FREQ=YEARLY;COUNT=3')
+    expect(buildRule({ ...base, unit: 'day', ends: 'never', count: 5 })).toBe('daily')
+  })
+
+  test('counted from the finish, a rule drops its day parts and carries X-FROM last', () => {
+    const base = defaultShape(DUE)
+    expect(buildRule({ ...base, unit: 'week', fromCompletion: true })).toBe('FREQ=WEEKLY;X-FROM=COMPLETION')
+    expect(buildRule({ ...base, unit: 'month', monthMode: 'weekday', fromCompletion: true })).toBe('FREQ=MONTHLY;X-FROM=COMPLETION')
+    expect(buildRule({ ...base, unit: 'day', interval: 3, fromCompletion: true, ends: 'after', count: 2 }))
+      .toBe('FREQ=DAILY;INTERVAL=3;COUNT=2;X-FROM=COMPLETION')
+  })
+})
+
+describe('parsing ends and the finish anchor', () => {
+  test('UNTIL with a time keeps its date, COUNT reads as After', () => {
+    expect(parseRule('FREQ=DAILY;UNTIL=20261231T235959Z', DUE)).toMatchObject({ ends: 'on', until: '2026-12-31' })
+    expect(parseRule('FREQ=DAILY;COUNT=7', DUE)).toMatchObject({ ends: 'after', count: 7 })
+    expect(parseRule('FREQ=DAILY;COUNT=150', DUE)).toMatchObject({ ends: 'after', count: 150 })
+  })
+
+  test('X-FROM=COMPLETION in any case and on an alias', () => {
+    expect(parseRule('every 3 days;X-FROM=COMPLETION', DUE)).toMatchObject({ unit: 'day', interval: 3, fromCompletion: true })
+    expect(parseRule('freq=weekly;x-from=completion', DUE)).toMatchObject({ unit: 'week', fromCompletion: true })
+    expect(parseRule('daily', DUE).fromCompletion).toBe(false)
+  })
+
+  test('countsFromCompletion', () => {
+    expect(countsFromCompletion('FREQ=DAILY;X-FROM=COMPLETION')).toBe(true)
+    expect(countsFromCompletion('FREQ=DAILY;x-from = completion')).toBe(true)
+    expect(countsFromCompletion('FREQ=DAILY')).toBe(false)
+    expect(countsFromCompletion(null)).toBe(false)
+  })
 })
 
 describe('unsupported rules parse to null', () => {
   const bad = [
-    '', null, 'garbage', 'FREQ=YEARLY;BYMONTH=3', 'FREQ=DAILY;COUNT=5', 'FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1',
+    '', null, 'garbage', 'FREQ=YEARLY;BYMONTH=3', 'FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1',
     'FREQ=WEEKLY;INTERVAL=54', 'every 54 weeks', 'every 0 days', 'FREQ=DAILY;INTERVAL=367', 'FREQ=MONTHLY;BYMONTHDAY=32',
     'FREQ=MONTHLY;BYDAY=5MO', 'FREQ=WEEKLY;BYDAY=XX',
+    'FREQ=DAILY;X-FOO=1', 'FREQ=DAILY;X-FROM=DUE', 'FREQ=DAILY;X-FROM=COMPLETION;X-FROM=COMPLETION', 'X-FROM=COMPLETION',
+    'FREQ=DAILY;COUNT=2;UNTIL=20261231', 'FREQ=WEEKLY;BYDAY=MO;X-FROM=COMPLETION', 'weekdays;X-FROM=COMPLETION',
+    'FREQ=DAILY;UNTIL=2026-12-31', 'FREQ=DAILY;COUNT=0', 'FREQ=DAILY;COUNT=two',
   ]
   for (const rule of bad) {
     test(`${JSON.stringify(rule)}`, () => {
@@ -130,5 +188,93 @@ describe('describeRule', () => {
 
   test('a rule the builder cannot show is a custom rule', () => {
     expect(describeRule('FREQ=YEARLY;BYMONTH=3')).toBe('by a custom rule')
+    expect(describeRule('FREQ=YEARLY;BYMONTH=3;X-FROM=COMPLETION')).toBe('by a custom rule')
+  })
+
+  test('the last day and the last weekday of the month', () => {
+    expect(describeRule('FREQ=MONTHLY;BYMONTHDAY=-1')).toBe('monthly on the last day')
+    expect(describeRule('FREQ=MONTHLY;BYDAY=-1FR')).toBe('monthly on the last Friday')
+  })
+
+  test('ends: until a date, or how many are left including this one', () => {
+    expect(describeRule('FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231')).toBe('weekly on Mon, until Dec 31, 2026')
+    expect(describeRule('FREQ=DAILY;COUNT=5')).toBe('daily, 5 more times')
+    expect(describeRule('FREQ=DAILY;COUNT=1')).toBe('daily, 1 more time')
+    expect(describeRule('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20270101')).toBe('on weekdays, until Jan 1, 2027')
+    expect(describeRule('FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12')).toBe('monthly on the last day, 12 more times')
+  })
+
+  test('counted from the finish', () => {
+    expect(describeRule('FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION')).toBe('every 3 days after you finish it')
+    expect(describeRule('FREQ=WEEKLY;X-FROM=COMPLETION')).toBe('weekly after you finish it')
+    expect(describeRule('FREQ=WEEKLY;INTERVAL=2;COUNT=4;X-FROM=COMPLETION')).toBe('every 2 weeks after you finish it, 4 more times')
+  })
+})
+
+describe('quickPicks', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  test('worded from a Wednesday, October 14 due date, as Google Calendar lists them', () => {
+    expect(quickPicks(DUE)).toEqual([
+      { rule: '', label: 'Does not repeat' },
+      { rule: 'daily', label: 'Daily' },
+      { rule: 'weekdays', label: 'Every weekday (Monday to Friday)' },
+      { rule: 'FREQ=WEEKLY;BYDAY=SA,SU', label: 'Weekends' },
+      { rule: 'FREQ=WEEKLY;BYDAY=WE', label: 'Weekly on Wednesday' },
+      { rule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=WE', label: 'Every 2 weeks on Wednesday' },
+      { rule: 'FREQ=MONTHLY;BYMONTHDAY=14', label: 'Monthly on day 14' },
+      { rule: 'FREQ=MONTHLY;BYDAY=2WE', label: 'Monthly on the second Wednesday' },
+      { rule: 'FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=14', label: 'Every 3 months on day 14' },
+      { rule: 'yearly', label: 'Annually on October 14' },
+    ])
+  })
+
+  test('the month\'s last day and its last weekday read as the last', () => {
+    const picks = Object.fromEntries(quickPicks('2026-10-31').map((p) => [p.label, p.rule]))
+    expect(picks['Monthly on the last day']).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
+    expect(picks['Monthly on the last Saturday']).toBe('FREQ=MONTHLY;BYDAY=-1SA')
+    expect(picks['Every 3 months on the last day']).toBe('FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=-1')
+    // The fourth Wednesday of October 2026 is also its last.
+    expect(quickPicks('2026-10-28').map((p) => p.label)).toContain('Monthly on the last Wednesday')
+    expect(quickPicks('2026-10-21').map((p) => p.label)).toContain('Monthly on the third Wednesday')
+    expect(quickPicks('2026-02-28').map((p) => p.label)).toContain('Monthly on the last day')
+  })
+
+  test('with no due date they are worded from today', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 9, 14, 9, 0))
+    expect(quickPicks(null).map((p) => p.label)).toContain('Weekly on Wednesday')
+    expect(quickPicks(null).map((p) => p.label)).toContain('Annually on October 14')
+  })
+
+  test('every pick parses back to itself and is matched as itself', () => {
+    for (const due of [DUE, '2026-10-31', '2026-02-28', '2028-02-29']) {
+      for (const { rule } of quickPicks(due).slice(1)) {
+        expect(buildRule(parseRule(rule, due))).toBe(rule)
+        expect(matchQuickPick(rule, due)).toBe(rule)
+      }
+    }
+  })
+})
+
+describe('matchQuickPick', () => {
+  test('an alias is the pick it means for the due date', () => {
+    expect(matchQuickPick('weekly', DUE)).toBe('FREQ=WEEKLY;BYDAY=WE')
+    expect(matchQuickPick('weekly', '2026-10-16')).toBe('FREQ=WEEKLY;BYDAY=FR')
+    expect(matchQuickPick('every 2 weeks', DUE)).toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=WE')
+    expect(matchQuickPick('monthly', DUE)).toBe('FREQ=MONTHLY;BYMONTHDAY=14')
+    expect(matchQuickPick('yearly', DUE)).toBe('yearly')
+    expect(matchQuickPick('weekdays', DUE)).toBe('weekdays')
+    expect(matchQuickPick('FREQ=WEEKLY;BYDAY=SU,SA', DUE)).toBe('FREQ=WEEKLY;BYDAY=SA,SU')
+  })
+
+  test('no rule is the first pick, and anything else is none', () => {
+    expect(matchQuickPick('', DUE)).toBe('')
+    expect(matchQuickPick(null, DUE)).toBe('')
+    expect(matchQuickPick('every 3 days', DUE)).toBeNull()
+    expect(matchQuickPick('FREQ=DAILY;COUNT=5', DUE)).toBeNull()
+    expect(matchQuickPick('FREQ=DAILY;X-FROM=COMPLETION', DUE)).toBeNull()
+    expect(matchQuickPick('FREQ=YEARLY;BYMONTH=3', DUE)).toBeNull()
+    expect(matchQuickPick('FREQ=WEEKLY;BYDAY=WE', '2026-10-16')).toBeNull()
   })
 })
