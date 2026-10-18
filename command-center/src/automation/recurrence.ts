@@ -46,6 +46,9 @@ function resolveAlias(input: string): string {
   return trimmed.replace(/^RRULE:/i, '');
 }
 
+/** Whether a part's name or value has spaces at either end. rrule refuses some and keeps others. */
+const spaced = (key: string, value: string): boolean => key !== key.trim() || value !== value.trim();
+
 /**
  * The one extension part a rule may carry, `X-FROM=COMPLETION`: the next due date counts from the
  * day the task is finished rather than from its due date. It is taken off before the rest goes to
@@ -57,8 +60,11 @@ function splitExtensions(input: string): { base: string; fromCompletion: boolean
   for (const piece of input.trim().split(';')) {
     const [rawKey, ...rest] = piece.split('=');
     const key = rawKey.trim().replace(/^RRULE:/i, '').toUpperCase();
+    // Checked here, before the alias step trims the rest: taking X-FROM off could leave "COUNT=2 "
+    // as the end of the rule, which rrule reads as 2 and the store would not.
+    if (rest.length && spaced(rawKey.replace(/^RRULE:/i, ''), rest.join('='))) throw new Error(`spaces are not allowed around ${key} or its value`);
     if (!key.startsWith('X-')) { kept.push(piece); continue; }
-    const value = rest.join('=').trim().toUpperCase();
+    const value = rest.join('=').toUpperCase();
     if (key !== 'X-FROM') throw new Error(`${key} is not supported (the only extension is X-FROM=COMPLETION)`);
     if (value !== 'COMPLETION') throw new Error("X-FROM must be COMPLETION (leave it out to count from the due date)");
     if (fromCompletion) throw new Error('X-FROM is given twice');
@@ -146,7 +152,7 @@ const weekdayOf = (value: unknown): { weekday: number; n: number } => {
 /** Parses and checks the rule. Every rule that comes out of here is one the walk can settle. */
 /**
  * What rrule lets through but a task rule must not have. rrule keeps the last of a part given
- * twice and reads COUNT=+2 as 2, while the store, which rewrites COUNT as the series goes
+ * twice, reads COUNT=+2 as 2, and reads "COUNT=2 " as 2, while the store, which rewrites COUNT as the series goes
  * (core/recurrenceCount.ts), reads exactly one COUNT written in digits. Refusing both here keeps
  * the two readings the same for every rule that is saved.
  */
@@ -154,7 +160,10 @@ function checkParts(ruleStr: string): void {
   const seen = new Set<string>();
   for (const piece of ruleStr.split(';')) {
     const [rawKey, ...rest] = piece.split('=');
-    const key = rawKey.replace(/^RRULE:/i, '').toUpperCase();
+    const bare = rawKey.replace(/^RRULE:/i, '');
+    const key = bare.trim().toUpperCase();
+    // Taking X-FROM off can leave "COUNT=2 " behind, which rrule reads as 2 and the store would not.
+    if (spaced(bare, rest.join('='))) throw new Error(`spaces are not allowed around ${key} or its value`);
     if (seen.has(key)) throw new Error(`${key} is given twice`);
     seen.add(key);
     // A leading + is the one sign rrule reads as a number; anything else wrong is caught below.

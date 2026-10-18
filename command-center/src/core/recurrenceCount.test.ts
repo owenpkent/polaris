@@ -27,6 +27,12 @@ test('COUNT is read as rrule reads it: the last of two, and never with a sign', 
   assert.equal(remainingCount('FREQ=DAILY;COUNT=+2'), null);
 });
 
+// Validation refuses spaces around a part; read them anyway rather than miss the COUNT.
+test('a COUNT with spaces around it is still read and lowered', () => {
+  assert.equal(remainingCount('FREQ=DAILY;COUNT=2 ;X-FROM=COMPLETION'), 2);
+  assert.equal(withOneFewer('FREQ=DAILY; COUNT = 3 ;X-FROM=COMPLETION'), 'FREQ=DAILY;COUNT=2;X-FROM=COMPLETION');
+});
+
 test('withOneFewer leaves COUNT=1 and a rule with no COUNT alone', () => {
   assert.equal(withOneFewer('FREQ=DAILY;COUNT=1'), 'FREQ=DAILY;COUNT=1');
   assert.equal(withOneFewer('FREQ=DAILY'), 'FREQ=DAILY');

@@ -19,7 +19,7 @@ const RECURRENCE_HELP = 'How the task repeats: an RRULE such as FREQ=WEEKLY;BYDA
   + 'UNTIL=YYYYMMDD ends it on a date. Add ;X-FROM=COMPLETION to count the next due date from the day the task is finished instead of its due date: '
   + 'INTERVAL days, weeks, months, or years after it, a month landing on the same day or on the last day of a shorter month '
   + '(FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION is three days after it is done). X-FROM=COMPLETION cannot be combined with BYDAY, BYMONTHDAY, or BYMONTH. '
-  + 'Each part may be given once, and COUNT and INTERVAL are plain digits. No other X- part is accepted.';
+  + 'Each part may be given once, with no spaces around its name or value, and COUNT and INTERVAL are plain digits. No other X- part is accepted.';
 const customFieldSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
 export function registerWriteTools(server: McpServer, app: App, actor: ActorInput): void {

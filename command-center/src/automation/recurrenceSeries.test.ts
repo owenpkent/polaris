@@ -215,12 +215,29 @@ test('the store reads COUNT as the engine does for every rule validation accepts
   const rules = [
     'FREQ=DAILY;COUNT=5', 'COUNT=3;FREQ=WEEKLY', 'RRULE:COUNT=4;FREQ=DAILY', 'freq=daily;count=03', 'FREQ=DAILY;Count=7;X-FROM=COMPLETION',
     'FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12', 'FREQ=DAILY', 'weekly', 'every 2 weeks;X-FROM=COMPLETION', 'FREQ=YEARLY;UNTIL=20301231',
+    'FREQ=DAILY;COUNT=2;X-FROM=COMPLETION', 'X-FROM=COMPLETION;COUNT=3;FREQ=WEEKLY', 'RRULE:X-FROM=COMPLETION;FREQ=DAILY;COUNT=6',
   ];
   for (const rule of rules) {
     assert.doesNotThrow(() => nextOccurrence(rule, '2026-09-10', '2026-09-10'), rule);
-    const base = rule.split(';').filter((p) => !/^x-/i.test(p)).join(';').replace(/^RRULE:/i, '');
+    const base = rule.replace(/^RRULE:/i, '').split(';').filter((p) => !/^x-/i.test(p)).join(';');
     const engine = /=/.test(base) ? (RRule.parseString(base).count ?? null) : null;
     assert.equal(remainingCount(rule), engine === null ? null : Number(engine), rule);
+  }
+});
+
+// Taking X-FROM off once left "COUNT=2 " behind, which rrule read as 2 while the store read no
+// COUNT at all, so the series never ran out (re-review on #70).
+test('whitespace around a part name or value is refused, with or without X-FROM', () => {
+  const app = openApp({ dbPath: ':memory:' });
+  try {
+    for (const rule of [
+      'FREQ=DAILY;COUNT=2 ;X-FROM=COMPLETION', 'FREQ=DAILY;COUNT= 2;X-FROM=COMPLETION', 'FREQ=DAILY;COUNT =2;X-FROM=COMPLETION',
+      'FREQ=DAILY ;COUNT=2', 'FREQ=DAILY; X-FROM=COMPLETION', 'FREQ=DAILY;X-FROM= COMPLETION', 'FREQ=WEEKLY;INTERVAL=2 ;X-FROM=COMPLETION',
+    ]) {
+      assert.throws(() => app.store.createTask({ title: 'x', recurrence: rule }), /spaces are not allowed/, rule);
+    }
+  } finally {
+    app.close();
   }
 });
 

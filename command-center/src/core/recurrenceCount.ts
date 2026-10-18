@@ -7,9 +7,10 @@
 // (automation/recurrence.ts) reads COUNT the same way, so this is plain text work on the one part:
 // the rest of the rule, and its spelling, are left exactly as written.
 //
-// The part is read the way rrule reads it: split on ';', the key in any case with nothing around
-// it, the value in digits. Validation refuses a COUNT with a sign and any part given twice, so for
-// every rule the store accepts there is one COUNT and both readings agree.
+// The part is read the way rrule reads it: split on ';', the key in any case, the value in digits.
+// Validation refuses a COUNT with a sign, spaces around a part, and any part given twice, so for
+// every rule the store accepts there is one COUNT and both readings agree; spaces are trimmed here
+// as well, so a rule from before that check still counts down.
 
 interface CountPart {
   index: number;
@@ -20,10 +21,13 @@ interface CountPart {
 function findCount(rule: string): { pieces: string[]; part: CountPart } | null {
   const pieces = rule.trim().split(';');
   for (let index = pieces.length - 1; index >= 0; index--) {
-    const [rawKey, value, ...rest] = pieces[index].split('=');
-    const key = index === 0 ? rawKey.replace(/^RRULE:/i, '') : rawKey;
-    if (key.toUpperCase() !== 'COUNT' || rest.length || !/^\d+$/.test(value ?? '')) continue;
-    return { pieces, part: { index, key: rawKey, value: Number(value) } };
+    const [rawKey, rawValue, ...rest] = pieces[index].split('=');
+    const key = (index === 0 ? rawKey.replace(/^RRULE:/i, '') : rawKey).trim();
+    const value = (rawValue ?? '').trim();
+    if (key.toUpperCase() !== 'COUNT' || rest.length || !/^\d+$/.test(value)) continue;
+    // A rewrite keeps a leading "RRULE:" and the key's own spelling, without the spaces.
+    const lead = index === 0 && /^\s*RRULE:/i.test(rawKey) ? rawKey.slice(0, rawKey.search(/:/) + 1).trim() : '';
+    return { pieces, part: { index, key: lead + key, value: Number(value) } };
   }
   return null;
 }
