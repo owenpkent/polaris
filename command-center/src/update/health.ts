@@ -53,9 +53,8 @@ export async function checkHealthOnce(check: HealthCheck, fetchFn: typeof fetch)
  *  failure carries the last reason seen. */
 export async function waitForHealthy(check: HealthCheck, timeoutMs: number, deps: HealthDeps): Promise<HealthOutcome> {
   const deadline = deps.now() + timeoutMs;
-  let last: HealthOutcome = { ok: false, reason: 'not checked' };
   for (;;) {
-    last = await checkHealthOnce(check, deps.fetch);
+    const last: HealthOutcome = await checkHealthOnce(check, deps.fetch);
     if (last.ok || deps.now() >= deadline) return last;
     await deps.sleep(500);
   }

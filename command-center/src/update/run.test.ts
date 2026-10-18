@@ -24,6 +24,11 @@ import { NO_RESTART_METHOD, performUpdate, runTrustSigners, runUpdate, updateLog
 import { pinnedSignersPath } from './signers.ts';
 import { emptyUpdateStatus, readUpdateStatus, updateStatusPath, writeUpdateStatus } from './status.ts';
 
+/** True once the file is absent: one read that is allowed to fail, not an existence check before an act. */
+function gone(file: string): boolean {
+  try { readFileSync(file); return false; } catch (err) { return (err as NodeJS.ErrnoException).code === 'ENOENT'; }
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const PREVIOUS = 'a'.repeat(40);
 const TARGET = 'b'.repeat(40);
@@ -665,13 +670,13 @@ test('a stale barrier is ignored and removed: a dead pid, or over two hours old'
   await withServer(app, {}, async (base) => {
     assert.equal((await api(base, 'POST', '/api/tasks', { title: 'the update is long over' })).status, 201);
   });
-  assert.equal(existsSync(file), false, 'the old barrier was removed by the reader');
+  assert.equal(gone(file), true, 'the old barrier was removed by the reader');
   writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), version: '2.1.0' }));
   assert.equal(readBarrier(h.dbPath, { alive: () => false }), null, 'a pid that is not alive');
-  assert.equal(existsSync(file), false);
+  assert.equal(gone(file), true);
   writeFileSync(file, 'not json');
   assert.doesNotThrow(() => assertNotUpdating(h.dbPath));
-  assert.equal(existsSync(file), false, 'an unreadable barrier is removed too');
+  assert.equal(gone(file), true, 'an unreadable barrier is removed too');
   // A fresh one, for contrast: this process, now.
   writeBarrier(h.dbPath, '2.1.0');
   assert.throws(() => assertNotUpdating(h.dbPath), UpdateInProgressError);
@@ -985,7 +990,7 @@ test('--trust-signers shows both files with fingerprints, asks, and replaces the
   assert.equal(asked, 1);
   const text = first.out.join('\n');
   assert.match(text, /Pinned \(.*release-signers\): nothing pinned yet/);
-  assert.match(text, new RegExp(`Committed \\(.*release-signers\\):\\n  polaris-release  ssh-ed25519  ${FINGERPRINT.replace(/\+/g, '\\+')}`));
+  assert.match(text, new RegExp(`Committed \\(.*release-signers\\):\\n  polaris-release  ssh-ed25519  ${FINGERPRINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(text, /Pinned 1 key to .*release-signers\. Releases verify against that copy from now on/);
   assert.equal(first.pinned(), SIGNERS_A);
   if (process.platform !== 'win32') assert.equal(statSync(first.pinnedFile).mode & 0o777, 0o600);
