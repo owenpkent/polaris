@@ -255,7 +255,14 @@ describe('quickPicks', () => {
     // Any other month and day stays a custom rule, and a plain yearly from February 29 is not this pick.
     expect(parseRule('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=-1', DUE)).toBeNull()
     expect(matchQuickPick('yearly', '2028-02-29')).toBeNull()
-    expect(quickPicks('2027-02-28').at(-1)).toEqual({ rule: 'yearly', label: 'Annually on February 28' })
+    // February 28 is the last day in a common year, so it gets the same pick, and the rule a
+    // February 29 task carries is still checked once its series reaches a common year.
+    expect(quickPicks('2027-02-28').at(-1)).toEqual(annual)
+    expect(matchQuickPick(annual.rule, '2029-02-28')).toBe(annual.rule)
+    expect(matchQuickPick(annual.rule, '2028-02-29')).toBe(annual.rule)
+    // In a leap year February 28 is not the last day, so it stays a plain yearly.
+    expect(quickPicks('2028-02-28').at(-1)).toEqual({ rule: 'yearly', label: 'Annually on February 28' })
+    expect(matchQuickPick(annual.rule, '2028-02-28')).toBeNull()
   })
 
   test('with no due date they are worded from today', () => {
