@@ -53,6 +53,12 @@ export interface StoreOptions {
    * date of `now`.
    */
   today?: () => string;
+  /**
+   * The calendar day, YYYY-MM-DD in the configured timezone, that a timestamp falls on: what a
+   * completion replayed from the outbox counts its next occurrence from, since the device made it
+   * on that day, not on the day it synced. Defaults to the UTC date of the timestamp.
+   */
+  dayOf?: (iso: string) => string;
 }
 
 type Row = Record<string, SqlValue>;
@@ -266,6 +272,7 @@ export class Store {
   private readonly nextOccurrence?: StoreOptions['nextOccurrence'];
   private readonly validateRecurrence?: StoreOptions['validateRecurrence'];
   private readonly today: () => string;
+  private readonly dayOf: (iso: string) => string;
 
   constructor(db: SqlDriver, opts: StoreOptions = {}) {
     this.db = db;
@@ -273,6 +280,7 @@ export class Store {
     this.nextOccurrence = opts.nextOccurrence;
     this.validateRecurrence = opts.validateRecurrence;
     this.today = opts.today ?? (() => this.now().slice(0, 10));
+    this.dayOf = opts.dayOf ?? ((iso) => iso.slice(0, 10));
   }
 
   // ---------------------------------------------------------------- events
@@ -521,7 +529,7 @@ export class Store {
     });
   }
 
-  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: ActorInput = 'human'): Task {
+  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: ActorInput = 'human', opts: { completedAt?: string } = {}): Task {
     this.validate(patch);
     // Normalised up front so the history records what was stored: a blank from a form clears the
     // field and lands as null, the same as an explicit null.
@@ -540,7 +548,7 @@ export class Store {
         delete rest.status;
         if (patch.status === 'done') {
           if (Object.keys(rest).length) this.updateTask(id, rest, actor);
-          return this.completeTask(id, actor).task;
+          return this.completeTask(id, actor, opts).task;
         }
         if (before.status === 'done' && patch.status === 'open') {
           if (Object.keys(rest).length) this.updateTask(id, rest, actor);
@@ -626,9 +634,11 @@ export class Store {
   /**
    * Complete a task. If it recurs, the next instance is created and returned. The next instance's
    * rule has one occurrence fewer when it carries a COUNT (core/recurrenceCount.ts), so COUNT=N on
-   * a task always means this one and N-1 more, and COUNT=1 makes no next instance.
+   * a task always means this one and N-1 more, and COUNT=1 makes no next instance. `completedAt`
+   * is the moment the completion was really made when it is replayed later (the outbox), so a rule
+   * that counts from the finish counts from that day.
    */
-  completeTask(id: string, actor: ActorInput = 'human'): { task: Task; next: Task | null } {
+  completeTask(id: string, actor: ActorInput = 'human', opts: { completedAt?: string } = {}): { task: Task; next: Task | null } {
     return this.db.transaction(() => {
       const before = this.requireTask(id);
       if (before.status === 'done') return { task: before, next: null };
@@ -640,7 +650,7 @@ export class Store {
         const from = before.dueAt ?? this.today();
         let nextDue: string | null = null;
         try {
-          nextDue = this.nextOccurrence(before.recurrence, from, { completedOn: this.today() });
+          nextDue = this.nextOccurrence(before.recurrence, from, { completedOn: opts.completedAt ? this.dayOf(opts.completedAt) : this.today() });
         } catch (e) {
           // A bad rule must never make a task impossible to complete.
           this.addComment(id, `Completed, but no next occurrence was created: ${e instanceof Error ? e.message : String(e)}`, 'system');

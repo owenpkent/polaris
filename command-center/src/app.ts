@@ -24,6 +24,7 @@ export function openApp(overrides: Partial<Config> = {}): App {
   const store = openStore(config.dbPath, {
     nextOccurrence: (rule, prev, context) => nextOccurrence(rule, prev, todayIn(config.timezone), context),
     today: () => todayIn(config.timezone),
+    dayOf: (iso) => todayIn(config.timezone, new Date(iso)),
     validateRecurrence: (rule) => {
       const today = todayIn(config.timezone);
       try { nextOccurrence(rule, today, today); return null; } catch (e) { return e instanceof Error ? e.message : String(e); }
