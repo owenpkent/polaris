@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import AboutSettings, { formatBuild } from './AboutSettings'
 
 let connection = { connected: true, health: { version: '2.0.0' } }
@@ -28,6 +28,28 @@ describe('AboutSettings', () => {
     cleanup()
     connection = { connected: false, health: null }
     render(<AboutSettings />)
+    expect(row('Server')).toBe('Not connected')
+  })
+
+  test('asks the server when it opens, so an updated server shows its new version', async () => {
+    connection = { connected: true, health: { version: '2.0.0' }, api: { health: vi.fn().mockResolvedValue({ version: '2.1.0' }) } }
+    render(<AboutSettings />)
+    await waitFor(() => expect(row('Server')).toBe('v2.1.0'))
+    expect(connection.api.health).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps the last reported version when the server cannot be reached', async () => {
+    connection = { connected: true, health: { version: '2.0.0' }, api: { health: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) } }
+    render(<AboutSettings />)
+    await waitFor(() => expect(connection.api.health).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(row('Server')).toBe('v2.0.0')
+  })
+
+  test('does not ask anything without a connection', () => {
+    connection = { connected: false, health: null, api: { health: vi.fn() } }
+    render(<AboutSettings />)
+    expect(connection.api.health).not.toHaveBeenCalled()
     expect(row('Server')).toBe('Not connected')
   })
 

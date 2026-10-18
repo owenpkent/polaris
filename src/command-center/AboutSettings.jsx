@@ -1,11 +1,12 @@
+import { useEffect, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { BUILD_INFO } from './buildInfo'
 
 function Row({ label, children }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.75rem', fontSize: '0.85rem', padding: '0.3rem 0' }}>
-      <span style={{ color: 'var(--t2)', flex: '0 0 7.5rem' }}>{label}</span>
-      <span style={{ flex: '1 1 12rem', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
+    <div>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
     </div>
   )
 }
@@ -18,16 +19,28 @@ export function formatBuild({ version, commit, builtAt } = BUILD_INFO) {
   return parts.join(' · ')
 }
 
-// Which code is running: the dashboard's build, and the server's version as its last health
-// check reported it. Nothing here asks the server anything, so it reads the same offline.
+// Which code is running: the dashboard's build, and the server's version. The card asks the
+// server once when it opens, so a server updated since the connection test shows its new
+// version. /api/health is never cached, so offline that ask fails and the card keeps the
+// version the last health check reported.
 export default function AboutSettings({ build = BUILD_INFO }) {
-  const { connected, health } = useConnection()
-  const server = health?.version ? `v${health.version}` : connected ? 'Not reached yet' : 'Not connected'
+  const { connected, health, api } = useConnection()
+  const [fresh, setFresh] = useState(null)
+  useEffect(() => {
+    if (!connected || !api) return undefined
+    let live = true
+    api.health().then((res) => { if (live && res?.version) setFresh(res.version) }, () => {})
+    return () => { live = false }
+  }, [connected, api])
+  const version = (connected && fresh) || health?.version
+  const server = version ? `v${version}` : connected ? 'Not reached yet' : 'Not connected'
   return (
     <section className="card" aria-labelledby="cc-about-heading">
       <div className="section-header" id="cc-about-heading">About</div>
-      <Row label="Dashboard">{formatBuild(build)}</Row>
-      <Row label="Server">{server}</Row>
+      <dl className="settings-facts">
+        <Row label="Dashboard">{formatBuild(build)}</Row>
+        <Row label="Server">{server}</Row>
+      </dl>
     </section>
   )
 }
