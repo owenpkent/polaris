@@ -26,6 +26,14 @@ async function expectNothingCutOff(page) {
   expect([...(await clippedContent(page)), ...(await danglingLines(page)), ...(await hiddenFocusRings(page))]).toEqual([])
 }
 
+// A text box that grows with its text (useFitToText.js) refits in a ResizeObserver callback, a
+// frame or so after its width or its text changes. Wait until it holds its whole text before the
+// one-shot cut-off sweep, so the sweep measures the settled box; a box that never fits still
+// fails here, after the wait.
+async function expectFitsItsText(box) {
+  await expect.poll(() => box.evaluate((el) => el.scrollHeight - el.clientHeight), { message: 'the box never grew to hold its text' }).toBeLessThanOrEqual(1)
+}
+
 test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   for (const view of VIEWS) {
     test(`${view.label}`, async ({ page }) => {
@@ -85,11 +93,14 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await panel.getByRole('button', { name: subtaskTitle, exact: true }).click()
     await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(subtaskTitle)
     await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectFitsItsText(panel.getByRole('textbox', { name: 'Assignee' }))
     await expectNothingCutOff(page)
 
+    // Narrower, the box refits a frame after the resize (CI caught it at 101px holding 244px).
     const { width, height } = testInfo.project.use.viewport
     await page.setViewportSize({ width: Math.max(320, width - 70), height })
     await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectFitsItsText(panel.getByRole('textbox', { name: 'Assignee' }))
     await expectNothingCutOff(page)
   })
 
