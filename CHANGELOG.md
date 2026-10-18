@@ -3,7 +3,7 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.1.0 (2026-10-18)
 
 - Due times: a due date can carry an optional time of day, set and removed in the due date menu,
   the task panel's Due date field, and Add time in "When is it due?" for a new task, and shown
