@@ -895,11 +895,18 @@ export async function longNames(page) {
     (url) => url.pathname.startsWith('/api/') && !LONG_SKIP.has(url.pathname),
     async (route) => {
       if (!isGet(route)) return route.fallback()
-      const response = await route.fetch()
-      if (!(response.headers()['content-type'] || '').includes('json')) return route.fulfill({ response })
-      const body = await response.json()
-      lengthen(body)
-      return route.fulfill({ response, json: body })
+      // A request a view started can still be in here when its test ends (the Goals view's
+      // GitHub status, on CI): answering one that is gone is not a failure, so this is best
+      // effort, as in delayRequest. An error thrown here belongs to no test and fails the run.
+      try {
+        const response = await route.fetch()
+        if (!(response.headers()['content-type'] || '').includes('json')) return await route.fulfill({ response })
+        const body = await response.json()
+        lengthen(body)
+        await route.fulfill({ response, json: body })
+      } catch {
+        // gone
+      }
     }
   )
 }

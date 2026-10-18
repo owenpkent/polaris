@@ -65,14 +65,19 @@ async function shot(page, testInfo, view, state, mask = []) {
 // real one. The digest then renders the same text every run and stays fully visible in the shot.
 async function stabiliseDigestIds(page) {
   await page.route('**/api/digest', async (route) => {
-    const response = await route.fetch()
-    const body = await response.json()
-    const seen = new Map()
-    body.markdown = String(body.markdown ?? '').replace(/\b([a-z])_[0-9a-z]{10}\b/g, (id, prefix) => {
-      if (!seen.has(id)) seen.set(id, `${prefix}_${String(seen.size + 1).padStart(10, '0')}`)
-      return seen.get(id)
-    })
-    await route.fulfill({ response, json: body })
+    // Best effort, as in delayRequest: the shot may be taken and the test over before this lands.
+    try {
+      const response = await route.fetch()
+      const body = await response.json()
+      const seen = new Map()
+      body.markdown = String(body.markdown ?? '').replace(/\b([a-z])_[0-9a-z]{10}\b/g, (id, prefix) => {
+        if (!seen.has(id)) seen.set(id, `${prefix}_${String(seen.size + 1).padStart(10, '0')}`)
+        return seen.get(id)
+      })
+      await route.fulfill({ response, json: body })
+    } catch {
+      // gone
+    }
   })
 }
 
