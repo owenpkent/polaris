@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TaskDetailPanel from './TaskDetailPanel'
 import { markOffline, markOnline, resetOfflineStatus } from './offlineStatus'
@@ -698,6 +698,31 @@ describe('TaskDetailPanel repeating tasks', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: `FREQ=WEEKLY;INTERVAL=2;BYDAY=${weekdayOf(null)}` }))
     await waitFor(() => expect(screen.queryByRole('group', { name: 'Custom repeat' })).toBeNull())
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Repeat, / }))
+  })
+
+  // "weekly" on its own repeats on the due date's weekday. The builder stays open while the due
+  // date changes, so it saves the weekday it shows, not whatever the new due date falls on.
+  test('Custom keeps the weekday it shows when the due date changes under it', async () => {
+    const task = { ...TASK, dueAt: '2026-10-14', recurrence: 'weekly' }
+    api.getTask.mockResolvedValue(detail(task, []))
+    api.previewRecurrence.mockResolvedValue({ dates: ['2026-10-21'] })
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Repeat, / }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Custom' }))
+    const group = await screen.findByRole('group', { name: 'Custom repeat' })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Due date, / }))
+    const input = screen.getByLabelText('Date')
+    fireEvent.change(input, { target: { value: '2026-10-16' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2026-10-16' }))
+
+    expect(within(group).getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(group).getByRole('button', { name: 'Friday' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(within(group).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'FREQ=WEEKLY;BYDAY=WE' }))
   })
 
   // Opened in the panel, the builder closes on Esc and leaves the panel open.

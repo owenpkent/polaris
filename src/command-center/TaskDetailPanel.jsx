@@ -12,7 +12,7 @@ import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
 import { Menu } from './Menu'
 import RepeatBuilder, { useRecurrencePreview } from './RepeatBuilder'
-import { parseRule } from './recurrenceRules'
+import { parseRule, buildRule, defaultShape } from './recurrenceRules'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 import ThreadSection from './ThreadSection'
 
@@ -958,13 +958,17 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   patchTask({ recurrence: value || null }, { recurrence: value })
                 }}
                 onCustom={() => {
-                  if (form.recurrence && !parseRule(form.recurrence, form.dueAt ? form.dueAt.slice(0, 10) : null)) {
+                  const dueIso = form.dueAt ? form.dueAt.slice(0, 10) : null
+                  const shape = parseRule(form.recurrence, dueIso)
+                  if (form.recurrence && !shape) {
                     setMoreOpen(true)
                     // The box is rendered by the More details section, so it exists after this render.
                     requestAnimationFrame(() => recurrenceRef.current?.focus())
                     return
                   }
-                  setRepeatDraft(form.recurrence || '')
+                  // Spelled out, so the draft says what the builder shows: "weekly" on its own
+                  // follows the due date, which can change while the builder is open.
+                  setRepeatDraft(buildRule(shape || defaultShape(dueIso)))
                 }}
               />
             </FieldRow>
