@@ -487,6 +487,21 @@ test('a dueAt condition against a plain date treats a task due at a time as its 
   assert.deepEqual(firedFor(after), [dayAfter.id]);
 });
 
+test('a dueAt in condition compares each plain date in the list by day, as eq does', () => {
+  const s = fresh();
+  const rule = addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op: 'in', value: ['2026-09-14', '2026-09-16T10:00'] }],
+    actions: [{ type: 'notify', message: 'in: {title}' }],
+  });
+  const onDay = s.createTask({ title: 'On the 14th at nine', dueAt: '2026-09-14T09:00' });
+  const exact = s.createTask({ title: 'Exactly the listed time', dueAt: '2026-09-16T10:00' });
+  s.createTask({ title: 'Same day, other time than listed', dueAt: '2026-09-16T11:00' });
+  s.createTask({ title: 'Another day', dueAt: '2026-09-15T09:00' });
+  const fired = runRules(s, { today: TODAY }).fired.filter((f) => f.ruleId === rule.id).map((f) => f.taskId).sort();
+  assert.deepEqual(fired, [onDay.id, exact.id].sort());
+});
+
 test('the overdue schedule trigger leaves out a task due earlier today at a time', () => {
   const s = fresh();
   addRule(s, { trigger: { type: 'schedule', condition: 'overdue' }, actions: [{ type: 'notify', message: 'Overdue: {title}' }] });

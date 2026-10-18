@@ -193,15 +193,19 @@ function fieldValue(task: Task, field: string): Json {
   }
 }
 
+// A dueAt with a time, compared with a plain date, is compared by its day.
+const byDay = (field: string, value: Json): boolean => field === 'dueAt' && typeof value === 'string';
+
 function evaluateCondition(task: Task, cond: RuleCondition): boolean {
-  let value = fieldValue(task, cond.field);
+  const raw = fieldValue(task, cond.field);
+  let value = raw;
   // A due time is a time on its day: against a plain date, a task due 2026-10-18T09:00 is due on
   // 2026-10-18 (eq that day, neither before nor after it), as the views and the digest count it.
   if (cond.field === 'dueAt' && typeof value === 'string' && typeof cond.value === 'string' && isDateOnly(cond.value)) value = dueDay(value);
   switch (cond.op) {
     case 'eq': return value === cond.value;
     case 'ne': return value !== cond.value;
-    case 'in': return Array.isArray(cond.value) && cond.value.some((v) => v === value);
+    case 'in': return Array.isArray(cond.value) && cond.value.some((v) => v === value || (byDay(cond.field, raw) && typeof v === 'string' && isDateOnly(v) && dueDay(raw as string) === v));
     case 'contains':
       return typeof value === 'string' && typeof cond.value === 'string' && value.toLowerCase().includes(cond.value.toLowerCase());
     case 'matches':
