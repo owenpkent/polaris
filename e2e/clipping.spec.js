@@ -185,22 +185,23 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
-  // The custom repeat builder grows while it is open (day to week adds the weekday buttons), and
-  // its popover has to move to stay on screen, with Save whole, before anything scrolls (review on
-  // #66: it widened in place and put Save 53px off a 390px screen).
+  // The custom repeat builder grows while it is open (day to week adds the weekday buttons). As a
+  // popover it widened in place and put Save 53px off a 390px screen (review on #66); in the
+  // panel's column it has to stay inside the screen's width, with Save whole, before anything
+  // scrolls.
   test('the custom repeat builder after its unit changes', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'repeat resize', { recurrence: 'daily' })
     await openView(page)
     await openTask(page, title)
     await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Repeat, / }).click()
     await page.getByRole('menuitemradio', { name: 'Custom' }).click()
-    const builder = page.getByRole('dialog', { name: 'Custom repeat' })
+    const builder = page.getByRole('group', { name: 'Custom repeat' })
     await builder.getByRole('combobox', { name: 'Repeat unit' }).selectOption('week')
     await expect(builder.getByRole('button', { name: 'Sunday' })).toBeVisible()
     await expect.poll(() => builder.evaluate((el) => {
-      const pop = el.closest('[data-popover]').getBoundingClientRect()
+      const box = el.getBoundingClientRect()
       const save = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save').getBoundingClientRect()
-      return pop.left >= 0 && pop.right <= window.innerWidth && save.left >= 0 && save.right <= window.innerWidth
+      return box.left >= 0 && box.right <= window.innerWidth && save.left >= 0 && save.right <= window.innerWidth
     })).toBe(true)
     await expectNothingCutOff(page)
   })

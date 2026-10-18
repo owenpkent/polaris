@@ -1560,7 +1560,8 @@ kbd { color: var(--t1); }
 .cal-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 
-/* The repeat rule builder (RepeatBuilder.jsx). */
+/* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
+.repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }
 .repeat-builder { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .repeat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .repeat-builder .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }

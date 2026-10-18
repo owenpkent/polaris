@@ -10,7 +10,7 @@ import { formatDueCell, getDueBounds, repeatLabel } from './dueDates'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
-import { Menu, Popover } from './Menu'
+import { Menu } from './Menu'
 import RepeatBuilder, { useRecurrencePreview } from './RepeatBuilder'
 import { parseRule } from './recurrenceRules'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
@@ -288,10 +288,10 @@ function DueDateField({ value, onChange }) {
 }
 
 // The repeat choices offered beside the due date: the server's friendly aliases
-// (automation/recurrence.ts), and Custom, which opens the builder (RepeatBuilder.jsx) to tap out
-// any other rule: every N units, the weekdays of a weekly rule, the day of a monthly one. A rule
-// the builder cannot show (a raw RRULE with BYMONTH, say) is edited in the Recurrence box under
-// More details instead, which Custom then opens.
+// (automation/recurrence.ts), and Custom, which opens the builder (RepeatBuilder.jsx) in the
+// panel under the due date, to tap out any other rule: every N units, the weekdays of a weekly
+// rule, the day of a monthly one. A rule the builder cannot show (a raw RRULE with BYMONTH, say) is
+// edited in the Recurrence box under More details instead, which Custom then opens.
 const REPEAT_OPTIONS = [
   ['', 'Never'],
   ['daily', 'Daily'],
@@ -301,11 +301,8 @@ const REPEAT_OPTIONS = [
   ['yearly', 'Yearly'],
 ]
 
-function RepeatField({ value, dueIso, onChange, onTypeRule, api, disabled }) {
+function RepeatField({ value, onChange, onCustom, buttonRef, building }) {
   const [open, setOpen] = useState(false)
-  const [building, setBuilding] = useState(false)
-  const [draft, setDraft] = useState('')
-  const btnRef = useRef(null)
   const label = repeatLabel(value)
   const current = String(value || '').trim().toLowerCase()
   const items = [
@@ -322,19 +319,14 @@ function RepeatField({ value, dueIso, onChange, onTypeRule, api, disabled }) {
       label: 'Custom',
       radio: true,
       checked: Boolean(current) && !REPEAT_OPTIONS.some(([option]) => option === current),
-      onSelect: () => {
-        if (value && !parseRule(value, dueIso)) { onTypeRule(); return }
-        setDraft(value || '')
-        // After the menu has closed and handed focus back to the button.
-        requestAnimationFrame(() => setBuilding(true))
-      },
+      onSelect: onCustom,
     },
   ]
   return (
     <>
       <button
         type="button"
-        ref={btnRef}
+        ref={buttonRef}
         className="due-field"
         aria-haspopup="menu"
         aria-expanded={open || building}
@@ -345,24 +337,39 @@ function RepeatField({ value, dueIso, onChange, onTypeRule, api, disabled }) {
         <Repeat size={14} aria-hidden="true" style={{ color: label ? 'var(--blue)' : 'var(--t3)', flexShrink: 0 }} />
         <span style={{ color: label ? 'var(--t1)' : 'var(--t2)' }}>{label ? `Repeats ${label}` : 'Repeat'}</span>
       </button>
-      <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
-      <Popover anchorRef={btnRef} open={building} onClose={() => setBuilding(false)} minWidth={300} maxWidth={440} focusSelector="button:not(:disabled), select">
-        <div role="dialog" aria-label="Custom repeat" style={{ padding: 12 }}>
-          <RepeatBuilder value={draft} dueIso={dueIso} onChange={setDraft} api={api} />
-          <div className="sheet-actions" style={{ marginTop: 12 }}>
-            <button type="button" className="btn" onClick={() => { setBuilding(false); btnRef.current?.focus() }}>Cancel</button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={disabled || !draft}
-              onClick={() => { setBuilding(false); btnRef.current?.focus(); onChange(draft) }}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </Popover>
+      <Menu anchorRef={buttonRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
     </>
+  )
+}
+
+// The custom repeat builder, opened from the Repeat menu's Custom as a section of the panel under
+// the due date rather than a popover: it grows as its choices do (day to week adds the weekday
+// buttons), and in the panel's own column it never has to be placed again or run off the screen.
+// Save writes the rule, Cancel or Esc leaves it, and either puts focus back on the Repeat button.
+function RepeatBuilderSection({ draft, dueIso, api, onDraft, onSave, onCancel }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    ref.current?.querySelector('button:not(:disabled), select')?.focus()
+  }, [])
+  return (
+    <div
+      ref={ref}
+      role="group"
+      aria-label="Custom repeat"
+      className="repeat-inline"
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return
+        // The panel closes on Esc (a window listener); here it closes only the builder.
+        e.stopPropagation()
+        onCancel()
+      }}
+    >
+      <RepeatBuilder value={draft} dueIso={dueIso} onChange={onDraft} api={api} />
+      <div className="sheet-actions" style={{ marginTop: 12 }}>
+        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn btn-primary" disabled={!draft} onClick={onSave}>Save</button>
+      </div>
+    </div>
   )
 }
 
@@ -376,7 +383,7 @@ function formatLongDate(iso) {
 // live-only (api.js), so it is off while offline, and so is the date, which the server works out.
 function NextOccurrenceRow({ rule, dueAt, api, offline, onSkip, busy }) {
   const dates = useRecurrencePreview(api, rule, dueAt, 1)
-  const text = !dates ? null : dates.length ? `Next: ${formatLongDate(dates[0])}` : 'This is the last one.'
+  const text = !dates ? null : dates.length ? formatLongDate(dates[0]) : 'This is the last one.'
   return (
     <FieldRow label="Next">
       <span style={{ color: 'var(--t2)' }}>{text || (offline ? 'Shown when online.' : '')}</span>
@@ -449,6 +456,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [checklistBusy, setChecklistBusy] = useState(false)
   const [checklistNotice, setChecklistNotice] = useState('')
   useEffect(() => { setChecklistNotice('') }, [taskId])
+  // The custom repeat builder's rule while it is open under the due date, else null.
+  const [repeatDraft, setRepeatDraft] = useState(null)
+  const repeatBtnRef = useRef(null)
+  useEffect(() => { setRepeatDraft(null) }, [taskId])
   const agentName = useDefaultAgentName(api)
   const [assignBusy, setAssignBusy] = useState(false)
   // What the hidden live region reads out after an assign or a take back.
@@ -940,19 +951,39 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               />
               <RepeatField
                 value={form.recurrence}
-                dueIso={form.dueAt ? form.dueAt.slice(0, 10) : null}
-                api={api}
+                buttonRef={repeatBtnRef}
+                building={repeatDraft !== null}
                 onChange={(value) => {
                   setForm((f) => ({ ...f, recurrence: value }))
                   patchTask({ recurrence: value || null }, { recurrence: value })
                 }}
-                onTypeRule={() => {
-                  setMoreOpen(true)
-                  // The box is rendered by the More details section, so it exists after this render.
-                  requestAnimationFrame(() => recurrenceRef.current?.focus())
+                onCustom={() => {
+                  if (form.recurrence && !parseRule(form.recurrence, form.dueAt ? form.dueAt.slice(0, 10) : null)) {
+                    setMoreOpen(true)
+                    // The box is rendered by the More details section, so it exists after this render.
+                    requestAnimationFrame(() => recurrenceRef.current?.focus())
+                    return
+                  }
+                  setRepeatDraft(form.recurrence || '')
                 }}
               />
             </FieldRow>
+            {repeatDraft !== null && (
+              <RepeatBuilderSection
+                draft={repeatDraft}
+                dueIso={form.dueAt ? form.dueAt.slice(0, 10) : null}
+                api={api}
+                onDraft={setRepeatDraft}
+                onCancel={() => { setRepeatDraft(null); repeatBtnRef.current?.focus() }}
+                onSave={() => {
+                  const value = repeatDraft
+                  setRepeatDraft(null)
+                  repeatBtnRef.current?.focus()
+                  setForm((f) => ({ ...f, recurrence: value }))
+                  patchTask({ recurrence: value || null }, { recurrence: value })
+                }}
+              />
+            )}
             {data.task.recurrence && data.task.status !== 'done' && data.task.status !== 'dropped' && (
               <NextOccurrenceRow
                 rule={data.task.recurrence}
