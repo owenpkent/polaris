@@ -5,6 +5,13 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- Due times: a due date can carry an optional time of day, set and removed in the due date menu,
+  the task panel's Due date field, and Add time in "When is it due?" for a new task, and shown
+  after the day in rows, board cards, and the panel ("Today 9:00 AM"). It is stored as floating
+  local time (`YYYY-MM-DDTHH:MM`, no zone). A task due at a time counts as its day for Today,
+  Overdue, the digest, rules, and the CLI, and sorts after that day's untimed tasks. `cc add
+  --due "YYYY-MM-DD HH:MM"` takes one, and the digest, MCP text, and CLI write it as
+  `2026-10-18 09:00`. No migration: `due_at` already held a datetime.
 - Settings has an About card: the dashboard's build (version, commit, and build time, recorded by
   `npm run build`) and the server's version, so a cached or bundled dashboard is easy to tell apart
   from the server it talks to.

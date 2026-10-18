@@ -227,8 +227,9 @@ const blendInputStyle = {
 }
 
 // The Due date row's value: a calendar circle and the date as the list writes it (Today,
-// Tomorrow, a weekday, or a short date) on a button that opens the shared picker, plus a clear
-// button once a date is set. `value` is the form's plain date ('' for none).
+// Tomorrow, a weekday, or a short date, then the time when there is one) on a button that opens
+// the shared picker, plus a clear button once a date is set. `value` is the form's dueAt, a day or
+// a day and a time ('' for none).
 function DueDateField({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
@@ -504,7 +505,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         notes: res.task.notes || '',
         status: res.task.status || 'open',
         priority: res.task.priority || 'none',
-        dueAt: res.task.dueAt ? res.task.dueAt.slice(0, 10) : '',
+        // The whole due date, its time included: slicing it to the day here would drop the time
+        // on the next save of any field that sends the form's dueAt.
+        dueAt: res.task.dueAt || '',
         recurrence: res.task.recurrence || '',
         assignee: res.task.assignee || '',
       }

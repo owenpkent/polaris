@@ -50,6 +50,40 @@ describe('InlineTaskInput', () => {
     expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: 'weekly' })
   })
 
+  test('Add time opens a time box, and the day picked next carries the time', async () => {
+    const { input, onSubmit } = setup()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    const time = screen.getByLabelText('Time')
+    expect(document.activeElement).toBe(time)
+    fireEvent.change(time, { target: { value: '09:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${getDueBounds().tomorrow}T09:30`, recurrence: null }))
+  })
+
+  test('Enter in the time box keeps the group date', async () => {
+    const today = getDueBounds().today
+    const { input, onSubmit } = setup({ defaultDueAt: today })
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    const time = screen.getByLabelText('Time')
+    fireEvent.change(time, { target: { value: '18:00' } })
+    fireEvent.keyDown(time, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${today}T18:00`, recurrence: null }))
+  })
+
+  test('Remove time drops the time again and puts focus back on Add time', async () => {
+    const { input, onSubmit } = setup()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '09:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove time' }))
+    expect(screen.queryByLabelText('Time')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add time' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: null }))
+  })
+
   test('No date submits a null date', async () => {
     const { input, onSubmit } = setup()
     await openPicker(input)

@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { useOffline } from './offlineStatus'
-import { ErrorBanner, formatDate } from './shared'
+import { ErrorBanner } from './shared'
+import { formatDueShort } from './dueDates'
 
 // The server takes 1 MiB of JSON per request (POST /api/tasks/import), so stay under it with room for escaping.
 const MAX_CHARS = 900_000
@@ -29,7 +30,7 @@ function rowMeta(row) {
   const parts = []
   if (row.projectName || row.projectSlug || row.project) parts.push(row.projectName || row.projectSlug || row.project)
   if (row.sectionName || row.section) parts.push(row.sectionName || row.section)
-  if (row.dueAt) parts.push(`due ${formatDate(row.dueAt)}`)
+  if (row.dueAt) parts.push(`due ${formatDueShort(row.dueAt)}`)
   if (row.priority && row.priority !== 'none') parts.push(row.priority)
   if (row.status && row.status !== 'open') parts.push(row.status.replace('_', ' '))
   return parts.join(' · ')

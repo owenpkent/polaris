@@ -154,6 +154,18 @@ describe('sortTasks', () => {
     expect(result.map((t) => t.id)).toEqual(['c', 'a', 'b'])
   })
 
+  test('within a day, the untimed tasks come first, then the timed ones by time', () => {
+    const tasks = [
+      { id: 'afternoon', dueAt: '2026-09-18T14:00' },
+      { id: 'nextDay', dueAt: '2026-09-19' },
+      { id: 'morning', dueAt: '2026-09-18T09:00' },
+      { id: 'untimed', dueAt: '2026-09-18' },
+      { id: 'late', dueAt: '2026-09-18T23:30' },
+    ]
+    const result = sortTasks(tasks, { field: 'due', dir: 'asc' }, new Map())
+    expect(result.map((t) => t.id)).toEqual(['untimed', 'morning', 'afternoon', 'late', 'nextDay'])
+  })
+
   test('descending due-date sort still leaves undated tasks last', () => {
     const tasks = [
       { id: 'a', dueAt: '2026-09-20' },

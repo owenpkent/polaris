@@ -31,17 +31,19 @@ function day(offset: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const tasks: { title: string; due: number | null; priority: Priority; assignee?: string }[] = [
+// `time` puts a due time on the day (floating local 'HH:MM'), so the views show one.
+const tasks: { title: string; due: number | null; time?: string; priority: Priority; assignee?: string }[] = [
   { title: 'Renew domain for the portfolio site', due: -2, priority: 'high' },
   { title: 'Reply to accessibility audit feedback', due: 0, priority: 'urgent' },
   { title: 'Review dashboard focus ring contrast', due: 0, priority: 'medium' },
-  { title: 'Draft ADR-003 hosting options', due: 1, priority: 'medium', assignee: 'Scribe' },
+  { title: 'Draft ADR-003 hosting options', due: 1, time: '09:00', priority: 'medium', assignee: 'Scribe' },
   { title: 'Clean up stale branches across repos', due: 4, priority: 'low' },
   { title: 'Plan next marketing post', due: 12, priority: 'none' },
   { title: 'Collect ideas for the goals page', due: null, priority: 'none' },
 ];
 tasks.forEach((t, i) => {
-  store.createTask({ title: t.title, dueAt: t.due === null ? null : day(t.due), priority: t.priority, projectId: projectId(i), assignee: t.assignee ?? null });
+  const dueAt = t.due === null ? null : t.time ? `${day(t.due)}T${t.time}` : day(t.due);
+  store.createTask({ title: t.title, dueAt, priority: t.priority, projectId: projectId(i), assignee: t.assignee ?? null });
 });
 
 // One dependency, so the Ready and Blocked filters on My tasks (the ready and blocked views) have

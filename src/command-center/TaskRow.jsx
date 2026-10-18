@@ -47,13 +47,14 @@ const cellStyle = {
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
 // is the 44px-tall click target.
-function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel }) {
+function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title }) {
   return (
     <button
       type="button"
       ref={innerRef}
       aria-haspopup="menu"
       aria-label={ariaLabel}
+      title={title}
       onClick={(e) => {
         e.stopPropagation()
         onClick()
@@ -94,13 +95,21 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
         ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
         onClick={() => setOpen((v) => !v)}
         color={due.color}
+        // A narrow column can cut a date and time short; the whole of it is a hover away.
+        title={due.text || undefined}
       >
         {phone && due.text ? (
+          // The day and the time each stay whole, and the time takes a second line when the
+          // column is too narrow for both.
           <span
-            className="due-chip"
+            className={due.time ? 'due-chip has-time' : 'due-chip'}
             style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
           >
-            {due.text}
+            {due.time ? (
+              <>
+                <span>{due.date}</span> <span>{due.time}</span>
+              </>
+            ) : due.text}
           </span>
         ) : (
           due.text

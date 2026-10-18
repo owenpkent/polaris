@@ -8,6 +8,7 @@ import { isSafeHref } from './SafeMarkdown'
 import { Loading, ErrorBanner, Kbd, ProjectChip } from './shared'
 import { useNarrowBreakpoints } from './columnsState'
 import { useRequestGuard } from './useRequestGuard'
+import { withDueDate } from './dueDates'
 
 const GRID_TEMPLATE = 'minmax(0, 1fr) 200px 120px 220px'
 
@@ -207,7 +208,8 @@ function AcceptFormRow({ item, projects, onAccept, onCancel, busy, error }) {
           type="button"
           disabled={busy || !title.trim() || offline}
           style={acceptAsTaskBtnStyle}
-          onClick={() => onAccept({ title: title.trim(), project: project || undefined, dueAt: dueAt || undefined, priority })}
+          // The box holds the day; a time the suggestion already carried goes with whatever day is picked.
+          onClick={() => onAccept({ title: title.trim(), project: project || undefined, dueAt: dueAt ? withDueDate(item.dueAt, dueAt) : undefined, priority })}
         >
           Accept as task
         </button>

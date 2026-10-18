@@ -4,8 +4,8 @@ import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
-import { Loading, EmptyState, ErrorBanner, Avatar, formatDate, isOverdue } from './shared'
-import { plainTitle } from './dueDates'
+import { Loading, EmptyState, ErrorBanner, Avatar, isOverdue } from './shared'
+import { formatDueShort, plainTitle } from './dueDates'
 import { Popover } from './Menu'
 import { useRequestGuard } from './useRequestGuard'
 
@@ -152,9 +152,9 @@ function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu,
         >
           <div className="board-card-title" style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--t1)', paddingTop: 2 }}>{plainTitle(task.title)}</div>
           {hasMeta && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
               {task.dueAt && (
-                <span style={{ color: overdue ? 'var(--red)' : 'var(--t2)' }}>{formatDate(task.dueAt)}</span>
+                <span style={{ color: overdue ? 'var(--red)' : 'var(--t2)' }}>{formatDueShort(task.dueAt)}</span>
               )}
               {task.recurrence && <Repeat size={12} aria-hidden="true" className="repeat-glyph" style={{ marginLeft: task.dueAt ? -4 : 0 }} />}
               {priority && <span className={priority.className}>{priority.label}</span>}

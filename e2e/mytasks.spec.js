@@ -30,7 +30,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('due cells read Today and Tomorrow for those days and a date for overdue tasks', async ({ page }) => {
     await openView(page)
     await expect(page.getByRole('button', { name: 'Change due date for Reply to accessibility audit feedback' })).toHaveText('Today')
-    await expect(page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' })).toHaveText('Tomorrow')
+    // The demo seed gives this one a time, which follows the day.
+    await expect(page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' })).toHaveText(/^Tomorrow 9:00\sAM$/)
     await expect(page.getByRole('button', { name: 'Change due date for Renew domain for the portfolio site' })).not.toHaveText(/Today|Tomorrow/)
   })
 

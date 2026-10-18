@@ -6,7 +6,7 @@ import { useOffline } from './offlineStatus'
 import NotConnected from './NotConnected'
 import { Menu } from './Menu'
 import { ConfirmButton, EmptyState, ErrorBanner, Loading, todayIso } from './shared'
-import { plainTitle } from './dueDates'
+import { formatDueShort, plainTitle } from './dueDates'
 import {
   GOAL_STATUS_OPTIONS, flattenGoalTree, goalFlags, importAlreadyDone, markImportDone, periodSuggestions,
   progressLabel, readLegacyGoals, statusOption,
@@ -362,7 +362,7 @@ function GoalDetails({ goal, api, projects, onUpdate, onChanged, onAddSub, onDel
           ? <p className="goal-muted">None. Nothing open is moving this goal.</p>
           : (
             <ul className="goal-open-tasks">
-              {detail.openTasks.slice(0, 12).map((t) => <li key={t.id}>{plainTitle(t.title)}{t.dueAt ? ` · due ${t.dueAt.slice(0, 10)}` : ''}</li>)}
+              {detail.openTasks.slice(0, 12).map((t) => <li key={t.id}>{plainTitle(t.title)}{t.dueAt ? ` · due ${formatDueShort(t.dueAt)}` : ''}</li>)}
               {detail.openTasks.length > 12 && <li>and {detail.openTasks.length - 12} more</li>}
             </ul>
           )}

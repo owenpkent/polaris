@@ -8,6 +8,10 @@ import {
   bucketForTask,
   groupTasks,
   formatDueCell,
+  formatDueShort,
+  dueTimeOnly,
+  joinDue,
+  withDueDate,
   repeatLabel,
 } from './dueDates'
 
@@ -276,41 +280,41 @@ describe('formatDueCell', () => {
   const bounds = getDueBounds(new Date(2026, 8, 18)) // today=09-18, tomorrow=09-19, in7=09-25
 
   test('returns an empty cell for a task with no due date', () => {
-    expect(formatDueCell(null, bounds)).toEqual({ text: '', color: null })
+    expect(formatDueCell(null, bounds)).toMatchObject({ text: '', color: null })
   })
 
   test('renders "Today" in green for the current day', () => {
-    expect(formatDueCell('2026-09-18', bounds)).toEqual({ text: 'Today', color: 'var(--green)' })
+    expect(formatDueCell('2026-09-18', bounds)).toMatchObject({ text: 'Today', color: 'var(--green)' })
   })
 
   test('renders "Tomorrow" in green for the next day', () => {
-    expect(formatDueCell('2026-09-19', bounds)).toEqual({ text: 'Tomorrow', color: 'var(--green)' })
+    expect(formatDueCell('2026-09-19', bounds)).toMatchObject({ text: 'Tomorrow', color: 'var(--green)' })
   })
 
   test('renders an overdue date as a short month/day in red', () => {
-    expect(formatDueCell('2026-09-10', bounds)).toEqual({ text: 'Sep 10', color: 'var(--red)' })
+    expect(formatDueCell('2026-09-10', bounds)).toMatchObject({ text: 'Sep 10', color: 'var(--red)' })
   })
 
   test('renders a date within the next7 window as a short weekday with no color', () => {
     // 2026-09-20 is a Sunday.
-    expect(formatDueCell('2026-09-20', bounds)).toEqual({ text: 'Sun', color: null })
+    expect(formatDueCell('2026-09-20', bounds)).toMatchObject({ text: 'Sun', color: null })
   })
 
   test('renders the in7 boundary date itself as a short weekday', () => {
     // 2026-09-25 is a Friday.
-    expect(formatDueCell('2026-09-25', bounds)).toEqual({ text: 'Fri', color: null })
+    expect(formatDueCell('2026-09-25', bounds)).toMatchObject({ text: 'Fri', color: null })
   })
 
   test('renders a date past in7 as a short month/day with no color', () => {
-    expect(formatDueCell('2026-10-05', bounds)).toEqual({ text: 'Oct 5', color: null })
+    expect(formatDueCell('2026-10-05', bounds)).toMatchObject({ text: 'Oct 5', color: null })
   })
 
   test('appends the year for a far-future date in a different year than bounds.today', () => {
-    expect(formatDueCell('2027-09-18', bounds)).toEqual({ text: 'Sep 18, 2027', color: null })
+    expect(formatDueCell('2027-09-18', bounds)).toMatchObject({ text: 'Sep 18, 2027', color: null })
   })
 
   test('omits the year when the far-future date is in the same year as bounds.today', () => {
-    expect(formatDueCell('2026-11-01', bounds)).toEqual({ text: 'Nov 1', color: null })
+    expect(formatDueCell('2026-11-01', bounds)).toMatchObject({ text: 'Nov 1', color: null })
   })
 
   test('the year decision follows bounds, not the real clock', () => {
@@ -318,10 +322,60 @@ describe('formatDueCell', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2031, 0, 1))
     try {
-      expect(formatDueCell('2026-11-01', bounds)).toEqual({ text: 'Nov 1', color: null })
-      expect(formatDueCell('2031-03-01', bounds)).toEqual({ text: 'Mar 1, 2031', color: null })
+      expect(formatDueCell('2026-11-01', bounds)).toMatchObject({ text: 'Nov 1', color: null })
+      expect(formatDueCell('2031-03-01', bounds)).toMatchObject({ text: 'Mar 1, 2031', color: null })
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('due times', () => {
+  const bounds = getDueBounds(new Date(2026, 8, 18)) // today=09-18 (a Friday), tomorrow=09-19, in7=09-25
+
+  test('dueTimeOnly reads HH:MM from a datetime and nothing from a plain day', () => {
+    expect(dueTimeOnly('2026-09-18T09:05')).toBe('09:05')
+    expect(dueTimeOnly('2026-09-18T21:30:00Z')).toBe('21:30')
+    expect(dueTimeOnly('2026-09-18')).toBeNull()
+    expect(dueTimeOnly(null)).toBeNull()
+  })
+
+  test('joinDue writes floating local time with no zone, and a day alone without a time', () => {
+    expect(joinDue('2026-09-18', '09:00')).toBe('2026-09-18T09:00')
+    expect(joinDue('2026-09-18', '')).toBe('2026-09-18')
+    expect(joinDue('2026-09-18', null)).toBe('2026-09-18')
+    expect(joinDue(null, '09:00')).toBeNull()
+  })
+
+  test('withDueDate moves the day and keeps the time; null clears both', () => {
+    expect(withDueDate('2026-09-18T09:00', '2026-09-21')).toBe('2026-09-21T09:00')
+    expect(withDueDate('2026-09-18', '2026-09-21')).toBe('2026-09-21')
+    expect(withDueDate(null, '2026-09-21')).toBe('2026-09-21')
+    expect(withDueDate('2026-09-18T09:00', null)).toBeNull()
+  })
+
+  test('formatDueCell puts the time after the day words', () => {
+    expect(formatDueCell('2026-09-18T09:00', bounds, 'en-US')).toEqual({ text: 'Today 9:00 AM', color: 'var(--green)', date: 'Today', time: '9:00 AM' })
+    expect(formatDueCell('2026-09-19T14:30', bounds, 'en-US')).toMatchObject({ text: 'Tomorrow 2:30 PM' })
+    expect(formatDueCell('2026-09-20T08:15', bounds, 'en-US')).toMatchObject({ text: 'Sun 8:15 AM', color: null })
+    expect(formatDueCell('2026-10-18T09:00', bounds, 'en-US')).toMatchObject({ text: 'Oct 18, 9:00 AM', color: null })
+    expect(formatDueCell('2027-10-18T09:00', bounds, 'en-US')).toMatchObject({ text: 'Oct 18, 2027, 9:00 AM' })
+  })
+
+  test('a 24-hour locale writes a 24-hour time', () => {
+    expect(formatDueCell('2026-09-18T14:30', bounds, 'en-GB').text).toBe('Today 14:30')
+  })
+
+  test('overdue stays day-level: earlier today at a time is Today, not red', () => {
+    expect(formatDueCell('2026-09-18T00:01', bounds, 'en-US').color).toBe('var(--green)')
+    expect(formatDueCell('2026-09-17T23:59', bounds, 'en-US')).toMatchObject({ text: 'Sep 17, 11:59 PM', color: 'var(--red)' })
+    expect(bucketForTask({ dueAt: '2026-09-18T00:01' }, bounds)).toBe('today')
+    expect(bucketForTask({ dueAt: '2026-09-17T23:59' }, bounds)).toBe('overdue')
+  })
+
+  test('formatDueShort is the short date, with the time when there is one', () => {
+    expect(formatDueShort('2026-10-18', 'en-US')).toBe('Oct 18')
+    expect(formatDueShort('2026-10-18T09:00', 'en-US')).toBe('Oct 18, 9:00 AM')
+    expect(formatDueShort(null)).toBe('')
   })
 })

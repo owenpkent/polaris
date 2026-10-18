@@ -111,3 +111,27 @@ describe('TaskRow', () => {
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy()
   })
 })
+
+describe('TaskRow due time', () => {
+  test('the Due date cell shows the day and the time, with the whole of it in the title', () => {
+    renderRow({ task: { dueAt: '2026-09-29T09:00' } })
+    const cell = screen.getByRole('button', { name: 'Change due date for Write the report' })
+    expect(cell.textContent).toMatch(/^Today 9:00\sAM$/)
+    expect(cell.getAttribute('title')).toBe(cell.textContent)
+  })
+
+  test('the phone chip keeps the day and the time as two words that wrap apart', () => {
+    renderRow({ task: { dueAt: '2026-09-30T14:30' }, props: { phone: true } })
+    const cell = screen.getByRole('button', { name: 'Change due date for Write the report' })
+    const chip = cell.querySelector('.due-chip')
+    expect(chip.className).toContain('has-time')
+    expect([...chip.children].map((c) => c.textContent)).toEqual(['Tomorrow', expect.stringMatching(/^2:30\sPM$/)])
+  })
+
+  test('a quick pick from the cell keeps the time', () => {
+    const { onQuickUpdate, task } = renderRow({ task: { dueAt: '2026-09-29T09:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: `${DUE_BOUNDS.tomorrow}T09:00` })
+  })
+})

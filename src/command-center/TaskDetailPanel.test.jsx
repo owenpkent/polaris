@@ -788,3 +788,47 @@ describe('TaskDetailPanel repeating tasks', () => {
     expect(await screen.findByText('Done. The next one is due Sat, Oct 24.')).toBeTruthy()
   })
 })
+
+describe('the due time in the panel', () => {
+  const TIMED = { ...TASK, dueAt: '2030-10-08T09:00' }
+
+  test('the Due date field shows the day and the time, and the picker opens on both', async () => {
+    api.getTask.mockResolvedValue(detail(TIMED, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const field = await screen.findByRole('button', { name: /^Due date, / })
+    expect(field.getAttribute('aria-label')).toMatch(/^Due date, Oct 8, 2030, 9:00\sAM$/)
+    fireEvent.click(field)
+    expect(screen.getByLabelText('Date').value).toBe('2030-10-08')
+    expect(screen.getByLabelText('Time').value).toBe('09:00')
+  })
+
+  test('a new day keeps the time', async () => {
+    api.getTask.mockResolvedValue(detail(TIMED, []))
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...TIMED, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    const input = screen.getByLabelText('Date')
+    fireEvent.change(input, { target: { value: '2030-10-10' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10T09:00' }))
+  })
+
+  test('a time can be set and removed from the panel', async () => {
+    let current = { ...TASK, dueAt: '2030-10-08' }
+    api.getTask.mockImplementation(() => Promise.resolve(detail(current, [])))
+    api.updateTask.mockImplementation((id, patch) => {
+      current = { ...current, ...patch }
+      return Promise.resolve({ task: current })
+    })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '17:15' } })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Set date and time' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-08T17:15' }))
+    const field = screen.getByRole('button', { name: /^Due date, / })
+    await waitFor(() => expect(field.getAttribute('aria-label')).toMatch(/5:15\sPM$/))
+    fireEvent.click(field)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove time' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenLastCalledWith('t_1', { dueAt: '2030-10-08' }))
+  })
+})
