@@ -7,6 +7,9 @@ import { z } from 'zod';
 import {
   ACTIVE_STATUSES,
   CHECKLIST_REPEAT_ITEMS_FIELD,
+  dueDay,
+  isDateOnly,
+  toLocalDue,
   type CustomFieldValue,
   type EventKind,
   type Json,
@@ -190,22 +193,39 @@ function fieldValue(task: Task, field: string): Json {
   }
 }
 
-function evaluateCondition(task: Task, cond: RuleCondition): boolean {
-  const value = fieldValue(task, cond.field);
+// A dueAt with a time, compared with a plain date, is compared by its day.
+const byDay = (field: string, value: Json): boolean => field === 'dueAt' && typeof value === 'string';
+
+/** A due operand as a due is stored (dueAt.ts): a zoned moment becomes floating local time in the
+ *  store's timezone, each entry of an `in` list on its own, so a rule written with the value a task
+ *  was created with still matches it. A plain date and anything else pass through. */
+function localDueOperand(value: RuleCondition['value'], timezone: string): RuleCondition['value'] {
+  if (typeof value === 'string') return toLocalDue(value, timezone);
+  if (Array.isArray(value)) return value.map((v) => (typeof v === 'string' ? toLocalDue(v, timezone) : v));
+  return value;
+}
+
+function evaluateCondition(task: Task, cond: RuleCondition, timezone: string): boolean {
+  const raw = fieldValue(task, cond.field);
+  let value = raw;
+  const operand = cond.field === 'dueAt' ? localDueOperand(cond.value, timezone) : cond.value;
+  // A due time is a time on its day: against a plain date, a task due 2026-10-18T09:00 is due on
+  // 2026-10-18 (eq that day, neither before nor after it), as the views and the digest count it.
+  if (cond.field === 'dueAt' && typeof value === 'string' && typeof operand === 'string' && isDateOnly(operand)) value = dueDay(value);
   switch (cond.op) {
-    case 'eq': return value === cond.value;
-    case 'ne': return value !== cond.value;
-    case 'in': return Array.isArray(cond.value) && cond.value.some((v) => v === value);
+    case 'eq': return value === operand;
+    case 'ne': return value !== operand;
+    case 'in': return Array.isArray(operand) && operand.some((v) => v === value || (byDay(cond.field, raw) && typeof v === 'string' && isDateOnly(v) && dueDay(raw as string) === v));
     case 'contains':
-      return typeof value === 'string' && typeof cond.value === 'string' && value.toLowerCase().includes(cond.value.toLowerCase());
+      return typeof value === 'string' && typeof operand === 'string' && value.toLowerCase().includes(operand.toLowerCase());
     case 'matches':
       // The pattern was accepted by compilePattern at validation (see conditionSchema); the cap
       // on the tested string bounds the work per task. A stored pattern the engine no longer
       // accepts throws, which the runner reports as that rule's error.
-      return typeof value === 'string' && typeof cond.value === 'string' && compilePattern(cond.value).test(value.slice(0, MAX_MATCHES_INPUT_LENGTH));
+      return typeof value === 'string' && typeof operand === 'string' && compilePattern(operand).test(value.slice(0, MAX_MATCHES_INPUT_LENGTH));
     case 'exists': return value !== null && value !== undefined;
-    case 'before': return typeof value === 'string' && typeof cond.value === 'string' && value < cond.value;
-    case 'after': return typeof value === 'string' && typeof cond.value === 'string' && value > cond.value;
+    case 'before': return typeof value === 'string' && typeof operand === 'string' && value < operand;
+    case 'after': return typeof value === 'string' && typeof operand === 'string' && value > operand;
     default: return false;
   }
 }
@@ -396,7 +416,7 @@ export function runRules(store: Store, opts: { today: string; ruleId?: string; d
         const task = store.getTask(ev.taskId);
         if (!task) continue;
         if (!matchesSource(task, def.trigger.source)) continue;
-        if (!def.conditions.every((c) => evaluateCondition(task, c))) continue;
+        if (!def.conditions.every((c) => evaluateCondition(task, c, store.timezone))) continue;
         const result = fireOnTask(store, rule, task, def, opts.today, dryRun);
         report.fired.push({ ruleId: rule.id, ruleName: rule.name, taskId: result.taskId, actions: result.actions });
       } catch (e) {
@@ -422,7 +442,7 @@ export function runRules(store: Store, opts: { today: string; ruleId?: string; d
       for (const task of candidates) {
         try {
           if (!matchesSource(task, def.trigger.source)) continue;
-          if (!def.conditions.every((c) => evaluateCondition(task, c))) continue;
+          if (!def.conditions.every((c) => evaluateCondition(task, c, store.timezone))) continue;
           const key = `${rule.id}:${task.id}:${opts.today}`;
           if (firedMap[key]) continue;
           const result = fireOnTask(store, rule, task, def, opts.today, dryRun);

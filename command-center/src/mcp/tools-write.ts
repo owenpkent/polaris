@@ -6,7 +6,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { App } from '../app.ts';
 import { runRules, validateRuleDefinition } from '../automation/index.ts';
 import { postBlock, taskRef } from './format.ts';
-import { CONFIDENCES, NotFoundError, POST_TYPES, ValidationError, type ActorInput, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
+import { CONFIDENCES, NotFoundError, POST_TYPES, ValidationError, formatDue, type ActorInput, type Json, type NewTask, type TaskPatch } from '../core/index.ts';
 import { TOOL_CATALOG } from './catalog.ts';
 import { PRIORITY_VALUES, TASK_STATUS_VALUES, guard, ok, err, resolveProject, resolveProjectByGithubRepo, resolveSectionWrite } from './shared.ts';
 import { resolveThread } from './tools-read.ts';
@@ -37,7 +37,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       parent_id: z.string().optional(),
       status: z.enum(TASK_STATUS_VALUES).optional().describe('Defaults to open.'),
       priority: z.enum(PRIORITY_VALUES).optional(),
-      due_at: z.string().optional(),
+      due_at: z.string().optional().describe('Due date, YYYY-MM-DD. A time is optional: YYYY-MM-DDTHH:MM, local time with no zone; a value with a zone or offset (such as 2026-10-20T14:00:00Z) is stored as local time in the server timezone (CC_TZ), except exactly midnight UTC (what toISOString makes of a plain date), which is stored as that date. A task due at a time counts as due on its day (today, overdue, upcoming).'),
       start_at: z.string().optional(),
       estimate_minutes: z.number().int().nonnegative().optional(),
       recurrence: z.string().optional().describe(RECURRENCE_HELP),
@@ -94,7 +94,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       parent_id: z.string().nullable().optional(),
       status: z.enum(TASK_STATUS_VALUES).optional(),
       priority: z.enum(PRIORITY_VALUES).optional(),
-      due_at: z.string().nullable().optional(),
+      due_at: z.string().nullable().optional().describe('Due date, YYYY-MM-DD. A time is optional: YYYY-MM-DDTHH:MM, local time with no zone; a value with a zone or offset (such as 2026-10-20T14:00:00Z) is stored as local time in the server timezone (CC_TZ), except exactly midnight UTC (what toISOString makes of a plain date), which is stored as that date. A task due at a time counts as due on its day (today, overdue, upcoming). null clears it.'),
       start_at: z.string().nullable().optional(),
       estimate_minutes: z.number().int().nonnegative().nullable().optional(),
       recurrence: z.string().nullable().optional().describe(`${RECURRENCE_HELP} null stops it repeating.`),
@@ -149,7 +149,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
   }, (args) => guard(() => {
     const { task, next } = app.store.completeTask(args.task_id, actor);
     const text = next
-      ? `Completed ${taskRef(task)}. Next occurrence created: ${next.id} due ${next.dueAt ?? 'unscheduled'}.`
+      ? `Completed ${taskRef(task)}. Next occurrence created: ${next.id} due ${next.dueAt ? formatDue(next.dueAt) : 'unscheduled'}.`
       : `Completed ${taskRef(task)}.`;
     return ok(text, { task, next });
   }));
@@ -191,7 +191,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       task_id: z.string(),
       project: z.string().optional().describe('Project id, slug, or name.'),
       section: z.string().optional().describe('Section id or name within the project; created if the name does not exist yet.'),
-      due_at: z.string().optional(),
+      due_at: z.string().optional().describe('Due date, YYYY-MM-DD. A time is optional: YYYY-MM-DDTHH:MM, local time with no zone; a value with a zone or offset (such as 2026-10-20T14:00:00Z) is stored as local time in the server timezone (CC_TZ), except exactly midnight UTC (what toISOString makes of a plain date), which is stored as that date. A task due at a time counts as due on its day (today, overdue, upcoming).'),
       priority: z.enum(PRIORITY_VALUES).optional(),
       title: z.string().optional(),
     },

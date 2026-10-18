@@ -29,9 +29,57 @@ export function addDays(date, n) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n)
 }
 
-// Extract just the YYYY-MM-DD portion of a task's dueAt, or null.
+// A due value with a zone or an offset ('...Z', '+02:00'), which the server turns into floating
+// local time (on the way in, and for older rows when it upgrades the database) but a cached copy may
+// still hold, is read as the local time of that moment, so the list, the picker, and a reminder
+// agree; an edit then saves the floating form.
+// A day or a floating time is returned as it is.
+const ZONED_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+// Exactly midnight UTC is what toISOString() makes of a plain date, so it reads as that date, as
+// the server stores it (command-center/src/core/dueAt.ts).
+const MIDNIGHT_UTC_RE = /T00:00(:00(\.0+)?)?(Z|[+-]00:?00)$/
+export function localDue(dueAt) {
+  if (!dueAt || !ZONED_RE.test(dueAt)) return dueAt
+  if (MIDNIGHT_UTC_RE.test(dueAt)) return dueAt.slice(0, 10)
+  const d = new Date(dueAt.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
+  if (Number.isNaN(d.getTime())) return dueAt
+  return `${localIso(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// Extract just the YYYY-MM-DD portion of a task's dueAt (its local day), or null.
 export function dueDateOnly(dueAt) {
-  return dueAt ? dueAt.slice(0, 10) : null
+  return dueAt ? localDue(dueAt).slice(0, 10) : null
+}
+
+// A due time. dueAt is a day ('YYYY-MM-DD') or, with a time, 'YYYY-MM-DDTHH:MM': floating local
+// time with no zone, as the server stores it (a zoned value is read as local time, see localDue). So
+// a task due at a time sits in its day's group (Today, Overdue, ...) and is overdue only once the
+// day is past, as the server counts it; the time orders it within the day, after the untimed
+// tasks. These return 'HH:MM' or null.
+const TIME_RE = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/
+export function dueTimeOnly(dueAt) {
+  const m = dueAt ? TIME_RE.exec(localDue(dueAt)) : null
+  return m ? `${m[1]}:${m[2]}` : null
+}
+
+// A due date with its day and time put together: `date` ('YYYY-MM-DD', or null for no due date)
+// and `time` ('HH:MM', or null or '' for none).
+export function joinDue(date, time) {
+  if (!date) return null
+  return time ? `${date}T${time}` : date
+}
+
+// A new day for a due date, keeping the time it had: moving a task due Friday at 9:00 to Monday
+// makes it Monday at 9:00. Null clears the whole due date.
+export function withDueDate(dueAt, date) {
+  return joinDue(date, dueTimeOnly(dueAt))
+}
+
+// 'HH:MM' as the owner's locale writes a time ("9:00 AM", or "09:00" where the clock is 24-hour).
+export function formatTime(hhmm, locale) {
+  const [h, m] = hhmm.split(':').map(Number)
+  // Some ICU versions put a narrow no-break space before AM; a plain space reads the same.
+  return new Date(2000, 0, 1, h, m).toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }).replace(/\u202f/g, ' ')
 }
 
 // Parse a YYYY-MM-DD string as a local date (not UTC), for display formatting only.
@@ -78,22 +126,38 @@ export function repeatLabel(recurrence) {
   return describeRule(recurrence)
 }
 
-export function formatDueCell(dueAt, bounds) {
+// The cell text is the day as the list writes it (Today, Tomorrow, a weekday, or a short date),
+// then the time when there is one: "Today 9:00 AM", "Fri 9:00 AM", "Oct 18, 9:00 AM". `date` and
+// `time` are the two parts on their own, for a chip that puts them on two lines when it must.
+export function formatDueCell(dueAt, bounds, locale) {
   const d = dueDateOnly(dueAt)
-  if (d === null) return { text: '', color: null }
-  if (d === bounds.today) return { text: 'Today', color: 'var(--green)' }
-  if (d === bounds.tomorrow) return { text: 'Tomorrow', color: 'var(--green)' }
+  if (d === null) return { text: '', color: null, date: '', time: '' }
+  const t = dueTimeOnly(dueAt)
+  const time = t ? formatTime(t, locale) : ''
+  const out = (date, color, sep = ' ') => ({ text: time ? `${date}${sep}${time}` : date, color, date, time })
+  if (d === bounds.today) return out('Today', 'var(--green)')
+  if (d === bounds.tomorrow) return out('Tomorrow', 'var(--green)')
 
   const parsed = parseLocalDateOnly(d)
 
   if (d < bounds.today) {
-    return { text: parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), color: 'var(--red)' }
+    return out(parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 'var(--red)', ', ')
   }
   if (d <= bounds.in7) {
-    return { text: parsed.toLocaleDateString('en-US', { weekday: 'short' }), color: null }
+    return out(parsed.toLocaleDateString('en-US', { weekday: 'short' }), null)
   }
   const opts = { month: 'short', day: 'numeric' }
   // The "current year" comes from bounds, like every other comparison here, not the real clock.
   if (d.slice(0, 4) !== bounds.today.slice(0, 4)) opts.year = 'numeric'
-  return { text: parsed.toLocaleDateString('en-US', opts), color: null }
+  return out(parsed.toLocaleDateString('en-US', opts), null, ', ')
+}
+
+// A due date in a short form for places with no Today or weekday words (a board card, a goal's
+// task list): "Oct 18", or "Oct 18, 9:00 AM" with a time.
+export function formatDueShort(dueAt, locale) {
+  const d = dueDateOnly(dueAt)
+  if (d === null) return ''
+  const date = parseLocalDateOnly(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const t = dueTimeOnly(dueAt)
+  return t ? `${date}, ${formatTime(t, locale)}` : date
 }

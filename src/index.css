@@ -1449,6 +1449,18 @@ kbd { color: var(--t1); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* With a time the day and the time are two words that each stay whole: the time moves under
+   the day when the 120px column cannot hold both on one line, and the chip grows to fit. */
+.due-chip.has-time {
+  flex-wrap: wrap;
+  column-gap: 4px;
+  height: auto;
+  min-height: 32px;
+  padding: 3px 12px;
+  line-height: 1.2;
+  overflow: visible;
+}
+.due-chip.has-time > span { white-space: nowrap; }
 
 /* New task sheet (NewTaskSheet.jsx): a dialog that rises from the bottom edge under 640px and
    sits centred like a modal above it. Same layer as the navigation drawer. */
@@ -1522,6 +1534,7 @@ kbd { color: var(--t1); }
     row-gap: 12px;
   }
   .add-due-pop .add-due > .cal { grid-column: 2; grid-row: 1 / span 3; }
+  .add-due-pop .add-due > .add-due-time { grid-column: 2; grid-row: 4; }
   .add-due-pop .add-due .sheet-chips { flex-direction: column; align-items: stretch; align-self: start; }
 }
 @media (max-width: 360px) {
@@ -1529,6 +1542,12 @@ kbd { color: var(--t1); }
   .add-due-pop .add-due > :not(.cal) { margin-left: 7px; margin-right: 7px; }
 }
 .add-due { display: flex; flex-direction: column; gap: 12px; }
+/* Add time, under the month: a button, then a time box and Remove time once opened. They wrap
+   onto two lines when the box and the button do not fit side by side; the box's 160px basis
+   leaves room for Remove time beside it in the 308px column under the month on a desktop. */
+.add-due-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.add-due-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
+.add-due-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
 .add-due .field { margin-bottom: 0; }
 .add-due-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--t1); }
 .sheet-draft-title { margin: 0 0 12px; color: var(--t2); overflow-wrap: anywhere; }

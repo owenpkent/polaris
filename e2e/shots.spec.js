@@ -279,6 +279,34 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'due-menu')
   })
 
+  // The due date menu on a task with a time, from the panel's Due date field (near the top, so
+  // the whole menu has room under it): the time box filled and Remove time.
+  test('mytasks: due menu with a time', async ({ page }, testInfo) => {
+    await openView(page)
+    await openTask(page, 'Draft ADR-003 hosting options')
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / }).click()
+    const menu = page.getByRole('menu', { name: 'Due date' })
+    await expect(menu.getByRole('menuitem', { name: 'Remove time' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'due-menu-time')
+  })
+
+  // "When is it due?" with Add time opened under the month.
+  test('mytasks: new due step with a time', async ({ page }, testInfo) => {
+    await openView(page)
+    let scope = page
+    if (phone(testInfo)) {
+      await page.getByRole('button', { name: 'New task' }).click()
+      scope = page.getByRole('dialog', { name: 'New task' })
+    } else {
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+    }
+    await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
+    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    await page.getByRole('button', { name: 'Add time' }).click()
+    await page.getByLabel('Time', { exact: true }).fill('09:30')
+    await shot(page, testInfo, 'mytasks', 'new-due-step-time')
+  })
+
   test('mytasks: sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()

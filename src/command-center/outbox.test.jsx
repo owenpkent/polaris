@@ -135,6 +135,32 @@ describe('offline task edits', () => {
     expect(getOfflineState().lastSync).toMatchObject({ failed: false, synced: 2, conflicts: [] })
   })
 
+  test('a due time set offline shows in the copy and is replayed as written', async () => {
+    const client = createApiClient('http://x', 'tok')
+    await seed(client)
+    global.fetch.mockImplementation(down)
+    const res = await client.updateTask(TASK.id, { dueAt: '2026-09-23T09:30' })
+    expect(res.task.dueAt).toBe('2026-09-23T09:30')
+    expect((await client.listTasks(MY_TASKS_QUERY)).tasks[0].dueAt).toBe('2026-09-23T09:30')
+    const { task: made } = await client.createTask({ title: 'Timed offline', dueAt: '2026-09-24T17:15' })
+    expect(made.dueAt).toBe('2026-09-24T17:15')
+
+    let sent = null
+    global.fetch.mockImplementation(async (url, init) => {
+      if (url === 'http://x/api/outbox') {
+        sent = JSON.parse(init.body)
+        return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+      }
+      return jsonResponse(200, { events: [], headId: 9 })
+    })
+    await client.getEvents()
+    expect(sent.ops.map((o) => [o.kind, o.body.dueAt])).toEqual([
+      ['update_task', '2026-09-23T09:30'],
+      ['create_task', '2026-09-24T17:15'],
+    ])
+    expect(getOfflineState()).toMatchObject({ offline: false, pending: 0 })
+  })
+
   test('a batch the server refuses stays queued, and is not resent on every request', async () => {
     const client = createApiClient('http://x', 'tok')
     await seed(client)

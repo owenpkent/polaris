@@ -101,6 +101,27 @@ describe('InboxTab', () => {
     await waitFor(() => expect(screen.getByText('Inbox is empty.')).toBeTruthy())
   })
 
+  test('Accept as task keeps a time the suggestion carried, on the day in the box', async () => {
+    api.listInbox.mockResolvedValue({ tasks: [item({ dueAt: '2026-10-20T09:30' })] })
+    render(<InboxTab />)
+    await screen.findByText('Fix the login bug')
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
+    const date = screen.getByLabelText('Due date')
+    expect(date.value).toBe('2026-10-20')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Accept as task' })) })
+    expect(api.acceptInboxItem).toHaveBeenLastCalledWith('i1', expect.objectContaining({ dueAt: '2026-10-20T09:30' }))
+  })
+
+  test('Accept as task with a new day moves the suggested time to it', async () => {
+    api.listInbox.mockResolvedValue({ tasks: [item({ dueAt: '2026-10-20T09:30' })] })
+    render(<InboxTab />)
+    await screen.findByText('Fix the login bug')
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }))
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-22' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Accept as task' })) })
+    expect(api.acceptInboxItem).toHaveBeenLastCalledWith('i1', expect.objectContaining({ dueAt: '2026-10-22T09:30' }))
+  })
+
   test('Confirm reject sends the typed reason and removes the suggestion', async () => {
     render(<InboxTab />)
     await screen.findByText('Fix the login bug')

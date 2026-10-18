@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Calendar } from 'lucide-react'
-import { getDueBounds } from './dueDates'
+import { dueDateOnly, dueTimeOnly, formatTime, getDueBounds, withDueDate } from './dueDates'
 import { oneLine, useFitToText } from './useFitToText'
 import AddDuePanel, { nextMondayIso } from './AddDuePanel'
 import { RepeatSelect } from './RepeatBuilder'
 
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)'
 
+// The picked date in full, with its time when it has one: "Mon, Oct 19, 2026, 9:00 AM".
 function dateLabel(iso) {
   const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  const time = dueTimeOnly(iso)
+  return time ? `${day}, ${formatTime(time)}` : day
 }
 
 // A link shown as host and path; the full address is in the line's title.
@@ -240,9 +243,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
                 key={chip.key}
                 type="button"
                 className="sheet-chip"
-                aria-pressed={dueAt === chip.value}
+                aria-pressed={dueDateOnly(dueAt) === chip.value}
                 disabled={busy}
-                onClick={() => setDueAt(chip.value)}
+                // A quick date keeps a time already picked; No date drops both.
+                onClick={() => setDueAt(withDueDate(dueAt, chip.value))}
               >
                 {chip.label}
               </button>
@@ -256,7 +260,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
             onClick={() => openDateStep(pickRef)}
           >
             <Calendar size={16} aria-hidden="true" />
-            <span>{dueAt && !chips.some((chip) => chip.value === dueAt) ? dateLabel(dueAt) : 'Pick a date'}</span>
+            <span>{dueAt && (dueTimeOnly(dueAt) || !chips.some((chip) => chip.value === dueAt)) ? dateLabel(dueAt) : 'Pick a date'}</span>
           </button>
         </div>
 

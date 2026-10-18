@@ -190,3 +190,16 @@ test('goals: achieved and dropped goals are not in the digest', () => {
   const digest = buildDigest(store, { today: '2026-09-18', nowIso: '2026-09-18T12:00:00.000Z' });
   assert.doesNotMatch(digest.markdown, /Already done|Gave up|## Goals/);
 });
+
+test('a task due at a time is listed under Today with the time written readably', () => {
+  const s = openStore(':memory:', { now: () => `${TODAY}T08:00:00.000Z`, nextOccurrence: () => null });
+  s.createTask({ title: 'Call the vet', dueAt: `${TODAY}T09:30` });
+  s.createTask({ title: 'Late yesterday', dueAt: '2026-09-11T23:00' });
+  const d = buildDigest(s, { today: TODAY, nowIso: `${TODAY}T08:00:00.000Z` });
+  const section = (from: string, to: string) => d.markdown.slice(d.markdown.indexOf(from), d.markdown.indexOf(to));
+  assert.match(section('## Today', '## Upcoming'), /Call the vet due 2026-09-12 09:30/);
+  const overdue = section('## Overdue', '## Today');
+  assert.match(overdue, /Late yesterday due 2026-09-11 23:00/);
+  assert.doesNotMatch(overdue, /Call the vet/);
+  assert.equal(d.counts.overdue, 1);
+});

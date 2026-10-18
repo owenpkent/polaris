@@ -129,6 +129,16 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // A task with a due time (the demo seed's Draft ADR-003): the time box filled, and Remove time.
+  test('the due date menu with a time', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()
+    const menu = page.getByRole('menu', { name: 'Due date for Draft ADR-003 hosting options' })
+    await expect(menu.getByRole('menuitem', { name: 'Remove time' })).toBeVisible()
+    expect(await smallTargets(menu, 'button, [role="menuitem"]')).toEqual([])
+    await expectNothingCutOff(page)
+  })
+
   test('the goal menu in the task panel', async ({ page }) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')
@@ -193,6 +203,19 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       return { scrollLeft: pop.scrollLeft, heading: inside(el.querySelector('h3')), today: inside(today) }
     })).toEqual({ scrollLeft: 0, heading: true, today: true })
     expect(await smallTargets(due, 'button, select')).toEqual([])
+    await expectNothingCutOff(page)
+  })
+
+  // Add time opened under the month: the time box and Remove time beside or under each other.
+  test('the due date step with a time box', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
+    await due.getByRole('button', { name: 'Add time' }).click()
+    await expect(due.getByLabel('Time', { exact: true })).toBeFocused()
+    expect(await smallTargets(due, 'button, select, input')).toEqual([])
     await expectNothingCutOff(page)
   })
 

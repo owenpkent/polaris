@@ -3,6 +3,7 @@
 
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
+import { toLocalDue } from './dueAt.ts';
 import { remainingCount, withOneFewer } from './recurrenceCount.ts';
 import {
   ACTIVE_STATUSES, CHECKLIST_ID_FIELD, CHECKLIST_MAX_ITEM, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_NAME, CHECKLIST_REPEAT_ITEMS_FIELD, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
@@ -58,6 +59,11 @@ export interface StoreOptions {
    * date of `now`.
    */
   today?: () => string;
+  /**
+   * IANA timezone a zoned due date is stored in, as floating local time (dueAt.ts, toLocalDue).
+   * The app passes the configured one (CC_TZ); defaults to UTC, like `today`.
+   */
+  timezone?: string;
   /**
    * The calendar day, YYYY-MM-DD in the configured timezone, that a timestamp falls on: what a
    * completion replayed from the outbox counts its next occurrence from, since the device made it
@@ -277,6 +283,8 @@ export class Store {
   private readonly nextOccurrence?: StoreOptions['nextOccurrence'];
   private readonly validateRecurrence?: StoreOptions['validateRecurrence'];
   private readonly today: () => string;
+  /** IANA timezone a zoned due is read in (dueAt.ts). Public so the rules engine reads a rule's operands in it. */
+  readonly timezone: string;
   private readonly dayOf: (iso: string) => string;
 
   constructor(db: SqlDriver, opts: StoreOptions = {}) {
@@ -285,8 +293,15 @@ export class Store {
     this.nextOccurrence = opts.nextOccurrence;
     this.validateRecurrence = opts.validateRecurrence;
     this.today = opts.today ?? (() => this.now().slice(0, 10));
+    this.timezone = opts.timezone ?? 'UTC';
     this.dayOf = opts.dayOf ?? ((iso) => iso.slice(0, 10));
   }
+
+  /** A due date as it is stored: a zoned value becomes floating local time (dueAt.ts). */
+  private localDue<T extends string | null | undefined>(v: T): T {
+    return (typeof v === 'string' ? toLocalDue(v, this.timezone) : v) as T;
+  }
+
 
   // ---------------------------------------------------------------- events
 
@@ -499,6 +514,7 @@ export class Store {
   /** `opts.id` is for a task a dashboard created offline, which already carries the id it minted. */
   createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string } = {}): Task {
     this.validate(input);
+    if (input.dueAt != null) input = { ...input, dueAt: this.localDue(input.dueAt) };
     if (opts.id !== undefined && !TASK_ID_PATTERN.test(opts.id)) throw new ValidationError(`not a task id: ${opts.id}`);
     const now = this.now();
     const status = input.status ?? 'open';
@@ -539,6 +555,7 @@ export class Store {
     // Normalised up front so the history records what was stored: a blank from a form clears the
     // field and lands as null, the same as an explicit null.
     if (patch.assignee !== undefined) patch = { ...patch, assignee: normalizeAssignee(patch.assignee) };
+    if (patch.dueAt != null) patch = { ...patch, dueAt: this.localDue(patch.dueAt) };
     return this.db.transaction(() => {
       const before = this.requireTask(id);
       if (patch.parentId && this.isAncestor(id, patch.parentId)) throw new ValidationError('a task cannot be nested under its own subtask');
@@ -837,8 +854,9 @@ export class Store {
     if (f.parentId !== undefined) {
       if (f.parentId === null) c.push('t.parent_id IS NULL'); else { c.push('t.parent_id = ?'); p.push(f.parentId); }
     }
-    if (f.dueBefore) { c.push('t.due_at IS NOT NULL AND t.due_at < ?'); p.push(f.dueBefore); }
-    if (f.dueAfter) { c.push('t.due_at IS NOT NULL AND t.due_at >= ?'); p.push(f.dueAfter); }
+    // A bound is read as a due is stored (dueAt.ts), so the value a task was created with finds it.
+    if (f.dueBefore) { c.push('t.due_at IS NOT NULL AND t.due_at < ?'); p.push(this.localDue(f.dueBefore)); }
+    if (f.dueAfter) { c.push('t.due_at IS NOT NULL AND t.due_at >= ?'); p.push(this.localDue(f.dueAfter)); }
     if (f.hasDue !== undefined) c.push(f.hasDue ? 't.due_at IS NOT NULL' : 't.due_at IS NULL');
     if (f.completedAfter) { c.push('t.completed_at IS NOT NULL AND t.completed_at >= ?'); p.push(f.completedAfter); }
     if (f.completedBefore) { c.push('t.completed_at IS NOT NULL AND t.completed_at < ?'); p.push(f.completedBefore); }
@@ -970,7 +988,7 @@ export class Store {
     return this.db.transaction(() => {
       const now = this.now();
       const snapshot = {
-        title: item.title.trim(), notes: item.notes ?? '', dueAt: item.dueAt ?? null, priority: item.priority ?? 'none',
+        title: item.title.trim(), notes: item.notes ?? '', dueAt: this.localDue(item.dueAt ?? null), priority: item.priority ?? 'none',
         // The source's own done/not-done state, so the next import has the third input it needs
         // to merge completion rather than just overwrite it.
         sourceCompleted: item.sourceCompleted ?? null,

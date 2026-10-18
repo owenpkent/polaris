@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Popover, useRovingFocus } from './Menu'
-import { localIso, addDays } from './dueDates'
+import { localIso, addDays, dueDateOnly, dueTimeOnly, joinDue } from './dueDates'
 
 const menuItemStyle = {
   display: 'flex',
@@ -18,20 +18,35 @@ const menuItemStyle = {
 }
 
 // The due-date picker shared by a list row's Due date cell (TaskRow.jsx) and the task panel's
-// Due date field (TaskDetailPanel.jsx): quick picks, a date box, and Clear. `value` is the
-// task's dueAt (an ISO date or null); `onChange` gets the new plain date, or null for Clear.
+// Due date field (TaskDetailPanel.jsx): quick picks, a date box and an optional time box, and
+// Clear. `value` is the task's dueAt (a day, or a day and a time, or null); `onChange` gets the new
+// dueAt ('YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM', floating local time), or null for Clear. A quick pick
+// changes the day and keeps the time in the box (the task's, or one just typed), as the date box
+// does; Remove time keeps the day.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label }) {
   const listRef = useRef(null)
   const onKeyDown = useRovingFocus(listRef)
-  const dateOnly = value ? value.slice(0, 10) : ''
+  const dateOnly = dueDateOnly(value) || ''
+  const timeOnly = dueTimeOnly(value) || ''
 
-  // The date box edits a draft. Chromium fires a change event for every segment edit, so the
-  // first digit of a new year would otherwise be saved as the year 0002 and close the menu
-  // before the rest could be typed. Enter in the box or the Set date button saves the draft.
+  // The date and time boxes edit a draft. Chromium fires a change event for every segment edit, so
+  // the first digit of a new year would otherwise be saved as the year 0002 and close the menu
+  // before the rest could be typed. Enter in a box or the Set date button saves the draft.
   const [draft, setDraft] = useState(dateOnly)
+  const [draftTime, setDraftTime] = useState(timeOnly)
+  // Chromium reports '' for a time box with a segment cleared (validity.badInput), the same as an
+  // empty one. While the box holds such a half-typed time nothing is saved from it, and the time
+  // in the draft stays the last whole one, so a half-typed time never reads as "no time".
+  const [timePartial, setTimePartial] = useState(false)
   useEffect(() => {
-    if (open) setDraft(dateOnly)
-  }, [open, dateOnly])
+    if (open) {
+      setDraft(dateOnly)
+      setDraftTime(timeOnly)
+      setTimePartial(false)
+    }
+  }, [open, dateOnly, timeOnly])
+  const unchanged = draft === dateOnly && draftTime === timeOnly
+  const cannotSet = !draft || unchanged || timePartial
 
   const now = new Date()
   const nextMondayDays = ((1 - now.getDay() + 7) % 7) || 7
@@ -42,12 +57,24 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
   }
 
   function commitDraft() {
-    if (!draft) return
-    commit(draft)
+    if (cannotSet) return
+    commit(joinDue(draft, draftTime))
   }
 
-  // Up and Down step the focused segment of the date box, so they stay with it instead of
-  // moving between menu items. Enter saves the draft.
+  // A time with no day yet goes on today, so typing a time alone is enough.
+  function changeTime(e) {
+    const next = e.target.value
+    if (!next && e.target.validity?.badInput) {
+      setTimePartial(true)
+      return
+    }
+    setTimePartial(false)
+    setDraftTime(next)
+    if (next && !draft) setDraft(dueBounds.today)
+  }
+
+  // Up and Down step the focused segment of the date or time box, so they stay with it instead
+  // of moving between menu items. Enter saves the draft.
   function onDateKeyDown(e) {
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.stopPropagation()
@@ -66,7 +93,7 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
           { key: 'monday', label: 'Next Monday', value: localIso(addDays(now, nextMondayDays)) },
           { key: 'week', label: 'In one week', value: localIso(addDays(now, 7)) },
         ].map((opt) => (
-          <button key={opt.key} type="button" role="menuitem" data-menu-item onClick={() => commit(opt.value)} style={menuItemStyle}>
+          <button key={opt.key} type="button" role="menuitem" data-menu-item onClick={() => commit(joinDue(opt.value, draftTime))} style={menuItemStyle}>
             {opt.label}
           </button>
         ))}
@@ -82,20 +109,36 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
             style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
           />
         </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, padding: '0 14px', fontSize: 14, color: 'var(--t1)' }}>
+          <span style={{ flexShrink: 0, color: 'var(--t2)' }}>Time</span>
+          <input
+            type="time"
+            data-menu-item
+            value={draftTime}
+            onChange={changeTime}
+            onKeyDown={onDateKeyDown}
+            style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
+          />
+        </label>
         <button
           type="button"
           role="menuitem"
           data-menu-item
-          disabled={!draft || draft === dateOnly}
+          disabled={cannotSet}
           onClick={commitDraft}
           style={{
             ...menuItemStyle,
-            color: !draft || draft === dateOnly ? 'var(--t3)' : 'var(--t1)',
-            cursor: !draft || draft === dateOnly ? 'default' : 'pointer',
+            color: cannotSet ? 'var(--t3)' : 'var(--t1)',
+            cursor: cannotSet ? 'default' : 'pointer',
           }}
         >
-          Set date
+          {draftTime ? 'Set date and time' : 'Set date'}
         </button>
+        {timeOnly && (
+          <button type="button" role="menuitem" data-menu-item onClick={() => commit(dateOnly)} style={menuItemStyle}>
+            Remove time
+          </button>
+        )}
         <div role="separator" style={{ height: 1, background: 'var(--bd)', margin: '6px 0' }} />
         <button type="button" role="menuitem" data-menu-item onClick={() => commit(null)} style={menuItemStyle}>
           Clear

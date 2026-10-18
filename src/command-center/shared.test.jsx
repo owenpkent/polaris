@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
-import { ProjectChip, formatDate } from './shared'
+import { ProjectChip, formatDate, isOverdue } from './shared'
 
 afterEach(() => {
   cleanup()
@@ -37,5 +37,19 @@ describe('ProjectChip in the task panel', () => {
   test('wraps a long name instead of shortening it', () => {
     const { container } = render(<ProjectChip name="A long project name" wrap />)
     expect(container.firstChild.className).toBe('project-chip is-wrapping')
+  })
+})
+
+describe('isOverdue', () => {
+  const now = new Date(2026, 9, 18, 10, 0) // local 18 Oct, 10:00
+  test('is day-level on the local calendar: earlier today at a time is not overdue, yesterday is', () => {
+    expect(isOverdue({ dueAt: '2026-10-18T06:00', status: 'open' }, now)).toBe(false)
+    expect(isOverdue({ dueAt: '2026-10-17T23:59', status: 'open' }, now)).toBe(true)
+    expect(isOverdue({ dueAt: '2026-10-17', status: 'done' }, now)).toBe(false)
+  })
+
+  test('reads a zoned value as its local day', () => {
+    expect(isOverdue({ dueAt: new Date(2026, 9, 18, 0, 30).toISOString(), status: 'open' }, now)).toBe(false)
+    expect(isOverdue({ dueAt: new Date(2026, 9, 17, 23, 30).toISOString(), status: 'open' }, now)).toBe(true)
   })
 })

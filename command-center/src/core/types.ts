@@ -1,5 +1,6 @@
 // Domain types for the Command Center task graph.
-// Dates: due_at / start_at are 'YYYY-MM-DD' or full ISO datetimes. All other timestamps are ISO datetimes (UTC).
+// Dates: due_at / start_at are 'YYYY-MM-DD' or full ISO datetimes; a due time set from the dashboard or the CLI is
+// floating local time, 'YYYY-MM-DDTHH:MM' with no zone (dueAt.ts). All other timestamps are ISO datetimes (UTC).
 
 export type TaskStatus = 'inbox' | 'open' | 'in_progress' | 'waiting' | 'done' | 'dropped';
 export const TASK_STATUSES: readonly TaskStatus[] = ['inbox', 'open', 'in_progress', 'waiting', 'done', 'dropped'];

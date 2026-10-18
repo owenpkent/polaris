@@ -85,6 +85,25 @@ describe('NewTaskSheet', () => {
     expect(screen.queryByRole('button', { name: 'Pick a date' })).toBeNull()
   })
 
+  test('a time added in the date step is shown on the form, kept by a quick date, and sent', async () => {
+    const { onCreate } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Dentist' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '14:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    const { tomorrow } = getDueBounds()
+    expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /2:30\sPM$/ })).toBeTruthy()
+    // Reopening the date step starts on the time already chosen.
+    fireEvent.click(screen.getByRole('button', { name: /2:30\sPM$/ }))
+    expect(screen.getByLabelText('Time').value).toBe('14:30')
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Dentist', dueAt: `${tomorrow}T14:30` }))
+  })
+
   test('Esc in the date step goes back to the form and keeps the sheet open', () => {
     const { onClose } = renderSheet()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Walk' } })

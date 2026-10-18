@@ -423,3 +423,20 @@ test('assignee: create_task and update_task set and clear it, search_tasks filte
     .filter((e) => e.kind === 'task.updated').map((e) => e.payload.changes);
   assert.deepEqual(history, [{ assignee: ['scribe', 'reviewer'] }, { assignee: ['reviewer', null] }], 'history keeps each reassignment');
 });
+
+test('search_tasks: a zoned due_before or due_after is read the way a stored due is (midnight UTC is a date, other moments local time)', async (t) => {
+  const app = fakeApp();
+  app.config.timezone = 'America/Chicago';
+  const { client } = await connected(app);
+  t.after(() => client.close());
+  const evening = app.store.createTask({ title: 'Evening of the 19th', dueAt: '2026-10-19T19:00' }).id;
+  const allDay = app.store.createTask({ title: 'Some time on the 20th', dueAt: '2026-10-20' }).id;
+  const morning = app.store.createTask({ title: 'Morning of the 20th', dueAt: '2026-10-20T08:00' }).id;
+  const ids = async (args: Record<string, string>) => ((await client.callTool({ name: 'search_tasks', arguments: args }) as unknown as TextResult)
+    .structuredContent!.tasks as { id: string }[]).map((x) => x.id).sort();
+  // An agent's toISOString() of the plain date 2026-10-20 means that day: before it is only the 19th.
+  assert.deepEqual(await ids({ due_before: '2026-10-20T00:00:00.000Z' }), [evening]);
+  assert.deepEqual(await ids({ due_after: '2026-10-20T00:00:00.000Z' }), [allDay, morning].sort());
+  // Any other moment is local time: 13:00Z is 08:00 in Chicago, which takes in the 08:00 task.
+  assert.deepEqual(await ids({ due_after: '2026-10-20T13:00:00Z' }), [morning]);
+});

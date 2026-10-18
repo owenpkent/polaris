@@ -5,6 +5,15 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- Due times: a due date can carry an optional time of day, set and removed in the due date menu,
+  the task panel's Due date field, and Add time in "When is it due?" for a new task, and shown
+  after the day in rows, board cards, and the panel ("Today 9:00 AM"). It is stored as floating
+  local time (`YYYY-MM-DDTHH:MM`, no zone); a value sent with a zone or an offset is stored as
+  the local time of that moment in `CC_TZ`, and exactly midnight UTC (a plain date through
+  `toISOString()`) as that date. A task due at a time counts as its day for Today,
+  Overdue, the digest, rules, and the CLI, and sorts after that day's untimed tasks. `cc add
+  --due "YYYY-MM-DD HH:MM"` takes one, and the digest, MCP text, and CLI write it as
+  `2026-10-18 09:00`. Migration 13 converts a due written with a zone before this into floating local time in `CC_TZ`, so a rollback restores the snapshot.
 - Richer repeating tasks. The Repeat menu and the add-task Repeat choice offer Google Calendar
   style quick picks worded from the due date (Weekly on Wednesday, Monthly on the second
   Wednesday, Annually on October 14, and so on). The custom builder adds Ends (never, on a date,

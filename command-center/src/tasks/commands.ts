@@ -4,9 +4,11 @@ import { parseFlags } from '../cli-types.ts';
 import type { Confidence, Post, PostStatus, PostType, Priority, Store, Task, TaskStatus, ThreadSummary } from '../core/index.ts';
 import { readFileSync } from 'node:fs';
 import { importTasks } from '../importer/taskImport.ts';
-import { ACTIVE_STATUSES, CONFIDENCES, POST_STATUSES, POST_TYPES } from '../core/index.ts';
+import { ACTIVE_STATUSES, CONFIDENCES, POST_STATUSES, POST_TYPES, dueDay, formatDue, parseDueInput } from '../core/index.ts';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+/** A --due flag: 'YYYY-MM-DD', or 'YYYY-MM-DD HH:MM' in quotes, stored as 'YYYY-MM-DDTHH:MM'. */
+const due = (v: unknown): string | undefined => (typeof v === 'string' ? parseDueInput(v) : undefined);
 
 export function formatTask(store: Store, t: Task, today?: string): string {
   const project = t.projectId ? store.getProject(t.projectId)?.name : undefined;
@@ -16,7 +18,7 @@ export function formatTask(store: Store, t: Task, today?: string): string {
     t.priority !== 'none' ? `!${t.priority}` : '',
     t.title,
     project ? `(${project})` : '',
-    t.dueAt ? `due ${t.dueAt}${today && t.dueAt.slice(0, 10) < today && ACTIVE_STATUSES.includes(t.status) ? ' OVERDUE' : ''}` : '',
+    t.dueAt ? `due ${formatDue(t.dueAt)}${today && dueDay(t.dueAt) < today && ACTIVE_STATUSES.includes(t.status) ? ' OVERDUE' : ''}` : '',
     t.recurrence ? `repeats ${t.recurrence}` : '',
     t.assignee ? `@${t.assignee}` : '',
     t.sourceType ? `<${t.sourceType}>` : '',
@@ -60,7 +62,7 @@ export const commands: Command[] = [
   {
     name: 'add',
     summary: 'Create a task',
-    usage: 'add <title> [--project <name>] [--due YYYY-MM-DD] [--priority low|medium|high|urgent] [--repeat <rrule>] [--parent <id>] [--notes <text>]',
+    usage: 'add <title> [--project <name>] [--due YYYY-MM-DD | "YYYY-MM-DD HH:MM"] [--priority low|medium|high|urgent] [--repeat <rrule>] [--parent <id>] [--notes <text>]',
     run(args, { openApp, stdout }) {
       const f = parseFlags(args);
       const title = f._.join(' ');
@@ -68,7 +70,7 @@ export const commands: Command[] = [
       const app = openApp();
       try {
         const t = app.store.createTask({
-          title, projectId: resolveProjectId(app.store, str(f.project)), dueAt: str(f.due), priority: str(f.priority) as Priority | undefined,
+          title, projectId: resolveProjectId(app.store, str(f.project)), dueAt: due(f.due), priority: str(f.priority) as Priority | undefined,
           recurrence: str(f.repeat), parentId: str(f.parent), notes: str(f.notes),
         }, 'human');
         stdout(formatTask(app.store, t, app.today()));
@@ -175,14 +177,14 @@ export const commands: Command[] = [
   {
     name: 'accept',
     summary: 'Accept inbox items as real tasks',
-    usage: 'accept <id> [<id> ...] [--project <name>] [--due YYYY-MM-DD] [--priority p]',
+    usage: 'accept <id> [<id> ...] [--project <name>] [--due YYYY-MM-DD | "YYYY-MM-DD HH:MM"] [--priority p]',
     run(args, { openApp, stdout }) {
       const f = parseFlags(args);
       const app = openApp();
       try {
         for (const id of f._) {
           const t = app.store.acceptInboxItem(id, {
-            projectId: resolveProjectId(app.store, str(f.project)), dueAt: str(f.due), priority: str(f.priority) as Priority | undefined,
+            projectId: resolveProjectId(app.store, str(f.project)), dueAt: due(f.due), priority: str(f.priority) as Priority | undefined,
           }, 'human');
           stdout(formatTask(app.store, t));
         }

@@ -5,11 +5,12 @@ import { listNotifications, runRules, validateRuleDefinition } from './rules.ts'
 
 const TODAY = '2026-09-12';
 
-function fresh(): Store {
+function fresh(timezone?: string): Store {
   let tick = 0;
   return openStore(':memory:', {
     now: () => new Date(Date.UTC(2026, 8, 12, 9, 0, tick++)).toISOString(),
     nextOccurrence: () => null,
+    timezone,
   });
 }
 
@@ -462,4 +463,73 @@ test('listNotifications keeps the newest notifications when the window truncates
   const notifications = listNotifications(store);
   assert.equal(notifications.at(-1)?.message, 'msg 1099', 'the most recent notification must be present');
   assert.ok(notifications.length >= 1100, `expected the whole history, got ${notifications.length}`);
+});
+
+// ---------------------------------------------------------------- due times
+
+test('a dueAt condition against a plain date treats a task due at a time as its day', () => {
+  const s = fresh();
+  const rule = (op: string) => addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op, value: '2026-09-14' }],
+    actions: [{ type: 'notify', message: `${op}: {title}` }],
+  }, { name: op });
+  const eq = rule('eq');
+  const before = rule('before');
+  const after = rule('after');
+  const onDay = s.createTask({ title: 'On the day at nine', dueAt: '2026-09-14T09:00' });
+  const dayBefore = s.createTask({ title: 'Day before at eleven', dueAt: '2026-09-13T23:00' });
+  const dayAfter = s.createTask({ title: 'Day after at one', dueAt: '2026-09-15T01:00' });
+  const report = runRules(s, { today: TODAY });
+  const firedFor = (r: { id: string }) => report.fired.filter((f) => f.ruleId === r.id).map((f) => f.taskId).sort();
+  assert.deepEqual(firedFor(eq), [onDay.id]);
+  assert.deepEqual(firedFor(before), [dayBefore.id]);
+  assert.deepEqual(firedFor(after), [dayAfter.id]);
+});
+
+test('a dueAt in condition compares each plain date in the list by day, as eq does', () => {
+  const s = fresh();
+  const rule = addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op: 'in', value: ['2026-09-14', '2026-09-16T10:00'] }],
+    actions: [{ type: 'notify', message: 'in: {title}' }],
+  });
+  const onDay = s.createTask({ title: 'On the 14th at nine', dueAt: '2026-09-14T09:00' });
+  const exact = s.createTask({ title: 'Exactly the listed time', dueAt: '2026-09-16T10:00' });
+  s.createTask({ title: 'Same day, other time than listed', dueAt: '2026-09-16T11:00' });
+  s.createTask({ title: 'Another day', dueAt: '2026-09-15T09:00' });
+  const fired = runRules(s, { today: TODAY }).fired.filter((f) => f.ruleId === rule.id).map((f) => f.taskId).sort();
+  assert.deepEqual(fired, [onDay.id, exact.id].sort());
+});
+
+test('the overdue schedule trigger leaves out a task due earlier today at a time', () => {
+  const s = fresh();
+  addRule(s, { trigger: { type: 'schedule', condition: 'overdue' }, actions: [{ type: 'notify', message: 'Overdue: {title}' }] });
+  s.createTask({ title: 'This morning', dueAt: `${TODAY}T06:00` });
+  const late = s.createTask({ title: 'Yesterday evening', dueAt: '2026-09-11T20:00' });
+  assert.deepEqual(runRules(s, { today: TODAY }).fired.map((f) => f.taskId), [late.id]);
+});
+
+test('a dueAt operand with a zone is read as the task was stored, in every operator and in an in list', () => {
+  const s = fresh('America/Chicago');
+  const zoned = '2026-09-14T14:00:00Z'; // nine in the morning in Chicago, stored as 2026-09-14T09:00
+  const rule = (op: string, value: unknown) => addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op, value }],
+    actions: [{ type: 'notify', message: op + ': {title}' }],
+  }, { name: op });
+  const eq = rule('eq', zoned);
+  const before = rule('before', zoned);
+  const after = rule('after', zoned);
+  const within = rule('in', ['2026-09-13', zoned]);
+  const exact = s.createTask({ title: 'Created with the zoned value', dueAt: zoned });
+  assert.equal(exact.dueAt, '2026-09-14T09:00');
+  const earlier = s.createTask({ title: 'An hour earlier', dueAt: '2026-09-14T08:00' });
+  const later = s.createTask({ title: 'An hour later', dueAt: '2026-09-14T10:00' });
+  const report = runRules(s, { today: TODAY });
+  const firedFor = (r: { id: string }) => report.fired.filter((f) => f.ruleId === r.id).map((f) => f.taskId).sort();
+  assert.deepEqual(firedFor(eq), [exact.id]);
+  assert.deepEqual(firedFor(before), [earlier.id]);
+  assert.deepEqual(firedFor(after), [later.id]);
+  assert.deepEqual(firedFor(within), [exact.id]);
 });

@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { inspectDatabaseFile, openStore } from '../core/index.ts';
-import { MIGRATIONS } from '../core/schema.ts';
+import { inspectDatabaseFile, openNodeDriver, openStore } from '../core/index.ts';
+import { MIGRATIONS, localizeZonedDues } from '../core/schema.ts';
 import { listSnapshots } from '../daemon/backup.ts';
 import { identityProof } from '../http/identity.ts';
 import { api, fakeApp, withServer } from '../http/test-support.ts';
@@ -71,6 +71,8 @@ interface Scenario {
   target?: string;
   changed?: string[];
   fail?: 'npm-ci' | 'test' | 'build' | 'health' | 'health-after-migration';
+  /** A due written with a zone, as an older daemon left it, on a task the new code's migration converts. */
+  zonedDue?: string;
   checkOnly?: boolean;
   yes?: boolean;
   confirm?: boolean;
@@ -102,6 +104,10 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const dbPath = join(dataDir, 'polaris.db');
   const store = openStore(dbPath);
   store.createTask({ title: 'before the update' });
+  if (s.zonedDue) {
+    const legacy = store.createTask({ title: 'legacy zoned due' });
+    store.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', [s.zonedDue, legacy.id]);
+  }
   store.db.close();
   writeFileSync(join(dataDir, 'api-token'), TOKEN);
   const dist = join(root, s.distName ?? 'dist');
@@ -117,7 +123,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const tagVersion = (tag: string) => tags.find((x) => x.tag === tag)?.version ?? tag.replace(/^v/, '');
 
   const snapshots = () => listSnapshots(join(dataDir, 'backups')).length;
-  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1, snapshotsAtStop: -1, snapshotsAtStart: -1, verifiedAgainst: [] as string[] };
+  const state = { head: 'previous' as 'previous' | 'target', listening: true, daemonVersion: running, snapshotsAtCheckout: -1, snapshotsAtStop: -1, snapshotsAtStart: -1, verifiedAgainst: [] as string[], convertedDue: null as string | null };
   const calls: Call[] = [];
   const out: string[] = [];
   const err: string[] = [];
@@ -197,8 +203,11 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
         if (state.head === 'target') {
           state.daemonVersion = s.fail === 'health' || s.fail === 'health-after-migration' ? 'broken' : version();
           if (s.fail === 'health-after-migration') {
-            // The new code's first start migrated the live database past what the old code knows.
-            const db = new DatabaseSync(dbPath);
+            // The new code's first start migrated the live database past what the old code knows,
+            // here with the one data migration there is, the way a newer daemon in Chicago would.
+            const db = openNodeDriver(dbPath);
+            localizeZonedDues(db, { timezone: 'America/Chicago' });
+            state.convertedDue = db.get<{ due_at: string | null }>('SELECT due_at FROM tasks WHERE title = ?', ['legacy zoned due'])?.due_at ?? null;
             db.exec(`UPDATE schema_version SET version = ${MIGRATIONS.length + 1}`);
             db.close();
           }
@@ -249,9 +258,11 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const pinned = () => (existsSync(pinnedFile) ? readFileSync(pinnedFile, 'utf8') : null);
   const distFile = (name: string) => (existsSync(join(root, name, 'index.html')) ? readFileSync(join(root, name, 'index.html'), 'utf8') : null);
   const tasks = () => { const st = openStore(dbPath); try { return st.searchAllTasks().map((x) => x.title); } finally { st.db.close(); } };
+  /** A due as the file holds it, read without opening the store (which would migrate). */
+  const rawDue = (title: string) => { const db = new DatabaseSync(dbPath, { readOnly: true }); try { return (db.prepare('SELECT due_at FROM tasks WHERE title = ?').get(title) as { due_at: string | null } | undefined)?.due_at ?? null; } finally { db.close(); } };
   /** A write the way the CLI makes one: the store opened directly, outside the update process. */
   const writeTask = (title: string) => { const st = openStore(dbPath); try { st.createTask({ title }); } finally { st.db.close(); } };
-  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, writeTask, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
+  return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, rawDue, writeTask, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
 }
 
 const npmAndRestartCalls = (lines: string[]) => lines.filter((l) => l.startsWith('npm ') || l.startsWith('vite ') || / (stop|start) /.test(l));
@@ -1049,4 +1060,12 @@ test('--trust-signers refuses a malformed committed file and a pinned file other
   chmodSync(loose.pinnedFile, 0o666);
   assert.equal(await loose.trust(), 1);
   assert.match(loose.err.join('\n'), /can be written by other users/);
+});
+
+test('a failed update whose migration converted older zoned dues puts them back with the snapshot', async (t) => {
+  const h = harness(t, { fail: 'health-after-migration', changed: ['command-center/src/core/schema.ts'], zonedDue: '2026-10-20T04:30:00.000Z' });
+  assert.equal(await h.run(), 1);
+  assert.equal(h.state.convertedDue, '2026-10-19T23:30', 'the new code did rewrite the row before its health check failed');
+  assert.equal(inspectDatabaseFile(h.dbPath).schemaVersion, MIGRATIONS.length, 'the version is back where the old code knows it');
+  assert.equal(h.rawDue('legacy zoned due'), '2026-10-20T04:30:00.000Z', 'and so is the due: the old code reads the day it always did');
 });

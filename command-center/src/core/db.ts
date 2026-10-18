@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { MIGRATIONS } from './schema.ts';
+import { MIGRATIONS, type MigrationContext } from './schema.ts';
 
 export type SqlValue = string | number | null;
 
@@ -18,7 +18,10 @@ export interface SqlDriver {
   close(): void;
 }
 
-export function openNodeDriver(path: string): SqlDriver {
+/** `ctx` is what a data migration needs (schema.ts): the timezone of the configuration that opens
+ *  the database. Left out, the machine's own timezone, which is also what config.ts falls back to
+ *  without CC_TZ. */
+export function openNodeDriver(path: string, ctx: Partial<MigrationContext> = {}): SqlDriver {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
@@ -49,18 +52,20 @@ export function openNodeDriver(path: string): SqlDriver {
     },
     close: () => db.close(),
   };
-  migrate(driver);
+  migrate(driver, ctx);
   return driver;
 }
 
-export function migrate(db: SqlDriver): void {
+export function migrate(db: SqlDriver, ctx: Partial<MigrationContext> = {}): void {
+  const context: MigrationContext = { timezone: ctx.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone };
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const row = db.get<{ version: number }>('SELECT version FROM schema_version');
   let current = row?.version ?? 0;
   if (!row) db.run('INSERT INTO schema_version (version) VALUES (0)');
   for (let i = current; i < MIGRATIONS.length; i++) {
     db.transaction(() => {
-      db.exec(MIGRATIONS[i]);
+      const step = MIGRATIONS[i];
+      if (typeof step === 'string') db.exec(step); else step(db, context);
       db.run('UPDATE schema_version SET version = ?', [i + 1]);
     });
   }

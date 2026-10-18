@@ -3,6 +3,7 @@
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
 import type { Checklist, Store } from '../core/index.ts';
+import { parseDueInput } from '../core/index.ts';
 import { formatTask } from './commands.ts';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
@@ -70,7 +71,7 @@ export const commands: Command[] = [
   {
     name: 'checklist start',
     summary: 'Start a checklist: a new task with one subtask per item',
-    usage: 'checklist start <id|name> [--title <text>] [--project <name>] [--due YYYY-MM-DD] [--repeat-items on|off]',
+    usage: 'checklist start <id|name> [--title <text>] [--project <name>] [--due YYYY-MM-DD | "YYYY-MM-DD HH:MM"] [--repeat-items on|off]',
     run(args, { openApp, stdout }) {
       const f = parseFlags(args);
       // Bring the items back each time the task repeats: on unless asked otherwise.
@@ -87,7 +88,7 @@ export const commands: Command[] = [
           if (!p) throw new Error(`No project matches "${projectRef}". Run "npm run cc -- projects" to list them.`);
           projectId = p.id;
         }
-        const { task, subtasks } = app.store.startChecklist(c.id, { title: str(f.title), projectId, dueAt: str(f.due), repeatItems }, 'human');
+        const { task, subtasks } = app.store.startChecklist(c.id, { title: str(f.title), projectId, dueAt: typeof f.due === 'string' ? parseDueInput(f.due) : undefined, repeatItems }, 'human');
         stdout([formatTask(app.store, task, app.today()), ...subtasks.map((s) => `  ${formatTask(app.store, s)}`)].join('\n'));
         return 0;
       } finally { app.close(); }
