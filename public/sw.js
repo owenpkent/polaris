@@ -56,6 +56,8 @@ const INSTALL_FILES = ['/manifest.webmanifest', '/icons/icon-192.png', '/icons/i
 // through the fetch handler below. main.jsx sends the list once the worker is ready, so one
 // visit is enough to open offline.
 self.addEventListener('message', (event) => {
+  // Workers only get messages from same-origin clients; this check is belt and braces.
+  if (event.origin && event.origin !== self.location.origin) return
   if (event.data?.type !== 'precache' || !Array.isArray(event.data.urls)) return
   const urls = event.data.urls.filter((raw) => {
     try {

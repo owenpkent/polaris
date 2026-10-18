@@ -34,7 +34,6 @@ describe('Sidebar', () => {
   test('lists every view with no menu to open, and marks the active one', () => {
     listInbox.mockResolvedValue({ tasks: [] })
     renderSidebar({ activeTab: 'goals' })
-    const nav = screen.getByRole('navigation', { name: 'Navigation' })
     for (const label of ['My tasks', 'Inbox', 'Board', 'Goals', 'Rules']) {
       expect(screen.getByRole('button', { name: label })).toBeTruthy()
     }
