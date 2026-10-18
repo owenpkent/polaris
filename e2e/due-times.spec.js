@@ -38,6 +38,32 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
+  test('a time typed in the menu goes with a quick pick, and a half-typed time saves nothing', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'due time typed')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    const menu = page.getByRole('menu', { name: 'Due date' })
+
+    await panel.getByRole('button', { name: /^Due date, / }).click()
+    await menu.getByLabel('Time', { exact: true }).fill('08:15')
+    await menu.getByRole('menuitem', { name: 'Tomorrow' }).click()
+    await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName(/^Due date, Tomorrow 8:15\sAM$/)
+    await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/T08:15$/)
+    const saved = (await taskByTitle(request, title)).dueAt
+
+    // Backspace clears one segment of the time box; Chromium then reports the box as empty.
+    await panel.getByRole('button', { name: /^Due date, / }).click()
+    const time = menu.getByLabel('Time', { exact: true })
+    await time.click()
+    await time.press('Backspace')
+    await time.press('Enter')
+    await expect(menu).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: /^Set date/ })).toBeDisabled()
+    await page.keyboard.press('Escape')
+    expect((await taskByTitle(request, title)).dueAt).toBe(saved)
+  })
+
   test('the list cell shows the time and keeps it when the day changes', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'due time cell')
     const day = (await taskByTitle(request, title)).dueAt
