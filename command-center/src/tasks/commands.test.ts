@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fakeApp } from '../http/test-support.ts';
-import { commands } from './commands.ts';
+import { commands, formatTask } from './commands.ts';
 
 const cmd = (name: string) => commands.find((c) => c.name === name)!;
 
@@ -132,4 +132,29 @@ test('tasks import: dry run, real run, and a failing file from the command line'
   assert.match(err.at(-1)!, /^line 2: a quoted field is never closed/);
   assert.equal(app.store.countTasks({}), 2);
   assert.throws(() => cmd('tasks import').run([good, '--format', 'xml'], ctx), /--format must be/);
+});
+
+test('add --due takes a day and a time in quotes, stores it as floating local time, and lists it readably', async (t) => {
+  const app = fakeApp('2026-09-12');
+  t.after(() => app.close());
+  const out: string[] = [];
+  const ctx = { openApp: () => ({ ...app, close: () => undefined }), stdout: (s: string) => out.push(s), stderr: () => undefined };
+
+  assert.equal(await cmd('add').run(['Call', 'the', 'vet', '--due', '2026-09-12 09:30'], ctx), 0);
+  const [task] = app.store.searchTasks({});
+  assert.equal(task.title, 'Call the vet');
+  assert.equal(task.dueAt, '2026-09-12T09:30');
+  assert.match(out.at(-1)!, / Call the vet due 2026-09-12 09:30$/);
+
+  assert.throws(() => cmd('add').run(['Bad', '--due', '2026-09-12 24:10'], ctx), /not a time of day/);
+});
+
+test('formatTask calls a timed task overdue by its day, never earlier on the day itself', () => {
+  const app = fakeApp('2026-09-12');
+  try {
+    const earlierToday = app.store.createTask({ title: 'This morning', dueAt: '2026-09-12T06:00' }, 'human');
+    const yesterday = app.store.createTask({ title: 'Last night', dueAt: '2026-09-11T23:00' }, 'human');
+    assert.match(formatTask(app.store, earlierToday, '2026-09-12'), /due 2026-09-12 06:00$/);
+    assert.match(formatTask(app.store, yesterday, '2026-09-12'), /due 2026-09-11 23:00 OVERDUE$/);
+  } finally { app.close(); }
 });

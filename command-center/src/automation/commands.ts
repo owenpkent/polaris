@@ -2,12 +2,13 @@ import { basename, join } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
+import { formatDue } from '../core/index.ts';
 import { buildDigest, markDigestDelivered } from './digest.ts';
 import { listNotifications, runRules, validateRuleDefinition } from './rules.ts';
 import { builtinViews, runView } from './views.ts';
 
 function formatTaskLine(t: { id: string; title: string; status: string; priority: string; dueAt: string | null }): string {
-  const due = t.dueAt ? ` due ${t.dueAt}` : '';
+  const due = t.dueAt ? ` due ${formatDue(t.dueAt)}` : '';
   const pri = t.priority !== 'none' ? ` [${t.priority}]` : '';
   return `  ${t.id}  ${t.status.padEnd(11)} ${t.title}${due}${pri}`;
 }

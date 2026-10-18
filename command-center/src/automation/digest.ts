@@ -1,7 +1,7 @@
 // The daily digest: a markdown snapshot of the task graph plus rule notifications and source
 // freshness, meant to be both human-readable and easy for Claude to act on (every task line
 // carries its id).
-import { ACTIVE_STATUSES, type GoalDetail, type Store, type Task } from '../core/index.ts';
+import { ACTIVE_STATUSES, formatDue, type GoalDetail, type Store, type Task } from '../core/index.ts';
 import { addDays } from './dates.ts';
 import { listNotifications } from './rules.ts';
 import { runView } from './views.ts';
@@ -82,7 +82,7 @@ export function buildDigest(store: Store, opts: { today: string; nowIso?: string
     const parts = [`[${t.id}]`, t.untrustedText ? `${JSON.stringify(t.title)} UNTRUSTED-TEXT` : t.title];
     const project = nameOf(t.projectId);
     if (project) parts.push(`(${project})`);
-    if (t.dueAt) parts.push(`due ${t.dueAt}`);
+    if (t.dueAt) parts.push(`due ${formatDue(t.dueAt)}`);
     if (t.priority === 'urgent' || t.priority === 'high') parts.push(`[${t.priority}]`);
     if (showSource && t.sourceType) {
       parts.push(`via ${t.sourceType}`);

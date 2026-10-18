@@ -464,3 +464,33 @@ test('listNotifications keeps the newest notifications when the window truncates
   assert.equal(notifications.at(-1)?.message, 'msg 1099', 'the most recent notification must be present');
   assert.ok(notifications.length >= 1100, `expected the whole history, got ${notifications.length}`);
 });
+
+// ---------------------------------------------------------------- due times
+
+test('a dueAt condition against a plain date treats a task due at a time as its day', () => {
+  const s = fresh();
+  const rule = (op: string) => addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op, value: '2026-09-14' }],
+    actions: [{ type: 'notify', message: `${op}: {title}` }],
+  }, { name: op });
+  const eq = rule('eq');
+  const before = rule('before');
+  const after = rule('after');
+  const onDay = s.createTask({ title: 'On the day at nine', dueAt: '2026-09-14T09:00' });
+  const dayBefore = s.createTask({ title: 'Day before at eleven', dueAt: '2026-09-13T23:00' });
+  const dayAfter = s.createTask({ title: 'Day after at one', dueAt: '2026-09-15T01:00' });
+  const report = runRules(s, { today: TODAY });
+  const firedFor = (r: { id: string }) => report.fired.filter((f) => f.ruleId === r.id).map((f) => f.taskId).sort();
+  assert.deepEqual(firedFor(eq), [onDay.id]);
+  assert.deepEqual(firedFor(before), [dayBefore.id]);
+  assert.deepEqual(firedFor(after), [dayAfter.id]);
+});
+
+test('the overdue schedule trigger leaves out a task due earlier today at a time', () => {
+  const s = fresh();
+  addRule(s, { trigger: { type: 'schedule', condition: 'overdue' }, actions: [{ type: 'notify', message: 'Overdue: {title}' }] });
+  s.createTask({ title: 'This morning', dueAt: `${TODAY}T06:00` });
+  const late = s.createTask({ title: 'Yesterday evening', dueAt: '2026-09-11T20:00' });
+  assert.deepEqual(runRules(s, { today: TODAY }).fired.map((f) => f.taskId), [late.id]);
+});

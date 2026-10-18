@@ -1,7 +1,7 @@
 // Compact, human-readable text renderers. Every tool/resource pairs this text with a
 // structuredContent JSON payload; the text is for a human or a model skimming the
 // conversation, the JSON is for a model that wants to act on the data.
-import { EXTERNAL_SOURCE_TYPES, type CcEvent, type Comment, type Link, type Post, type PostSearchHit, type Project, type Task, type Thread, type ThreadSummary } from '../core/index.ts';
+import { EXTERNAL_SOURCE_TYPES, formatDue, type CcEvent, type Comment, type Link, type Post, type PostSearchHit, type Project, type Task, type Thread, type ThreadSummary } from '../core/index.ts';
 
 /** Sources whose text was written by third parties. Their titles and notes are untrusted data. */
 export const EXTERNAL_SOURCES: ReadonlySet<string> = new Set(EXTERNAL_SOURCE_TYPES);
@@ -10,7 +10,7 @@ export const EXTERNAL_SOURCES: ReadonlySet<string> = new Set(EXTERNAL_SOURCE_TYP
 const untrusted = (t: Task): string => (t.untrustedText ? ' UNTRUSTED-TEXT' : '');
 
 export function taskLine(t: Task): string {
-  const due = t.dueAt ? ` due:${t.dueAt}` : '';
+  const due = t.dueAt ? ` due:${formatDue(t.dueAt)}` : '';
   const who = t.assignee ? ` assignee:${JSON.stringify(t.assignee)}` : '';
   const marker = t.isMilestone ? '◆' : '-';
   const src = t.sourceType ? ` src:${t.sourceType}` : '';
@@ -64,7 +64,7 @@ export function taskDetailText(
 ): string {
   const lines: string[] = [
     `${JSON.stringify(task.title)} {${task.id}}${untrusted(task)}`,
-    `status:${task.status} priority:${task.priority}${task.dueAt ? ` due:${task.dueAt}` : ''}${task.assignee ? ` assignee:${JSON.stringify(task.assignee)}` : ' unassigned'}${task.isMilestone ? ' milestone' : ''}`,
+    `status:${task.status} priority:${task.priority}${task.dueAt ? ` due:${formatDue(task.dueAt)}` : ''}${task.assignee ? ` assignee:${JSON.stringify(task.assignee)}` : ' unassigned'}${task.isMilestone ? ' milestone' : ''}`,
     task.notes ? `notes: ${task.notes}` : '',
     task.sourceType ? `source: ${task.sourceType}:${oneLine(task.sourceId ?? '')}${task.sourceUrl ? ` <${oneLine(task.sourceUrl)}>` : ''}${task.confidence != null ? ` confidence:${task.confidence}` : ''}` : '',
     '',

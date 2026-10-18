@@ -363,3 +363,10 @@ test('agendaMarkdown reflects a hostile task title from an external source, stil
   assert.ok(md.includes(JSON.stringify('"; DROP TABLE tasks; --')));
   assert.ok(md.includes('UNTRUSTED-TEXT'));
 });
+
+test('taskLine and taskDetailText write a due time after the day with a space', () => {
+  const task = makeTask({ dueAt: '2026-09-20T09:00' });
+  assert.ok(taskLine(task).includes(' due:2026-09-20 09:00'));
+  const detail = taskDetailText(task, { subtasks: [], blockers: [], blocking: [], comments: [], links: [], history: [] });
+  assert.ok(detail.includes(' due:2026-09-20 09:00 '));
+});

@@ -8,6 +8,8 @@ import {
   ACTIVE_STATUSES,
   CHECKLIST_REPEAT_ITEMS_FIELD,
   EXTERNAL_SOURCE_TYPES,
+  dueDay,
+  isDateOnly,
   type CustomFieldValue,
   type EventKind,
   type Json,
@@ -192,7 +194,10 @@ function fieldValue(task: Task, field: string): Json {
 }
 
 function evaluateCondition(task: Task, cond: RuleCondition): boolean {
-  const value = fieldValue(task, cond.field);
+  let value = fieldValue(task, cond.field);
+  // A due time is a time on its day: against a plain date, a task due 2026-10-18T09:00 is due on
+  // 2026-10-18 (eq that day, neither before nor after it), as the views and the digest count it.
+  if (cond.field === 'dueAt' && typeof value === 'string' && typeof cond.value === 'string' && isDateOnly(cond.value)) value = dueDay(value);
   switch (cond.op) {
     case 'eq': return value === cond.value;
     case 'ne': return value !== cond.value;

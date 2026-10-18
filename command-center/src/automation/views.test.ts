@@ -248,3 +248,16 @@ test('runView resolves a saved view by name or id, else throws listing valid nam
     return true;
   });
 });
+
+test('a task due at a time counts as its day: today, not overdue, and after the untimed tasks of that day', () => {
+  const s = openStore(':memory:', { now: () => `${TODAY}T09:00:00.000Z`, nextOccurrence: () => null });
+  const untimed = s.createTask({ title: 'Some time today', dueAt: TODAY }).id;
+  const afternoon = s.createTask({ title: 'Today at two', dueAt: `${TODAY}T14:00` }).id;
+  const morning = s.createTask({ title: 'Today at nine', dueAt: `${TODAY}T09:00` }).id;
+  const yesterday = s.createTask({ title: 'Yesterday at five', dueAt: '2026-09-11T17:00' }).id;
+  const tomorrow = s.createTask({ title: 'Tomorrow at eight', dueAt: '2026-09-13T08:00' }).id;
+  const ids = (name: string) => runView(s, name, TODAY).tasks.map((t) => t.id);
+  assert.deepEqual(ids('today'), [yesterday, untimed, morning, afternoon]);
+  assert.deepEqual(ids('overdue'), [yesterday]);
+  assert.deepEqual(ids('upcoming'), [tomorrow]);
+});
