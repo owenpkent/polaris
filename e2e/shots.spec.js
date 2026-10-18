@@ -250,11 +250,13 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'due-menu')
   })
 
-  // The due date menu on a task with a time: the time box filled and Remove time.
+  // The due date menu on a task with a time, from the panel's Due date field (near the top, so
+  // the whole menu has room under it): the time box filled and Remove time.
   test('mytasks: due menu with a time', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()
-    const menu = page.getByRole('menu', { name: 'Due date for Draft ADR-003 hosting options' })
+    await openTask(page, 'Draft ADR-003 hosting options')
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / }).click()
+    const menu = page.getByRole('menu', { name: 'Due date' })
     await expect(menu.getByRole('menuitem', { name: 'Remove time' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'due-menu-time')
   })

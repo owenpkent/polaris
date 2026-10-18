@@ -1543,9 +1543,10 @@ kbd { color: var(--t1); }
 }
 .add-due { display: flex; flex-direction: column; gap: 12px; }
 /* Add time, under the month: a button, then a time box and Remove time once opened. They wrap
-   onto two lines when the box and the button do not fit side by side. */
+   onto two lines when the box and the button do not fit side by side; the box's 160px basis
+   leaves room for Remove time beside it in the 308px column under the month on a desktop. */
 .add-due-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.add-due-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 180px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
+.add-due-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
 .add-due-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
 .add-due .field { margin-bottom: 0; }
 .add-due-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--t1); }
