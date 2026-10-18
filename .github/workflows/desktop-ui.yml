@@ -29,8 +29,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
@@ -42,7 +44,7 @@ jobs:
         working-directory: command-center
       # windows-latest ships stable Rust with the MSVC toolchain. The build is the slow part, so
       # the cache is kept even when the tests fail.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: desktop/src-tauri
           cache-on-failure: true
@@ -88,7 +90,7 @@ jobs:
       - run: npm run test:desktop:ui
       - name: Keep traces, logs, and screenshots from failed desktop UI tests
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-ui-output
           path: desktop-test-output/

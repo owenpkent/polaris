@@ -77,10 +77,11 @@ jobs:
             introduced) [ "$FIXTURE" = "true" ] || { echo "::error::expect: introduced needs fixture: true"; exit 1; } ;;
             *) echo "::error::Unknown expect: $EXPECT"; exit 1 ;;
           esac
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Check out the merge base
         env:
           BASE_REF: ${{ inputs.base_ref }}
@@ -103,7 +104,7 @@ jobs:
           echo "RESULTS_DIR=$RESULTS_DIR" >> "$GITHUB_ENV"
       - name: Scan the merge base
         id: scan-old
-        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         continue-on-error: true
         with:
           scan-args: |-
@@ -114,10 +115,11 @@ jobs:
             --lockfile=mobile/package-lock.json
             --lockfile=desktop/src-tauri/Cargo.lock
       - name: Check out the pull request head with a clean tree
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.head_sha }}
           clean: true
+          persist-credentials: false
       # What the attack in the header adds to a pull request, written into the head tree as if
       # it had been committed there. The lockfile entry is enough for the scanner, which reads
       # every package in a version 3 lockfile; nothing is installed.
@@ -137,7 +139,7 @@ jobs:
           ls -l old-results.json new-results.json results.sarif
       - name: Scan the pull request head
         id: scan-new
-        uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         continue-on-error: true
         with:
           scan-args: |-
@@ -170,7 +172,7 @@ jobs:
       # self-test can require a failure where the gate requires a pass.
       - name: Report what the pull request introduces
         id: report
-        uses: google/osv-scanner-action/osv-reporter-action@v2.6.0
+        uses: google/osv-scanner-action/osv-reporter-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         continue-on-error: true
         with:
           scan-args: |-
