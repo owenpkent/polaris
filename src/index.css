@@ -1565,7 +1565,8 @@ kbd { color: var(--t1); }
 .repeat-builder { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
 .repeat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .repeat-builder .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
-.repeat-builder select, .field .repeat-builder select { width: auto; min-height: var(--target); }
+.repeat-builder select, .field .repeat-builder select { width: auto; min-width: var(--target); min-height: var(--target); }
+.repeat-builder input[type='date'], .field .repeat-builder input[type='date'] { width: auto; max-width: 100%; min-width: 0; min-height: var(--target); padding: 0 12px; }
 .repeat-stepper { display: inline-flex; align-items: center; gap: 8px; }
 .repeat-count { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--t1); }
 .repeat-days { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1573,6 +1574,7 @@ kbd { color: var(--t1); }
 .repeat-month { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: none; }
 .repeat-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--target); font-size: 0.9rem; color: var(--t1); }
 .repeat-preview { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+.repeat-note { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .sheet {

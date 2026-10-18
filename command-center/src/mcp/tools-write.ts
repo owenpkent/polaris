@@ -12,6 +12,14 @@ import { PRIORITY_VALUES, TASK_STATUS_VALUES, guard, ok, err, resolveProject, re
 import { resolveThread } from './tools-read.ts';
 
 const desc = (name: string): string => TOOL_CATALOG.find((t) => t.name === name)?.description ?? name;
+/** What a recurrence rule may be, said once for create_task and update_task. The store checks every rule on write. */
+const RECURRENCE_HELP = 'How the task repeats: an RRULE such as FREQ=WEEKLY;BYDAY=MO or FREQ=MONTHLY;BYDAY=-1FR (the last Friday), '
+  + 'or an alias (daily, weekdays, weekly, monthly, yearly, every 2 weeks). '
+  + 'COUNT=N means this task and N-1 more: each completion or skip uses up one, and the next occurrence carries COUNT one lower. '
+  + 'UNTIL=YYYYMMDD ends it on a date. Add ;X-FROM=COMPLETION to count the next due date from the day the task is finished instead of its due date: '
+  + 'INTERVAL days, weeks, months, or years after it, a month landing on the same day or on the last day of a shorter month '
+  + '(FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION is three days after it is done). X-FROM=COMPLETION cannot be combined with BYDAY, BYMONTHDAY, or BYMONTH. '
+  + 'Each part may be given once, with no spaces around its name or value, and COUNT and INTERVAL are plain digits. No other X- part is accepted.';
 const customFieldSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
 
 export function registerWriteTools(server: McpServer, app: App, actor: ActorInput): void {
@@ -32,7 +40,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       due_at: z.string().optional(),
       start_at: z.string().optional(),
       estimate_minutes: z.number().int().nonnegative().optional(),
-      recurrence: z.string().optional().describe('RRULE string, e.g. FREQ=WEEKLY;BYDAY=MO.'),
+      recurrence: z.string().optional().describe(RECURRENCE_HELP),
       assignee: z.string().max(200).optional().describe('Who the task is handed to, by name. Leave out for unclaimed (the owner).'),
       is_milestone: z.boolean().optional(),
       custom_fields: customFieldSchema.optional(),
@@ -89,7 +97,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       due_at: z.string().nullable().optional(),
       start_at: z.string().nullable().optional(),
       estimate_minutes: z.number().int().nonnegative().nullable().optional(),
-      recurrence: z.string().nullable().optional(),
+      recurrence: z.string().nullable().optional().describe(`${RECURRENCE_HELP} null stops it repeating.`),
       assignee: z.string().max(200).nullable().optional().describe('Who the task is handed to, by name; null clears it, making the task unclaimed.'),
       is_milestone: z.boolean().optional(),
       custom_fields: customFieldSchema.optional().describe('Merged into existing custom fields; a null value deletes that key.'),

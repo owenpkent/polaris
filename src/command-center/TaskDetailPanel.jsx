@@ -12,7 +12,7 @@ import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
 import { Menu } from './Menu'
 import RepeatBuilder, { useRecurrencePreview } from './RepeatBuilder'
-import { parseRule, buildRule, defaultShape } from './recurrenceRules'
+import { parseRule, buildRule, defaultShape, quickPicks, matchQuickPick, countsFromCompletion } from './recurrenceRules'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 import ThreadSection from './ThreadSection'
 
@@ -287,38 +287,30 @@ function DueDateField({ value, onChange }) {
   )
 }
 
-// The repeat choices offered beside the due date: the server's friendly aliases
-// (automation/recurrence.ts), and Custom, which opens the builder (RepeatBuilder.jsx) in the
-// panel under the due date, to tap out any other rule: every N units, the weekdays of a weekly
-// rule, the day of a monthly one. A rule the builder cannot show (a raw RRULE with BYMONTH, say) is
-// edited in the Recurrence box under More details instead, which Custom then opens.
-const REPEAT_OPTIONS = [
-  ['', 'Never'],
-  ['daily', 'Daily'],
-  ['weekdays', 'Weekdays'],
-  ['weekly', 'Weekly'],
-  ['monthly', 'Monthly'],
-  ['yearly', 'Yearly'],
-]
-
-function RepeatField({ value, onChange, onCustom, buttonRef, building }) {
+// The repeat choices offered beside the due date: the quick picks worded from the due date (or
+// today), as Google Calendar lists them (recurrenceRules.js), and Custom, which opens the builder
+// (RepeatBuilder.jsx) in the panel under the due date, to tap out any other rule: every N units,
+// counted from the due date or the finish, the weekdays of a weekly rule, the day of a monthly
+// one, and when it ends. A rule the builder cannot show (a raw RRULE with BYMONTH, say) is edited
+// in the Recurrence box under More details instead, which Custom then opens.
+function RepeatField({ value, dueIso, onChange, onCustom, buttonRef, building }) {
   const [open, setOpen] = useState(false)
   const label = repeatLabel(value)
-  const current = String(value || '').trim().toLowerCase()
+  const matched = matchQuickPick(value, dueIso)
   const items = [
-    ...REPEAT_OPTIONS.map(([option, text]) => ({
-      key: option || 'never',
-      label: text,
+    ...quickPicks(dueIso).map((pick) => ({
+      key: pick.rule || 'never',
+      label: pick.label,
       radio: true,
-      checked: current === option,
-      onSelect: () => onChange(option),
+      checked: matched === pick.rule,
+      onSelect: () => onChange(pick.rule),
     })),
     { type: 'separator', key: 'sep-custom' },
     {
       key: 'custom',
       label: 'Custom',
       radio: true,
-      checked: Boolean(current) && !REPEAT_OPTIONS.some(([option]) => option === current),
+      checked: matched === null,
       onSelect: onCustom,
     },
   ]
@@ -337,7 +329,7 @@ function RepeatField({ value, onChange, onCustom, buttonRef, building }) {
         <Repeat size={14} aria-hidden="true" style={{ color: label ? 'var(--blue)' : 'var(--t3)', flexShrink: 0 }} />
         <span style={{ color: label ? 'var(--t1)' : 'var(--t2)' }}>{label ? `Repeats ${label}` : 'Repeat'}</span>
       </button>
-      <Menu anchorRef={buttonRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={180} />
+      <Menu anchorRef={buttonRef} open={open} onClose={() => setOpen(false)} items={items} label="Repeat" minWidth={240} />
     </>
   )
 }
@@ -381,9 +373,18 @@ function formatLongDate(iso) {
 // Under the due date of an open repeating task: the date completing it will bring the next one
 // to, and Skip this one, which moves the task to that date without completing it. Skip is
 // live-only (api.js), so it is off while offline, and so is the date, which the server works out.
+// A rule counted from the finish has no next date until the task is done, so the row says that and
+// names the date a skip moves it to, since a skip counts from the due date.
 function NextOccurrenceRow({ rule, dueAt, api, offline, onSkip, busy }) {
   const dates = useRecurrencePreview(api, rule, dueAt, 1)
-  const text = !dates ? null : dates.length ? formatLongDate(dates[0]) : 'This is the last one.'
+  const fromCompletion = countsFromCompletion(rule)
+  const text = !dates
+    ? null
+    : !dates.length
+      ? 'This is the last one.'
+      : fromCompletion
+        ? `Counted from the day you finish it. Skipping moves it to ${formatLongDate(dates[0])}.`
+        : formatLongDate(dates[0])
   return (
     <FieldRow label="Next">
       <span style={{ color: 'var(--t2)' }}>{text || (offline ? 'Shown when online.' : '')}</span>
@@ -951,6 +952,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               />
               <RepeatField
                 value={form.recurrence}
+                dueIso={form.dueAt ? form.dueAt.slice(0, 10) : null}
                 buttonRef={repeatBtnRef}
                 building={repeatDraft !== null}
                 onChange={(value) => {

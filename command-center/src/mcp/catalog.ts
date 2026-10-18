@@ -75,7 +75,8 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: 'complete_task',
     readonly: false,
-    description: 'Mark a task done. If it recurs, reports the newly created next occurrence.',
+    description: 'Mark a task done. If it recurs, reports the newly created next occurrence: due on the next date of its rule after the due date '
+      + '(or after today, for a rule with X-FROM=COMPLETION), with COUNT one lower when the rule has one. A task whose rule has COUNT=1 is the last, and no next one is made.',
   },
   {
     name: 'move_task',
