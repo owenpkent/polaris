@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore, ValidationError } from './index.ts';
+import { newId, TASK_ID_PATTERN } from './store.ts';
 
 const fresh = () => {
   let tick = 0;
@@ -177,7 +178,7 @@ test('review fixes: drop keeps accepted tasks, inbox edits survive, bad recurren
   s.acceptInboxItem(a.task.id);
   assert.equal(s.markSourceGone('gdrive', 'doc:1', 'drop')?.status, 'open');
   assert.match(s.listComments(a.task.id).at(-1)!.body, /kept because you accepted/);
-  const b = s.upsertFromSource({ sourceType: 'gdrive', sourceId: 'doc:2', title: 'Other', contentHash: 'h1' });
+  s.upsertFromSource({ sourceType: 'gdrive', sourceId: 'doc:2', title: 'Other', contentHash: 'h1' });
   assert.equal(s.markSourceGone('gdrive', 'doc:2', 'drop')?.status, 'dropped');
 
   const c = s.upsertFromSource({ sourceType: 'gmail', sourceId: 't9', title: 'Send cut', dueAt: '2026-09-18', contentHash: 'h1' });
@@ -321,4 +322,14 @@ test('skipOccurrence refuses non-recurring, closed, and ended series', () => {
   const e = ended.createTask({ title: 'last one', dueAt: '2026-09-14', recurrence: 'FREQ=WEEKLY;UNTIL=20260915' });
   assert.throws(() => ended.skipOccurrence(e.id), /no later occurrence/);
   assert.equal(ended.getTask(e.id)?.dueAt, '2026-09-14');
+});
+
+test('newId produces prefix_ plus 10 lowercase alphanumerics and does not repeat', () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 500; i++) {
+    const id = newId('t');
+    assert.match(id, TASK_ID_PATTERN);
+    seen.add(id);
+  }
+  assert.equal(seen.size, 500);
 });

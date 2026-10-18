@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Command } from '../cli-types.ts';
 import { parseFlags } from '../cli-types.ts';
@@ -50,7 +50,12 @@ function writeOrCheck(
   stderr: (s: string) => void,
   label: string,
 ): { differs: boolean } {
-  const existing = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  let existing: string | null = null;
+  try {
+    existing = readFileSync(path, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
   const differs = existing === null || normalizeForCompare(existing) !== normalizeForCompare(content);
 
   if (opts.dryRun) {

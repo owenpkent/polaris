@@ -25,7 +25,9 @@ export function createMcpHandler(app: App, opts: { readonly: boolean }): McpRequ
       await transport.handleRequest(req, res, parsedBody);
     } catch (e) {
       if (!res.headersSent) {
-        sendError(res, 500, 'InternalError', e instanceof Error ? e.message : 'MCP request failed');
+        // The cause goes to the log, not to the client, the same as errorToPayload does for REST.
+        console.error('MCP request failed:', e instanceof Error ? e.message : String(e));
+        sendError(res, 500, 'InternalError', 'MCP request failed');
       } else {
         res.end();
       }
