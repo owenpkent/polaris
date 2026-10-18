@@ -59,15 +59,15 @@ describe('AboutSettings', () => {
     expect(row('Server')).toBe('v3.0.0')
   })
 
-  test('an answer that arrives after the card closes is dropped', async () => {
+  test('a late answer from the last server is dropped after a switch', async () => {
     let answer
     connection = { connected: true, health: null, api: { health: vi.fn(() => new Promise((resolve) => { answer = resolve })) } }
-    const { unmount } = render(<AboutSettings />)
-    const errors = vi.spyOn(console, 'error')
-    unmount()
+    const { rerender } = render(<AboutSettings />)
+    connection = { connected: true, health: { version: '3.0.0' }, api: waiting() }
+    rerender(<AboutSettings />)
     answer({ version: '2.1.0' })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(errors).not.toHaveBeenCalled()
+    expect(row('Server')).toBe('v3.0.0')
   })
 
   test('does not ask anything without a connection', () => {
