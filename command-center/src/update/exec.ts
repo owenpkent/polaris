@@ -67,6 +67,11 @@ function lineCollector(onLine?: (line: string) => void): { push: (chunk: Buffer)
   };
 }
 
-function quoteForCmd(arg: string): string {
-  return /^[\w./:\\=-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '\\"')}"`;
+/** Quotes one argument for the command line a Windows .cmd shim needs. cmd.exe has no way to escape a
+ *  double quote inside quotes, and `%`, `^`, `&`, `|`, `<`, `>`, `!` and line breaks keep their meaning
+ *  there, so an argument holding any of them is refused rather than guessed at. */
+export function quoteForCmd(arg: string): string {
+  if (/^[\w./:\\=-]+$/.test(arg)) return arg;
+  if (/["%^&|<>!\r\n]/.test(arg)) throw new Error(`refusing to pass an argument with a cmd.exe metacharacter to a .cmd shim: ${JSON.stringify(arg)}`);
+  return `"${arg}"`;
 }

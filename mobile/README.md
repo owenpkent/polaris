@@ -43,6 +43,7 @@ Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, whi
 
 - The default server URL is empty instead of the page's own origin, since the page's origin is the app itself.
 - No service worker is registered: the app shell is inside the app, and the offline copy and the outbox live in the dashboard's own code and work as they do in a browser.
+- The app is left out of Android device backups (allowBackup is off in the manifest), so the saved server URL and token never leave the phone with a backup. A new phone means typing them again.
 
 ## Share sheet
 

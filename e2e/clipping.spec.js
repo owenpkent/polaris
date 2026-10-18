@@ -240,6 +240,35 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // The Repeat menu's quick picks are long ("Every weekday (Monday to Friday)"): they wrap inside
+  // the menu at 320px rather than running off it.
+  test('the Repeat menu with its quick picks', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat picks clip', { dueAt: '2026-10-14' })
+    await openView(page)
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: 'Repeat, never' }).click()
+    await expect(page.getByRole('menuitemradio', { name: 'Every weekday (Monday to Friday)' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  // The builder's newer sections: counting from the finish (a note in place of the day choices)
+  // and Ends with its date box, then with its count, at every width.
+  test('the custom repeat builder counting from the finish, with an end', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat ends clip', { recurrence: 'FREQ=MONTHLY;BYDAY=-1FR;UNTIL=20261231' })
+    await openView(page)
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await expect(builder.getByLabel('End date')).toHaveValue('2026-12-31')
+    expect(await smallTargets(builder, 'button, select, input[type="date"]')).toEqual([])
+    await expectNothingCutOff(page)
+    await builder.getByRole('radio', { name: 'The day I finish it' }).check()
+    await builder.getByRole('combobox', { name: 'Number of times' }).selectOption('12')
+    await expect(builder.getByText('Each one is due a month after the day you finish the one before.')).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
   test('the navigation drawer', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'the drawer is the phone navigation')
     await openView(page)

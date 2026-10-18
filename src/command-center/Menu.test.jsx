@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { useRef, useState } from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Menu } from './Menu'
 
 afterEach(() => cleanup())

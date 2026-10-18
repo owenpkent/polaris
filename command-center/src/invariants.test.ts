@@ -564,7 +564,7 @@ test('4. calling any write tool by name on the read-only endpoint changes nothin
   const task = app.store.createTask({ title: 'Leave me alone' });
   const suggestion = app.store.upsertFromSource({ sourceType: 'github', sourceId: 'o/r#3', title: 'Suggestion', contentHash: 'h' }).task;
   const goal = app.store.createGoal({ title: 'Goal' });
-  const project = app.store.createProject({ name: 'Project' });
+  app.store.createProject({ name: 'Project' });
   const thread = app.store.createThread(task.id, null, 'human');
   const before = app.store.lastEventId();
 

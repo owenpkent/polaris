@@ -4,6 +4,7 @@ export * from './store.ts';
 export * from './outbox.ts';
 export * from './restore.ts';
 export * from './dueAt.ts';
+export * from './recurrenceCount.ts';
 export { openNodeDriver, migrate, countRows, inspectDatabaseFile, type SqlDriver, type SqlValue, type DatabaseCounts, type DatabaseInspection } from './db.ts';
 
 import { openNodeDriver } from './db.ts';

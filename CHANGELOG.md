@@ -14,6 +14,22 @@ carries, because `cc update` snapshots the database before one and a rollback re
   Overdue, the digest, rules, and the CLI, and sorts after that day's untimed tasks. `cc add
   --due "YYYY-MM-DD HH:MM"` takes one, and the digest, MCP text, and CLI write it as
   `2026-10-18 09:00`. No migration: `due_at` already held a datetime.
+- Richer repeating tasks. The Repeat menu and the add-task Repeat choice offer Google Calendar
+  style quick picks worded from the due date (Weekly on Wednesday, Monthly on the second
+  Wednesday, Annually on October 14, and so on). The custom builder adds Ends (never, on a date,
+  or after a number of times), "Next one counts from" the due date or the day you finish it, and
+  the last day or last weekday of the month.
+- `COUNT` in a recurrence rule is now exact: it counts the occurrences left, the current task
+  included. Completing a task gives the next one its rule with `COUNT` one lower, a skip lowers it
+  on the task itself, and `COUNT=1` is the last one (it makes no next task and cannot be skipped).
+  A late completion no longer uses up the dates it missed. Existing rules with `COUNT` keep their
+  number and count down from it.
+- New recurrence extension `X-FROM=COMPLETION`: the next due date counts from the day the task is
+  finished rather than its due date, INTERVAL days, weeks, months, or years after it (a month held
+  to the last day of a shorter one). It cannot be combined with BYDAY, BYMONTHDAY, or BYMONTH, and
+  every other `X-` part is still refused. A rule that gives a part twice, or a COUNT or INTERVAL
+  with a sign, is now refused. No schema migration.
+
 - Settings has an About card: the dashboard's build (version, commit, and build time, recorded by
   `npm run build`) and the server's version, so a cached or bundled dashboard is easy to tell apart
   from the server it talks to.

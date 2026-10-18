@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import {
   plainTitle,
   localIso,
@@ -46,7 +46,11 @@ describe('repeatLabel', () => {
 
   test('anything else is a custom rule', () => {
     expect(repeatLabel('FREQ=YEARLY;BYMONTH=3')).toBe('by a custom rule')
-    expect(repeatLabel('FREQ=WEEKLY;COUNT=4')).toBe('by a custom rule')
+    expect(repeatLabel('FREQ=MONTHLY;BYDAY=1MO,3WE')).toBe('by a custom rule')
+  })
+
+  test('a rule that ends says how', () => {
+    expect(repeatLabel('FREQ=WEEKLY;COUNT=4')).toBe('weekly, 3 more after this')
   })
 })
 

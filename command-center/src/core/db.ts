@@ -68,7 +68,6 @@ export function migrate(db: SqlDriver, ctx: Partial<MigrationContext> = {}): voi
       if (typeof step === 'string') db.exec(step); else step(db, context);
       db.run('UPDATE schema_version SET version = ?', [i + 1]);
     });
-    current = i + 1;
   }
 }
 

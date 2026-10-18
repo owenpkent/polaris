@@ -28,18 +28,23 @@ test('errorToPayload maps core ValidationError to 400', () => {
   assert.deepEqual(errorToPayload(e), { status: 400, code: 'ValidationError', message: 'title is required' });
 });
 
-test('errorToPayload maps an ordinary Error to a 500 InternalError, keeping its message', () => {
+test('errorToPayload hides an ordinary Error message behind a fixed 500 and logs the real one', (t) => {
+  const log = t.mock.method(console, 'error', () => {});
   const e = new Error('boom');
-  assert.deepEqual(errorToPayload(e), { status: 500, code: 'InternalError', message: 'boom' });
+  assert.deepEqual(errorToPayload(e), { status: 500, code: 'InternalError', message: 'Internal error' });
+  assert.equal(log.mock.callCount(), 1);
+  assert.match(String(log.mock.calls[0].arguments[0]), /boom/);
 });
 
-test('errorToPayload maps a thrown non-Error value to a generic 500 message', () => {
-  assert.deepEqual(errorToPayload('a plain string'), { status: 500, code: 'InternalError', message: 'internal error' });
-  assert.deepEqual(errorToPayload(undefined), { status: 500, code: 'InternalError', message: 'internal error' });
-  assert.deepEqual(errorToPayload({ some: 'object' }), { status: 500, code: 'InternalError', message: 'internal error' });
+test('errorToPayload maps a thrown non-Error value to a generic 500 message', (t) => {
+  t.mock.method(console, 'error', () => {});
+  assert.deepEqual(errorToPayload('a plain string'), { status: 500, code: 'InternalError', message: 'Internal error' });
+  assert.deepEqual(errorToPayload(undefined), { status: 500, code: 'InternalError', message: 'Internal error' });
+  assert.deepEqual(errorToPayload({ some: 'object' }), { status: 500, code: 'InternalError', message: 'Internal error' });
 });
 
-test('errorToPayload never leaks a stack trace', () => {
+test('errorToPayload never leaks a stack trace', (t) => {
+  t.mock.method(console, 'error', () => {});
   const e = new Error('boom');
   const payload = errorToPayload(e);
   assert.deepEqual(Object.keys(payload).sort(), ['code', 'message', 'status']);

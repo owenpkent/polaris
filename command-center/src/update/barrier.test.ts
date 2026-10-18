@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 import { openStore } from '../core/index.ts';
 import { assertNotUpdating, BARRIER_MAX_AGE_MS, barrierPath, pidAlive, readBarrier, removeBarrier, UPDATE_BARRIER_FILE, UpdateInProgressError, updatingMessage, writeBarrier } from './barrier.ts';
 
+/** True once the file is absent: one read that is allowed to fail, not an existence check before an act. */
+function gone(file: string): boolean {
+  try { readFileSync(file); return false; } catch (err) { return (err as NodeJS.ErrnoException).code === 'ENOENT'; }
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 function scratch(t: { after(fn: () => void): void }): { dir: string; dbPath: string } {
@@ -34,7 +39,7 @@ test('the barrier is written next to the database, owner-only, with this pid, th
   assert.equal(updatingMessage(written), `Polaris is being updated (started ${written.startedAt}). Try again in a minute.`);
   assert.throws(() => assertNotUpdating(dbPath), (e: unknown) => e instanceof UpdateInProgressError && e.message === updatingMessage(written));
   removeBarrier(dbPath);
-  assert.equal(existsSync(file), false);
+  assert.equal(gone(file), true);
   assert.equal(readBarrier(dbPath), null);
   assert.doesNotThrow(() => assertNotUpdating(dbPath));
   removeBarrier(dbPath);
@@ -49,17 +54,17 @@ test('a stale barrier reads as none and is removed: a dead pid, two hours old, o
 
   writeFileSync(file, JSON.stringify(fresh));
   assert.equal(readBarrier(dbPath, { alive: () => false }), null);
-  assert.equal(existsSync(file), false, 'removed by the reader that found it stale');
+  assert.equal(gone(file), true, 'removed by the reader that found it stale');
 
   writeFileSync(file, JSON.stringify(fresh));
   assert.deepEqual(readBarrier(dbPath, { now: () => Date.parse(fresh.startedAt) + BARRIER_MAX_AGE_MS }), fresh, 'two hours exactly is still fresh');
   assert.equal(readBarrier(dbPath, { now: () => Date.parse(fresh.startedAt) + BARRIER_MAX_AGE_MS + 1 }), null, 'a moment more is stale');
-  assert.equal(existsSync(file), false);
+  assert.equal(gone(file), true);
 
   for (const text of ['not json', '{}', JSON.stringify({ ...fresh, pid: 'x' }), JSON.stringify({ ...fresh, startedAt: 'never' }), JSON.stringify({ ...fresh, pid: 0 })]) {
     writeFileSync(file, text);
     assert.equal(readBarrier(dbPath), null, text);
-    assert.equal(existsSync(file), false, text);
+    assert.equal(gone(file), true, text);
   }
 
   // A real dead pid: a child that has already exited.
@@ -69,7 +74,7 @@ test('a stale barrier reads as none and is removed: a dead pid, two hours old, o
   assert.ok(pidAlive(process.pid), 'this process is here');
   writeFileSync(file, JSON.stringify({ ...fresh, pid: child.pid }));
   assert.equal(readBarrier(dbPath), null);
-  assert.equal(existsSync(file), false);
+  assert.equal(gone(file), true);
 });
 
 test('the CLI refuses to open the store behind a fresh barrier, with the message and exit 1, and cc backup check is not blocked', (t) => {

@@ -126,3 +126,16 @@ test('resolveTokens creates the directory if it does not exist yet', () => {
     assert.ok(tokens.api.length > 0);
   });
 });
+
+test('two calls return the same token and a pre-existing file is read, not replaced', () => {
+  withTempDir((dir) => {
+    const dbPath = join(dir, 'polaris.db');
+    writeFileSync(join(dir, 'mcp-token'), 'already-here', 'utf8');
+    const first = resolveTokens(dbPath, {});
+    const second = resolveTokens(dbPath, {});
+    assert.deepEqual(second, first);
+    assert.equal(first.mcp, 'already-here');
+    assert.equal(readFileSync(join(dir, 'mcp-token'), 'utf8'), 'already-here');
+    assert.equal(readFileSync(join(dir, 'api-token'), 'utf8').trim(), first.api);
+  });
+});

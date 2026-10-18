@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyOutbox, openStore, type OutboxOp, type Store } from './index.ts';
+import { nextOccurrence, todayIn } from '../automation/index.ts';
 
 // A clock the test moves by hand, so "who edited last" is stated rather than implied.
 function storeAt(start: string): { store: Store; setNow: (iso: string) => void } {
@@ -261,4 +262,45 @@ test('a due time edited on both sides keeps the newer one and puts the other in 
   assert.equal(r.status, 'conflict');
   assert.deepEqual(r.conflicts, [{ field: 'dueAt', kept: '2026-09-22T10:00', discarded: '2026-09-22T08:00' }]);
   assert.equal(store.requireTask(task.id).dueAt, '2026-09-22T10:00');
+});
+
+// A store with the real recurrence engine, its calendar on the given timezone, as app.ts wires it.
+function recurringStoreAt(start: string, timezone = 'UTC'): { store: Store; setNow: (iso: string) => void } {
+  let now = start;
+  const store = openStore(':memory:', {
+    now: () => now,
+    today: () => todayIn(timezone, new Date(now)),
+    dayOf: (iso) => todayIn(timezone, new Date(iso)),
+    nextOccurrence: (rule, prev, context) => nextOccurrence(rule, prev, todayIn(timezone, new Date(now)), context),
+  });
+  return { store, setNow: (iso) => { now = iso; } };
+}
+
+const openSuccessor = (store: Store, title: string) => store.searchTasks({ text: title }).find((t) => t.status === 'open');
+
+test('a completion replayed from the outbox counts the next occurrence from the day it was made, not the day it synced', () => {
+  const { store, setNow } = recurringStoreAt('2026-10-14T08:00:00.000Z');
+  const plants = store.createTask({ title: 'Water the plants', dueAt: '2026-10-14', recurrence: 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION' });
+  const short = store.createTask({ title: 'Short series', dueAt: '2026-10-14', recurrence: 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION;UNTIL=20261017' });
+  // Completed on the phone on the 14th, synced on the 16th.
+  setNow('2026-10-16T09:00:00.000Z');
+  const results = applyOutbox(store, [
+    op({ kind: 'complete_task', taskId: plants.id, base: plants.updatedAt, at: '2026-10-14T18:00:00.000Z' }),
+    op({ kind: 'complete_task', taskId: short.id, base: short.updatedAt, at: '2026-10-14T18:00:00.000Z' }),
+  ]);
+  assert.deepEqual(results.map((r) => r.status), ['applied', 'applied']);
+  assert.equal(openSuccessor(store, 'Water the plants')?.dueAt, '2026-10-17', 'three days after the 14th, not the 16th');
+  assert.equal(openSuccessor(store, 'Short series')?.dueAt, '2026-10-17', 'UNTIL the 17th still has room for it');
+});
+
+test('the offline completion day is read in the calendar timezone, and an online completion counts from today', () => {
+  // 13:00 UTC on the 14th is already the 15th in Auckland.
+  const { store, setNow } = recurringStoreAt('2026-10-14T08:00:00.000Z', 'Pacific/Auckland');
+  const offline = store.createTask({ title: 'Offline in Auckland', dueAt: '2026-10-14', recurrence: 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION' });
+  const online = store.createTask({ title: 'Online in Auckland', dueAt: '2026-10-14', recurrence: 'FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION' });
+  setNow('2026-10-16T09:00:00.000Z');
+  applyOutbox(store, [op({ kind: 'complete_task', taskId: offline.id, base: offline.updatedAt, at: '2026-10-14T13:00:00.000Z' })]);
+  assert.equal(openSuccessor(store, 'Offline in Auckland')?.dueAt, '2026-10-18');
+  store.completeTask(online.id);
+  assert.equal(openSuccessor(store, 'Online in Auckland')?.dueAt, '2026-10-19', 'the 16th at 09:00 UTC is the 16th in Auckland, plus three');
 });

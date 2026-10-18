@@ -7,7 +7,6 @@ import { z } from 'zod';
 import {
   ACTIVE_STATUSES,
   CHECKLIST_REPEAT_ITEMS_FIELD,
-  EXTERNAL_SOURCE_TYPES,
   dueDay,
   isDateOnly,
   toLocalDue,

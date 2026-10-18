@@ -33,7 +33,7 @@ function load() {
     skipWaiting: () => {},
     clients: { claim: () => {} },
   }
-  new Function('self', 'caches', 'fetch', SOURCE)(self, caches, (req) => network(req))
+  new Function('self', 'caches', 'fetch', SOURCE)(self, caches, () => network())
 }
 
 // Sends a page load through the worker's fetch handler and resolves to what the page would get.
@@ -82,5 +82,19 @@ describe('service worker: opening the dashboard', () => {
     await navigateTo('/')
     network = async () => response(500, 'server error')
     expect((await navigateTo('/')).status).toBe(500)
+  })
+})
+
+describe('service worker: precache messages', () => {
+  test('a precache message from a foreign origin is ignored', () => {
+    let waited = false
+    listeners.message({ origin: 'http://evil.test', data: { type: 'precache', urls: [] }, waitUntil: () => { waited = true } })
+    expect(waited).toBe(false)
+  })
+
+  test('a precache message from the same origin is handled', () => {
+    let waited = false
+    listeners.message({ origin: ORIGIN, data: { type: 'precache', urls: [] }, waitUntil: () => { waited = true } })
+    expect(waited).toBe(true)
   })
 })

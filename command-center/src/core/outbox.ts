@@ -211,7 +211,10 @@ function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutbo
   }
   const { apply, conflicts, held } = mergeFields(store, task, op, editedAt, wanted);
   if (!Object.keys(apply).length) return { task, conflicts, held };
-  return { task: store.updateTask(task.id, apply as TaskPatch & { status?: TaskStatus }, 'human'), conflicts, held };
+  // A completion made offline counts its next occurrence from the day the device completed it
+  // (editedAt is the op's own time, clamped to now), not the day it reached the server.
+  const completion = apply.status === 'done' ? { completedAt: editedAt } : {};
+  return { task: store.updateTask(task.id, apply as TaskPatch & { status?: TaskStatus }, 'human', completion), conflicts, held };
 }
 
 /** Applies each op in order, each in its own transaction, so one refused op never blocks the rest. */

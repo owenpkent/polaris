@@ -43,9 +43,13 @@ export function setOutboxBackend(next) {
 }
 
 function randomId(length) {
-  const bytes = crypto.getRandomValues(new Uint8Array(length))
+  // Rejection sampling: 252 = 7 * 36, so bytes below it map to the alphabet without bias.
   let out = ''
-  for (const b of bytes) out += ID_ALPHABET[b % 36]
+  while (out.length < length) {
+    for (const b of crypto.getRandomValues(new Uint8Array(length))) {
+      if (b < 252 && out.length < length) out += ID_ALPHABET[b % 36]
+    }
+  }
   return out
 }
 

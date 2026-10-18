@@ -44,10 +44,10 @@ describe('InlineTaskInput', () => {
   test('a repeat chosen in the panel goes with the day', async () => {
     const { input, onSubmit } = setup()
     await openPicker(input)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'weekly' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'daily' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
-    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: 'weekly' })
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: 'daily' })
   })
 
   test('Add time opens a time box, and the day picked next carries the time', async () => {

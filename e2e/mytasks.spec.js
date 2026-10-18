@@ -63,13 +63,13 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await input.press('Enter')
     const due = page.getByRole('dialog', { name: `Due date for ${title}` })
     expect(await smallTargets(due, 'button, select')).toEqual([])
-    await due.getByRole('combobox', { name: 'Repeat' }).selectOption('weekly')
+    await due.getByRole('combobox', { name: 'Repeat' }).selectOption({ label: 'Daily' })
     await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
     await expect(due).toHaveCount(0)
-    await expect(page.getByRole('button', { name: `Change due date for ${title}, repeats weekly` })).toHaveText('Tomorrow')
+    await expect(page.getByRole('button', { name: `Change due date for ${title}, repeats daily` })).toHaveText('Tomorrow')
     const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
-    expect(created.recurrence).toBe('weekly')
+    expect(created.recurrence).toBe('daily')
   })
 
   test('Esc on the due step goes back to the title without adding anything', async ({ page, request }, testInfo) => {
