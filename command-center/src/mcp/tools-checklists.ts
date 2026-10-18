@@ -55,7 +55,7 @@ export function registerChecklistWriteTools(server: McpServer, app: App, actor: 
       checklist: z.string().min(1).describe('Checklist id or name.'),
       title: z.string().max(500).optional().describe('Title of the new task. Defaults to the checklist name.'),
       project: z.string().optional().describe('Project id, slug, or name.'),
-      due_at: z.string().optional().describe('Due date, YYYY-MM-DD. A time is optional: YYYY-MM-DDTHH:MM, local time with no zone. A task due at a time counts as due on its day (today, overdue, upcoming).'),
+      due_at: z.string().optional().describe('Due date, YYYY-MM-DD. A time is optional: YYYY-MM-DDTHH:MM, local time with no zone; a value with a zone or offset (such as 2026-10-20T14:00:00Z) is stored as local time in the server timezone (CC_TZ). A task due at a time counts as due on its day (today, overdue, upcoming).'),
       repeat_items: z.boolean().optional().describe('If the task is later made to repeat, bring the items back as fresh subtasks each time. Defaults to true.'),
     },
   }, (args) => guard(() => {

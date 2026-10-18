@@ -235,3 +235,30 @@ test('a task created offline from a share keeps its link and stays the owner\'s 
   assert.equal(task.untrustedText, false);
   assert.notEqual(task.status, 'inbox');
 });
+
+test('a due time set offline is replayed as written, a create carries one too, and a replay changes nothing', () => {
+  const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
+  const task = store.createTask({ title: 'Call the garage', dueAt: '2026-09-22' });
+  setNow('2026-09-21T12:00:00.000Z');
+  const edit = op({ kind: 'update_task', taskId: task.id, base: task.updatedAt, body: { dueAt: '2026-09-23T09:30' } });
+  assert.equal(applyOutbox(store, [edit])[0].status, 'applied');
+  assert.equal(store.requireTask(task.id).dueAt, '2026-09-23T09:30');
+  assert.equal(applyOutbox(store, [edit])[0].status, 'duplicate');
+  assert.equal(store.requireTask(task.id).dueAt, '2026-09-23T09:30');
+
+  const create = op({ kind: 'create_task', taskId: 't_due0time01', body: { title: 'Made offline with a time', dueAt: '2026-09-24T17:15' } });
+  assert.equal(applyOutbox(store, [create])[0].status, 'applied');
+  assert.equal(store.requireTask('t_due0time01').dueAt, '2026-09-24T17:15');
+});
+
+test('a due time edited on both sides keeps the newer one and puts the other in history', () => {
+  const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
+  const task = store.createTask({ title: 'Dentist', dueAt: '2026-09-22T09:00' });
+  setNow('2026-09-21T11:00:00.000Z');
+  store.updateTask(task.id, { dueAt: '2026-09-22T10:00' });
+  setNow('2026-09-21T12:00:00.000Z');
+  const [r] = applyOutbox(store, [op({ kind: 'update_task', taskId: task.id, base: task.updatedAt, at: '2026-09-21T10:00:00.000Z', body: { dueAt: '2026-09-22T08:00' } })]);
+  assert.equal(r.status, 'conflict');
+  assert.deepEqual(r.conflicts, [{ field: 'dueAt', kept: '2026-09-22T10:00', discarded: '2026-09-22T08:00' }]);
+  assert.equal(store.requireTask(task.id).dueAt, '2026-09-22T10:00');
+});

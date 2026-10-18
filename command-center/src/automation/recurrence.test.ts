@@ -257,3 +257,18 @@ test('a weekly rule with its own BYDAY keeps that weekday whatever day it starts
   assert.equal(nextOccurrence('FREQ=WEEKLY;BYDAY=WE', '2026-10-16', '2026-10-16'), '2026-10-21');
   assert.equal(nextOccurrence('FREQ=WEEKLY;INTERVAL=2;BYDAY=WE', '2026-10-14', '2026-10-14'), '2026-10-28');
 });
+
+test('a floating due time with no seconds keeps its time and its form', () => {
+  assert.equal(nextOccurrence('weekly', '2026-10-20T09:00', '2026-10-18'), '2026-10-27T09:00');
+  assert.equal(nextOccurrence('FREQ=DAILY', '2026-10-20T23:30', '2026-10-18'), '2026-10-21T23:30');
+});
+
+test('completing a weekly task due at a time through openApp makes the next one at the same time', () => {
+  const app = openApp({ dbPath: ':memory:', timezone: 'America/Chicago' });
+  try {
+    const t = app.store.createTask({ title: 'Standup notes', dueAt: '2026-10-20T09:00', recurrence: 'weekly' });
+    assert.equal(app.store.completeTask(t.id).next?.dueAt, '2026-10-27T09:00');
+    // A zoned value from an agent is stored in the configured timezone (CC_TZ) on this path too.
+    assert.equal(app.store.createTask({ title: 'From an agent', dueAt: '2026-10-20T14:00:00.000Z' }).dueAt, '2026-10-20T09:00');
+  } finally { app.close(); }
+});

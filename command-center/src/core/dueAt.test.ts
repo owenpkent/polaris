@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from './index.ts';
-import { dueDay, formatDue, isDateOnly, parseDueInput } from './dueAt.ts';
+import { dueDay, formatDue, isDateOnly, parseDueInput, toLocalDue } from './dueAt.ts';
 
 test('dueDay is the first ten characters, with or without a time', () => {
   assert.equal(dueDay('2026-10-18'), '2026-10-18');
@@ -63,4 +63,31 @@ test('store: a time is kept as written, with no zone added', () => {
   const t = s.createTask({ title: 'Call', dueAt: '2026-10-18T09:00' });
   assert.equal(s.getTask(t.id)?.dueAt, '2026-10-18T09:00');
   assert.equal(s.updateTask(t.id, { dueAt: '2026-10-20T09:00' }).dueAt, '2026-10-20T09:00');
+});
+
+test('toLocalDue turns a zoned value into floating local time in the timezone, and leaves the rest alone', () => {
+  assert.equal(toLocalDue('2026-10-20T00:00:00.000Z', 'America/Chicago'), '2026-10-19T19:00');
+  assert.equal(toLocalDue('2026-10-20T07:30:00Z', 'Europe/Berlin'), '2026-10-20T09:30');
+  assert.equal(toLocalDue('2026-10-20T09:30+02:00', 'UTC'), '2026-10-20T07:30');
+  assert.equal(toLocalDue('2026-10-20T09:30+0200', 'UTC'), '2026-10-20T07:30');
+  assert.equal(toLocalDue('2026-10-20T09:30:15Z', 'UTC'), '2026-10-20T09:30:15');
+  assert.equal(toLocalDue('2026-10-20T09:30', 'America/Chicago'), '2026-10-20T09:30');
+  assert.equal(toLocalDue('2026-10-20', 'America/Chicago'), '2026-10-20');
+});
+
+test('store: a zoned due date is stored as floating local time in the configured timezone, on create, update, and accept', () => {
+  const s = openStore(':memory:', { timezone: 'America/Chicago' });
+  const t = s.createTask({ title: 'From an agent', dueAt: '2026-10-20T00:00:00.000Z' });
+  assert.equal(t.dueAt, '2026-10-19T19:00');
+  assert.equal(s.updateTask(t.id, { dueAt: '2026-10-21T14:00:00Z' }).dueAt, '2026-10-21T09:00');
+  const inbox = s.createTask({ title: 'Suggestion', status: 'inbox' });
+  assert.equal(s.acceptInboxItem(inbox.id, { dueAt: '2026-10-22T12:00:00-05:00' }).dueAt, '2026-10-22T12:00');
+  // Day-only and floating values are kept as given.
+  assert.equal(s.updateTask(t.id, { dueAt: '2026-10-23T08:00' }).dueAt, '2026-10-23T08:00');
+  assert.equal(s.updateTask(t.id, { dueAt: '2026-10-24' }).dueAt, '2026-10-24');
+});
+
+test('store: without a timezone a zoned due date is stored as UTC floating time', () => {
+  const s = openStore(':memory:');
+  assert.equal(s.createTask({ title: 'x', dueAt: '2026-10-20T09:00:00.000+02:00' }).dueAt, '2026-10-20T07:00');
 });

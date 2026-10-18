@@ -4,6 +4,11 @@
 // it due today, which digest section) is answered on the first ten characters, so a task due at a
 // time behaves as its day; the time only orders tasks within that day, untimed ones first, which
 // plain string order already does ('2026-10-18' < '2026-10-18T09:00' < '2026-10-19').
+//
+// A value that names a zone or an offset ('2026-10-20T00:00:00.000Z', the toISOString() an agent
+// sends, or '+02:00') is a moment, not a time on the owner's clock. The store turns it into
+// floating local time in the configured timezone on the way in (toLocalDue), so every reader sees
+// the same day and the same time, and a reminder fires at the time the list shows.
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(:\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
@@ -46,4 +51,23 @@ export function parseDueInput(raw: string): string {
   const minute = Number(m[3]);
   if (hour > 23 || minute > 59) throw new Error(`"${raw}" is not a time of day. Use YYYY-MM-DD HH:MM, 24-hour.`);
   return `${m[1]}T${String(hour).padStart(2, '0')}:${m[3]}`;
+}
+
+/**
+ * A due value as the store keeps it: a day or a floating local time passes through unchanged; one
+ * with a zone or an offset becomes floating local time in `timezone` ('YYYY-MM-DDTHH:MM', with
+ * ':SS' only when the seconds are not zero). Anything else passes through for validation to judge.
+ */
+export function toLocalDue(value: string, timezone: string): string {
+  const m = DATETIME.exec(value);
+  if (!m || !m[4]) return value;
+  const zone = m[4] === 'Z' ? 'Z' : m[4].length === 5 ? `${m[4].slice(0, 3)}:${m[4].slice(3)}` : m[4];
+  const instant = Date.parse(`${m[1]}T${m[2]}${m[3] ?? ''}${zone}`);
+  if (Number.isNaN(instant)) return value;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date(instant));
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  const seconds = get('second');
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}${seconds === '00' ? '' : `:${seconds}`}`;
 }
