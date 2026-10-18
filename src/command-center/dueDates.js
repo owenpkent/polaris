@@ -30,7 +30,7 @@ export function addDays(date, n) {
 }
 
 // A due value with a zone or an offset ('...Z', '+02:00'), which the server turns into floating
-// local time (on the way in, and for older rows when it opens the database) but a cached copy may
+// local time (on the way in, and for older rows when it upgrades the database) but a cached copy may
 // still hold, is read as the local time of that moment, so the list, the picker, and a reminder
 // agree; an edit then saves the floating form.
 // A day or a floating time is returned as it is.

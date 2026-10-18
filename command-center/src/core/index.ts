@@ -10,5 +10,5 @@ import { openNodeDriver } from './db.ts';
 import { Store, type StoreOptions } from './store.ts';
 
 export function openStore(path: string, opts: StoreOptions = {}): Store {
-  return new Store(openNodeDriver(path), opts);
+  return new Store(openNodeDriver(path, { timezone: opts.timezone }), opts);
 }

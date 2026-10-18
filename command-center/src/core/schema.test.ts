@@ -23,10 +23,15 @@ function columnNames(db: SqlDriver, table: string): string[] {
 
 // ---- MIGRATIONS array invariants ----
 
-test('MIGRATIONS is a non-empty, append-only list of non-empty SQL strings', () => {
+test('MIGRATIONS is a non-empty, append-only list of non-empty SQL strings or data migrations', () => {
   assert.ok(Array.isArray(MIGRATIONS));
   assert.ok(MIGRATIONS.length > 0);
   for (const m of MIGRATIONS) {
+    if (typeof m === 'function') {
+      // A data migration takes the driver and the context (schema.ts, MigrationContext).
+      assert.equal(m.length, 2, m.name);
+      continue;
+    }
     assert.equal(typeof m, 'string');
     assert.ok(m.trim().length > 0);
   }

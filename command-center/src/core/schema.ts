@@ -1,6 +1,16 @@
 // Append-only migrations. Never edit a shipped migration; add a new one.
+import type { SqlDriver } from './db.ts';
+import { toLocalDue } from './dueAt.ts';
 
-export const MIGRATIONS: string[] = [
+/** What a migration that rewrites data needs to know: the timezone dues are stored in (CC_TZ). */
+export interface MigrationContext { timezone: string }
+
+/** SQL, or a function for a change SQL alone cannot make. Either runs once, in its own
+ *  transaction, and moves the version by one, so `cc update` sees every data change as a schema
+ *  change and restores its snapshot when a failed update rolls back. */
+export type Migration = string | ((db: SqlDriver, ctx: MigrationContext) => void);
+
+export const MIGRATIONS: Migration[] = [
   /* 1: initial task graph */ `
   CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -311,4 +321,20 @@ export const MIGRATIONS: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  // 13: dues written with a zone or an offset before a zoned due was stored as floating local
+  // time (dueAt.ts) are brought into that form, in the configured timezone, so the views, the
+  // digest, rules, and filters read them as the dashboard shows them. A migration rather than a
+  // fix-up when the store opens, so the version moves with the data and a failed update's
+  // rollback restores the snapshot taken before it. Exactly midnight UTC becomes its date, as a
+  // write stores it. Nothing else about a row changes.
+  localizeZonedDues,
 ];
+
+/** Migration 13's work, exported so the updater's tests can run it the way a newer daemon would. */
+export function localizeZonedDues(db: SqlDriver, { timezone }: MigrationContext): void {
+  const rows = db.all<{ id: string; due_at: string }>("SELECT id, due_at FROM tasks WHERE due_at GLOB '????-??-??T*' AND (due_at GLOB '*Z' OR due_at GLOB '*[+-][0-9][0-9]:[0-9][0-9]' OR due_at GLOB '*[+-][0-9][0-9][0-9][0-9]')");
+  for (const r of rows) {
+    const local = toLocalDue(r.due_at, timezone);
+    if (local !== r.due_at) db.run('UPDATE tasks SET due_at = ? WHERE id = ?', [local, r.id]);
+  }
+}

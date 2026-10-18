@@ -54,7 +54,7 @@ test('inspectDatabaseFile only reads: no -wal or -shm appears, and an old schema
   // A database from before the newest migration: everything but the last one applied.
   const old = new DatabaseSync(file);
   old.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
-  for (const sql of MIGRATIONS.slice(0, -1)) old.exec(sql);
+  for (const step of MIGRATIONS.slice(0, -1)) if (typeof step === 'string') old.exec(step); else step({ all: () => [], run: () => ({ changes: 0 }) } as never, { timezone: 'UTC' });
   old.prepare('INSERT INTO schema_version (version) VALUES (?)').run(MIGRATIONS.length - 1);
   old.close();
 

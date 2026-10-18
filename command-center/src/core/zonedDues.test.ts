@@ -1,14 +1,15 @@
 // Rows written before a zoned due was stored as local time (dueAt.ts) are brought into that form
-// when the store opens, so the server reads them as the dashboard shows them.
+// by migration 13 (schema.ts), so the server reads them as the dashboard shows them.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from './index.ts';
+import { MIGRATIONS } from './schema.ts';
 import { runView } from '../automation/views.ts';
 
-test('a zoned due from an older row is read as local time once the store opens, and the views agree', (t) => {
+test('a database from before the migration: its zoned dues become local time on upgrade, and the views agree', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'cc-zoned-dues-'));
   const path = join(dir, 'cc.db');
   const first = openStore(path, { timezone: 'America/Chicago' });
@@ -18,11 +19,13 @@ test('a zoned due from an older row is read as local time once the store opens, 
   // The rows as an older store left them: the moment, with its zone.
   first.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', ['2026-10-20T04:30:00.000Z', evening.id]);
   first.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', ['2026-10-21T00:00:00.000Z', midnight.id]);
+  first.db.run('UPDATE schema_version SET version = ?', [MIGRATIONS.length - 1]);
   first.db.close();
 
   const store = openStore(path, { timezone: 'America/Chicago' });
   // Closed before the folder goes: Windows will not remove an open database.
   t.after(() => { store.db.close(); rmSync(dir, { recursive: true, force: true }); });
+  assert.equal(store.db.get<{ version: number }>('SELECT version FROM schema_version')?.version, MIGRATIONS.length, 'the version moved with the data');
   assert.equal(store.requireTask(evening.id).dueAt, '2026-10-19T23:30', 'the evening before, as the dashboard shows it');
   assert.equal(store.requireTask(midnight.id).dueAt, '2026-10-21', 'midnight UTC is the date, as a write stores it');
   assert.equal(store.requireTask(floating.id).dueAt, '2026-10-20T09:00', 'a local value is left alone');

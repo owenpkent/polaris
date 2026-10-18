@@ -277,7 +277,6 @@ export class Store {
     this.validateRecurrence = opts.validateRecurrence;
     this.today = opts.today ?? (() => this.now().slice(0, 10));
     this.timezone = opts.timezone ?? 'UTC';
-    this.normalizeZonedDues();
   }
 
   /** A due date as it is stored: a zoned value becomes floating local time (dueAt.ts). */
@@ -285,20 +284,6 @@ export class Store {
     return (typeof v === 'string' ? toLocalDue(v, this.timezone) : v) as T;
   }
 
-  /**
-   * Rows written before a zoned due was stored as local time still hold the moment with its zone.
-   * They are brought into the stored form when the store opens, so the views, the digest, rules,
-   * and filters read them as the dashboard shows them; a write would have done the same. Nothing
-   * else about the row changes, and a store with no such rows does one cheap query.
-   */
-  private normalizeZonedDues(): void {
-    const rows = this.db.all<{ id: string; due_at: string }>(
-      "SELECT id, due_at FROM tasks WHERE due_at GLOB '????-??-??T*' AND (due_at GLOB '*Z' OR due_at GLOB '*[+-][0-9][0-9]:[0-9][0-9]' OR due_at GLOB '*[+-][0-9][0-9][0-9][0-9]')");
-    for (const r of rows) {
-      const local = toLocalDue(r.due_at, this.timezone);
-      if (local !== r.due_at) this.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', [local, r.id]);
-    }
-  }
 
   // ---------------------------------------------------------------- events
 

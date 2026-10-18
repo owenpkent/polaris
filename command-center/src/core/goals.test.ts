@@ -323,7 +323,7 @@ test('a version 1 database gains the goal tables on open and keeps its tasks', a
     // Build the database exactly as it was before the goals migration existed.
     const raw = new DatabaseSync(file);
     raw.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
-    raw.exec(MIGRATIONS[0]);
+    raw.exec(MIGRATIONS[0] as string); // the initial schema is SQL
     raw.exec('INSERT INTO schema_version (version) VALUES (1)');
     raw.close();
 
