@@ -3,7 +3,7 @@ import { cleanup, render, screen, act } from '@testing-library/react'
 import { DEFAULT_BASE_URL, createApiClient, MY_TASKS_QUERY } from './api'
 import { cacheGet, memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus, setLastSync } from './offlineStatus'
-import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
+import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected: true, baseUrl: 'http://x', token: 'tok' }) }))
 vi.mock('./useMirrorWarm', () => ({ useMirrorWarm: () => {} }))
@@ -524,5 +524,14 @@ describe('sending a long queue', () => {
     })
     expect(await flushOutbox('http://x', 'tok')).toBe(false)
     expect(getOfflineState()).toMatchObject({ pending: 1, lastSync: { failed: true, count: 1 } })
+  })
+})
+
+describe('generated ids', () => {
+  test('have the expected prefix, length and alphabet', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(newOpId()).toMatch(/^op_[0-9a-z]{16}$/)
+      expect(newTaskId()).toMatch(/^t_[0-9a-z]{10}$/)
+    }
   })
 })

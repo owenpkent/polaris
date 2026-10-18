@@ -20,6 +20,9 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         rewriteShare(getIntent());
         super.onCreate(savedInstanceState);
+        // The page is served from Capacitor's own scheme and never loads a content:// URL, so the
+        // WebView is not allowed to; a link to a content provider from a third party stays a link.
+        getBridge().getWebView().getSettings().setAllowContentAccess(false);
     }
 
     @Override

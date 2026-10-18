@@ -30,9 +30,14 @@ export const TASK_ID_PATTERN = /^t_[0-9a-z]{10}$/;
 
 export function newId(prefix: string): string {
   const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
-  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(10));
+  // Rejection sampling: 252 is the largest multiple of 36 that fits in a byte, so bytes below it
+  // map to the alphabet without modulo bias.
   let s = '';
-  for (const b of bytes) s += alphabet[b % 36];
+  while (s.length < 10) {
+    for (const b of globalThis.crypto.getRandomValues(new Uint8Array(16))) {
+      if (b < 252 && s.length < 10) s += alphabet[b % 36];
+    }
+  }
   return `${prefix}_${s}`;
 }
 

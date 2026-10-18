@@ -306,7 +306,6 @@ test('a targeted run of one rule never advances a different rule\'s cursor', () 
   const t = s.createTask({ title: 'Shared event' });
 
   const ruleA = s.listRules().find((r) => r.name === 'rule A')!;
-  const ruleB = s.listRules().find((r) => r.name === 'rule B')!;
 
   const targeted = runRules(s, { today: TODAY, ruleId: ruleA.id });
   assert.equal(targeted.fired.length, 1);

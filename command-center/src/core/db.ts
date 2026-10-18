@@ -63,7 +63,6 @@ export function migrate(db: SqlDriver): void {
       db.exec(MIGRATIONS[i]);
       db.run('UPDATE schema_version SET version = ?', [i + 1]);
     });
-    current = i + 1;
   }
 }
 

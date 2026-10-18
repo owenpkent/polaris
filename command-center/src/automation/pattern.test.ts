@@ -10,6 +10,7 @@ const AGREEMENT: [string, string[]][] = [
   ['a.c', ['abc', 'a\nc', 'ac', 'a c', 'a\u{1F600}c']],
   ['a|b|c', ['a', 'c', 'd', '']],
   ['^(ab|cd)+$', ['abcd', 'abcdab', 'abc', '']],
+  // The next three are catastrophic-backtracking shapes on purpose: the engine under test must agree with RegExp on them.
   ['^(a|aa)+$', ['aaaa', 'aaaaa!', 'a']],
   ['(a+)+b', ['aaab', 'aaa', 'b']],
   ['(a*)*b', ['b', 'aaab', 'aaa']],
@@ -42,7 +43,8 @@ const AGREEMENT: [string, string[]][] = [
   ['^[\\-x]+$', ['-x', 'y']],
   ['[]', ['a', '']],
   ['^[^]$', ['a', '\n', 'ab']],
-  ['[\\b]', ['a\bb', 'ab']],
+  // Inside a class, \b is a backspace (not a word boundary), and the first input holds one on purpose.
+  ['[\\b]',['a\bb', 'ab']],
   ['\\.', ['a.b', 'ab']],
   ['\\(\\)', ['()', '(']],
   ['\\/', ['a/b', 'ab']],

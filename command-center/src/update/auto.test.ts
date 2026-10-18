@@ -26,6 +26,9 @@ const SIGNERS = 'polaris-release namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NT
 const IN_WINDOW = '2026-10-06T04:30:00.000Z';
 const OUTSIDE = '2026-10-06T12:00:00.000Z';
 
+/** The build is node running vite's own entry point, not the npx shim (run.ts), so a path with any character reaches it whole. */
+const isViteBuild = (cmd: string, args: string[]) => cmd === process.execPath && (args[0] ?? '').endsWith(join('vite', 'bin', 'vite.js')) && args[1] === 'build';
+
 interface FakeTag { tag: string; verifies?: boolean }
 interface FakeRequest { id: string; version: string; state: string; result?: string | null; finishedAt?: string | null }
 
@@ -125,7 +128,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario, at = OUTSIDE) 
       }
     }
     if (cmd === 'npm') return ok();
-    if (cmd === 'npx' && args[0] === 'vite') {
+    if (isViteBuild(cmd, args)) {
       if (s.fail === 'build') return fail('error during build');
       const outDir = args[args.indexOf('--outDir') + 1];
       mkdirSync(outDir, { recursive: true });
@@ -196,8 +199,8 @@ function harness(t: { after(fn: () => void): void }, s: Scenario, at = OUTSIDE) 
   };
   const run = (overrides: Partial<UpdateDeps> = {}) => runAuto(opts, { ...deps, ...overrides });
   const byHand = () => runUpdate({ repoRoot: root, dbPath, dashboardDir: dist, port: PORT, target: { kind: 'release' }, checkOnly: false, yes: true, restartSpec: 'systemd-user:polaris', stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, deps);
-  const commandLines = () => calls.map((c) => `${c.cmd} ${c.args.join(' ')}`);
-  const gitAndMore = () => commandLines().filter((l) => /^(git (fetch|merge|checkout|reset)|npm|npx|systemctl --user (stop|start))/.test(l));
+  const commandLines = () => calls.map((c) => (isViteBuild(c.cmd, c.args) ? `vite ${c.args.slice(1).join(' ')}` : `${c.cmd} ${c.args.join(' ')}`));
+  const gitAndMore = () => commandLines().filter((l) => /^(git (fetch|merge|checkout|reset)|npm|vite |systemctl --user (stop|start))/.test(l));
   return {
     root, dbPath, dataDir, dist, state, calls, out, err, deps, opts, run, byHand, commandLines, gitAndMore, version,
     status: () => readUpdateStatus(dbPath),
@@ -259,7 +262,7 @@ test('a pending request is picked up, re-verified, installed through the --to pa
   const lines = h.commandLines();
   assert.ok(lines.includes('git checkout -q --detach v2.1.0'));
   assert.ok(!lines.some((l) => l.startsWith('git merge')), 'main is never installed');
-  assert.ok(lines.indexOf('npx vite build --outDir ' + h.dist + '.next --emptyOutDir') < lines.indexOf('systemctl --user stop polaris'));
+  assert.ok(lines.indexOf('vite build --outDir ' + h.dist + '.next --emptyOutDir') < lines.indexOf('systemctl --user stop polaris'));
   assert.equal(h.version(), '2.1.0');
   assert.equal(h.state.daemonVersion, '2.1.0');
   assert.equal(listSnapshots(join(h.dataDir, 'backups')).length, 1, 'the snapshot was taken');

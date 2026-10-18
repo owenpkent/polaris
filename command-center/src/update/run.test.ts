@@ -24,6 +24,11 @@ import { NO_RESTART_METHOD, performUpdate, runTrustSigners, runUpdate, updateLog
 import { pinnedSignersPath } from './signers.ts';
 import { emptyUpdateStatus, readUpdateStatus, updateStatusPath, writeUpdateStatus } from './status.ts';
 
+/** True once the file is absent: one read that is allowed to fail, not an existence check before an act. */
+function gone(file: string): boolean {
+  try { readFileSync(file); return false; } catch (err) { return (err as NodeJS.ErrnoException).code === 'ENOENT'; }
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const PREVIOUS = 'a'.repeat(40);
 const TARGET = 'b'.repeat(40);
@@ -55,6 +60,8 @@ function rawTag(tag: FakeTag): string {
 }
 
 interface Scenario {
+  /** The dashboard directory's name under the repo root, for a path that carries an odd character. */
+  distName?: string;
   dirty?: string[];
   branch?: string | null;
   tag?: string;
@@ -82,6 +89,9 @@ interface Scenario {
 
 interface Call { cmd: string; args: string[]; cwd?: string }
 
+/** The build is node running vite's own entry point, not the npx shim (run.ts), so a path with any character reaches it whole. */
+const isViteBuild = (cmd: string, args: string[]) => cmd === process.execPath && (args[0] ?? '').endsWith(join('vite', 'bin', 'vite.js')) && args[1] === 'build';
+
 function harness(t: { after(fn: () => void): void }, s: Scenario) {
   const root = mkdtempSync(join(tmpdir(), 'cc-update-run-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -94,7 +104,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   store.createTask({ title: 'before the update' });
   store.db.close();
   writeFileSync(join(dataDir, 'api-token'), TOKEN);
-  const dist = join(root, 'dist');
+  const dist = join(root, s.distName ?? 'dist');
   mkdirSync(dist);
   writeFileSync(join(dist, 'index.html'), 'old');
   const writeVersion = (v: string) => writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'polaris', version: v }));
@@ -171,7 +181,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
       if (args[0] === 'run' && s.fail === 'test' && state.head === 'target') return fail('1 failing');
       return ok();
     }
-    if (cmd === 'npx' && args[0] === 'vite') {
+    if (isViteBuild(cmd, args)) {
       if (s.fail === 'build') return fail('error during build');
       const outDir = args[args.indexOf('--outDir') + 1];
       mkdirSync(outDir, { recursive: true });
@@ -234,7 +244,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
     stdout: (l) => out.push(l), stderr: (l) => err.push(l),
   }, { ...deps, ...overrides });
   const trust = (overrides: Partial<UpdateDeps> = {}) => runTrustSigners({ repoRoot: root, dbPath, yes: s.yes ?? false, stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, { ...deps, ...overrides });
-  const commandLines = () => calls.map((c) => `${c.cmd} ${c.args.join(' ')}`);
+  const commandLines = () => calls.map((c) => (isViteBuild(c.cmd, c.args) ? `vite ${c.args.slice(1).join(' ')}` : `${c.cmd} ${c.args.join(' ')}`));
   const version = () => JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version as string;
   const pinned = () => (existsSync(pinnedFile) ? readFileSync(pinnedFile, 'utf8') : null);
   const distFile = (name: string) => (existsSync(join(root, name, 'index.html')) ? readFileSync(join(root, name, 'index.html'), 'utf8') : null);
@@ -244,7 +254,7 @@ function harness(t: { after(fn: () => void): void }, s: Scenario) {
   return { root, dbPath, dataDir, dist, state, calls, out, err, deps, run, trust, commandLines, version, distFile, tasks, writeTask, pinnedFile, pinned, log: () => (existsSync(updateLogPath(dbPath)) ? readFileSync(updateLogPath(dbPath), 'utf8') : '') };
 }
 
-const npmAndRestartCalls = (lines: string[]) => lines.filter((l) => l.startsWith('npm ') || l.startsWith('npx ') || / (stop|start) /.test(l));
+const npmAndRestartCalls = (lines: string[]) => lines.filter((l) => l.startsWith('npm ') || l.startsWith('vite ') || / (stop|start) /.test(l));
 
 test('run.ts imports everything statically: the old code must keep running after the checkout moves', () => {
   const source = readFileSync(join(here, 'run.ts'), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -368,11 +378,11 @@ test('the happy path: checkout, npm ci, tests, staged build, restart with the sn
   after('git merge', 'npm ci --ignore-scripts');
   after('npm ci --ignore-scripts', 'npm rebuild esbuild');
   after('npm rebuild esbuild', 'npm run test:fast');
-  after('npm run test:fast', 'npx vite build');
-  after('npx vite build', 'systemctl --user stop polaris');
+  after('npm run test:fast', 'vite build');
+  after('vite build', 'systemctl --user stop polaris');
   after('systemctl --user stop polaris', 'systemctl --user start polaris');
   assert.deepEqual(h.calls.filter((c) => c.cmd === 'npm' && c.args[0] === 'ci').map((c) => c.cwd), [h.root, join(h.root, 'command-center')]);
-  assert.deepEqual(h.calls.find((c) => c.cmd === 'npx')!.args, ['vite', 'build', '--outDir', `${h.dist}.next`, '--emptyOutDir']);
+  assert.deepEqual(h.calls.find((c) => isViteBuild(c.cmd, c.args))!.args, [join(h.root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', `${h.dist}.next`, '--emptyOutDir']);
   assert.equal(h.version(), '2.1.0');
   assert.equal(h.distFile('dist'), 'new');
   assert.equal(h.distFile('dist.prev'), 'old');
@@ -400,12 +410,22 @@ test('with backup encryption on, the snapshot is encrypted', async (t) => {
   assert.ok(!h.log().includes('a long enough passphrase'));
 });
 
+test('a dashboard directory with an ampersand reaches the build whole: node runs vite, no shim and no shell', async (t) => {
+  const h = harness(t, { changed: ['src/App.jsx'], distName: 'Work & Projects' });
+  assert.equal(await h.run(), 0, h.err.join('\n'));
+  const build = h.calls.find((c) => isViteBuild(c.cmd, c.args));
+  assert.ok(build, 'the build ran');
+  assert.ok(!build.cmd.toLowerCase().endsWith('.cmd'), 'not a .cmd shim');
+  assert.equal(build.args[build.args.indexOf('--outDir') + 1], `${h.dist}.next`, 'the path, ampersand and all');
+  assert.equal(h.distFile('Work & Projects'), 'new');
+});
+
 test('a failing npm ci rolls the checkout back: the daemon is never stopped and dist is untouched', async (t) => {
   const h = harness(t, { fail: 'npm-ci' });
   assert.equal(await h.run(), 1);
   const lines = h.commandLines();
   assert.ok(!lines.some((l) => / (stop|start) /.test(l)), 'the daemon was never stopped');
-  assert.ok(!lines.some((l) => l.startsWith('npx vite')), 'nothing was built');
+  assert.ok(!lines.some((l) => l.startsWith('vite build')), 'nothing was built');
   assert.ok(lines.includes(`git reset --hard ${PREVIOUS}`));
   assert.ok(lines.filter((l) => l === 'npm ci --ignore-scripts').length >= 3, 'npm ci ran again after the reset');
   assert.equal(h.version(), '2.0.0');
@@ -665,13 +685,13 @@ test('a stale barrier is ignored and removed: a dead pid, or over two hours old'
   await withServer(app, {}, async (base) => {
     assert.equal((await api(base, 'POST', '/api/tasks', { title: 'the update is long over' })).status, 201);
   });
-  assert.equal(existsSync(file), false, 'the old barrier was removed by the reader');
+  assert.equal(gone(file), true, 'the old barrier was removed by the reader');
   writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), version: '2.1.0' }));
   assert.equal(readBarrier(h.dbPath, { alive: () => false }), null, 'a pid that is not alive');
-  assert.equal(existsSync(file), false);
+  assert.equal(gone(file), true);
   writeFileSync(file, 'not json');
   assert.doesNotThrow(() => assertNotUpdating(h.dbPath));
-  assert.equal(existsSync(file), false, 'an unreadable barrier is removed too');
+  assert.equal(gone(file), true, 'an unreadable barrier is removed too');
   // A fresh one, for contrast: this process, now.
   writeBarrier(h.dbPath, '2.1.0');
   assert.throws(() => assertNotUpdating(h.dbPath), UpdateInProgressError);
@@ -985,7 +1005,7 @@ test('--trust-signers shows both files with fingerprints, asks, and replaces the
   assert.equal(asked, 1);
   const text = first.out.join('\n');
   assert.match(text, /Pinned \(.*release-signers\): nothing pinned yet/);
-  assert.match(text, new RegExp(`Committed \\(.*release-signers\\):\\n  polaris-release  ssh-ed25519  ${FINGERPRINT.replace(/\+/g, '\\+')}`));
+  assert.match(text, new RegExp(`Committed \\(.*release-signers\\):\\n  polaris-release  ssh-ed25519  ${FINGERPRINT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(text, /Pinned 1 key to .*release-signers\. Releases verify against that copy from now on/);
   assert.equal(first.pinned(), SIGNERS_A);
   if (process.platform !== 'win32') assert.equal(statSync(first.pinnedFile).mode & 0o777, 0o600);

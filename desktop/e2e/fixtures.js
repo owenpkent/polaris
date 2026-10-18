@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { test as base, expect } from '@playwright/test'
 import { freePort, launchApp, makeScratch, processState, startImpostor, startServer } from './app.js'
@@ -11,7 +12,7 @@ export const test = base.extend({
   rig: async ({}, use, testInfo) => {
     const scratch = makeScratch()
     const port = await freePort()
-    const token = `desktop-ui-token-${Math.random().toString(16).slice(2)}`
+    const token = `desktop-ui-token-${randomBytes(8).toString('hex')}`
     const apps = []
     const servers = []
     const impostors = []
