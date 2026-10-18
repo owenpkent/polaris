@@ -19,6 +19,14 @@ test('withOneFewer lowers COUNT by one and leaves everything else as written', (
   assert.equal(withOneFewer('FREQ=DAILY;count=3;X-FROM=COMPLETION'), 'FREQ=DAILY;count=2;X-FROM=COMPLETION');
 });
 
+// Validation refuses both shapes below; if one ever got through, the store would still read the
+// COUNT rrule reads (the last one) rather than one the engine ignores, and no sign at all.
+test('COUNT is read as rrule reads it: the last of two, and never with a sign', () => {
+  assert.equal(remainingCount('FREQ=DAILY;COUNT=2;COUNT=5'), 5);
+  assert.equal(withOneFewer('FREQ=DAILY;COUNT=2;COUNT=5'), 'FREQ=DAILY;COUNT=2;COUNT=4');
+  assert.equal(remainingCount('FREQ=DAILY;COUNT=+2'), null);
+});
+
 test('withOneFewer leaves COUNT=1 and a rule with no COUNT alone', () => {
   assert.equal(withOneFewer('FREQ=DAILY;COUNT=1'), 'FREQ=DAILY;COUNT=1');
   assert.equal(withOneFewer('FREQ=DAILY'), 'FREQ=DAILY');

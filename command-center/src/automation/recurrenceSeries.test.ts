@@ -3,9 +3,12 @@
 // refuses. The store's today and the engine's today are the same movable day.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openStore, type Store, type Task } from '../core/index.ts';
+import rrulePkg from 'rrule';
+import { openStore, remainingCount, type Store, type Task } from '../core/index.ts';
 import { openApp } from '../app.ts';
 import { nextOccurrence } from './recurrence.ts';
+
+const { RRule } = rrulePkg;
 
 function series(start: string): { store: Store; on: (day: string) => void } {
   let today = start;
@@ -149,8 +152,8 @@ test('every other X- part, a bad X-FROM, and a doubled one are refused on write 
     assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;X-FROM=COMPLETION;X-FROM=COMPLETION' }), /X-FROM is given twice/);
     assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'X-FROM=COMPLETION' }), /invalid recurrence rule/);
     assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;COUNT=0;X-FROM=COMPLETION' }), /COUNT must be a whole number/);
-    const ok = app.store.createTask({ title: 'fine', recurrence: 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231;X-FROM=COMPLETION' });
-    assert.equal(ok.recurrence, 'FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231;X-FROM=COMPLETION');
+    const ok = app.store.createTask({ title: 'fine', recurrence: 'FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231;X-FROM=COMPLETION' });
+    assert.equal(ok.recurrence, 'FREQ=WEEKLY;INTERVAL=2;UNTIL=20261231;X-FROM=COMPLETION');
   } finally {
     app.close();
   }
@@ -164,4 +167,70 @@ test('monthly on the last day and on the last Friday', () => {
   assert.equal(nextOccurrence('FREQ=MONTHLY;BYMONTHDAY=-1', '2026-10-14', '2026-10-14'), '2026-10-31');
   assert.equal(nextOccurrence('FREQ=MONTHLY;BYDAY=-1FR', '2026-10-30', '2026-10-30'), '2026-11-27');
   assert.equal(nextOccurrence('FREQ=MONTHLY;INTERVAL=3;BYDAY=-1WE', '2026-10-28', '2026-10-28'), '2027-01-27');
+});
+
+// ---- review on #70
+
+test('X-FROM=COMPLETION on a month or a year lands in the next one, held to its last day', () => {
+  const after = (rule: string, finished: string, due = '2026-10-01') => nextOccurrence(rule, due, finished, { completedOn: finished });
+  assert.equal(after('FREQ=MONTHLY;X-FROM=COMPLETION', '2026-10-31'), '2026-11-30');
+  assert.equal(after('FREQ=MONTHLY;X-FROM=COMPLETION', '2027-01-30'), '2027-02-28');
+  assert.equal(after('FREQ=MONTHLY;X-FROM=COMPLETION', '2028-01-31'), '2028-02-29');
+  assert.equal(after('FREQ=MONTHLY;X-FROM=COMPLETION', '2026-10-14'), '2026-11-14');
+  assert.equal(after('FREQ=MONTHLY;INTERVAL=2;X-FROM=COMPLETION', '2026-12-31'), '2027-02-28');
+  assert.equal(after('FREQ=YEARLY;X-FROM=COMPLETION', '2028-02-29'), '2029-02-28');
+  assert.equal(after('FREQ=YEARLY;INTERVAL=4;X-FROM=COMPLETION', '2028-02-29'), '2032-02-29');
+  // The time of day is kept, and UNTIL and COUNT still end it.
+  assert.equal(after('FREQ=MONTHLY;X-FROM=COMPLETION', '2026-10-31', '2026-10-20T08:15'), '2026-11-30T08:15');
+  assert.equal(after('FREQ=MONTHLY;UNTIL=20261129;X-FROM=COMPLETION', '2026-10-31'), null);
+  assert.equal(after('FREQ=MONTHLY;UNTIL=20261130;X-FROM=COMPLETION', '2026-10-31'), '2026-11-30');
+  assert.equal(after('FREQ=MONTHLY;COUNT=1;X-FROM=COMPLETION', '2026-10-31'), null);
+});
+
+test('a monthly X-FROM=COMPLETION series through the store, and its skip, counted to the month end', () => {
+  const { store } = series('2026-10-31');
+  const task = store.createTask({ title: 'Month end', dueAt: '2026-10-31', recurrence: 'FREQ=MONTHLY;COUNT=3;X-FROM=COMPLETION' });
+  const next = finish(store, task);
+  assert.equal(next.dueAt, '2026-11-30');
+  assert.equal(next.recurrence, 'FREQ=MONTHLY;COUNT=2;X-FROM=COMPLETION');
+  // A skip counts from the due date, by the same month arithmetic.
+  const skipped = store.createTask({ title: 'Skip month end', dueAt: '2027-01-31', recurrence: 'FREQ=MONTHLY;X-FROM=COMPLETION' });
+  assert.equal(store.skipOccurrence(skipped.id, 'human').dueAt, '2027-02-28');
+});
+
+test('a sign on COUNT or INTERVAL, and any part given twice, are refused on write', () => {
+  const app = openApp({ dbPath: ':memory:' });
+  try {
+    assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;COUNT=+2' }), /COUNT must be written as digits only/);
+    assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;INTERVAL=+2' }), /INTERVAL must be written as digits only/);
+    assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;COUNT=2;COUNT=2' }), /COUNT is given twice/);
+    assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;INTERVAL=2;interval=3' }), /INTERVAL is given twice/);
+    assert.throws(() => app.store.createTask({ title: 'x', recurrence: 'FREQ=DAILY;FREQ=WEEKLY' }), /FREQ is given twice/);
+  } finally {
+    app.close();
+  }
+});
+
+test('the store reads COUNT as the engine does for every rule validation accepts', () => {
+  const rules = [
+    'FREQ=DAILY;COUNT=5', 'COUNT=3;FREQ=WEEKLY', 'RRULE:COUNT=4;FREQ=DAILY', 'freq=daily;count=03', 'FREQ=DAILY;Count=7;X-FROM=COMPLETION',
+    'FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12', 'FREQ=DAILY', 'weekly', 'every 2 weeks;X-FROM=COMPLETION', 'FREQ=YEARLY;UNTIL=20301231',
+  ];
+  for (const rule of rules) {
+    assert.doesNotThrow(() => nextOccurrence(rule, '2026-09-10', '2026-09-10'), rule);
+    const base = rule.split(';').filter((p) => !/^x-/i.test(p)).join(';').replace(/^RRULE:/i, '');
+    const engine = /=/.test(base) ? (RRule.parseString(base).count ?? null) : null;
+    assert.equal(remainingCount(rule), engine === null ? null : Number(engine), rule);
+  }
+});
+
+test('X-FROM=COMPLETION with BYDAY, BYMONTHDAY, or BYMONTH is refused, since the days would fight the finish', () => {
+  for (const rule of ['FREQ=WEEKLY;BYDAY=MO;X-FROM=COMPLETION', 'FREQ=MONTHLY;BYMONTHDAY=-1;X-FROM=COMPLETION', 'FREQ=YEARLY;BYMONTH=3;X-FROM=COMPLETION', 'weekdays;X-FROM=COMPLETION']) {
+    assert.throws(() => nextOccurrence(rule, '2026-10-19', '2026-10-17'), /X-FROM=COMPLETION cannot be combined with BYDAY, BYMONTHDAY, or BYMONTH/, rule);
+  }
+});
+
+test('yearly on the last day of February comes every year', () => {
+  assert.equal(nextOccurrence('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1', '2028-02-29', '2028-02-29'), '2029-02-28');
+  assert.equal(nextOccurrence('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1', '2031-02-28', '2031-02-28'), '2032-02-29');
 });

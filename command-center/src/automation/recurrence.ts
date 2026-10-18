@@ -144,16 +144,43 @@ const weekdayOf = (value: unknown): { weekday: number; n: number } => {
 };
 
 /** Parses and checks the rule. Every rule that comes out of here is one the walk can settle. */
-function buildRule(ruleStr: string, dtstart: Date, original: string): CalendarRule {
+/**
+ * What rrule lets through but a task rule must not have. rrule keeps the last of a part given
+ * twice and reads COUNT=+2 as 2, while the store, which rewrites COUNT as the series goes
+ * (core/recurrenceCount.ts), reads exactly one COUNT written in digits. Refusing both here keeps
+ * the two readings the same for every rule that is saved.
+ */
+function checkParts(ruleStr: string): void {
+  const seen = new Set<string>();
+  for (const piece of ruleStr.split(';')) {
+    const [rawKey, ...rest] = piece.split('=');
+    const key = rawKey.replace(/^RRULE:/i, '').toUpperCase();
+    if (seen.has(key)) throw new Error(`${key} is given twice`);
+    seen.add(key);
+    // A leading + is the one sign rrule reads as a number; anything else wrong is caught below.
+    if ((key === 'COUNT' || key === 'INTERVAL') && /^\s*\+/.test(rest.join('='))) {
+      throw new Error(`${key} must be written as digits only, such as ${key}=5`);
+    }
+  }
+}
+
+function buildRule(ruleStr: string, dtstart: Date, original: string, fromCompletion = false): CalendarRule {
   if (!ruleStr.trim()) throw new Error(`invalid recurrence rule '${original}': rule is empty`);
   if (ruleStr.length > MAX_RULE_LENGTH) throw new Error(`invalid recurrence rule: must be ${MAX_RULE_LENGTH} characters or fewer`);
   try {
+    checkParts(ruleStr);
     const options = RRule.parseString(ruleStr) as Record<string, unknown>;
     if (options.freq === undefined) throw new Error("rule must include FREQ (e.g. 'FREQ=WEEKLY')");
     const freq = FREQ_NAMES.get(options.freq as number);
     if (!freq) throw new Error('FREQ must be DAILY, WEEKLY, MONTHLY, or YEARLY');
     for (const part of UNSUPPORTED_PARTS) {
       if (list(options[part]).length) throw new Error(`${UNSUPPORTED_NAMES[part]} is not supported`);
+    }
+    // Counted from the finish, the next date is a span after that day (see fromFinish), and a day
+    // part would fight it: a weekly Monday rule finished early on a Saturday would come back on
+    // the Monday it was due.
+    if (fromCompletion && (list(options.byweekday).length || list(options.bymonthday).length || list(options.bymonth).length)) {
+      throw new Error('X-FROM=COMPLETION cannot be combined with BYDAY, BYMONTHDAY, or BYMONTH: the next one is counted from the day the task is finished, so leave the days out');
     }
     const [interval = 1] = integers(options.interval, 'INTERVAL', 1, MAX_INTERVAL[freq]);
     const [count = null] = integers(options.count, 'COUNT', 1, Number.MAX_SAFE_INTEGER);
@@ -253,6 +280,30 @@ function firstOccurrence(rule: CalendarRule, dtstart: Date, notBefore: Date, inc
   return null;
 }
 
+/** `steps` periods of the rule's frequency after `anchor`, a month or a year held to the target month's last day. */
+function addPeriods(anchor: Date, freq: Freq, steps: number): Date {
+  if (freq === 'DAILY') return new Date(anchor.getTime() + steps * DAY_MS);
+  if (freq === 'WEEKLY') return new Date(anchor.getTime() + steps * 7 * DAY_MS);
+  const months = freq === 'MONTHLY' ? steps : steps * 12;
+  const year = anchor.getUTCFullYear() + Math.floor((anchor.getUTCMonth() + months) / 12);
+  const month0 = (anchor.getUTCMonth() + months) % 12;
+  return new Date(Date.UTC(year, month0, Math.min(anchor.getUTCDate(), daysInMonth(year, month0))));
+}
+
+/**
+ * The next date of a rule counted from the finish: INTERVAL periods after `anchor`, then further
+ * whole spans from the same anchor until it is on or after `today` (only a skip of a long-overdue
+ * task gets that far), or null past UNTIL or the horizon.
+ */
+function fromFinish(rule: CalendarRule, anchor: Date, today: Date): Date | null {
+  const horizon = anchor.getTime() + HORIZON_DAYS * DAY_MS;
+  for (let k = 1; ; k++) {
+    const d = addPeriods(anchor, rule.freq, k * rule.interval);
+    if (d.getTime() > horizon || (rule.until && d > rule.until)) return null;
+    if (d >= today) return d;
+  }
+}
+
 /** What the store knows about why the next date is wanted. Only completeTask passes it. */
 export interface OccurrenceContext {
   /** The day (YYYY-MM-DD) the task was finished on, for a rule with X-FROM=COMPLETION. */
@@ -273,11 +324,13 @@ export interface OccurrenceContext {
  * nothing comes up within 200 years. A date-only `previousDue` produces a date-only result; a
  * datetime `previousDue` produces a datetime result with the same time-of-day and zone.
  *
- * X-FROM=COMPLETION: when `context.completedOn` is given (the store passes it only when a task is
- * completed), the walk starts from that day instead: the first occurrence strictly after the day
- * the task was finished, with the previous due date's time-of-day. A plain "every 3 days" then
- * means three days after it was done, early or late. Without a completion day (a skip, a preview,
- * validation) such a rule counts from `previousDue` like any other.
+ * X-FROM=COMPLETION: such a rule has no day parts, and its next date is a span after an anchor:
+ * INTERVAL days, weeks, months, or years after the day the task was finished, when
+ * `context.completedOn` is given (the store passes it only when a task is completed), else after
+ * `previousDue` (a skip, a preview, validation). A month or a year lands on the same day of the
+ * target month, or on its last day when the month is shorter (Oct 31 to Nov 30, Feb 29 to Feb 28),
+ * never skipping a month the way an RRULE day of the month would. The time of day is kept, and
+ * UNTIL and COUNT end it as they end any rule.
  *
  * COUNT is exact, and counts tasks: COUNT=N on a task means this one and N-1 more. This function
  * only has to know whether any are left (COUNT=1 means none: null), because the store lowers
@@ -298,13 +351,16 @@ export function nextOccurrence(rrule: string, previousDue: string, today: string
   const ruleStr = resolveAlias(split.base);
   const anchor = split.fromCompletion && context.completedOn ? splitDue(context.completedOn).datePart : datePart;
   const dtstart = new Date(`${anchor}T00:00:00Z`);
-  const rule = buildRule(ruleStr, dtstart, rrule);
+  const rule = buildRule(ruleStr, dtstart, rrule, split.fromCompletion);
   if (rule.count === 1) return null;
+  const todayDate = new Date(`${today}T00:00:00Z`);
 
-  let occurrence = firstOccurrence(rule, dtstart, dtstart, false);
-  if (occurrence) {
-    const todayDate = new Date(`${today}T00:00:00Z`);
-    if (occurrence < todayDate) occurrence = firstOccurrence(rule, dtstart, todayDate, true);
+  let occurrence: Date | null;
+  if (split.fromCompletion) {
+    occurrence = fromFinish(rule, dtstart, todayDate);
+  } else {
+    occurrence = firstOccurrence(rule, dtstart, dtstart, false);
+    if (occurrence && occurrence < todayDate) occurrence = firstOccurrence(rule, dtstart, todayDate, true);
   }
   if (!occurrence) return null;
 
