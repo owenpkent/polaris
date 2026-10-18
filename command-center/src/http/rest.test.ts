@@ -814,3 +814,21 @@ test('GET /api/recurrence/preview lists the next dates, and answers 400 for a ba
     assert.equal((await api(base, 'GET', '/api/recurrence/preview')).status, 400);
   });
 });
+
+test('GET /api/tasks reads dueAfter and dueBefore as a due is stored, so the value a task was created with finds it', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const zoned = '2026-10-20T14:00:00Z';
+    const created = await api(base, 'POST', '/api/tasks', { title: 'Zoned due', dueAt: zoned });
+    assert.equal(created.status, 201);
+    assert.equal(created.json.task.dueAt, '2026-10-20T14:00', 'stored as local time (the fake app is in UTC)');
+    const ids = (r: { json: { tasks: { id: string }[] } }) => r.json.tasks.map((x) => x.id);
+    const after = await api(base, 'GET', '/api/tasks?dueAfter=' + encodeURIComponent(zoned));
+    assert.ok(ids(after).includes(created.json.task.id), 'the lower bound is inclusive at the exact due');
+    const before = await api(base, 'GET', '/api/tasks?dueBefore=' + encodeURIComponent(zoned));
+    assert.ok(!ids(before).includes(created.json.task.id), 'the upper bound is exclusive at the exact due');
+    const later = await api(base, 'GET', '/api/tasks?dueBefore=' + encodeURIComponent('2026-10-20T14:01:00Z'));
+    assert.ok(ids(later).includes(created.json.task.id));
+  });
+});

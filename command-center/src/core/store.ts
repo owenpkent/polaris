@@ -267,7 +267,8 @@ export class Store {
   private readonly nextOccurrence?: StoreOptions['nextOccurrence'];
   private readonly validateRecurrence?: StoreOptions['validateRecurrence'];
   private readonly today: () => string;
-  private readonly timezone: string;
+  /** IANA timezone a zoned due is read in (dueAt.ts). Public so the rules engine reads a rule's operands in it. */
+  readonly timezone: string;
 
   constructor(db: SqlDriver, opts: StoreOptions = {}) {
     this.db = db;
@@ -276,11 +277,27 @@ export class Store {
     this.validateRecurrence = opts.validateRecurrence;
     this.today = opts.today ?? (() => this.now().slice(0, 10));
     this.timezone = opts.timezone ?? 'UTC';
+    this.normalizeZonedDues();
   }
 
   /** A due date as it is stored: a zoned value becomes floating local time (dueAt.ts). */
   private localDue<T extends string | null | undefined>(v: T): T {
     return (typeof v === 'string' ? toLocalDue(v, this.timezone) : v) as T;
+  }
+
+  /**
+   * Rows written before a zoned due was stored as local time still hold the moment with its zone.
+   * They are brought into the stored form when the store opens, so the views, the digest, rules,
+   * and filters read them as the dashboard shows them; a write would have done the same. Nothing
+   * else about the row changes, and a store with no such rows does one cheap query.
+   */
+  private normalizeZonedDues(): void {
+    const rows = this.db.all<{ id: string; due_at: string }>(
+      "SELECT id, due_at FROM tasks WHERE due_at GLOB '????-??-??T*' AND (due_at GLOB '*Z' OR due_at GLOB '*[+-][0-9][0-9]:[0-9][0-9]' OR due_at GLOB '*[+-][0-9][0-9][0-9][0-9]')");
+    for (const r of rows) {
+      const local = toLocalDue(r.due_at, this.timezone);
+      if (local !== r.due_at) this.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', [local, r.id]);
+    }
   }
 
   // ---------------------------------------------------------------- events
@@ -812,8 +829,9 @@ export class Store {
     if (f.parentId !== undefined) {
       if (f.parentId === null) c.push('t.parent_id IS NULL'); else { c.push('t.parent_id = ?'); p.push(f.parentId); }
     }
-    if (f.dueBefore) { c.push('t.due_at IS NOT NULL AND t.due_at < ?'); p.push(f.dueBefore); }
-    if (f.dueAfter) { c.push('t.due_at IS NOT NULL AND t.due_at >= ?'); p.push(f.dueAfter); }
+    // A bound is read as a due is stored (dueAt.ts), so the value a task was created with finds it.
+    if (f.dueBefore) { c.push('t.due_at IS NOT NULL AND t.due_at < ?'); p.push(this.localDue(f.dueBefore)); }
+    if (f.dueAfter) { c.push('t.due_at IS NOT NULL AND t.due_at >= ?'); p.push(this.localDue(f.dueAfter)); }
     if (f.hasDue !== undefined) c.push(f.hasDue ? 't.due_at IS NOT NULL' : 't.due_at IS NULL');
     if (f.completedAfter) { c.push('t.completed_at IS NOT NULL AND t.completed_at >= ?'); p.push(f.completedAfter); }
     if (f.completedBefore) { c.push('t.completed_at IS NOT NULL AND t.completed_at < ?'); p.push(f.completedBefore); }

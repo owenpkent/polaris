@@ -30,8 +30,9 @@ export function addDays(date, n) {
 }
 
 // A due value with a zone or an offset ('...Z', '+02:00'), which the server turns into floating
-// local time on the way in but an older row may still hold, is read as the local time of that
-// moment, so the list, the picker, and a reminder agree; an edit then saves the floating form.
+// local time (on the way in, and for older rows when it opens the database) but a cached copy may
+// still hold, is read as the local time of that moment, so the list, the picker, and a reminder
+// agree; an edit then saves the floating form.
 // A day or a floating time is returned as it is.
 const ZONED_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
 // Exactly midnight UTC is what toISOString() makes of a plain date, so it reads as that date, as

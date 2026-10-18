@@ -5,11 +5,12 @@ import { listNotifications, runRules, validateRuleDefinition } from './rules.ts'
 
 const TODAY = '2026-09-12';
 
-function fresh(): Store {
+function fresh(timezone?: string): Store {
   let tick = 0;
   return openStore(':memory:', {
     now: () => new Date(Date.UTC(2026, 8, 12, 9, 0, tick++)).toISOString(),
     nextOccurrence: () => null,
+    timezone,
   });
 }
 
@@ -508,4 +509,28 @@ test('the overdue schedule trigger leaves out a task due earlier today at a time
   s.createTask({ title: 'This morning', dueAt: `${TODAY}T06:00` });
   const late = s.createTask({ title: 'Yesterday evening', dueAt: '2026-09-11T20:00' });
   assert.deepEqual(runRules(s, { today: TODAY }).fired.map((f) => f.taskId), [late.id]);
+});
+
+test('a dueAt operand with a zone is read as the task was stored, in every operator and in an in list', () => {
+  const s = fresh('America/Chicago');
+  const zoned = '2026-09-14T14:00:00Z'; // nine in the morning in Chicago, stored as 2026-09-14T09:00
+  const rule = (op: string, value: unknown) => addRule(s, {
+    trigger: { type: 'schedule', condition: 'due_within_days', days: 30 },
+    conditions: [{ field: 'dueAt', op, value }],
+    actions: [{ type: 'notify', message: op + ': {title}' }],
+  }, { name: op });
+  const eq = rule('eq', zoned);
+  const before = rule('before', zoned);
+  const after = rule('after', zoned);
+  const within = rule('in', ['2026-09-13', zoned]);
+  const exact = s.createTask({ title: 'Created with the zoned value', dueAt: zoned });
+  assert.equal(exact.dueAt, '2026-09-14T09:00');
+  const earlier = s.createTask({ title: 'An hour earlier', dueAt: '2026-09-14T08:00' });
+  const later = s.createTask({ title: 'An hour later', dueAt: '2026-09-14T10:00' });
+  const report = runRules(s, { today: TODAY });
+  const firedFor = (r: { id: string }) => report.fired.filter((f) => f.ruleId === r.id).map((f) => f.taskId).sort();
+  assert.deepEqual(firedFor(eq), [exact.id]);
+  assert.deepEqual(firedFor(before), [earlier.id]);
+  assert.deepEqual(firedFor(after), [later.id]);
+  assert.deepEqual(firedFor(within), [exact.id]);
 });
