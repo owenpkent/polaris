@@ -439,8 +439,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   test('settings: page', async ({ page }, testInfo) => {
     await openView(page, 'settings')
     // The backup folder is a scratch directory with a random name, and the newest copy carries
-    // the time the test server started.
-    const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
+    // the time the test server started, and the dashboard build carries its commit and build time.
+    const values = page.getByText(/^(Folder|Newest copy|Dashboard)$/).locator('xpath=following-sibling::span')
     await shot(page, testInfo, 'settings', 'page', [values])
   })
 
@@ -463,7 +463,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     // The card sits below the connection and agent cards, under the fold at both widths. The
     // page's scroll-padding-top (src/index.css) keeps it clear of the sticky top bar.
     await card.evaluate((el) => el.scrollIntoView({ block: 'start' }))
-    const values = page.getByText(/^(Folder|Newest copy)$/).locator('xpath=following-sibling::span')
+    const values = page.getByText(/^(Folder|Newest copy|Dashboard)$/).locator('xpath=following-sibling::span')
     await shot(page, testInfo, 'settings', 'reminders', [values])
   })
 
@@ -478,5 +478,15 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     // Scrolled to the buttons, so the preview under them is in the shot.
     await card.getByRole('button', { name: 'Preview' }).evaluate((el) => el.scrollIntoView({ block: 'start' }))
     await shot(page, testInfo, 'settings', 'import-preview')
+  })
+
+  // The About card is the last on the page, so the jump button brings it into the shot. The
+  // dashboard build carries the commit and the build time, which change with every build.
+  test('settings: about', async ({ page }, testInfo) => {
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
+    const card = page.getByRole('region', { name: 'About' })
+    await expect(card.getByText(/^v\d/).last()).toBeVisible()
+    await shot(page, testInfo, 'settings', 'about', [card.getByText('Dashboard', { exact: true }).locator('xpath=following-sibling::span')])
   })
 })
