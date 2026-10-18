@@ -27,7 +27,9 @@ export default function AboutSettings({ build = BUILD_INFO }) {
   const { connected, health, api } = useConnection()
   const [fresh, setFresh] = useState(null)
   useEffect(() => {
-    if (!connected || !api) return undefined
+    // A different server, or none, starts from its own health check, never the last one's answer.
+    setFresh(null)
+    if (!connected) return undefined
     let live = true
     api.health().then((res) => { if (live && res?.version) setFresh(res.version) }, () => {})
     return () => { live = false }

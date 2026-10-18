@@ -2,12 +2,14 @@ import { describe, test, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import AboutSettings, { formatBuild } from './AboutSettings'
 
-let connection = { connected: true, health: { version: '2.0.0' } }
+// A server that has not answered yet, so the first rows read the context's last health check.
+const waiting = () => ({ health: () => new Promise(() => {}) })
+let connection = { connected: true, health: { version: '2.0.0' }, api: waiting() }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
 
 afterEach(() => {
   cleanup()
-  connection = { connected: true, health: { version: '2.0.0' } }
+  connection = { connected: true, health: { version: '2.0.0' }, api: waiting() }
 })
 
 const row = (label) => screen.getByText(label).nextElementSibling.textContent
@@ -22,11 +24,11 @@ describe('AboutSettings', () => {
   })
 
   test('says when the server has not answered or there is no connection', () => {
-    connection = { connected: true, health: null }
+    connection = { connected: true, health: null, api: waiting() }
     render(<AboutSettings />)
     expect(row('Server')).toBe('Not reached yet')
     cleanup()
-    connection = { connected: false, health: null }
+    connection = { connected: false, health: null, api: waiting() }
     render(<AboutSettings />)
     expect(row('Server')).toBe('Not connected')
   })
@@ -42,8 +44,30 @@ describe('AboutSettings', () => {
     connection = { connected: true, health: { version: '2.0.0' }, api: { health: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) } }
     render(<AboutSettings />)
     await waitFor(() => expect(connection.api.health).toHaveBeenCalled())
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(row('Server')).toBe('v2.0.0')
+  })
+
+  test('a switch to another server drops the last server\'s answer', async () => {
+    connection = { connected: true, health: { version: '2.0.0' }, api: { health: vi.fn().mockResolvedValue({ version: '2.1.0' }) } }
+    const { rerender } = render(<AboutSettings />)
+    await waitFor(() => expect(row('Server')).toBe('v2.1.0'))
+    connection = { connected: true, health: { version: '3.0.0' }, api: { health: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) } }
+    rerender(<AboutSettings />)
+    await waitFor(() => expect(connection.api.health).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(row('Server')).toBe('v3.0.0')
+  })
+
+  test('an answer that arrives after the card closes is dropped', async () => {
+    let answer
+    connection = { connected: true, health: null, api: { health: vi.fn(() => new Promise((resolve) => { answer = resolve })) } }
+    const { unmount } = render(<AboutSettings />)
+    const errors = vi.spyOn(console, 'error')
+    unmount()
+    answer({ version: '2.1.0' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(errors).not.toHaveBeenCalled()
   })
 
   test('does not ask anything without a connection', () => {
