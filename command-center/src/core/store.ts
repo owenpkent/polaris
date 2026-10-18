@@ -3,6 +3,7 @@
 
 // Web Crypto keeps this file portable to Workers.
 import { countRows, type DatabaseCounts, type SqlDriver, type SqlValue } from './db.ts';
+import { remainingCount, withOneFewer } from './recurrenceCount.ts';
 import {
   ACTIVE_STATUSES, CHECKLIST_ID_FIELD, CHECKLIST_MAX_ITEM, CHECKLIST_MAX_ITEMS, CHECKLIST_MAX_NAME, CHECKLIST_REPEAT_ITEMS_FIELD, CONFIDENCES, EXTERNAL_SOURCE_TYPES, GOAL_PROGRESS_MODES, GOAL_STATUSES, JUDGED_POST_TYPES, OPEN_GOAL_STATUSES, POST_STATUSES, POST_TYPES, PRIORITIES, RELEASE_VERSION_PATTERN, TASK_STATUSES, UPDATE_REQUEST_STALE_MS, UPDATE_REQUEST_TTL_MS,
   type Actor, type ActorInput, type AppliedOp, type CcEvent, type Checklist, type ChecklistPatch, type ChecklistStart, type NewChecklist, type Comment, type CustomFieldValue, type EventKind, type Goal, type GoalDetail,
@@ -38,8 +39,12 @@ export function newId(prefix: string): string {
 
 export interface StoreOptions {
   now?: () => string;
-  /** Given an RRULE and the previous due date, return the next due date (same format) or null when the series ends. */
-  nextOccurrence?: (rrule: string, previousDue: string) => string | null;
+  /**
+   * Given an RRULE and the previous due date, return the next due date (same format) or null when the
+   * series ends. completeTask also passes the day the task was finished, which a rule with
+   * X-FROM=COMPLETION counts from; a hook that takes two arguments simply ignores it.
+   */
+  nextOccurrence?: (rrule: string, previousDue: string, context?: { completedOn?: string }) => string | null;
   /** Return an error message if the recurrence rule is invalid, else null. */
   validateRecurrence?: (rrule: string) => string | null;
   /**
@@ -618,7 +623,11 @@ export class Store {
     return false;
   }
 
-  /** Complete a task. If it recurs, the next instance is created and returned. */
+  /**
+   * Complete a task. If it recurs, the next instance is created and returned. The next instance's
+   * rule has one occurrence fewer when it carries a COUNT (core/recurrenceCount.ts), so COUNT=N on
+   * a task always means this one and N-1 more, and COUNT=1 makes no next instance.
+   */
   completeTask(id: string, actor: ActorInput = 'human'): { task: Task; next: Task | null } {
     return this.db.transaction(() => {
       const before = this.requireTask(id);
@@ -631,7 +640,7 @@ export class Store {
         const from = before.dueAt ?? this.today();
         let nextDue: string | null = null;
         try {
-          nextDue = this.nextOccurrence(before.recurrence, from);
+          nextDue = this.nextOccurrence(before.recurrence, from, { completedOn: this.today() });
         } catch (e) {
           // A bad rule must never make a task impossible to complete.
           this.addComment(id, `Completed, but no next occurrence was created: ${e instanceof Error ? e.message : String(e)}`, 'system');
@@ -639,7 +648,7 @@ export class Store {
         if (nextDue) {
           next = this.createTask({
             title: before.title, notes: before.notes, projectId: before.projectId, sectionId: before.sectionId, parentId: before.parentId,
-            priority: before.priority, dueAt: nextDue, estimateMinutes: before.estimateMinutes, recurrence: before.recurrence,
+            priority: before.priority, dueAt: nextDue, estimateMinutes: before.estimateMinutes, recurrence: withOneFewer(before.recurrence),
             assignee: before.assignee,
             // Shifted by the same amount as the due date, so a task that always starts three days
             // before it is due keeps doing that. Dropping it lost the only field a user can set on
@@ -666,7 +675,10 @@ export class Store {
 
   /**
    * Skip one occurrence of an open recurring task: the due date moves to the next occurrence and the
-   * task stays the same task. Nothing is completed and no task is created.
+   * task stays the same task. Nothing is completed and no task is created. A skip uses up the
+   * occurrence, so a rule with a COUNT loses one; the last one (COUNT=1) cannot be skipped, since
+   * there is nothing to skip to, and is completed or dropped instead. A rule with
+   * X-FROM=COMPLETION still counts from the due date here: skipping is not finishing.
    */
   skipOccurrence(id: string, actor: ActorInput = 'human'): Task {
     return this.db.transaction(() => {
@@ -674,10 +686,17 @@ export class Store {
       if (before.status === 'done' || before.status === 'dropped') throw new ValidationError('Only an open task can be skipped.');
       if (!before.recurrence) throw new ValidationError('This task does not repeat.');
       if (!this.nextOccurrence) throw new ValidationError('Repeating tasks are not available.');
+      if (remainingCount(before.recurrence) === 1) {
+        throw new ValidationError('This is the last occurrence of the series, so there is nothing to skip to. Complete it or drop it instead.');
+      }
       const from = before.dueAt ?? this.today();
       const nextDue = this.nextOccurrence(before.recurrence, from);
       if (!nextDue) throw new ValidationError('This repeating task has no later occurrence.');
-      const task = this.updateTask(id, { dueAt: nextDue, startAt: shiftStartAt(before.startAt, before.dueAt, nextDue) }, actor);
+      const recurrence = withOneFewer(before.recurrence);
+      const task = this.updateTask(id, {
+        dueAt: nextDue, startAt: shiftStartAt(before.startAt, before.dueAt, nextDue),
+        ...(recurrence !== before.recurrence ? { recurrence } : {}),
+      }, actor);
       this.addComment(id, `Skipped the occurrence due ${before.dueAt ?? from}.`, 'system');
       return task;
     });

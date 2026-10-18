@@ -188,7 +188,6 @@ test('the walk also agrees with rrule about occurrences at or after a later date
     ['FREQ=WEEKLY;BYDAY=MO,TH', '2026-09-10', '2026-10-01'],
     ['FREQ=MONTHLY;BYDAY=2TU', '2026-09-10', '2027-03-01'],
     ['FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29', '2024-02-29', '2029-01-01'],
-    ['FREQ=DAILY;INTERVAL=7;COUNT=3', '2026-09-10', '2026-09-25'],
     ['FREQ=DAILY;INTERVAL=7;COUNT=3', '2026-09-10', '2026-09-20'],
     ['FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=31', '2026-01-31', '2026-06-01'],
   ]) {
@@ -199,6 +198,15 @@ test('the walk also agrees with rrule about occurrences at or after a later date
     const expected = first && first < todayDate ? reference.after(todayDate, true) : first;
     assert.equal(nextOccurrence(rule, start, today), expected ? expected.toISOString().slice(0, 10) : null, `${rule} from ${start} on ${today}`);
   }
+});
+
+// The one place the walk parts from rrule on purpose. rrule counts COUNT in dates from DTSTART, so
+// a weekly series of three finished two weeks late would be over. Here COUNT counts the tasks left
+// (the store lowers it as each is used up), and a late finish does not burn the dates it missed.
+test('COUNT counts tasks, not dates: a late finish with occurrences left still gets a next one', () => {
+  assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=7;COUNT=3', '2026-09-10', '2026-09-25'), '2026-10-01');
+  assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=7;COUNT=2', '2026-09-10', '2026-12-25'), '2026-12-31');
+  assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=7;COUNT=1', '2026-09-10', '2026-09-25'), null);
 });
 
 test('parts that are not supported, and ranges that make no sense, are refused with their name', () => {
@@ -245,6 +253,11 @@ test('previewOccurrences chains from each result', () => {
 test('previewOccurrences stops when the series ends, and can be empty', () => {
   assert.deepEqual(previewOccurrences('FREQ=WEEKLY;UNTIL=20260925', '2026-09-10', '2026-09-10', 5), ['2026-09-17', '2026-09-24']);
   assert.deepEqual(previewOccurrences('FREQ=WEEKLY;UNTIL=20260901', '2026-09-10', '2026-09-10', 5), []);
+});
+
+test('previewOccurrences uses up COUNT as completing each one would: COUNT=3 has two dates after this one', () => {
+  assert.deepEqual(previewOccurrences('FREQ=DAILY;COUNT=3', '2026-09-10', '2026-09-10', 5), ['2026-09-11', '2026-09-12']);
+  assert.deepEqual(previewOccurrences('FREQ=DAILY;COUNT=1', '2026-09-10', '2026-09-10', 5), []);
 });
 
 test('previewOccurrences throws on an invalid rule', () => {

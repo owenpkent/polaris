@@ -5,6 +5,7 @@
 // loader only a default export is visible (named exports are not statically detectable). We
 // pull RRule off the default import rather than `import { RRule } from 'rrule'`.
 import rrulePkg from 'rrule';
+import { withOneFewer } from '../core/recurrenceCount.ts';
 
 const { RRule } = rrulePkg;
 
@@ -45,6 +46,29 @@ function resolveAlias(input: string): string {
   return trimmed.replace(/^RRULE:/i, '');
 }
 
+/**
+ * The one extension part a rule may carry, `X-FROM=COMPLETION`: the next due date counts from the
+ * day the task is finished rather than from its due date. It is taken off before the rest goes to
+ * rrule, which knows nothing of it. Any other `X-` part is refused by name, as is a second X-FROM.
+ */
+function splitExtensions(input: string): { base: string; fromCompletion: boolean } {
+  const kept: string[] = [];
+  let fromCompletion = false;
+  for (const piece of input.trim().split(';')) {
+    const [rawKey, ...rest] = piece.split('=');
+    const key = rawKey.trim().replace(/^RRULE:/i, '').toUpperCase();
+    if (!key.startsWith('X-')) { kept.push(piece); continue; }
+    const value = rest.join('=').trim().toUpperCase();
+    if (key !== 'X-FROM') throw new Error(`${key} is not supported (the only extension is X-FROM=COMPLETION)`);
+    if (value !== 'COMPLETION') throw new Error("X-FROM must be COMPLETION (leave it out to count from the due date)");
+    if (fromCompletion) throw new Error('X-FROM is given twice');
+    fromCompletion = true;
+  }
+  // A leading "RRULE:" on an X- part that came first is dropped with it; put it back for the rest.
+  const base = kept.join(';');
+  return { base: /^RRULE:/i.test(input.trim()) && !/^RRULE:/i.test(base) ? `RRULE:${base}` : base, fromCompletion };
+}
+
 interface SplitDue {
   datePart: string;
   timePart: string | null;
@@ -70,7 +94,9 @@ function splitDue(due: string): SplitDue {
 // UNTIL, BYMONTH, BYMONTHDAY, BYDAY (with a position for MONTHLY and YEARLY), and WKST. The parts
 // that are refused are the ones with no meaning for a date-only due date (BYHOUR and below) or
 // where a rule that never matches hides most easily (BYSETPOS, BYWEEKNO, BYYEARDAY). Where a rule
-// is accepted, the walk agrees with rrule; recurrence.test.ts checks that against rrule itself.
+// is accepted, the walk agrees with rrule, with one deliberate difference: COUNT counts the tasks
+// left rather than dates from DTSTART (see nextOccurrence). recurrence.test.ts checks the walk
+// against rrule itself. The extension X-FROM=COMPLETION is taken off before rrule sees the rule.
 
 const MAX_RULE_LENGTH = 200;
 /** How far past the previous due date the walk looks before calling the series finished. */
@@ -214,27 +240,31 @@ function passesFilters(rule: CalendarRule, d: Date): boolean {
 
 /**
  * The first occurrence at or after `notBefore` (strictly after, when `notBefore` is `dtstart`
- * and `inclusive` is false), or null when COUNT or UNTIL is exhausted first or nothing comes
- * up within the horizon. Occurrences are counted from `dtstart` inclusive, as rrule counts them.
+ * and `inclusive` is false), or null when UNTIL is passed first or nothing comes up within the
+ * horizon. COUNT plays no part here: it counts tasks, not dates (see nextOccurrence).
  */
 function firstOccurrence(rule: CalendarRule, dtstart: Date, notBefore: Date, inclusive: boolean): Date | null {
-  let seen = 0;
   for (let i = 0; i <= HORIZON_DAYS; i++) {
     const d = new Date(dtstart.getTime() + i * DAY_MS);
     if (rule.until && d > rule.until) return null;
     if (!onInterval(rule, dtstart, d) || !passesFilters(rule, d)) continue;
-    seen++;
-    if (rule.count !== null && seen > rule.count) return null;
     if (inclusive ? d >= notBefore : d > notBefore) return d;
   }
   return null;
+}
+
+/** What the store knows about why the next date is wanted. Only completeTask passes it. */
+export interface OccurrenceContext {
+  /** The day (YYYY-MM-DD) the task was finished on, for a rule with X-FROM=COMPLETION. */
+  completedOn?: string;
 }
 
 /**
  * Next due date for a recurring task.
  *
  * Accepts a raw RRULE ("FREQ=WEEKLY;BYDAY=MO"), the same with an "RRULE:" prefix, or a friendly
- * alias ("daily", "weekly", "weekdays", "monthly", "yearly", "every 2 weeks").
+ * alias ("daily", "weekly", "weekdays", "monthly", "yearly", "every 2 weeks"), either of them
+ * optionally followed by ";X-FROM=COMPLETION".
  *
  * `previousDue` is the due date of the instance that was just completed. The result is the first
  * occurrence strictly after `previousDue`, advanced (if needed) to the first occurrence on or
@@ -243,18 +273,34 @@ function firstOccurrence(rule: CalendarRule, dtstart: Date, notBefore: Date, inc
  * nothing comes up within 200 years. A date-only `previousDue` produces a date-only result; a
  * datetime `previousDue` produces a datetime result with the same time-of-day and zone.
  *
- * LIMITATION (documented, not fixed here): each call re-anchors DTSTART at `previousDue` (the
- * store keeps only the latest instance, not the series' original start), so COUNT=N is
- * approximate and can produce more than N total instances over the series' life; UNTIL is exact,
- * since it is an absolute date rather than a count from DTSTART.
+ * X-FROM=COMPLETION: when `context.completedOn` is given (the store passes it only when a task is
+ * completed), the walk starts from that day instead: the first occurrence strictly after the day
+ * the task was finished, with the previous due date's time-of-day. A plain "every 3 days" then
+ * means three days after it was done, early or late. Without a completion day (a skip, a preview,
+ * validation) such a rule counts from `previousDue` like any other.
+ *
+ * COUNT is exact, and counts tasks: COUNT=N on a task means this one and N-1 more. This function
+ * only has to know whether any are left (COUNT=1 means none: null), because the store lowers
+ * COUNT by one on the rule each time an occurrence is used up, on the next instance when a task is
+ * completed and on the task itself when one is skipped (core/recurrenceCount.ts). A late
+ * completion that jumps the walk past missed dates does not use them up: the series still gives
+ * the same number of tasks. UNTIL is exact too, since it is an absolute date.
  */
-export function nextOccurrence(rrule: string, previousDue: string, today: string): string | null {
+export function nextOccurrence(rrule: string, previousDue: string, today: string, context: OccurrenceContext = {}): string | null {
   const { datePart, timePart, zonePart } = splitDue(previousDue);
-  const ruleStr = resolveAlias(rrule);
-  const dtstart = new Date(`${datePart}T00:00:00Z`);
+  if (rrule.length > MAX_RULE_LENGTH) throw new Error(`invalid recurrence rule: must be ${MAX_RULE_LENGTH} characters or fewer`);
+  let split: { base: string; fromCompletion: boolean };
+  try {
+    split = splitExtensions(rrule);
+  } catch (e) {
+    throw new Error(`invalid recurrence rule '${rrule}': ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const ruleStr = resolveAlias(split.base);
+  const anchor = split.fromCompletion && context.completedOn ? splitDue(context.completedOn).datePart : datePart;
+  const dtstart = new Date(`${anchor}T00:00:00Z`);
   const rule = buildRule(ruleStr, dtstart, rrule);
+  if (rule.count === 1) return null;
 
-  // COUNT=1 (or any exhausted COUNT/UNTIL) means there is nothing after DTSTART: null below.
   let occurrence = firstOccurrence(rule, dtstart, dtstart, false);
   if (occurrence) {
     const todayDate = new Date(`${today}T00:00:00Z`);
@@ -267,17 +313,22 @@ export function nextOccurrence(rrule: string, previousDue: string, today: string
 }
 
 /**
- * The next `count` occurrences after `from`, each chained from the one before. Stops early when the
- * series ends, so the result can be shorter than `count` or empty. Throws on an invalid rule.
+ * The next `count` occurrences after `from`, each chained from the one before, the way completing
+ * each one on its due date would go: COUNT is lowered at every step as the store lowers it. Stops
+ * early when the series ends, so the result can be shorter than `count` or empty. Throws on an
+ * invalid rule. A rule with X-FROM=COMPLETION is previewed from its due dates, as if each one were
+ * finished on the day it is due.
  */
 export function previewOccurrences(rrule: string, from: string, today: string, count: number): string[] {
   const dates: string[] = [];
   let cursor = from;
+  let rule = rrule;
   for (let i = 0; i < count; i++) {
-    const next = nextOccurrence(rrule, cursor, today);
+    const next = nextOccurrence(rule, cursor, today);
     if (!next) break;
     dates.push(next);
     cursor = next;
+    rule = withOneFewer(rule);
   }
   return dates;
 }
