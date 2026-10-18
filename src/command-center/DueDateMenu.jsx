@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Popover, useRovingFocus } from './Menu'
-import { localIso, addDays, dueDateOnly, dueTimeOnly, joinDue, withDueDate } from './dueDates'
+import { localIso, addDays, dueDateOnly, dueTimeOnly, joinDue } from './dueDates'
 
 const menuItemStyle = {
   display: 'flex',
@@ -21,7 +21,8 @@ const menuItemStyle = {
 // Due date field (TaskDetailPanel.jsx): quick picks, a date box and an optional time box, and
 // Clear. `value` is the task's dueAt (a day, or a day and a time, or null); `onChange` gets the new
 // dueAt ('YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM', floating local time), or null for Clear. A quick pick
-// changes the day and keeps the time already set, as the date box does; Remove time keeps the day.
+// changes the day and keeps the time in the box (the task's, or one just typed), as the date box
+// does; Remove time keeps the day.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label }) {
   const listRef = useRef(null)
   const onKeyDown = useRovingFocus(listRef)
@@ -33,13 +34,19 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
   // before the rest could be typed. Enter in a box or the Set date button saves the draft.
   const [draft, setDraft] = useState(dateOnly)
   const [draftTime, setDraftTime] = useState(timeOnly)
+  // Chromium reports '' for a time box with a segment cleared (validity.badInput), the same as an
+  // empty one. While the box holds such a half-typed time nothing is saved from it, and the time
+  // in the draft stays the last whole one, so a half-typed time never reads as "no time".
+  const [timePartial, setTimePartial] = useState(false)
   useEffect(() => {
     if (open) {
       setDraft(dateOnly)
       setDraftTime(timeOnly)
+      setTimePartial(false)
     }
   }, [open, dateOnly, timeOnly])
   const unchanged = draft === dateOnly && draftTime === timeOnly
+  const cannotSet = !draft || unchanged || timePartial
 
   const now = new Date()
   const nextMondayDays = ((1 - now.getDay() + 7) % 7) || 7
@@ -50,12 +57,18 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
   }
 
   function commitDraft() {
-    if (!draft || unchanged) return
+    if (cannotSet) return
     commit(joinDue(draft, draftTime))
   }
 
   // A time with no day yet goes on today, so typing a time alone is enough.
-  function changeTime(next) {
+  function changeTime(e) {
+    const next = e.target.value
+    if (!next && e.target.validity?.badInput) {
+      setTimePartial(true)
+      return
+    }
+    setTimePartial(false)
     setDraftTime(next)
     if (next && !draft) setDraft(dueBounds.today)
   }
@@ -80,7 +93,7 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
           { key: 'monday', label: 'Next Monday', value: localIso(addDays(now, nextMondayDays)) },
           { key: 'week', label: 'In one week', value: localIso(addDays(now, 7)) },
         ].map((opt) => (
-          <button key={opt.key} type="button" role="menuitem" data-menu-item onClick={() => commit(withDueDate(value, opt.value))} style={menuItemStyle}>
+          <button key={opt.key} type="button" role="menuitem" data-menu-item onClick={() => commit(joinDue(opt.value, draftTime))} style={menuItemStyle}>
             {opt.label}
           </button>
         ))}
@@ -102,7 +115,7 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
             type="time"
             data-menu-item
             value={draftTime}
-            onChange={(e) => changeTime(e.target.value)}
+            onChange={changeTime}
             onKeyDown={onDateKeyDown}
             style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
           />
@@ -111,12 +124,12 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
           type="button"
           role="menuitem"
           data-menu-item
-          disabled={!draft || unchanged}
+          disabled={cannotSet}
           onClick={commitDraft}
           style={{
             ...menuItemStyle,
-            color: !draft || unchanged ? 'var(--t3)' : 'var(--t1)',
-            cursor: !draft || unchanged ? 'default' : 'pointer',
+            color: cannotSet ? 'var(--t3)' : 'var(--t1)',
+            cursor: cannotSet ? 'default' : 'pointer',
           }}
         >
           {draftTime ? 'Set date and time' : 'Set date'}

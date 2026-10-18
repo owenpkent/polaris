@@ -165,6 +165,39 @@ describe('the time box', () => {
     expect(onChange).toHaveBeenCalledWith(`${DUE_BOUNDS.tomorrow}T09:30`)
   })
 
+  test('a time typed in the box goes with a quick pick', () => {
+    const { onChange } = renderMenu('2026-10-20')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '08:15' } })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    expect(onChange).toHaveBeenCalledWith(`${DUE_BOUNDS.tomorrow}T08:15`)
+  })
+
+  // Chromium reports '' for a time box with a segment cleared (validity.badInput), the same as an
+  // empty one. A half-typed time must not read as "no time".
+  test('a half-typed time is not a cleared time: nothing saves and the old time stays', () => {
+    const { onChange, input } = renderMenu('2026-10-20T09:30')
+    const time = screen.getByLabelText('Time')
+    Object.defineProperty(time, 'validity', { configurable: true, value: { badInput: true, valid: false } })
+    fireEvent.change(time, { target: { value: '' } })
+    fireEvent.keyDown(time, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('menuitem', { name: /^Set date/ }).disabled).toBe(true)
+    // A new day still keeps the time the task had.
+    fireEvent.change(input, { target: { value: '2026-10-21' } })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    expect(onChange).toHaveBeenCalledWith(`${DUE_BOUNDS.tomorrow}T09:30`)
+  })
+
+  test('a zoned due value opens on its local day and time, and saves the local floating form', () => {
+    const zoned = new Date(2026, 9, 20, 21, 45).toISOString()
+    const { onChange, input } = renderMenu(zoned)
+    expect(input.value).toBe('2026-10-20')
+    expect(screen.getByLabelText('Time').value).toBe('21:45')
+    fireEvent.change(input, { target: { value: '2026-10-22' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith('2026-10-22T21:45')
+  })
+
   test('Up and Down stay in the time box', () => {
     renderMenu('2026-10-08T09:30')
     const time = screen.getByLabelText('Time')

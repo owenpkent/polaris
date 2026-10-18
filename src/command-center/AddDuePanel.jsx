@@ -71,7 +71,9 @@ export default function AddDuePanel({ dueAt, onPick, recurrence, onRecurrenceCha
                 ref={timeRef}
                 type="time"
                 value={time}
-                onChange={(e) => setTime(e.target.value)}
+                // A half-typed time reads '' in Chromium (validity.badInput): keep the last whole
+                // one rather than dropping the time from the next pick.
+                onChange={(e) => { if (e.target.value || !e.target.validity?.badInput) setTime(e.target.value) }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Enter') return
                   e.preventDefault()

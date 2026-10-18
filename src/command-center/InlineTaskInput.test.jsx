@@ -72,6 +72,18 @@ describe('InlineTaskInput', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${today}T18:00`, recurrence: null }))
   })
 
+  test('a half-typed time keeps the last whole one for the pick', async () => {
+    const { input, onSubmit } = setup()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    const time = screen.getByLabelText('Time')
+    fireEvent.change(time, { target: { value: '09:30' } })
+    Object.defineProperty(time, 'validity', { configurable: true, value: { badInput: true, valid: false } })
+    fireEvent.change(time, { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${getDueBounds().today}T09:30`, recurrence: null }))
+  })
+
   test('Remove time drops the time again and puts focus back on Add time', async () => {
     const { input, onSubmit } = setup()
     await openPicker(input)
