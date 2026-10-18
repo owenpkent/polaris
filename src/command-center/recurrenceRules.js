@@ -290,8 +290,8 @@ function describeDays(text, shape) {
 // Each is { rule, label }, the rule being what buildRule writes for it, and the first is no repeat.
 // A day that is the month's last reads as the last day, and a weekday in the month's last seven
 // days as the last one, so the rule keeps meaning the end of the month in a shorter one. For the
-// same reason the last day of February (the 29th, or the 28th in a common year) is annually on the
-// last day of February, not every fourth year or every 28th.
+// same reason February 29 is annually on the last day of February, not every fourth year, and
+// February 28 in a common year offers that as well as plain yearly on the 28th.
 export function quickPicks(dueIso) {
   const date = dateOf(dueIso)
   const iso = isoOf(date)
@@ -315,9 +315,10 @@ export function quickPicks(dueIso) {
     { rule: build({ unit: 'month', monthMode: 'day', monthDay }), label: `Monthly ${onDay}` },
     { rule: build({ unit: 'month', monthMode: 'weekday', nth, nthWeekday: weekday }), label: `Monthly on the ${NTH_NAMES[nth]} ${weekdayName}` },
     { rule: build({ unit: 'month', interval: 3, monthMode: 'day', monthDay }), label: `Every 3 months ${onDay}` },
-    month === 'February' && lastDay
-      ? { rule: build({ unit: 'year', yearLastFeb: true }), label: 'Annually on the last day of February' }
-      : { rule: build({ unit: 'year' }), label: `Annually on ${month} ${day}` },
+    // February 29 offers only the last day of February; February 28 in a common year offers both,
+    // since a birthday on the 28th stays on the 28th in a leap year.
+    ...(month === 'February' && day === 29 ? [] : [{ rule: build({ unit: 'year' }), label: `Annually on ${month} ${day}` }]),
+    ...(month === 'February' && lastDay ? [{ rule: build({ unit: 'year', yearLastFeb: true }), label: 'Annually on the last day of February' }] : []),
   ]
 }
 
