@@ -46,7 +46,7 @@ describe('repeatLabel', () => {
   })
 
   test('a rule that ends says how', () => {
-    expect(repeatLabel('FREQ=WEEKLY;COUNT=4')).toBe('weekly, 4 more times')
+    expect(repeatLabel('FREQ=WEEKLY;COUNT=4')).toBe('weekly, 3 more after this')
   })
 })
 

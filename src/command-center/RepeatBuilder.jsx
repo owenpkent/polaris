@@ -72,7 +72,9 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
 
   const max = MAX_INTERVAL[shape.unit]
   const unitWord = shape.interval === 1 ? `a ${UNIT_WORDS[shape.unit][0]}` : `${shape.interval} ${UNIT_WORDS[shape.unit][1]}`
-  const countOptions = Array.from({ length: Math.max(MAX_COUNT, shape.count) }, (_, i) => i + 1)
+  // 1 to MAX_COUNT, and a count an agent wrote past that as one more option, never a list that long.
+  const countOptions = Array.from({ length: MAX_COUNT }, (_, i) => i + 1)
+  if (!countOptions.includes(shape.count)) countOptions.push(shape.count)
 
   return (
     <div className="repeat-builder">
@@ -194,7 +196,9 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         </fieldset>
       )}
 
-      {!shape.fromCompletion && shape.unit === 'year' && <p className="repeat-note">On the due date's day and month.</p>}
+      {!shape.fromCompletion && shape.unit === 'year' && (
+        <p className="repeat-note">{shape.yearLastFeb ? 'On the last day of February.' : "On the due date's day and month."}</p>
+      )}
 
       <fieldset className="repeat-month">
         <legend className="field-label">Ends</legend>

@@ -15,7 +15,7 @@ describe('weekdayOf and defaultShape', () => {
 
   test('defaultShape is weekly on the due date', () => {
     expect(defaultShape(DUE)).toEqual({
-      interval: 1, unit: 'week', weekdays: ['WE'], monthMode: 'day', monthDay: 14, nth: 2, nthWeekday: 'WE',
+      interval: 1, unit: 'week', weekdays: ['WE'], monthMode: 'day', monthDay: 14, nth: 2, nthWeekday: 'WE', yearLastFeb: false,
       ends: 'never', until: '2027-01-14', count: 10, fromCompletion: false,
     })
   })
@@ -198,16 +198,17 @@ describe('describeRule', () => {
 
   test('ends: until a date, or how many are left including this one', () => {
     expect(describeRule('FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231')).toBe('weekly on Mon, until Dec 31, 2026')
-    expect(describeRule('FREQ=DAILY;COUNT=5')).toBe('daily, 5 more times')
-    expect(describeRule('FREQ=DAILY;COUNT=1')).toBe('daily, 1 more time')
+    expect(describeRule('FREQ=DAILY;COUNT=5')).toBe('daily, 4 more after this')
+    expect(describeRule('FREQ=DAILY;COUNT=1')).toBe('daily, this is the last one')
+    expect(describeRule('FREQ=DAILY;COUNT=2')).toBe('daily, 1 more after this')
     expect(describeRule('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20270101')).toBe('on weekdays, until Jan 1, 2027')
-    expect(describeRule('FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12')).toBe('monthly on the last day, 12 more times')
+    expect(describeRule('FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=12')).toBe('monthly on the last day, 11 more after this')
   })
 
   test('counted from the finish', () => {
     expect(describeRule('FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION')).toBe('every 3 days after you finish it')
     expect(describeRule('FREQ=WEEKLY;X-FROM=COMPLETION')).toBe('weekly after you finish it')
-    expect(describeRule('FREQ=WEEKLY;INTERVAL=2;COUNT=4;X-FROM=COMPLETION')).toBe('every 2 weeks after you finish it, 4 more times')
+    expect(describeRule('FREQ=WEEKLY;INTERVAL=2;COUNT=4;X-FROM=COMPLETION')).toBe('every 2 weeks after you finish it, 3 more after this')
   })
 })
 
@@ -238,6 +239,23 @@ describe('quickPicks', () => {
     expect(quickPicks('2026-10-28').map((p) => p.label)).toContain('Monthly on the last Wednesday')
     expect(quickPicks('2026-10-21').map((p) => p.label)).toContain('Monthly on the third Wednesday')
     expect(quickPicks('2026-02-28').map((p) => p.label)).toContain('Monthly on the last day')
+  })
+
+  // "yearly" from February 29 comes back only in leap years, so the pick is the last day of February.
+  test('a February 29 due date offers the last day of February every year', () => {
+    const picks = quickPicks('2028-02-29')
+    const annual = picks[picks.length - 1]
+    expect(annual).toEqual({ rule: 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1', label: 'Annually on the last day of February' })
+    expect(describeRule(annual.rule, '2028-02-29')).toBe('yearly on the last day of February')
+    expect(describeRule(annual.rule)).toBe('yearly on the last day of February')
+    expect(matchQuickPick(annual.rule, '2028-02-29')).toBe(annual.rule)
+    expect(buildRule(parseRule(annual.rule, '2028-02-29'))).toBe(annual.rule)
+    expect(buildRule({ ...parseRule(annual.rule, '2028-02-29'), ends: 'after', count: 4 })).toBe('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1;COUNT=4')
+    expect(describeRule('FREQ=YEARLY;INTERVAL=2;BYMONTH=2;BYMONTHDAY=-1')).toBe('every 2 years on the last day of February')
+    // Any other month and day stays a custom rule, and a plain yearly from February 29 is not this pick.
+    expect(parseRule('FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=-1', DUE)).toBeNull()
+    expect(matchQuickPick('yearly', '2028-02-29')).toBeNull()
+    expect(quickPicks('2027-02-28').at(-1)).toEqual({ rule: 'yearly', label: 'Annually on February 28' })
   })
 
   test('with no due date they are worded from today', () => {

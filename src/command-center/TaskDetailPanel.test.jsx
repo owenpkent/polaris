@@ -792,7 +792,7 @@ describe('TaskDetailPanel repeating tasks', () => {
   test('a rule with an end shows as Custom in the Repeat menu', async () => {
     api.getTask.mockResolvedValue(detail({ ...REPEATING, recurrence: 'FREQ=WEEKLY;BYDAY=SA;COUNT=3' }, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, weekly on Sat, 3 more times' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, weekly on Sat, 2 more after this' }))
     expect((await screen.findByRole('menuitemradio', { name: 'Custom' })).getAttribute('aria-checked')).toBe('true')
   })
 

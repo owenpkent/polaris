@@ -4,12 +4,13 @@
 // a friendly alias ("weekly", "every 2 weeks") or an RRULE, optionally with the extension
 // X-FROM=COMPLETION (the next one counts from the day the task is finished). The builder
 // (RepeatBuilder.jsx) edits a plain shape, { interval, unit, weekdays, monthMode, monthDay, nth,
-// nthWeekday, ends, until, count, fromCompletion }, and this module turns that shape into the
+// nthWeekday, yearLastFeb, ends, until, count, fromCompletion }, and this module turns that shape into the
 // shortest string the server accepts and back. A rule the shape cannot hold (a raw RRULE with
 // BYMONTH, say) parses to null and is left for the Recurrence box.
 //
 // COUNT counts the occurrences left, the task that carries it included: the server lowers it by
-// one each time one is completed or skipped, so "5 more times" stays true as the series goes.
+// one each time one is completed or skipped, so a rule with COUNT=5 reads "4 more after this" and
+// COUNT=1 "this is the last one", and the words stay true as the series goes.
 
 export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']
 export const WEEKDAY_NAMES = { MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday', TH: 'Thursday', FR: 'Friday', SA: 'Saturday', SU: 'Sunday' }
@@ -63,6 +64,10 @@ export function defaultShape(dueIso) {
     monthDay: day,
     nth: Math.min(Math.ceil(day / 7), 4),
     nthWeekday: weekday,
+    // Yearly on the last day of February (BYMONTH=2;BYMONTHDAY=-1), the one yearly day part the
+    // builder holds: the February 29 quick pick, which a plain "yearly" would turn into every
+    // four years.
+    yearLastFeb: false,
     ends: 'never',
     until: addMonthsIso(dueIso || isoOf(dateOf(null)), 3),
     count: DEFAULT_COUNT,
@@ -137,7 +142,7 @@ function parseBase(text, dueIso) {
   }
   const unit = UNIT_OF[parts.FREQ]
   if (!unit) return null
-  const known = ['FREQ', 'INTERVAL', 'BYDAY', 'BYMONTHDAY', 'COUNT', 'UNTIL']
+  const known = ['FREQ', 'INTERVAL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'COUNT', 'UNTIL']
   if (Object.keys(parts).some((k) => !known.includes(k))) return null
   const interval = parts.INTERVAL ? Number(parts.INTERVAL) : 1
   if (!Number.isInteger(interval) || interval < 1 || interval > MAX_INTERVAL[unit]) return null
@@ -153,6 +158,10 @@ function parseBase(text, dueIso) {
     if (!m) return null
     shape.ends = 'on'
     shape.until = `${m[1]}-${m[2]}-${m[3]}`
+  }
+  if (parts.BYMONTH) {
+    if (unit !== 'year' || parts.BYMONTH !== '2' || parts.BYMONTHDAY !== '-1' || parts.BYDAY) return null
+    return { ...shape, yearLastFeb: true, explicitDays: true }
   }
   if (unit === 'week') {
     if (parts.BYMONTHDAY) return null
@@ -216,6 +225,8 @@ export function buildRule(shape) {
     if (days.length) body = `${freq};BYDAY=${days.join(',')}`
   } else if (unit === 'month') {
     body = shape.monthMode === 'weekday' ? `${freq};BYDAY=${shape.nth}${shape.nthWeekday}` : `${freq};BYMONTHDAY=${shape.monthDay}`
+  } else if (unit === 'year' && shape.yearLastFeb) {
+    body = `${freq};BYMONTH=2;BYMONTHDAY=-1`
   } else if (!tail.length) {
     return plain
   }
@@ -239,7 +250,8 @@ function formatUntil(iso) {
 
 // How a rule reads after "Repeats", or null when there is none. A rule the builder cannot show
 // still repeats, so it reads as a custom rule rather than nothing. An end and the finish anchor
-// come after the rest: "weekly on Mon, until Dec 31, 2026", "every 3 days after you finish it".
+// come after the rest: "weekly on Mon, until Dec 31, 2026", "every 3 days after you finish it",
+// "daily, 4 more after this" (COUNT=5: this task and four more).
 export function describeRule(rule, dueIso) {
   const text = String(rule || '').trim()
   if (!text) return null
@@ -248,7 +260,7 @@ export function describeRule(rule, dueIso) {
   let words = describeDays(text, shape)
   if (shape.fromCompletion) words += ' after you finish it'
   if (shape.ends === 'on') words += `, until ${formatUntil(shape.until)}`
-  if (shape.ends === 'after') words += `, ${shape.count} more ${shape.count === 1 ? 'time' : 'times'}`
+  if (shape.ends === 'after') words += shape.count === 1 ? ', this is the last one' : `, ${shape.count - 1} more after this`
   return words
 }
 
@@ -268,6 +280,7 @@ function describeDays(text, shape) {
   if (unit === 'month' && explicitDays) {
     return `${every} on the ${NTH_NAMES[shape.nth]} ${WEEKDAY_NAMES[shape.nthWeekday]}`
   }
+  if (unit === 'year' && shape.yearLastFeb) return `${every} on the last day of February`
   return every
 }
 
@@ -276,7 +289,8 @@ function describeDays(text, shape) {
 // Wednesday", "Monthly on day 14", "Monthly on the second Wednesday", "Annually on October 14".
 // Each is { rule, label }, the rule being what buildRule writes for it, and the first is no repeat.
 // A day that is the month's last reads as the last day, and a weekday in the month's last seven
-// days as the last one, so the rule keeps meaning the end of the month in a shorter one.
+// days as the last one, so the rule keeps meaning the end of the month in a shorter one. For the
+// same reason February 29 is annually on the last day of February, not every fourth year.
 export function quickPicks(dueIso) {
   const date = dateOf(dueIso)
   const iso = isoOf(date)
@@ -300,7 +314,9 @@ export function quickPicks(dueIso) {
     { rule: build({ unit: 'month', monthMode: 'day', monthDay }), label: `Monthly ${onDay}` },
     { rule: build({ unit: 'month', monthMode: 'weekday', nth, nthWeekday: weekday }), label: `Monthly on the ${NTH_NAMES[nth]} ${weekdayName}` },
     { rule: build({ unit: 'month', interval: 3, monthMode: 'day', monthDay }), label: `Every 3 months ${onDay}` },
-    { rule: build({ unit: 'year' }), label: `Annually on ${month} ${day}` },
+    month === 'February' && day === 29
+      ? { rule: build({ unit: 'year', yearLastFeb: true }), label: 'Annually on the last day of February' }
+      : { rule: build({ unit: 'year' }), label: `Annually on ${month} ${day}` },
   ]
 }
 

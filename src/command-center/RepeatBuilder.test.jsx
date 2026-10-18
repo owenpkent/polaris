@@ -108,6 +108,17 @@ describe('RepeatBuilder', () => {
     expect(within(ends).getByText('time')).toBeTruthy()
   })
 
+  // An agent can write any COUNT; the builder must not try to list a million options.
+  test('a COUNT beyond the list shows as one extra option with its value', () => {
+    render(<Host initial="FREQ=DAILY;COUNT=1000000000" />)
+    const select = screen.getByRole('combobox', { name: 'Number of times' })
+    const options = within(select).getAllByRole('option')
+    expect(options).toHaveLength(101)
+    expect(options[99].textContent).toBe('100')
+    expect(options[100].textContent).toBe('1000000000')
+    expect(select.value).toBe('1000000000')
+  })
+
   test('counting from the finish hides the day choices and writes X-FROM; the due date brings them back', () => {
     const onChange = vi.fn()
     render(<Host onChange={onChange} />)

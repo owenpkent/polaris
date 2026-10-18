@@ -48,7 +48,7 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await expect(builder.getByRole('radio', { name: /^After/ })).toBeChecked()
     await builder.getByRole('button', { name: 'Save' }).click()
 
-    await expect(panel.getByRole('button', { name: 'Repeat, weekly after you finish it, 3 more times' })).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Repeat, weekly after you finish it, 2 more after this' })).toBeVisible()
     await expect(panel.getByText(/^Counted from the day you finish it\. Skipping moves it to /)).toBeVisible()
     const task = await taskByTitle(request, title)
     expect(task.recurrence).toBe('FREQ=WEEKLY;COUNT=3;X-FROM=COMPLETION')
