@@ -118,6 +118,9 @@ jobs:
         with:
           name: playwright-output-${{ matrix.shard }}
           path: .playwright/
+          # upload-artifact skips paths that start with a dot unless told otherwise, so without
+          # this a failed part uploaded nothing ("No files were found") despite its attachments.
+          include-hidden-files: true
           retention-days: 7
 
   # One check that speaks for every part, under the name the single job used to have. A part
