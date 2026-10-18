@@ -61,7 +61,8 @@ test('buildDigest sections and counts reflect the seeded store', () => {
   assert.match(digest.markdown, /# Command Center Digest - 2026-09-12/);
   assert.match(digest.markdown, /Send the film cut/);
   assert.match(digest.markdown, /gmail/);
-  assert.ok(digest.markdown.includes('https://mail.google.com/thread-1'), 'the thread link is in the digest');
+  const links: string[] = digest.markdown.match(/https?:\/\/\S+/g) ?? [];
+  assert.ok(links.includes('https://mail.google.com/thread-1'), 'the thread link is in the digest');
   assert.match(digest.markdown, /Overdue report/);
   assert.match(digest.markdown, /Project Nimbus/);
   assert.match(digest.markdown, /\[high\]/);

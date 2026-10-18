@@ -76,7 +76,7 @@ export interface UpdateDeps {
   sleep: (ms: number) => Promise<void>;
   portListening: (port: number) => Promise<boolean>;
   /** The platform the programs are chosen for: the restart method (restart.ts) and the npm and
-   *  npx program names (exec.ts). A test sets it to script the commands. The permission checks on
+   *  program name (exec.ts). A test sets it to script the commands. The permission checks on
    *  real files (signers.ts) go by `process.platform`, which is the platform the files are on. */
   platform: NodeJS.Platform;
   env: NodeJS.ProcessEnv;
@@ -162,7 +162,6 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
   const log = openLog(opts, deps);
   const repo = git(deps.exec, opts.repoRoot);
   const npm = npmProgram('npm', deps.platform);
-  const npx = npmProgram('npx', deps.platform);
   const program = async (what: string, cmd: string, args: string[], cwd: string): Promise<void> => {
     log(`> ${what}`);
     const r = await deps.exec(cmd, args, { cwd, env: deps.env, onOutput: (line) => appendFileSync(updateLogPath(opts.dbPath), `    ${line}\n`) });
@@ -293,7 +292,10 @@ export async function performUpdate(opts: UpdateOptions, deps: UpdateDeps = defa
     // 6. Test, then build beside the live dashboard, which stays as it is until the restart.
     await program('npm run test:fast', npm, ['run', 'test:fast'], opts.repoRoot);
     rmSync(distNext, { recursive: true, force: true });
-    await program('vite build', npx, ['vite', 'build', '--outDir', distNext, '--emptyOutDir'], opts.repoRoot);
+    // The build is the one program whose arguments carry a path (the dashboard directory, which may
+    // hold any character a folder name can), so node runs vite's own entry point: no npx shim, and so
+    // never a shell, whose metacharacters realExec refuses in a shim's arguments.
+    await program('vite build', process.execPath, [join(opts.repoRoot, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', distNext, '--emptyOutDir'], opts.repoRoot);
     if (!existsSync(join(distNext, 'index.html'))) throw new UpdateError(`the build left no index.html in ${distNext}`);
 
     // 7. The write barrier goes up (barrier.ts): from here until the finally below, the daemon
