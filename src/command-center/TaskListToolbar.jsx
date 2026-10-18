@@ -34,7 +34,7 @@ function FilterOption({ label, checked, onToggle }) {
         gap: 10,
         width: '100%',
         minHeight: 44,
-        padding: '0 14px',
+        padding: '10px 14px',
         background: 'transparent',
         border: 'none',
         textAlign: 'left',
@@ -60,7 +60,8 @@ function FilterOption({ label, checked, onToggle }) {
       >
         {checked && <Check size={12} strokeWidth={3} style={{ color: 'var(--on-accent)' }} />}
       </span>
-      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {/* A long name (a project, an assignee) wraps onto more lines: a menu shows every word. */}
+      <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{label}</span>
     </button>
   )
 }

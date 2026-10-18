@@ -42,6 +42,12 @@ export interface StoreOptions {
   nextOccurrence?: (rrule: string, previousDue: string) => string | null;
   /** Return an error message if the recurrence rule is invalid, else null. */
   validateRecurrence?: (rrule: string) => string | null;
+  /**
+   * Today as YYYY-MM-DD in the configured timezone: where a recurring task with no due date counts
+   * its next occurrence from, the same day GET /api/recurrence/preview uses. Defaults to the UTC
+   * date of `now`.
+   */
+  today?: () => string;
 }
 
 type Row = Record<string, SqlValue>;
@@ -254,12 +260,14 @@ export class Store {
   private readonly now: () => string;
   private readonly nextOccurrence?: StoreOptions['nextOccurrence'];
   private readonly validateRecurrence?: StoreOptions['validateRecurrence'];
+  private readonly today: () => string;
 
   constructor(db: SqlDriver, opts: StoreOptions = {}) {
     this.db = db;
     this.now = opts.now ?? (() => new Date().toISOString());
     this.nextOccurrence = opts.nextOccurrence;
     this.validateRecurrence = opts.validateRecurrence;
+    this.today = opts.today ?? (() => this.now().slice(0, 10));
   }
 
   // ---------------------------------------------------------------- events
@@ -620,7 +628,7 @@ export class Store {
       this.emit('task.completed', id, actor, { previousStatus: before.status });
       let next: Task | null = null;
       if (before.recurrence && this.nextOccurrence) {
-        const from = before.dueAt ?? now.slice(0, 10);
+        const from = before.dueAt ?? this.today();
         let nextDue: string | null = null;
         try {
           nextDue = this.nextOccurrence(before.recurrence, from);
@@ -653,6 +661,25 @@ export class Store {
         }
       }
       return { task: this.requireTask(id), next };
+    });
+  }
+
+  /**
+   * Skip one occurrence of an open recurring task: the due date moves to the next occurrence and the
+   * task stays the same task. Nothing is completed and no task is created.
+   */
+  skipOccurrence(id: string, actor: ActorInput = 'human'): Task {
+    return this.db.transaction(() => {
+      const before = this.requireTask(id);
+      if (before.status === 'done' || before.status === 'dropped') throw new ValidationError('Only an open task can be skipped.');
+      if (!before.recurrence) throw new ValidationError('This task does not repeat.');
+      if (!this.nextOccurrence) throw new ValidationError('Repeating tasks are not available.');
+      const from = before.dueAt ?? this.today();
+      const nextDue = this.nextOccurrence(before.recurrence, from);
+      if (!nextDue) throw new ValidationError('This repeating task has no later occurrence.');
+      const task = this.updateTask(id, { dueAt: nextDue, startAt: shiftStartAt(before.startAt, before.dueAt, nextDue) }, actor);
+      this.addComment(id, `Skipped the occurrence due ${before.dueAt ?? from}.`, 'system');
+      return task;
     });
   }
 

@@ -56,6 +56,8 @@ jobs:
           path: |
             .playwright/
             .playwright-perf/
+          # Dot-paths are skipped by upload-artifact unless this is set (see test.yml).
+          include-hidden-files: true
           retention-days: 14
 
       # Screenshots against last week's baseline. The restore falls back to the newest saved
@@ -81,6 +83,7 @@ jobs:
         with:
           name: weekly-shots
           path: .shots/
+          include-hidden-files: true
           retention-days: 30
       - name: Accept this run's shots as next week's baseline
         if: always() && steps.shots.outcome == 'success'

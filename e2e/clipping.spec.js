@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread } from './support.js'
+import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -24,6 +24,14 @@ const WORDY = 'Call the insurance company about the wheelchair van lift repair c
 // Content, focus rings, and the lines between rows, in one list so a failure shows them all.
 async function expectNothingCutOff(page) {
   expect([...(await clippedContent(page)), ...(await danglingLines(page)), ...(await hiddenFocusRings(page))]).toEqual([])
+}
+
+// A text box that grows with its text (useFitToText.js) refits in a ResizeObserver callback, a
+// frame or so after its width or its text changes. Wait until it holds its whole text before the
+// one-shot cut-off sweep, so the sweep measures the settled box; a box that never fits still
+// fails here, after the wait.
+async function expectFitsItsText(box) {
+  await expect.poll(() => box.evaluate((el) => el.scrollHeight - el.clientHeight), { message: 'the box never grew to hold its text' }).toBeLessThanOrEqual(1)
 }
 
 test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
@@ -85,11 +93,14 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await panel.getByRole('button', { name: subtaskTitle, exact: true }).click()
     await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(subtaskTitle)
     await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectFitsItsText(panel.getByRole('textbox', { name: 'Assignee' }))
     await expectNothingCutOff(page)
 
+    // Narrower, the box refits a frame after the resize (CI caught it at 101px holding 244px).
     const { width, height } = testInfo.project.use.viewport
     await page.setViewportSize({ width: Math.max(320, width - 70), height })
     await expect(panel.getByRole('textbox', { name: 'Assignee' })).toHaveValue(assignee)
+    await expectFitsItsText(panel.getByRole('textbox', { name: 'Assignee' }))
     await expectNothingCutOff(page)
   })
 
@@ -135,6 +146,74 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+    await expectNothingCutOff(page)
+  })
+
+  // "When is it due?" after a title (AddDuePanel.jsx): the desktop row's popover, which spans a
+  // 320px window, and the phone sheet's date step, with the custom repeat builder open in both.
+  test('the due date step of a new task', async ({ page }, testInfo) => {
+    await openView(page)
+    let scope
+    if (isPhone(testInfo)) {
+      await page.getByRole('button', { name: 'New task' }).click()
+      scope = page.getByRole('dialog', { name: 'New task' })
+      await scope.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+      await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    } else {
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      scope = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
+    }
+    await expect(scope.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    await expectNothingCutOff(page)
+    await scope.getByRole('combobox', { name: 'Repeat' }).selectOption('custom')
+    await scope.getByRole('combobox', { name: 'Repeat unit' }).selectOption('month')
+    await expect(scope.getByRole('combobox', { name: 'Day of the month' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  // A group's Add task row is there on a phone too, and its date step is a popover that has to
+  // fit seven 44px days at 320px (the Popover's gutter of 0 in InlineTaskInput.jsx).
+  test('the due date step from an Add task row', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
+    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
+    await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
+    // Seen as it opens, before the cut-off check scrolls any control into view: the popover is not
+    // scrolled sideways, and the heading and Today sit inside it (review on #67, where a 400px cap
+    // left the date step scrolled 142px with its left side out of sight).
+    expect(await due.evaluate((el) => {
+      const pop = el.closest('[data-popover]')
+      const box = pop.getBoundingClientRect()
+      const inside = (node) => { const r = node.getBoundingClientRect(); return r.left >= box.left - 0.5 && r.right <= box.right + 0.5 }
+      const today = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Today')
+      return { scrollLeft: pop.scrollLeft, heading: inside(el.querySelector('h3')), today: inside(today) }
+    })).toEqual({ scrollLeft: 0, heading: true, today: true })
+    expect(await smallTargets(due, 'button, select')).toEqual([])
+    await expectNothingCutOff(page)
+  })
+
+  // The custom repeat builder grows while it is open (day to week adds the weekday buttons). As a
+  // popover it widened in place and put Save 53px off a 390px screen (review on #66); in the
+  // panel's column it has to stay inside the screen's width, with Save whole, before anything
+  // scrolls.
+  test('the custom repeat builder after its unit changes', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat resize', { recurrence: 'daily' })
+    await openView(page)
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await builder.getByRole('combobox', { name: 'Repeat unit' }).selectOption('week')
+    await expect(builder.getByRole('button', { name: 'Sunday' })).toBeVisible()
+    await expect.poll(() => builder.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      const save = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save').getBoundingClientRect()
+      return box.left >= 0 && box.right <= window.innerWidth && save.left >= 0 && save.right <= window.innerWidth
+    })).toBe(true)
     await expectNothingCutOff(page)
   })
 
@@ -236,6 +315,10 @@ for (const long of [false, true]) {
       })
     }
     test('My tasks with every group open', async ({ page }) => {
+      // Every row of every group, each name made long, checked one element at a time: on CI's
+      // Windows runner it took about 21s of the 30s limit on main, and the rows other tests in the
+      // same worker add push it over. The check is the point, so it gets the time, not a cut.
+      test.slow()
       await longNames(page)
       await openView(page)
       for (const name of ['Expand Later', 'Expand No due date']) await page.getByRole('button', { name, exact: true }).click()

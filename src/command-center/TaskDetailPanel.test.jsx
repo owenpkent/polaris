@@ -1,9 +1,10 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TaskDetailPanel from './TaskDetailPanel'
-import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { markOffline, markOnline, resetOfflineStatus } from './offlineStatus'
 import { resetDefaultAgentNameCache } from './defaultAgentName'
+import { weekdayOf } from './recurrenceRules'
 
 const api = {
   getTask: vi.fn(),
@@ -18,6 +19,8 @@ const api = {
   getAgentSettings: vi.fn(),
   getThread: vi.fn(),
   saveTaskAsChecklist: vi.fn(),
+  previewRecurrence: vi.fn(),
+  skipOccurrence: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -38,6 +41,7 @@ beforeEach(() => {
   resetDefaultAgentNameCache()
   api.getAgentSettings.mockResolvedValue({ defaultAgentName: 'claude-code' })
   api.getThread.mockResolvedValue(null)
+  api.previewRecurrence.mockResolvedValue({ dates: [] })
 })
 
 afterEach(() => {
@@ -672,5 +676,115 @@ describe('TaskDetailPanel assignee box', () => {
     await userEvent.type(box, 'reviewer{Enter}')
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'reviewer' }))
     expect(box.value).not.toContain('\n')
+  })
+})
+
+describe('TaskDetailPanel repeating tasks', () => {
+  const REPEATING = { ...TASK, dueAt: '2026-10-17', recurrence: 'weekly' }
+
+  test('Custom opens the builder and Save updates the recurrence', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: TASK })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, never' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Custom' }))
+    const dialog = await screen.findByRole('group', { name: 'Custom repeat' })
+    expect(dialog).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    // No due date, so the builder starts on today's weekday and writes it out.
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: `FREQ=WEEKLY;INTERVAL=2;BYDAY=${weekdayOf(null)}` }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Custom repeat' })).toBeNull())
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Repeat, / }))
+  })
+
+  // "weekly" on its own repeats on the due date's weekday. The builder stays open while the due
+  // date changes, so it saves the weekday it shows, not whatever the new due date falls on.
+  test('Custom keeps the weekday it shows when the due date changes under it', async () => {
+    const task = { ...TASK, dueAt: '2026-10-14', recurrence: 'weekly' }
+    api.getTask.mockResolvedValue(detail(task, []))
+    api.previewRecurrence.mockResolvedValue({ dates: ['2026-10-21'] })
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Repeat, / }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Custom' }))
+    const group = await screen.findByRole('group', { name: 'Custom repeat' })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Due date, / }))
+    const input = screen.getByLabelText('Date')
+    fireEvent.change(input, { target: { value: '2026-10-16' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2026-10-16' }))
+
+    expect(within(group).getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(group).getByRole('button', { name: 'Friday' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(within(group).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'FREQ=WEEKLY;BYDAY=WE' }))
+  })
+
+  // Opened in the panel, the builder closes on Esc and leaves the panel open.
+  test('Esc closes the custom repeat builder, not the panel', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, never' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Custom' }))
+    const group = await screen.findByRole('group', { name: 'Custom repeat' })
+    fireEvent.keyDown(group.querySelector('select'), { key: 'Escape' })
+    expect(screen.queryByRole('group', { name: 'Custom repeat' })).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+
+  test('shows the next date and Skip this one moves the task on', async () => {
+    api.getTask.mockResolvedValue(detail(REPEATING, []))
+    api.previewRecurrence.mockResolvedValue({ dates: ['2026-10-24'] })
+    api.skipOccurrence.mockResolvedValue({ task: { ...REPEATING, dueAt: '2026-10-24' } })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    expect(await screen.findByText('Sat, Oct 24')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Skip this one' }))
+
+    await waitFor(() => expect(api.skipOccurrence).toHaveBeenCalledWith('t_1'))
+    expect(await screen.findByText('Skipped. Now due Sat, Oct 24.')).toBeTruthy()
+  })
+
+  // Opened offline with nothing cached, the preview fails; when the server is back the Next line
+  // and Skip fill in without the panel being closed and opened again (review on #66).
+  test('a preview that failed offline is asked again once back online', async () => {
+    api.getTask.mockResolvedValue(detail(REPEATING, []))
+    api.previewRecurrence.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ dates: ['2026-10-24'] })
+    act(() => markOffline())
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+      expect(await screen.findByText('Shown when online.')).toBeTruthy()
+      await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalledTimes(1))
+      act(() => markOnline())
+      expect(await screen.findByText('Sat, Oct 24')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Skip this one' }).disabled).toBe(false)
+      expect(api.previewRecurrence).toHaveBeenCalledTimes(2)
+    } finally {
+      resetOfflineStatus()
+    }
+  })
+
+  test('no Next row for a task that does not repeat', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    await screen.findByRole('textbox', { name: 'Task title' })
+    expect(screen.queryByRole('button', { name: 'Skip this one' })).toBeNull()
+  })
+
+  test('completing a repeating task names the next due date', async () => {
+    api.getTask.mockResolvedValue(detail(REPEATING, []))
+    api.completeTask.mockResolvedValue({ task: { ...REPEATING, status: 'done' }, next: { dueAt: '2026-10-24' } })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark complete' }))
+
+    expect(await screen.findByText('Done. The next one is due Sat, Oct 24.')).toBeTruthy()
   })
 })

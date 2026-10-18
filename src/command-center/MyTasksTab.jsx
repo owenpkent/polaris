@@ -289,9 +289,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     }
   }, [view.group, openInlineAdd])
 
-  const submitInlineAdd = useCallback(async (title) => {
+  // The row's "When is it due?" step (InlineTaskInput.jsx) hands over the date picked there,
+  // which starts on the group's own date, and a repeat rule if one was chosen.
+  const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
-    if (inlineAdd?.dueAt) payload.dueAt = inlineAdd.dueAt
+    if (dueAt) payload.dueAt = dueAt
+    if (recurrence) payload.recurrence = recurrence
     await api.createTask(payload)
     await fetchTasks()
     setInlineAdd(null)
@@ -396,6 +399,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     onToggleComplete: handleToggleComplete,
     onOpenTask: setDetailTaskId,
     onQuickUpdate: handleQuickUpdate,
+    api,
   }
 
   let content = null
@@ -522,7 +526,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           ) : (
             <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
-                <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} />
+                <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
               {content}
             </div>
@@ -556,6 +560,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         seed={sheetSeed.seq}
         projects={projectOptions}
         openButtonRef={fabRef}
+        api={api}
       />
     </div>
   )

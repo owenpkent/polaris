@@ -30,6 +30,7 @@ export default function TaskGroupSection({
   onOpenInlineAdd,
   onSubmitInlineAdd,
   onCancelInlineAdd,
+  api,
 }) {
   return (
     <section className="mytasks-section">
@@ -51,7 +52,7 @@ export default function TaskGroupSection({
       {!collapsed && (
         <div>
           {inlineAdd?.position === 'top' && (
-            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} />
+            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {tasks.map((task) => (
@@ -73,7 +74,7 @@ export default function TaskGroupSection({
           ))}
 
           {inlineAdd?.position === 'bottom' && (
-            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} />
+            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {addRow && !inlineAdd && (

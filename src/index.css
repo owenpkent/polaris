@@ -1503,6 +1503,77 @@ kbd { color: var(--t1); }
 .sheet-actions .btn { flex: 1 1 0; justify-content: center; }
 .sheet-error { margin: 0 0 12px; font-size: 0.875rem; color: var(--red); }
 
+/* "When is it due?" (AddDuePanel.jsx): the step after a new task's title, in a popover on a
+   desktop (.add-due-pop) and in place of the sheet's form on a phone (.sheet-cal). */
+/* A set width: the month and the full-width Repeat box would otherwise stretch the popover to
+   the window's edge. 360px less the 12px sides is room for the 308px month; at 320px the
+   window less the 1px borders and 5px sides is exactly 308px. */
+.add-due-pop { width: min(360px, calc(100vw - 2px)); padding: 12px; }
+/* Above the breakpoint the popover sits under a row in the middle of the list, with about half
+   the window below it: the month goes beside the rest, so the whole step fits without scrolling
+   the heading out of sight. */
+@media (min-width: 641px) {
+  .add-due-pop { width: 540px; }
+  .add-due-pop .add-due {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 308px;
+    grid-template-rows: auto auto 1fr;
+    column-gap: 20px;
+    row-gap: 12px;
+  }
+  .add-due-pop .add-due > .cal { grid-column: 2; grid-row: 1 / span 3; }
+  .add-due-pop .add-due .sheet-chips { flex-direction: column; align-items: stretch; align-self: start; }
+}
+@media (max-width: 360px) {
+  .add-due-pop { padding: 12px 5px; }
+  .add-due-pop .add-due > :not(.cal) { margin-left: 7px; margin-right: 7px; }
+}
+.add-due { display: flex; flex-direction: column; gap: 12px; }
+.add-due .field { margin-bottom: 0; }
+.add-due-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--t1); }
+.sheet-draft-title { margin: 0 0 12px; color: var(--t2); overflow-wrap: anywhere; }
+.sheet-pick-date { justify-content: flex-start; gap: 8px; }
+
+/* A month to pick from (MonthCalendar.jsx). Days touch, so seven 44px days fit at 320px, and
+   their focus rings are drawn inside. */
+.cal { min-width: 308px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.cal-title { flex: 1; margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--t1); text-align: center; }
+.cal-grid { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.cal-grid th { padding: 4px 0; font-size: 0.75rem; font-weight: 500; color: var(--t2); text-align: center; }
+.cal-grid td { padding: 0; }
+.cal-day {
+  width: 100%;
+  min-width: var(--target);
+  height: var(--target);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.cal-day:hover { background: var(--bg-hover); }
+.cal-day:focus-visible { outline-offset: -2px; }
+.cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; box-shadow: inset 0 0 0 1px var(--blue); }
+.cal-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
+.cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
+
+/* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
+.repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }
+.repeat-builder { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.repeat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.repeat-builder .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
+.repeat-builder select, .field .repeat-builder select { width: auto; min-height: var(--target); }
+.repeat-stepper { display: inline-flex; align-items: center; gap: 8px; }
+.repeat-count { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--t1); }
+.repeat-days { display: flex; flex-wrap: wrap; gap: 8px; }
+.repeat-day { min-width: var(--target); padding: 0 8px; }
+.repeat-month { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: none; }
+.repeat-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--target); font-size: 0.9rem; color: var(--t1); }
+.repeat-preview { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+
 @media (max-width: 640px) {
   .sheet {
     left: 0;
@@ -1516,6 +1587,9 @@ kbd { color: var(--t1); }
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     border-bottom: none;
   }
+  /* The sheet's 20px sides and 1px borders leave 278px at 320px wide; the month reaches into
+     them for the 308px seven 44px days need. */
+  .sheet-cal .cal { margin: 0 -15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -71,7 +71,7 @@ jobs:
         working-directory: command-center
 
   ui:
-    name: UI tests in Edge, part ${{ matrix.shard }} of 6
+    name: UI tests in Edge, part ${{ matrix.shard }} of 12
     needs: changes
     # Skipped when the pull request touches nothing the dashboard or its server is built from
     # (the `ui` filter in `changes` below). `ui-passed` and `tests` accept that skip, and only that one.
@@ -90,10 +90,13 @@ jobs:
         # until tests timed out, and two workers took 14 minutes a part against 9 with one, so a
         # part stays at one worker and the parallelism is the parts. Six on 2026-10-15: the slowest
         # of four parts took eight minutes and set the pace for the whole run, and the repository
-        # is public, so a part costs runner time and nothing else. Playwright splits by test count
+        # is public, so a part costs runner time and nothing else. Twelve on 2026-10-18: the six
+        # parts took 7 to 14 minutes, nearly all of it tests (setup is under a minute a part), so
+        # the pull request waited on the slowest. Twelve parts and the rest of a pull request's
+        # jobs stay under the 20 jobs a free account runs at once. Playwright splits by test count
         # (fullyParallel), not by duration, so the parts stay somewhat uneven. To change it, change
-        # this list, the "of 6" above, and the --shard below together.
-        shard: [1, 2, 3, 4, 5, 6]
+        # this list, the "of 12" above, and the --shard below together.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -108,13 +111,16 @@ jobs:
         working-directory: command-center
       # windows-latest ships Microsoft Edge, which playwright.config.js drives through
       # channel 'msedge', so no browser download is needed.
-      - run: npm run test:ui -- --shard=${{ matrix.shard }}/6
+      - run: npm run test:ui -- --shard=${{ matrix.shard }}/12
       - name: Keep traces and screenshots from failed UI tests
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-output-${{ matrix.shard }}
           path: .playwright/
+          # upload-artifact skips paths that start with a dot unless told otherwise, so without
+          # this a failed part uploaded nothing ("No files were found") despite its attachments.
+          include-hidden-files: true
           retention-days: 7
 
   # One check that speaks for every part, under the name the single job used to have. A part
