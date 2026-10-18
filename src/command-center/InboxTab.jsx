@@ -8,7 +8,7 @@ import { isSafeHref } from './SafeMarkdown'
 import { Loading, ErrorBanner, Kbd, ProjectChip } from './shared'
 import { useNarrowBreakpoints } from './columnsState'
 import { useRequestGuard } from './useRequestGuard'
-import { withDueDate } from './dueDates'
+import { dueDateOnly, withDueDate } from './dueDates'
 
 const GRID_TEMPLATE = 'minmax(0, 1fr) 200px 120px 220px'
 
@@ -157,7 +157,7 @@ const confirmRejectBtnStyle = {
 function AcceptFormRow({ item, projects, onAccept, onCancel, busy, error }) {
   const offline = useOffline()
   const [project, setProject] = useState(item.projectId || '')
-  const [dueAt, setDueAt] = useState(item.dueAt ? item.dueAt.slice(0, 10) : '')
+  const [dueAt, setDueAt] = useState(dueDateOnly(item.dueAt) || '')
   const [priority, setPriority] = useState(item.priority || 'none')
   const [title, setTitle] = useState(() => displayTitle(item, deriveMeta(item)))
 

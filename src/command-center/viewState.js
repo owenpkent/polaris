@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { plainTitle } from './dueDates'
+import { localDue, plainTitle } from './dueDates'
 
 // Filter/sort/group state for the My Tasks list (the toolbar's Filter, Sort
 // and Group dropdowns, plus each column header menu's own sort shortcut),
@@ -192,8 +192,9 @@ function compareTasks(a, b, field, projectNameById) {
     return plainTitle(a.title).toLowerCase().localeCompare(plainTitle(b.title).toLowerCase())
   }
   // 'due': tasks with no due date sort last regardless of direction.
-  const da = a.dueAt || '9999-99-99'
-  const db = b.dueAt || '9999-99-99'
+  // localDue reads a zoned value as its local time, so it sorts among the floating ones.
+  const da = localDue(a.dueAt) || '9999-99-99'
+  const db = localDue(b.dueAt) || '9999-99-99'
   return da < db ? -1 : da > db ? 1 : 0
 }
 

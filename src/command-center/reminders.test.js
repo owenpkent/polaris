@@ -37,6 +37,15 @@ describe('planReminders', () => {
     expect(item.body).toBe('Due at 17:05')
   })
 
+  test('a floating due time (YYYY-MM-DDTHH:MM, as the dashboard saves it) fires at that local time', () => {
+    const [item] = planReminders([task('t_aaaaaaaaaa', '2026-10-05T17:05')], prefs, NOW)
+    expect(item.at.getTime()).toBe(new Date(2026, 9, 5, 17, 5).getTime())
+    expect(item.body).toBe('Due at 17:05')
+    // Earlier today at a time is already past, whatever the day-level groups say.
+    expect(planReminders([task('t_bbbbbbbbbb', '2026-10-04T07:59')], prefs, NOW)).toEqual([])
+    expect(planReminders([task('t_cccccccccc', '2026-10-04T08:01')], prefs, NOW)).toHaveLength(1)
+  })
+
   test('skips no due date, past times, and times beyond the horizon', () => {
     const plan = planReminders([
       task('t_aaaaaaaaaa', null),

@@ -214,7 +214,8 @@ describe('bucketForTask', () => {
   })
 
   test('buckets exactly today as today', () => {
-    expect(bucketForTask({ dueAt: '2026-09-18T23:59:00Z' }, bounds)).toBe('today')
+    // A floating time late on the day is still that day. (A zoned value is read as local time.)
+    expect(bucketForTask({ dueAt: '2026-09-18T23:59' }, bounds)).toBe('today')
   })
 
   test('buckets exactly tomorrow as tomorrow', () => {
@@ -335,7 +336,7 @@ describe('due times', () => {
 
   test('dueTimeOnly reads HH:MM from a datetime and nothing from a plain day', () => {
     expect(dueTimeOnly('2026-09-18T09:05')).toBe('09:05')
-    expect(dueTimeOnly('2026-09-18T21:30:00Z')).toBe('21:30')
+    expect(dueTimeOnly('2026-09-18T21:30:00')).toBe('21:30')
     expect(dueTimeOnly('2026-09-18')).toBeNull()
     expect(dueTimeOnly(null)).toBeNull()
   })
@@ -371,6 +372,18 @@ describe('due times', () => {
     expect(formatDueCell('2026-09-17T23:59', bounds, 'en-US')).toMatchObject({ text: 'Sep 17, 11:59 PM', color: 'var(--red)' })
     expect(bucketForTask({ dueAt: '2026-09-18T00:01' }, bounds)).toBe('today')
     expect(bucketForTask({ dueAt: '2026-09-17T23:59' }, bounds)).toBe('overdue')
+  })
+
+  test('a zoned value is read as local time: its local day and time, its group, and a moved day', () => {
+    // 23:30 local on the 17th, written in UTC: in a zone west of UTC that is already the 18th in
+    // UTC; in one east of it, the written hour differs. Either way the local reading wins.
+    const zoned = new Date(2026, 8, 17, 23, 30).toISOString()
+    expect(dueDateOnly(zoned)).toBe('2026-09-17')
+    expect(dueTimeOnly(zoned)).toBe('23:30')
+    expect(bucketForTask({ dueAt: zoned }, bounds)).toBe('overdue')
+    expect(formatDueCell(zoned, bounds, 'en-US').text).toBe('Sep 17, 11:30 PM')
+    expect(withDueDate(zoned, '2026-09-21')).toBe('2026-09-21T23:30')
+    expect(formatDueShort(new Date(2026, 9, 18, 9, 0).toISOString(), 'en-US')).toBe('Oct 18, 9:00 AM')
   })
 
   test('formatDueShort is the short date, with the time when there is one', () => {

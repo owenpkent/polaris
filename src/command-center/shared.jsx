@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Inbox, AlertCircle } from 'lucide-react'
+import { dueDateOnly, localIso } from './dueDates'
 
 export const PRIORITY_COLORS = {
   none: 'var(--t2)',
@@ -32,9 +33,11 @@ export function todayIso() {
   return new Date().toISOString().split('T')[0]
 }
 
-export function isOverdue(task) {
+// Day-level, on the owner's own calendar: the due date's local day (a zoned value read as local
+// time) against today's local date, the way My tasks groups it.
+export function isOverdue(task, now = new Date()) {
   if (!task?.dueAt || task.status === 'done' || task.status === 'dropped') return false
-  return task.dueAt.slice(0, 10) < todayIso()
+  return dueDateOnly(task.dueAt) < localIso(now)
 }
 
 export function PriorityChip({ priority }) {

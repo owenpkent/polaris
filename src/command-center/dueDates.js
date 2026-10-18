@@ -29,19 +29,31 @@ export function addDays(date, n) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n)
 }
 
-// Extract just the YYYY-MM-DD portion of a task's dueAt, or null.
+// A due value with a zone or an offset ('...Z', '+02:00'), which the server turns into floating
+// local time on the way in but an older row may still hold, is read as the local time of that
+// moment, so the list, the picker, and a reminder agree; an edit then saves the floating form.
+// A day or a floating time is returned as it is.
+const ZONED_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
+export function localDue(dueAt) {
+  if (!dueAt || !ZONED_RE.test(dueAt)) return dueAt
+  const d = new Date(dueAt.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'))
+  if (Number.isNaN(d.getTime())) return dueAt
+  return `${localIso(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// Extract just the YYYY-MM-DD portion of a task's dueAt (its local day), or null.
 export function dueDateOnly(dueAt) {
-  return dueAt ? dueAt.slice(0, 10) : null
+  return dueAt ? localDue(dueAt).slice(0, 10) : null
 }
 
 // A due time. dueAt is a day ('YYYY-MM-DD') or, with a time, 'YYYY-MM-DDTHH:MM': floating local
-// time with no zone, as the server stores it. The time is read as written, the way the day is, so
+// time with no zone, as the server stores it (a zoned value is read as local time, see localDue). So
 // a task due at a time sits in its day's group (Today, Overdue, ...) and is overdue only once the
 // day is past, as the server counts it; the time orders it within the day, after the untimed
 // tasks. These return 'HH:MM' or null.
 const TIME_RE = /^\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2})/
 export function dueTimeOnly(dueAt) {
-  const m = dueAt ? TIME_RE.exec(dueAt) : null
+  const m = dueAt ? TIME_RE.exec(localDue(dueAt)) : null
   return m ? `${m[1]}:${m[2]}` : null
 }
 

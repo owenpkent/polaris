@@ -166,6 +166,15 @@ describe('sortTasks', () => {
     expect(result.map((t) => t.id)).toEqual(['untimed', 'morning', 'afternoon', 'late', 'nextDay'])
   })
 
+  test('a zoned due sorts by its local day and time among floating ones', () => {
+    const tasks = [
+      { id: 'floating10', dueAt: '2026-09-18T10:00' },
+      { id: 'zoned0930', dueAt: new Date(2026, 8, 18, 9, 30).toISOString() },
+      { id: 'floating09', dueAt: '2026-09-18T09:00' },
+    ]
+    expect(sortTasks(tasks, { field: 'due', dir: 'asc' }, new Map()).map((t) => t.id)).toEqual(['floating09', 'zoned0930', 'floating10'])
+  })
+
   test('descending due-date sort still leaves undated tasks last', () => {
     const tasks = [
       { id: 'a', dueAt: '2026-09-20' },
