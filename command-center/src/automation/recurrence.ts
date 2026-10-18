@@ -305,12 +305,16 @@ function addPeriods(anchor: Date, freq: Freq, steps: number): Date {
  * task gets that far), or null past UNTIL or the horizon.
  */
 function fromFinish(rule: CalendarRule, anchor: Date, today: Date): Date | null {
+  // An invalid date compares false both ways, so the loop is also bounded by the horizon's own
+  // step count: nothing here may run forever on a request.
+  if (Number.isNaN(anchor.getTime()) || Number.isNaN(today.getTime())) return null;
   const horizon = anchor.getTime() + HORIZON_DAYS * DAY_MS;
-  for (let k = 1; ; k++) {
+  for (let k = 1; k <= HORIZON_DAYS; k++) {
     const d = addPeriods(anchor, rule.freq, k * rule.interval);
-    if (d.getTime() > horizon || (rule.until && d > rule.until)) return null;
+    if (Number.isNaN(d.getTime()) || d.getTime() > horizon || (rule.until && d > rule.until)) return null;
     if (d >= today) return d;
   }
+  return null;
 }
 
 /** What the store knows about why the next date is wanted. Only completeTask passes it. */
@@ -360,9 +364,12 @@ export function nextOccurrence(rrule: string, previousDue: string, today: string
   const ruleStr = resolveAlias(split.base);
   const anchor = split.fromCompletion && context.completedOn ? splitDue(context.completedOn).datePart : datePart;
   const dtstart = new Date(`${anchor}T00:00:00Z`);
+  // splitDue checks the shape; a day that does not exist (a 13th month) gets this far.
+  if (Number.isNaN(dtstart.getTime())) throw new Error(`invalid date '${anchor}': no such day`);
   const rule = buildRule(ruleStr, dtstart, rrule, split.fromCompletion);
   if (rule.count === 1) return null;
   const todayDate = new Date(`${today}T00:00:00Z`);
+  if (Number.isNaN(todayDate.getTime())) throw new Error(`invalid date '${today}': no such day`);
 
   let occurrence: Date | null;
   if (split.fromCompletion) {

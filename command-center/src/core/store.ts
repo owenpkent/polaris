@@ -700,7 +700,13 @@ export class Store {
         throw new ValidationError('This is the last occurrence of the series, so there is nothing to skip to. Complete it or drop it instead.');
       }
       const from = before.dueAt ?? this.today();
-      const nextDue = this.nextOccurrence(before.recurrence, from);
+      let nextDue: string | null;
+      try {
+        nextDue = this.nextOccurrence(before.recurrence, from);
+      } catch (e) {
+        // A rule or a due date the engine refuses is the task's problem to show, not a server fault.
+        throw new ValidationError(`This task cannot be skipped: ${e instanceof Error ? e.message : String(e)}`);
+      }
       if (!nextDue) throw new ValidationError('This repeating task has no later occurrence.');
       const recurrence = withOneFewer(before.recurrence);
       const task = this.updateTask(id, {

@@ -66,6 +66,15 @@ test('invalid previousDue throws a clear error', () => {
   assert.throws(() => nextOccurrence('FREQ=DAILY', 'not-a-date', '2026-09-10'), /invalid date/);
 });
 
+test('a day that does not exist throws at once, also on a rule counted from the finish', () => {
+  // The shape passes, the calendar does not: before, the walk from the finish never ended on it.
+  for (const rule of ['FREQ=MONTHLY;X-FROM=COMPLETION', 'FREQ=DAILY;X-FROM=COMPLETION', 'FREQ=MONTHLY']) {
+    assert.throws(() => nextOccurrence(rule, '2026-13-10', '2026-10-10'), /invalid date '2026-13-10'/, rule);
+    assert.throws(() => nextOccurrence(rule, '2026-10-10', '2026-13-01'), /invalid date '2026-13-01'/, rule);
+  }
+  assert.throws(() => nextOccurrence('FREQ=MONTHLY;X-FROM=COMPLETION', '2026-10-10', '2026-10-10', { completedOn: '2026-13-10' }), /invalid date '2026-13-10'/);
+});
+
 
 // ---- bounds: a rule is expanded on the request thread, so every rule has to be one that ends
 

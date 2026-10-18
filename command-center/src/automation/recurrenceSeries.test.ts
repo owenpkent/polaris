@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import rrulePkg from 'rrule';
-import { openStore, remainingCount, type Store, type Task } from '../core/index.ts';
+import { ValidationError, openStore, remainingCount, type Store, type Task } from '../core/index.ts';
 import { openApp } from '../app.ts';
 import { nextOccurrence } from './recurrence.ts';
 
@@ -122,6 +122,17 @@ test('X-FROM=COMPLETION still ends on UNTIL and on COUNT', () => {
   assert.equal(second.dueAt, '2026-09-20');
   assert.equal(second.recurrence, 'FREQ=DAILY;INTERVAL=2;COUNT=1;X-FROM=COMPLETION');
   assert.equal(store.completeTask(second.id, 'human').next, null);
+});
+
+test('a saved due date that is not a real day: the skip is refused, and completing counts from the finish', () => {
+  const { store } = series('2026-10-10');
+  // The store checks the shape of a due date, not the calendar, so this is accepted.
+  const task = store.createTask({ title: 'Thirteenth month', dueAt: '2026-13-10', recurrence: 'FREQ=MONTHLY;X-FROM=COMPLETION' });
+  assert.throws(() => store.skipOccurrence(task.id, 'human'), (e: unknown) => e instanceof ValidationError && /cannot be skipped: invalid date '2026-13-10'/.test(e.message));
+  // Completing counts from the day it is finished, so the bad due date plays no part.
+  const { task: done, next } = store.completeTask(task.id, 'human');
+  assert.equal(done.status, 'done');
+  assert.equal(next?.dueAt, '2026-11-10');
 });
 
 test('a skip on an X-FROM=COMPLETION rule counts from the due date: skipping is not finishing', () => {
