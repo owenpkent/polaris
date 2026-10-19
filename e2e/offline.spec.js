@@ -77,7 +77,9 @@ test('a task completed before the first connection leaves the list, and stays ou
     const input = page.getByRole('textbox', { name: 'New task name' })
     await input.fill(title)
     await input.press('Enter')
-    await page.getByRole('dialog', { name: `Due date for ${title}` }).getByRole('button', { name: 'Today', exact: true }).click()
+    const due = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await due.getByRole('button', { name: 'Today', exact: true }).click()
+    await due.getByRole('button', { name: 'Add task' }).click()
   }
   await expect(page.getByRole('checkbox', { name: `Complete ${title}` })).toBeVisible()
 
@@ -105,7 +107,9 @@ test('a task added and another completed offline reach the server when it return
   const input = page.getByRole('textbox', { name: 'New task name' })
   await input.fill(added)
   await input.press('Enter')
-  await page.getByRole('dialog', { name: `Due date for ${added}` }).getByRole('button', { name: 'Today', exact: true }).click()
+  const due = page.getByRole('dialog', { name: `Due date for ${added}` })
+  await due.getByRole('button', { name: 'Today', exact: true }).click()
+  await due.getByRole('button', { name: 'Add task' }).click()
   await expect(page.getByText(added, { exact: true })).toBeVisible()
   await page.getByRole('checkbox', { name: `Complete ${existing}` }).click()
   await expect(page.getByRole('status').filter({ hasText: '2 changes waiting' })).toBeVisible()

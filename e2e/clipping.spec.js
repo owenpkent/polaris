@@ -187,7 +187,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     }
     await expect(scope.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
     await expectNothingCutOff(page)
-    await scope.getByRole('combobox', { name: 'Repeat' }).selectOption('custom')
+    await scope.getByRole('combobox', { name: 'Repeats' }).selectOption('custom')
     await scope.getByRole('combobox', { name: 'Repeat unit' }).selectOption('month')
     await expect(scope.getByRole('combobox', { name: 'Day of the month' })).toBeVisible()
     await expectNothingCutOff(page)

@@ -63,13 +63,41 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await input.press('Enter')
     const due = page.getByRole('dialog', { name: `Due date for ${title}` })
     expect(await smallTargets(due, 'button, select')).toEqual([])
-    await due.getByRole('combobox', { name: 'Repeat' }).selectOption({ label: 'Daily' })
     await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await due.getByRole('combobox', { name: 'Repeats' }).selectOption({ label: 'Daily' })
+    await due.getByRole('button', { name: 'Add task' }).click()
     await expect(due).toHaveCount(0)
     await expect(page.getByRole('button', { name: `Change due date for ${title}, repeats daily` })).toHaveText('Tomorrow')
     const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
     expect(created.recurrence).toBe('daily')
+  })
+
+  // As in Asana: the date button beside the name opens the picker, a day only selects, and a plain
+  // Weekly follows the day picked after it, with its next dates tinted on the month.
+  test('the due date button opens the picker, and Weekly follows the day picked', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test weekly add ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    await page.getByRole('textbox', { name: 'New task name' }).fill(title)
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
+    const due = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await due.getByRole('combobox', { name: 'Repeats' }).selectOption('weekly')
+    await due.getByRole('button', { name: 'Next month' }).click()
+    const day = due.getByRole('grid').getByRole('button', { name: /\b15, \d{4}/ })
+    await day.click()
+    await expect(day).toHaveAttribute('aria-pressed', 'true')
+    await expect(due.getByRole('grid').getByRole('button', { name: /\b22, \d{4}, repeats$/ })).toBeVisible()
+    await due.getByRole('button', { name: 'Add task' }).click()
+    await expect(due).toHaveCount(0)
+    const created = await (async () => {
+      const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+      return (await res.json()).tasks.find((t) => t.title === title)
+    })()
+    expect(created.dueAt).toMatch(/-15$/)
+    const weekday = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][new Date(`${created.dueAt}T12:00`).getDay()]
+    expect(created.recurrence).toBe(`FREQ=WEEKLY;BYDAY=${weekday}`)
   })
 
   test('Esc on the due step goes back to the title without adding anything', async ({ page, request }, testInfo) => {
@@ -175,6 +203,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await sheet.getByRole('button', { name: 'Pick a date' }).click()
     await sheet.getByRole('button', { name: 'Next month' }).click()
     await sheet.getByRole('grid').getByRole('button', { name: /\b15, \d{4}$/ }).click()
+    await sheet.getByRole('button', { name: 'Done' }).click()
     await expect(sheet.getByRole('button', { name: 'Create' })).toBeFocused()
     await sheet.getByRole('button', { name: 'Create' }).click()
     await expect(sheet).toHaveCount(0)

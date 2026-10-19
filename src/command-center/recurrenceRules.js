@@ -333,3 +333,38 @@ export function matchQuickPick(rule, dueIso) {
   const pick = quickPicks(dueIso).find((p) => p.rule && p.rule === canonical)
   return pick ? pick.rule : null
 }
+
+// The Repeats choice a rule is, as the add-task picker (RepeatPicker in RepeatBuilder.jsx) lists
+// them after Asana's: 'none', 'daily', 'weekly', 'monthly', 'yearly', 'periodic' (counted from the
+// day the task is finished), or 'custom' for a rule that needs the full builder (an end, the last
+// day of February, or one the builder cannot show).
+const FREQUENCY_OF_UNIT = { day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly' }
+export function frequencyOf(rule, dueIso) {
+  if (!String(rule || '').trim()) return 'none'
+  const shape = parseRule(rule, dueIso)
+  if (!shape || shape.ends !== 'never' || shape.yearLastFeb) return 'custom'
+  if (shape.fromCompletion) return 'periodic'
+  return FREQUENCY_OF_UNIT[shape.unit]
+}
+
+// The rule a Repeats choice starts as for a due date: every day, week (on the due date's weekday),
+// month (on its day), or year, or every day counted from the finish.
+export function frequencyRule(frequency, dueIso) {
+  const base = defaultShape(dueIso)
+  if (frequency === 'periodic') return buildRule({ ...base, unit: 'day', fromCompletion: true })
+  const unit = Object.keys(FREQUENCY_OF_UNIT).find((u) => FREQUENCY_OF_UNIT[u] === frequency)
+  return unit ? buildRule({ ...base, unit }) : ''
+}
+
+// A rule moved to a newly picked due date, while it is still the plain one its choice started as
+// for the old date: Weekly picked on a Tuesday becomes Weekly on Thursday when Thursday is picked
+// next, keeping its interval. A rule changed by hand (a second weekday, another day of the month)
+// is left alone.
+export function followDate(rule, fromIso, toIso) {
+  const shape = parseRule(rule, fromIso)
+  if (!shape || fromIso === toIso) return rule
+  const keep = { unit: shape.unit, interval: shape.interval, fromCompletion: shape.fromCompletion }
+  const plain = buildRule({ ...defaultShape(fromIso), ...keep })
+  if (buildRule(shape) !== plain || shape.ends !== 'never') return rule
+  return buildRule({ ...defaultShape(toIso), ...keep })
+}

@@ -128,6 +128,7 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await expect(time).toBeFocused()
     await time.fill('07:15')
     await scope.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await scope.getByRole('button', { name: isPhone(testInfo) ? 'Done' : 'Add task' }).click()
     if (isPhone(testInfo)) {
       await expect(scope.getByRole('button', { name: /7:15\sAM$/ })).toBeVisible()
       await scope.getByRole('button', { name: 'Create' }).click()
