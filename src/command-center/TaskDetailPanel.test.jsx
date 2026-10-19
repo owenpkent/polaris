@@ -881,12 +881,24 @@ describe('the repeat in the panel\'s due date picker', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /^Repeat, / }).getAttribute('aria-label')).toMatch(/^Repeat, weekly on Tue/))
   })
 
-  test('a new day moves a plain repeat with it in one save', async () => {
+  test('a new day keeps the days of the repeat the task already has', async () => {
     const task = { ...TASK, dueAt: '2030-10-08', recurrence: 'FREQ=WEEKLY;BYDAY=TU' }
     api.getTask.mockResolvedValue(detail(task, []))
     api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thursday, October 10, 2030' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10' }))
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+  })
+
+  test('a new day moves a plain repeat chosen in the picker with it in one save', async () => {
+    const task = { ...TASK, dueAt: '2030-10-08', recurrence: 'FREQ=WEEKLY;BYDAY=TU' }
+    api.getTask.mockResolvedValue(detail(task, []))
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
     fireEvent.click(screen.getByRole('button', { name: 'Thursday, October 10, 2030' }))
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10', recurrence: 'FREQ=WEEKLY;BYDAY=TH' }))
   })

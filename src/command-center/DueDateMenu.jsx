@@ -34,9 +34,12 @@ function popGutter() {
 // repeat saves null and closes it again. A choice there saves at once: `onRecurrenceChange` gets the rule (null for
 // Does not repeat) and, on a task with no date, today as its dueAt too, since a repeat counts from
 // the due date. The picker stays open, so Custom's builder can be tapped through, each change saved
-// as it is made. A plain repeat follows a newly picked day (followDate in recurrenceRules.js):
-// `onChange` then gets the moved rule as its second argument. A rule the builder cannot show (a raw
-// RRULE with BYMONTH, say) is named and left to the task panel's Recurrence box.
+// as it is made. A plain repeat chosen while the picker is open follows a day picked after it
+// (followDate in recurrenceRules.js): `onChange` then gets the moved rule as its second argument.
+// The rule a task already has keeps its days when a day is picked, since its text cannot say
+// whether it was made in Custom: moving one occurrence leaves the schedule alone. A rule the
+// builder cannot show (a raw RRULE with BYMONTH, say) is named and left to the task panel's
+// Recurrence box.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label, recurrence = null, onRecurrenceChange, api }) {
   return (
     <Popover anchorRef={anchorRef} open={open} onClose={onClose} minWidth={200} maxWidth={540} gutter={popGutter()} focusSelector="[data-cal-focus]" preferFit>
@@ -62,7 +65,10 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
   // date gives it today at once, and the picker shows that before the task is loaded again.
   const [day, setDay] = useState(() => dueDateOnly(value))
   const [rule, setRule] = useState(recurrence || '')
-  const [customRepeat, setCustomRepeat] = useState(false)
+  // Whether the rule is a plain choice made in Repeats since the picker opened, the only kind that
+  // follows a new day. A rule loaded with the task may have been made in Custom, here or in the
+  // panel, and reads the same as a plain one, so it is never taken for one (review on #77).
+  const [followsDay, setFollowsDay] = useState(false)
   // Off until turned on, as Add time is; a task that already repeats opens with it on.
   const [showRepeat, setShowRepeat] = useState(Boolean(recurrence))
   const repeatRef = useRef(null)
@@ -101,11 +107,12 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     else if (next !== savedDue.current) onChange(next)
   }
 
-  // A new day moves a plain repeat along with it; one made in Custom keeps the days it names. A
-  // bare alias (daily, weekly, ...) names no day, so it follows the due date on its own.
+  // A new day moves a plain repeat chosen in this opening along with it; one made in Custom, or
+  // the one the task already had, keeps the days it names. A bare alias (daily, weekly, ...) names
+  // no day, so it follows the due date on its own.
   function pick(date) {
     const named = rule.includes('=')
-    const moved = named && !customRepeat && !unreadable ? followDate(rule, repeatFrom, date) : rule
+    const moved = named && followsDay && !unreadable ? followDate(rule, repeatFrom, date) : rule
     commit(joinDue(date, time), moved !== rule ? moved || null : undefined)
   }
 
@@ -164,7 +171,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
   function removeRepeat() {
     focusRepeatRef.current = true
     setShowRepeat(false)
-    setCustomRepeat(false)
+    setFollowsDay(false)
     if (rule) {
       setRule('')
       onRecurrenceChange(null)
@@ -216,7 +223,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
           <p className="due-pop-repeat repeat-note">{`Repeats ${repeatLabel(rule)}. Change it under More details in the task panel.`}</p>
         ) : showRepeat ? (
           <div ref={repeatRef} className="field due-pop-repeat">
-            <RepeatPicker id={`${uid}-repeat`} value={rule} onChange={changeRule} dueIso={repeatFrom} api={api} preview={marks} onCustomChange={setCustomRepeat} />
+            <RepeatPicker id={`${uid}-repeat`} value={rule} onChange={changeRule} dueIso={repeatFrom} api={api} preview={marks} onCustomChange={(custom) => setFollowsDay(!custom)} />
             <button type="button" className="btn due-pop-repeat-off" onClick={removeRepeat}>Remove repeat</button>
           </div>
         ) : (

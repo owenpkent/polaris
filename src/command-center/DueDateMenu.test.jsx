@@ -305,11 +305,37 @@ describe('Repeats', () => {
     expect(onRecurrenceChange).toHaveBeenCalledWith('daily', `${DUE_BOUNDS.today}T07:30`)
   })
 
-  test('a plain repeat follows a newly picked day, saved with it', () => {
+  // The task's own rule may have been made in Custom, which its text cannot say: Weekly on
+  // Thursday reads the same either way. Moving this one occurrence leaves it alone (review on #77).
+  test('the rule a task already has keeps its days on a newly picked day', () => {
     const { onChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
+    expect(picker()).toBeNull()
+  })
+
+  test('a plain repeat chosen again in Repeats follows the day picked after it, saved with it', () => {
+    const { onChange, onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
     fireEvent.click(day('Friday, October 9, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-09', 'FREQ=WEEKLY;BYDAY=FR')
     expect(picker()).toBeNull()
+  })
+
+  // Custom chosen, the picker closed, and opened again: the rule is the task's own now, and the
+  // close does not turn it back into a plain repeat that follows the day (review on #77).
+  test('a rule made in Custom keeps its days after the picker is closed and opened again', () => {
+    const { onChange, onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'custom' } })
+    expect(onRecurrenceChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(picker()).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Due' }))
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
   })
 
   test('a repeat that does not name the day is saved with the day alone', () => {
