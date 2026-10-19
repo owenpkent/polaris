@@ -656,9 +656,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
   async function handleCompleteToggle() {
     setSaveError(null)
-    if (data.task.status !== 'done') taskCelebration.celebrate()
+    const completing = data.task.status !== 'done'
     try {
-      if (data.task.status === 'done') {
+      if (!completing) {
         await api.reopenTask(taskId)
       } else {
         const res = await api.completeTask(taskId)
@@ -666,6 +666,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         if (res?.next?.dueAt) setActionNotice({ text: `Done. The next one is due ${formatLongDate(res.next.dueAt.slice(0, 10))}.` })
       }
       await load({ quiet: true })
+      // Only now, with the done state on screen: started on the click, a slow request would use up
+      // the burst before it could show, and a failed one never gets here.
+      if (completing) taskCelebration.celebrate()
       onChanged?.()
     } catch (err) {
       setSaveError(err.message || 'Could not update completion.')
@@ -745,18 +748,20 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   }
 
   async function handleToggleSubtask(sub) {
-    if (sub.status !== 'done') {
-      setCelebratedSubId(sub.id)
-      subCelebration.celebrate()
-    }
+    const completing = sub.status !== 'done'
     setSubtaskPending((prev) => new Set(prev).add(sub.id))
     try {
-      if (sub.status === 'done') {
+      if (!completing) {
         await api.reopenTask(sub.id)
       } else {
         await api.completeTask(sub.id)
       }
       await load({ quiet: true })
+      // After the reload, as for the task's own check, so the burst plays on a ticked box.
+      if (completing) {
+        setCelebratedSubId(sub.id)
+        subCelebration.celebrate()
+      }
       onChanged?.()
     } catch (err) {
       setSaveError(err.message || 'Could not update that subtask.')
