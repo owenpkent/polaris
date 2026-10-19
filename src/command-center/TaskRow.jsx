@@ -48,12 +48,12 @@ const cellStyle = {
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
 // is the 44px-tall click target.
-function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title }) {
+function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu' }) {
   return (
     <button
       type="button"
       ref={innerRef}
-      aria-haspopup="menu"
+      aria-haspopup={hasPopup}
       aria-label={ariaLabel}
       title={title}
       onClick={(e) => {
@@ -82,7 +82,7 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
 // The soft background behind a phone due chip, matching the text colour formatDueCell chose.
 const CHIP_BACKGROUNDS = { 'var(--green)': 'var(--green-soft)', 'var(--red)': 'var(--red-soft)' }
 
-function DueDateCell({ task, dueBounds, onUpdate, phone }) {
+function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const due = formatDueCell(task.dueAt, dueBounds)
@@ -94,6 +94,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
       <CellButton
         innerRef={btnRef}
         ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
+        hasPopup="dialog"
         onClick={() => setOpen((v) => !v)}
         color={due.color}
         // A narrow column can cut a date and time short; the whole of it is a hover away.
@@ -123,7 +124,10 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
         onClose={() => setOpen(false)}
         value={task.dueAt}
         dueBounds={dueBounds}
-        onChange={(value) => onUpdate(task, { dueAt: value })}
+        onChange={(value, recurrence) => onUpdate(task, recurrence === undefined ? { dueAt: value } : { dueAt: value, recurrence })}
+        recurrence={task.recurrence}
+        onRecurrenceChange={(recurrence, dueAt) => onUpdate(task, dueAt === undefined ? { recurrence } : { recurrence, dueAt })}
+        api={api}
         label={`Due date for ${task.title}`}
       />
     </div>
@@ -199,6 +203,7 @@ export default function TaskRow({
   onToggleComplete,
   onOpen,
   onQuickUpdate,
+  api,
 }) {
   const done = task.status === 'done'
   const columnIds = new Set(visibleColumns.map((c) => c.id))
@@ -305,7 +310,7 @@ export default function TaskRow({
         )}
       </span>
 
-      {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} />}
+      {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
       )}

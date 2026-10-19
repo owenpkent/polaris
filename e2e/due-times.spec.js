@@ -11,6 +11,17 @@ async function taskByTitle(request, title) {
   return (await res.json()).tasks.find((t) => t.title === title)
 }
 
+// A YYYY-MM-DD day as MonthCalendar.jsx names its button ("Tuesday, October 20, 2026").
+function dayName(iso) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function shiftDay(iso, days) {
+  const d = new Date(`${iso}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 test.describe('due times', { tag: ['@flow'] }, () => {
   test('the task panel sets a time on the due date, shows it, keeps it through a new day, and removes it', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'due time panel')
@@ -20,20 +31,24 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     const panel = page.getByRole('dialog', { name: 'Task details' })
 
     await panel.getByRole('button', { name: /^Due date, / }).click()
-    const menu = page.getByRole('menu', { name: 'Due date' })
-    await menu.getByLabel('Time', { exact: true }).fill('09:30')
-    await menu.getByRole('menuitem', { name: 'Set date and time' }).click()
+    const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
+    await menu.getByRole('button', { name: 'Add time' }).click()
+    const time = menu.getByLabel('Time', { exact: true })
+    await expect(time).toBeFocused()
+    await time.fill('09:30')
+    await time.press('Enter')
+    await expect(menu).toBeHidden()
     await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName(/^Due date, Today 9:30\sAM$/)
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toBe(`${day}T09:30`)
 
     // A quick pick moves the day and keeps the time.
     await panel.getByRole('button', { name: /^Due date, / }).click()
-    await menu.getByRole('menuitem', { name: 'Tomorrow' }).click()
+    await menu.getByRole('button', { name: 'Tomorrow', exact: true }).click()
     await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName(/^Due date, Tomorrow 9:30\sAM$/)
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/T09:30$/)
 
     await panel.getByRole('button', { name: /^Due date, / }).click()
-    await menu.getByRole('menuitem', { name: 'Remove time' }).click()
+    await menu.getByRole('button', { name: 'Remove time' }).click()
     await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName('Due date, Tomorrow')
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
@@ -43,11 +58,12 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await openView(page)
     await openTask(page, title)
     const panel = page.getByRole('dialog', { name: 'Task details' })
-    const menu = page.getByRole('menu', { name: 'Due date' })
+    const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
 
     await panel.getByRole('button', { name: /^Due date, / }).click()
+    await menu.getByRole('button', { name: 'Add time' }).click()
     await menu.getByLabel('Time', { exact: true }).fill('08:15')
-    await menu.getByRole('menuitem', { name: 'Tomorrow' }).click()
+    await menu.getByRole('button', { name: 'Tomorrow', exact: true }).click()
     await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName(/^Due date, Tomorrow 8:15\sAM$/)
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/T08:15$/)
     const saved = (await taskByTitle(request, title)).dueAt
@@ -59,12 +75,12 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await time.press('Backspace')
     await time.press('Enter')
     await expect(menu).toBeVisible()
-    await expect(menu.getByRole('menuitem', { name: /^Set date/ })).toBeDisabled()
     await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
     expect((await taskByTitle(request, title)).dueAt).toBe(saved)
   })
 
-  test('the list cell shows the time and keeps it when the day changes', async ({ page, request }, testInfo) => {
+  test('the list cell opens on the month, where one tap on a day saves it and keeps the time', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'due time cell')
     const day = (await taskByTitle(request, title)).dueAt
     await request.patch(`/api/tasks/${(await taskByTitle(request, title)).id}`, {
@@ -75,8 +91,21 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     const cell = page.getByRole('button', { name: `Change due date for ${title}` })
     await expect(cell).toHaveText(/^Today\s?4:45\sPM$/)
     await cell.click()
-    await page.getByRole('menu', { name: `Due date for ${title}` }).getByRole('menuitem', { name: 'Tomorrow' }).click()
+    const menu = page.getByRole('dialog', { name: `Due date for ${title}` })
+    // The task's day is chosen and has focus, so Enter keeps it.
+    const taskDay = menu.getByRole('button', { name: dayName(day), exact: true })
+    await expect(taskDay).toHaveAttribute('aria-pressed', 'true')
+    await expect(taskDay).toBeFocused()
+    await menu.getByRole('button', { name: 'Tomorrow', exact: true }).click()
     await expect(cell).toHaveText(/^Tomorrow\s?4:45\sPM$/)
+
+    // A day of the month, three days on, chosen with one tap.
+    const later = shiftDay(day, 3)
+    await cell.click()
+    if (later.slice(0, 7) !== day.slice(0, 7)) await menu.getByRole('button', { name: 'Next month' }).click()
+    await menu.getByRole('button', { name: dayName(later), exact: true }).click()
+    await expect(menu).toBeHidden()
+    await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toBe(`${later}T16:45`)
   })
 
   test('a new task gets a time from Add time in "When is it due?"', async ({ page, request }, testInfo) => {

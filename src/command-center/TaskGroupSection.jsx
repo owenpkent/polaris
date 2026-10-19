@@ -70,6 +70,7 @@ export default function TaskGroupSection({
               onToggleComplete={onToggleComplete}
               onOpen={onOpenTask}
               onQuickUpdate={onQuickUpdate}
+              api={api}
             />
           ))}
 

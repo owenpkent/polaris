@@ -5,6 +5,7 @@ import TaskDetailPanel from './TaskDetailPanel'
 import { markOffline, markOnline, resetOfflineStatus } from './offlineStatus'
 import { resetDefaultAgentNameCache } from './defaultAgentName'
 import { weekdayOf } from './recurrenceRules'
+import { getDueBounds } from './dueDates'
 
 const api = {
   getTask: vi.fn(),
@@ -603,12 +604,12 @@ describe('save as checklist', () => {
 
 describe('the due date menu and the focus trap', () => {
   // The menu is portalled to <body>, outside the panel. The panel's Tab trap must leave focus
-  // alone there, or Tab in the date box jumps to Mark complete instead of the next segment.
-  test('Tab and Shift+Tab inside the date box are left to the browser', async () => {
-    api.getTask.mockResolvedValue(detail({ ...TASK, dueAt: '2026-10-08' }, []))
+  // alone there, or Tab in the time box jumps to Mark complete instead of the next segment.
+  test('Tab and Shift+Tab inside the time box are left to the browser', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, dueAt: '2026-10-08T09:00' }, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
-    const input = screen.getByLabelText('Date')
+    const input = screen.getByLabelText('Time')
     input.focus()
     // fireEvent returns false when a listener called preventDefault.
     expect(fireEvent.keyDown(input, { key: 'Tab' })).toBe(true)
@@ -714,9 +715,7 @@ describe('TaskDetailPanel repeating tasks', () => {
     const group = await screen.findByRole('group', { name: 'Custom repeat' })
 
     fireEvent.click(screen.getByRole('button', { name: /^Due date, / }))
-    const input = screen.getByLabelText('Date')
-    fireEvent.change(input, { target: { value: '2026-10-16' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Friday, October 16, 2026' }))
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2026-10-16' }))
 
     expect(within(group).getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
@@ -832,7 +831,7 @@ describe('the due time in the panel', () => {
     const field = await screen.findByRole('button', { name: /^Due date, / })
     expect(field.getAttribute('aria-label')).toMatch(/^Due date, Oct 8, 2030, 9:00\sAM$/)
     fireEvent.click(field)
-    expect(screen.getByLabelText('Date').value).toBe('2030-10-08')
+    expect(screen.getByRole('button', { name: 'Tuesday, October 8, 2030' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByLabelText('Time').value).toBe('09:00')
   })
 
@@ -841,9 +840,7 @@ describe('the due time in the panel', () => {
     api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...TIMED, ...patch } }))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
-    const input = screen.getByLabelText('Date')
-    fireEvent.change(input, { target: { value: '2030-10-10' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Thursday, October 10, 2030' }))
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10T09:00' }))
   })
 
@@ -856,14 +853,64 @@ describe('the due time in the panel', () => {
     })
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '17:15' } })
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Set date and time' }))
+    fireEvent.keyDown(screen.getByLabelText('Time'), { key: 'Enter' })
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-08T17:15' }))
     const field = screen.getByRole('button', { name: /^Due date, / })
     await waitFor(() => expect(field.getAttribute('aria-label')).toMatch(/5:15\sPM$/))
     fireEvent.click(field)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Remove time' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove time' }))
     await waitFor(() => expect(api.updateTask).toHaveBeenLastCalledWith('t_1', { dueAt: '2030-10-08' }))
+  })
+})
+
+describe('the repeat in the panel\'s due date picker', () => {
+  test('a Repeats choice saves the rule, and the Repeat button shows it', async () => {
+    let current = { ...TASK, dueAt: '2030-10-08' }
+    api.getTask.mockImplementation(() => Promise.resolve(detail(current, [])))
+    api.updateTask.mockImplementation((id, patch) => {
+      current = { ...current, ...patch }
+      return Promise.resolve({ task: current })
+    })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'FREQ=WEEKLY;BYDAY=TU' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Repeat, / }).getAttribute('aria-label')).toMatch(/^Repeat, weekly on Tue/))
+  })
+
+  test('a new day keeps the days of the repeat the task already has', async () => {
+    const task = { ...TASK, dueAt: '2030-10-08', recurrence: 'FREQ=WEEKLY;BYDAY=TU' }
+    api.getTask.mockResolvedValue(detail(task, []))
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thursday, October 10, 2030' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10' }))
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+  })
+
+  test('a new day moves a plain repeat chosen in the picker with it in one save', async () => {
+    const task = { ...TASK, dueAt: '2030-10-08', recurrence: 'FREQ=WEEKLY;BYDAY=TU' }
+    api.getTask.mockResolvedValue(detail(task, []))
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...task, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Thursday, October 10, 2030' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { dueAt: '2030-10-10', recurrence: 'FREQ=WEEKLY;BYDAY=TH' }))
+  })
+
+  test('a repeat on a task with no date sets it to today', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, dueAt: null }, []))
+    api.updateTask.mockImplementation((id, patch) => Promise.resolve({ task: { ...TASK, ...patch } }))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Due date, / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'daily', dueAt: getDueBounds().today }))
   })
 })
 

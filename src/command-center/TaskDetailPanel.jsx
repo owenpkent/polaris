@@ -230,8 +230,10 @@ const blendInputStyle = {
 // The Due date row's value: a calendar circle and the date as the list writes it (Today,
 // Tomorrow, a weekday, or a short date, then the time when there is one) on a button that opens
 // the shared picker, plus a clear button once a date is set. `value` is the form's dueAt, a day or
-// a day and a time ('' for none).
-function DueDateField({ value, onChange }) {
+// a day and a time ('' for none). The picker also sets the repeat (`recurrence`, '' for none):
+// `onChange` gets the new dueAt and, when a plain repeat followed a new day, the new rule, and
+// `onRecurrenceChange` gets a rule chosen there and, when the task had no date, today.
+function DueDateField({ value, onChange, recurrence, onRecurrenceChange, api }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const due = value ? formatDueCell(value, getDueBounds()) : { text: '', color: null }
@@ -241,7 +243,7 @@ function DueDateField({ value, onChange }) {
         type="button"
         ref={btnRef}
         className="due-field"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={value ? `Due date, ${due.text}` : 'Due date, none'}
         onClick={() => setOpen((v) => !v)}
@@ -259,7 +261,10 @@ function DueDateField({ value, onChange }) {
         onClose={() => setOpen(false)}
         value={value || null}
         dueBounds={getDueBounds()}
-        onChange={(next) => onChange(next || '')}
+        onChange={(next, rule) => onChange(next || '', rule === undefined ? undefined : rule || '')}
+        recurrence={recurrence || null}
+        onRecurrenceChange={(rule, due) => onRecurrenceChange(rule || '', due === undefined ? undefined : due || '')}
+        api={api}
         label="Due date"
       />
       {value && (
@@ -972,10 +977,26 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             <FieldRow label="Due date">
               <DueDateField
                 value={form.dueAt}
-                onChange={(value) => {
-                  setForm((f) => ({ ...f, dueAt: value }))
-                  patchTask({ dueAt: value || null }, { dueAt: value })
+                onChange={(value, rule) => {
+                  if (rule === undefined) {
+                    setForm((f) => ({ ...f, dueAt: value }))
+                    patchTask({ dueAt: value || null }, { dueAt: value })
+                    return
+                  }
+                  setForm((f) => ({ ...f, dueAt: value, recurrence: rule }))
+                  patchTask({ dueAt: value || null, recurrence: rule || null }, { dueAt: value, recurrence: rule })
                 }}
+                recurrence={form.recurrence}
+                onRecurrenceChange={(rule, due) => {
+                  if (due === undefined) {
+                    setForm((f) => ({ ...f, recurrence: rule }))
+                    patchTask({ recurrence: rule || null }, { recurrence: rule })
+                    return
+                  }
+                  setForm((f) => ({ ...f, recurrence: rule, dueAt: due }))
+                  patchTask({ recurrence: rule || null, dueAt: due || null }, { recurrence: rule, dueAt: due })
+                }}
+                api={api}
               />
               <RepeatField
                 value={form.recurrence}
