@@ -40,11 +40,11 @@ await fetch(`/api/1.0/tasks?assignee=me&workspace=<workspace gid>&completed_sinc
 | `monthly`, `date: 1, frequency: 24` | `FREQ=MONTHLY;INTERVAL=24;BYMONTHDAY=1` |
 | `monthly`, `days_of_week: [5], nth_weekday: 1` | `FREQ=MONTHLY;BYDAY=1FR` |
 | `yearly`, `month: 9, date: 14` | `FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=14` |
-| `periodically`, `days_after_completion: 2` | `FREQ=DAILY;INTERVAL=2` (approximate, see below) |
+| `periodically`, `days_after_completion: 2` | `FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION` |
 
 Keep the task's current Asana due date even when it is not on the rule (a yearly task moved by hand, for example). Polaris computes the next due date from the rule after the current one, as Asana does.
 
-**What does not carry over exactly.** Polaris repeats from the due date only, so Asana's "N days after completion" becomes a fixed interval. A task with two repeating copies in Asana (PPL Timesheets on the 1st and on the 16th) stays two tasks.
+Asana's "N days after completion" is `X-FROM=COMPLETION`: the next one is due N days after the day the task is finished, not after its due date. A task with two repeating copies in Asana (PPL Timesheets on the 1st and on the 16th) stays two tasks.
 
 ## Writing them into Polaris
 
