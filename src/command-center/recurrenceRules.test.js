@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import {
-  parseRule, buildRule, describeRule, defaultShape, weekdayOf, quickPicks, matchQuickPick, countsFromCompletion,
+  parseRule, buildRule, describeRule, defaultShape, weekdayOf, quickPicks, matchQuickPick, countsFromCompletion, frequencyOf, frequencyRule, followDate,
 } from './recurrenceRules'
 
 // 2026-10-14 is a Wednesday.
@@ -308,3 +308,37 @@ describe('matchQuickPick', () => {
     expect(matchQuickPick('FREQ=WEEKLY;BYDAY=WE', '2026-10-16')).toBeNull()
   })
 })
+
+describe('frequencyOf and frequencyRule', () => {
+  test('name the Repeats choice a rule is', () => {
+    expect(frequencyOf('', '2026-10-20')).toBe('none')
+    expect(frequencyOf('daily', '2026-10-20')).toBe('daily')
+    expect(frequencyOf('FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH', '2026-10-20')).toBe('weekly')
+    expect(frequencyOf('FREQ=MONTHLY;BYDAY=1FR', '2026-10-20')).toBe('monthly')
+    expect(frequencyOf('yearly', '2026-10-20')).toBe('yearly')
+    expect(frequencyOf('FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION', '2026-10-20')).toBe('periodic')
+    expect(frequencyOf('FREQ=DAILY;COUNT=3', '2026-10-20')).toBe('custom')
+    expect(frequencyOf('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1', '2026-02-28')).toBe('custom')
+  })
+
+  test('start each choice from the due date', () => {
+    expect(frequencyRule('weekly', '2026-10-20')).toBe('FREQ=WEEKLY;BYDAY=TU')
+    expect(frequencyRule('monthly', '2026-10-20')).toBe('FREQ=MONTHLY;BYMONTHDAY=20')
+    expect(frequencyRule('periodic', '2026-10-20')).toBe('FREQ=DAILY;X-FROM=COMPLETION')
+    expect(frequencyRule('none', '2026-10-20')).toBe('')
+  })
+})
+
+describe('followDate', () => {
+  test('moves a plain rule to the new date, keeping its interval', () => {
+    expect(followDate('FREQ=WEEKLY;BYDAY=TU', '2026-10-20', '2026-10-22')).toBe('FREQ=WEEKLY;BYDAY=TH')
+    expect(followDate('FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=20', '2026-10-20', '2026-10-05')).toBe('FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=5')
+  })
+
+  test('leaves a rule changed by hand, or one with an end, alone', () => {
+    expect(followDate('FREQ=WEEKLY;BYDAY=TU,TH', '2026-10-20', '2026-10-23')).toBe('FREQ=WEEKLY;BYDAY=TU,TH')
+    expect(followDate('FREQ=MONTHLY;BYDAY=3TU', '2026-10-20', '2026-10-23')).toBe('FREQ=MONTHLY;BYDAY=3TU')
+    expect(followDate('FREQ=WEEKLY;BYDAY=TU;COUNT=4', '2026-10-20', '2026-10-22')).toBe('FREQ=WEEKLY;BYDAY=TU;COUNT=4')
+  })
+})
+

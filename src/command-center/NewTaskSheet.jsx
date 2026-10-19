@@ -3,7 +3,8 @@ import { X, Calendar } from 'lucide-react'
 import { dueDateOnly, dueTimeOnly, formatTime, getDueBounds, withDueDate } from './dueDates'
 import { oneLine, useFitToText } from './useFitToText'
 import AddDuePanel, { nextMondayIso } from './AddDuePanel'
-import { RepeatSelect } from './RepeatBuilder'
+import { RepeatPicker } from './RepeatBuilder'
+import { followDate } from './recurrenceRules'
 
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)'
 
@@ -44,6 +45,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState(null)
   const [recurrence, setRecurrence] = useState('')
+  const [customRepeat, setCustomRepeat] = useState(false)
   const [step, setStep] = useState('form')
   const createRef = useRef(null)
   const pickRef = useRef(null)
@@ -132,12 +134,19 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setStep('date')
   }
 
-  // A pick (a date, or null for No date) is the whole choice, so Create is next, once there is a
-  // title to create with.
+  // Done in the date step (a date, or null for No date) brings the choice back to the form, where
+  // Create is next once there is a title to create with.
   function pickDate(value) {
     setDueAt(value)
     returnFocusRef.current = title.trim() ? createRef : pickRef
     setStep('form')
+  }
+
+  // A quick date on the form; a plain repeat moves with it, as it does in the date step, and one
+  // made in Custom stays.
+  function chooseChip(value) {
+    if (recurrence && !customRepeat && value) setRecurrence(followDate(recurrence, dueDateOnly(dueAt) || getDueBounds().today, value))
+    setDueAt(withDueDate(dueAt, value))
   }
 
   // Back, or Esc: the date stays as it was.
@@ -197,7 +206,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
               </button>
             </div>
             <p className="sheet-draft-title">{title.trim()}</p>
-            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} />
+            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} submitLabel="Done" customRepeat={customRepeat} onCustomRepeatChange={setCustomRepeat} />
             <div className="sheet-actions">
               <button type="button" className="btn" onClick={closeDateStep}>Back</button>
             </div>
@@ -246,7 +255,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
                 aria-pressed={dueDateOnly(dueAt) === chip.value}
                 disabled={busy}
                 // A quick date keeps a time already picked; No date drops both.
-                onClick={() => setDueAt(withDueDate(dueAt, chip.value))}
+                onClick={() => chooseChip(chip.value)}
               >
                 {chip.label}
               </button>
@@ -265,8 +274,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         </div>
 
         <div className="field">
-          <label htmlFor="new-task-repeat">Repeat</label>
-          <RepeatSelect id="new-task-repeat" value={recurrence} onChange={setRecurrence} dueIso={dueAt} api={api} disabled={busy} />
+          <RepeatPicker id="new-task-repeat" value={recurrence} onChange={setRecurrence} dueIso={dueDateOnly(dueAt) || undefined} api={api} disabled={busy} initialCustom={customRepeat} onCustomChange={setCustomRepeat} />
         </div>
 
         <div className="field">

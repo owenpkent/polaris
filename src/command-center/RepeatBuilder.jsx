@@ -3,7 +3,7 @@ import { Minus, Plus } from 'lucide-react'
 import { useOffline } from './offlineStatus'
 import {
   WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, MAX_COUNT, UNITS,
-  buildRule, defaultShape, parseRule, quickPicks, matchQuickPick,
+  buildRule, defaultShape, parseRule, frequencyOf, frequencyRule,
 } from './recurrenceRules'
 
 const UNIT_WORDS = { day: ['day', 'days'], week: ['week', 'weeks'], month: ['month', 'months'], year: ['year', 'years'] }
@@ -48,11 +48,17 @@ export function previewText(dates, fromCompletion = false) {
 // last one) for a monthly one; and when it ends: never, on a date, or after a number of times.
 // `value` is the rule string and `onChange` gets the new one (recurrenceRules.js picks the
 // shortest form the server accepts). `dueIso` is the task's due date, which the rule starts from.
-// With `api`, the next three dates are shown under it.
-export default function RepeatBuilder({ value, dueIso, onChange, api, disabled = false }) {
+// With `api`, the next three dates are shown under it; `preview` hands in dates already fetched
+// (the add-task picker marks them on its calendar too) so they are not asked for twice.
+//
+// `compact` is the add-task picker's form (RepeatPicker below): the unit is the Repeats choice
+// above it, so it shows as words, and the from-the-finish and Ends choices are left to Custom. A
+// rule counted from the finish (Periodically) keeps its unit box, since that choice has no unit.
+export default function RepeatBuilder({ value, dueIso, onChange, api, disabled = false, compact = false, preview }) {
   const uid = useId()
   const [shape, setShape] = useState(() => parseRule(value, dueIso) || defaultShape(dueIso))
-  const dates = useRecurrencePreview(api, value, dueIso)
+  const fetched = useRecurrencePreview(preview === undefined ? api : null, value, dueIso)
+  const dates = preview === undefined ? fetched : preview
 
   // A rule changed from outside (the task reloaded) is shown; one this builder just wrote is not
   // parsed back, so a half-made choice (no weekday picked yet) is not snapped back.
@@ -101,6 +107,9 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
             <Plus size={16} aria-hidden="true" />
           </button>
         </div>
+        {compact && !shape.fromCompletion ? (
+          <span className="repeat-unit">{shape.interval === 1 ? UNIT_WORDS[shape.unit][0] : UNIT_WORDS[shape.unit][1]}</span>
+        ) : (
         <select
           aria-label="Repeat unit"
           value={shape.unit}
@@ -114,8 +123,10 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
             <option key={unit} value={unit}>{shape.interval === 1 ? UNIT_WORDS[unit][0] : UNIT_WORDS[unit][1]}</option>
           ))}
         </select>
+        )}
       </div>
 
+      {!compact && (
       <fieldset className="repeat-month">
         <legend className="field-label">Next one counts from</legend>
         <label className="repeat-choice">
@@ -127,6 +138,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
           <span>The day I finish it</span>
         </label>
       </fieldset>
+      )}
 
       {shape.fromCompletion && (
         <p className="repeat-note">{`Each one is due ${unitWord} after the day you finish the one before.`}</p>
@@ -200,6 +212,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         <p className="repeat-note">{shape.yearLastFeb ? 'On the last day of February.' : "On the due date's day and month."}</p>
       )}
 
+      {!compact && (
       <fieldset className="repeat-month">
         <legend className="field-label">Ends</legend>
         <label className="repeat-choice">
@@ -233,46 +246,60 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
           <span>{shape.count === 1 ? 'time' : 'times'}</span>
         </label>
       </fieldset>
+      )}
 
       {previewText(dates, shape.fromCompletion) && <p className="repeat-preview" role="status">{previewText(dates, shape.fromCompletion)}</p>}
     </div>
   )
 }
 
-// A Repeat choice for a task being added: the quick picks worded from the due date (or today),
-// as Google Calendar lists them, and Custom, which opens the builder under it. `value` is the rule
-// ('' for none) and `onChange` gets the new one. A pick writes its rule in full (buildRule), so the
-// rule saved is the one its words describe whatever due date is picked next; an alias such as
-// "weekly" shows as the pick it means for the due date, and any other rule shows as Custom.
-export function RepeatSelect({ value, onChange, dueIso, api, disabled = false, id }) {
-  const current = String(value || '').trim()
-  const picks = quickPicks(dueIso)
-  const matched = matchQuickPick(current, dueIso)
-  const [custom, setCustom] = useState(matched === null)
-  const showBuilder = custom || matched === null
+const FREQUENCIES = [
+  ['none', 'Does not repeat'],
+  ['daily', 'Daily'],
+  ['weekly', 'Weekly'],
+  ['monthly', 'Monthly'],
+  ['yearly', 'Yearly'],
+  ['periodic', 'Periodically, from when I finish it'],
+  ['custom', 'Custom'],
+]
+
+// Repeats, for a task being added, as Asana lays it out under its calendar: one choice of how
+// often, and under it only what that choice needs (the stepper for every N, the weekdays of a
+// weekly rule, the day of a monthly one). Custom opens the whole builder, with Ends and the
+// from-the-finish choice. `value` is the rule ('' for none) and `onChange` gets the new one. A
+// choice writes its rule in full for the due date (frequencyRule), and the caller moves a plain
+// rule along when another date is picked (followDate in recurrenceRules.js), unless it was made
+// in Custom: `onCustomChange` tells it whether Custom is chosen, since a Custom rule can read the
+// same as a plain one, and `initialCustom` starts it there (the sheet's date step, opened after
+// Custom was chosen on its form). `preview` is passed through to the builder.
+export function RepeatPicker({ value, onChange, dueIso, api, disabled = false, id, preview, initialCustom = false, onCustomChange }) {
+  const ownId = useId()
+  const selectId = id || ownId
+  const [custom, setOwnCustom] = useState(initialCustom)
+  const setCustom = (next) => { setOwnCustom(next); onCustomChange?.(next) }
+  const frequency = custom && value ? 'custom' : frequencyOf(value, dueIso)
   return (
-    <>
-      <select
-        id={id}
-        value={showBuilder ? 'custom' : matched}
-        disabled={disabled}
-        onChange={(e) => {
-          const next = e.target.value
-          if (next === 'custom') {
-            setCustom(true)
-            // Written out in full (a preset's "weekly" becomes this week's day as a BYDAY), so the
-            // builder shows exactly the rule that is saved, whatever due date is picked next.
-            onChange(buildRule(parseRule(current, dueIso) || defaultShape(dueIso)))
-          } else {
-            setCustom(false)
-            onChange(next)
-          }
-        }}
-      >
-        {picks.map((pick) => <option key={pick.rule || 'never'} value={pick.rule}>{pick.label}</option>)}
-        <option value="custom">Custom</option>
-      </select>
-      {showBuilder && <RepeatBuilder value={value} dueIso={dueIso} onChange={onChange} api={api} disabled={disabled} />}
-    </>
+    <div className="repeat-picker">
+      <div className="repeat-picker-head">
+        <label htmlFor={selectId}>Repeats</label>
+        <select
+          id={selectId}
+          value={frequency}
+          disabled={disabled}
+          onChange={(e) => {
+            const next = e.target.value
+            setCustom(next === 'custom')
+            if (next === 'custom') onChange(buildRule(parseRule(value, dueIso) || defaultShape(dueIso)))
+            else onChange(frequencyRule(next, dueIso))
+          }}
+        >
+          {FREQUENCIES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+        </select>
+      </div>
+      {frequency !== 'none' && (
+        // Keyed by the choice, so a builder opened for one choice starts from the new rule.
+        <RepeatBuilder key={frequency} value={value} dueIso={dueIso} onChange={onChange} api={api} disabled={disabled} compact={frequency !== 'custom'} preview={preview} />
+      )}
+    </div>
   )
 }
