@@ -8,6 +8,7 @@ import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
 import TaskRow from './TaskRow'
+import { completeExitDelay } from './CompleteBurst'
 import TaskListToolbar from './TaskListToolbar'
 import ColumnHeader from './ColumnHeader'
 import InlineTaskInput from './InlineTaskInput'
@@ -334,7 +335,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       if (wasDone) {
         await api.reopenTask(task.id)
       } else {
+        // The row stays while its check celebrates and it fades (TaskRow, CompleteBurst.jsx).
+        const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         await api.completeTask(task.id)
+        await exit
       }
       await fetchTasks()
     } catch (err) {
