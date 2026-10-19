@@ -1553,6 +1553,42 @@ kbd { color: var(--t1); }
 .sheet-draft-title { margin: 0 0 12px; color: var(--t2); overflow-wrap: anywhere; }
 .sheet-pick-date { justify-content: flex-start; gap: 8px; }
 
+/* The due date picker (DueDateMenu.jsx) behind a row's Due date cell and the panel's Due date
+   field. On a phone: the quick dates, the month, then Add time. 332px is the 308px month and 12px
+   sides. At 320px the window less the popover's 1px borders is 318px, so the sides shrink to 5px
+   there (the clamp) and the chips and the time row keep 12px from the edge (the margin). */
+.due-pop {
+  --due-pad: clamp(5px, calc((100vw - 310px) / 2), 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(332px, calc(100vw - 2px));
+  padding: 12px var(--due-pad);
+}
+.due-pop > :not(.cal) { margin-inline: calc(12px - var(--due-pad)); }
+/* Add time, or the time box and Remove time, which wrap onto two lines when they do not fit. */
+.due-pop-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.due-pop-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
+.due-pop-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
+/* Above the breakpoint the quick dates and the time go in a column beside the month, so the
+   picker is no taller than the month and fits under a row in the middle of the list. */
+@media (min-width: 641px) {
+  .due-pop {
+    display: grid;
+    grid-template-columns: 160px 308px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: 'chips cal' 'time cal';
+    column-gap: 16px;
+    row-gap: 12px;
+    width: auto;
+  }
+  .due-pop > .sheet-chips { grid-area: chips; flex-direction: column; align-items: stretch; }
+  .due-pop > .cal { grid-area: cal; }
+  .due-pop > .due-pop-time { grid-area: time; align-self: end; flex-direction: column; align-items: stretch; }
+  .due-pop-time > * { flex: 0 0 auto; }
+  .due-pop-time-field { flex-direction: column; align-items: stretch; gap: 4px; }
+}
+
 /* A month to pick from (MonthCalendar.jsx). Days touch, so seven 44px days fit at 320px, and
    their focus rings are drawn inside. */
 .cal { min-width: 308px; }

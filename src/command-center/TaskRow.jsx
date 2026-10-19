@@ -47,12 +47,12 @@ const cellStyle = {
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
 // is the 44px-tall click target.
-function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title }) {
+function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu' }) {
   return (
     <button
       type="button"
       ref={innerRef}
-      aria-haspopup="menu"
+      aria-haspopup={hasPopup}
       aria-label={ariaLabel}
       title={title}
       onClick={(e) => {
@@ -93,6 +93,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
       <CellButton
         innerRef={btnRef}
         ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
+        hasPopup="dialog"
         onClick={() => setOpen((v) => !v)}
         color={due.color}
         // A narrow column can cut a date and time short; the whole of it is a hover away.

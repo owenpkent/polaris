@@ -118,6 +118,13 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await audit(page, testInfo, 'goal menu open')
   })
 
+  test('the due date picker', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()
+    await expect(page.getByRole('dialog', { name: 'Due date for Draft ADR-003 hosting options' }).getByRole('grid')).toBeVisible()
+    await audit(page, testInfo, 'due date picker open')
+  })
+
   test('the sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()

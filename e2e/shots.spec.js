@@ -275,7 +275,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   test('mytasks: due menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Reply to accessibility audit feedback' }).click()
-    await expect(page.getByRole('menu', { name: 'Due date for Reply to accessibility audit feedback' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Due date for Reply to accessibility audit feedback' }).getByRole('grid')).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'due-menu')
   })
 
@@ -285,8 +285,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await openView(page)
     await openTask(page, 'Draft ADR-003 hosting options')
     await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / }).click()
-    const menu = page.getByRole('menu', { name: 'Due date' })
-    await expect(menu.getByRole('menuitem', { name: 'Remove time' })).toBeVisible()
+    const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
+    await expect(menu.getByRole('button', { name: 'Remove time' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'due-menu-time')
   })
 

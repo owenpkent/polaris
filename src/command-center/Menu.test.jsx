@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { useRef, useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Menu } from './Menu'
+import { Menu, Popover } from './Menu'
 
 afterEach(() => cleanup())
 
@@ -130,5 +130,53 @@ describe('Menu', () => {
     await screen.findByRole('menuitem', { name: 'Alpha' })
     expect(screen.getByText('Section')).toBeTruthy()
     expect(screen.getByRole('separator')).toBeTruthy()
+  })
+})
+
+// preferFit (DueDateMenu.jsx): a popover too tall for the room under its trigger opens above it
+// when there is more room there; without it, only less than 160px below flips it.
+describe('Popover preferFit', () => {
+  function Host({ preferFit }) {
+    const ref = useRef(null)
+    return (
+      <>
+        <button ref={ref} type="button">Anchor</button>
+        <Popover anchorRef={ref} open onClose={() => {}} preferFit={preferFit}>
+          <div role="dialog" aria-label="Tall">Tall content</div>
+        </Popover>
+      </>
+    )
+  }
+
+  // A 768px window with the trigger's bottom at 500 (268px below, 480 above) and a 400px tall popover.
+  function layout() {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 480, bottom: 500, left: 10, right: 110, width: 100, height: 20 })
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400)
+    return () => { rect.mockRestore(); height.mockRestore() }
+  }
+
+  test('opens above when the content fits only there', async () => {
+    const restore = layout()
+    try {
+      render(<Host preferFit />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.bottom).not.toBe(''))
+      expect(pop.style.top).toBe('')
+    } finally {
+      restore()
+    }
+  })
+
+  test('stays below without it', async () => {
+    const restore = layout()
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+      expect(pop.style.top).toBe('504px')
+      expect(pop.style.bottom).toBe('')
+    } finally {
+      restore()
+    }
   })
 })

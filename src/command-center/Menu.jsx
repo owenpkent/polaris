@@ -38,6 +38,10 @@ export function useRovingFocus(containerRef) {
 // past which a menu's labels wrap; a popover holding a form (the add-task date step, the repeat
 // builder) passes more. `gutter` is the least room kept between it and the window's sides; the
 // add-task date step (InlineTaskInput.jsx) passes 0, so seven 44px days fit on a 320px screen.
+// It opens below the trigger unless there is less than 160px there and more above. `preferFit`
+// also opens it above when its whole content fits only there, or fits neither way and there is
+// more room above: the due date picker (DueDateMenu.jsx) is a whole month, too tall to scroll
+// through from a row low on the screen.
 export function Popover({
   anchorRef,
   open,
@@ -48,6 +52,7 @@ export function Popover({
   focusSelector = '[data-menu-item]:not(:disabled)',
   gutter = 8,
   maxWidth = 400,
+  preferFit = false,
 }) {
   const popRef = useRef(null)
   const [pos, setPos] = useState(null)
@@ -63,14 +68,16 @@ export function Popover({
     left = Math.max(gutter, Math.min(left, vw - width - gutter))
     const spaceBelow = vh - a.bottom
     const spaceAbove = a.top
-    const openUp = spaceBelow < 160 && spaceAbove > spaceBelow
+    // The content's full height (scrollHeight leaves out the 1px borders), once it is rendered.
+    const needed = preferFit && popRef.current ? popRef.current.scrollHeight + 2 + 12 : 0
+    const openUp = (spaceBelow < 160 || needed > spaceBelow) && spaceAbove > spaceBelow
     setPos({
       left,
       top: openUp ? null : a.bottom + 4,
       bottom: openUp ? vh - a.top + 4 : null,
       maxHeight: Math.max(120, (openUp ? spaceAbove : spaceBelow) - 12),
     })
-  }, [anchorRef, align, minWidth, gutter])
+  }, [anchorRef, align, minWidth, gutter, preferFit])
 
   useLayoutEffect(() => {
     if (!open) { setPos(null); return }

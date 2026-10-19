@@ -122,10 +122,20 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     }
   })
 
+  // The due date picker opens on the month, which has to fit seven 44px days at 320px (the
+  // Popover's gutter shrinks to 0 there, DueDateMenu.jsx). Seen as it opens, before the cut-off
+  // check scrolls anything: the popover is not scrolled sideways and sits inside the window.
   test('the due date menu', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Reply to accessibility audit feedback' }).click()
-    await expect(page.getByRole('menu', { name: 'Due date for Reply to accessibility audit feedback' })).toBeVisible()
+    const menu = page.getByRole('dialog', { name: 'Due date for Reply to accessibility audit feedback' })
+    await expect(menu.getByRole('grid')).toBeVisible()
+    expect(await menu.evaluate((el) => {
+      const pop = el.closest('[data-popover]')
+      const box = pop.getBoundingClientRect()
+      return { scrollLeft: pop.scrollLeft, inside: box.left >= 0 && box.right <= window.innerWidth }
+    })).toEqual({ scrollLeft: 0, inside: true })
+    expect(await smallTargets(menu, 'button')).toEqual([])
     await expectNothingCutOff(page)
   })
 
@@ -133,9 +143,9 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   test('the due date menu with a time', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()
-    const menu = page.getByRole('menu', { name: 'Due date for Draft ADR-003 hosting options' })
-    await expect(menu.getByRole('menuitem', { name: 'Remove time' })).toBeVisible()
-    expect(await smallTargets(menu, 'button, [role="menuitem"]')).toEqual([])
+    const menu = page.getByRole('dialog', { name: 'Due date for Draft ADR-003 hosting options' })
+    await expect(menu.getByRole('button', { name: 'Remove time' })).toBeVisible()
+    expect(await smallTargets(menu, 'button, input')).toEqual([])
     await expectNothingCutOff(page)
   })
 

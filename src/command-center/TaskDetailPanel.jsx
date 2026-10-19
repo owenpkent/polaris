@@ -240,7 +240,7 @@ function DueDateField({ value, onChange }) {
         type="button"
         ref={btnRef}
         className="due-field"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={value ? `Due date, ${due.text}` : 'Due date, none'}
         onClick={() => setOpen((v) => !v)}

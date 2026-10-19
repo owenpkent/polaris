@@ -87,7 +87,7 @@ describe('TaskRow', () => {
   test('picking Tomorrow from the due date menu updates the due date', () => {
     const { onQuickUpdate, task } = renderRow()
     fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: DUE_BOUNDS.tomorrow })
   })
 
@@ -131,7 +131,7 @@ describe('TaskRow due time', () => {
   test('a quick pick from the cell keeps the time', () => {
     const { onQuickUpdate, task } = renderRow({ task: { dueAt: '2026-09-29T09:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: `${DUE_BOUNDS.tomorrow}T09:00` })
   })
 })

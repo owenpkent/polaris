@@ -229,68 +229,40 @@ test.describe('the ? legend', { tag: ['@a11y'] }, () => {
   })
 })
 
-test.describe('the due date box in the task panel', { tag: ['@a11y'] }, () => {
+test.describe('the due date picker in the task panel', { tag: ['@a11y'] }, () => {
   // DueDateMenu.jsx is portalled to <body>, outside the panel's focus trap (TaskDetailPanel.jsx).
-  // Tab has to move between the date box's own segments, and typing a new year has to reach
-  // all four digits: Chromium fires change after the first one, which must not be saved.
-  test('Tab stays in the date box, a typed digit waits for Enter to save, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the date box has keyboard segments on the desktop tier')
-    const title = await createTask(request, testInfo, 'due year', { dueAt: '2026-10-08' })
+  // It opens with focus on the task's day in the month, the arrow keys move between days, Enter
+  // saves the day focused, once, and Escape returns focus to the trigger.
+  test('focus starts on the task day, the arrows move it, Enter saves, and Escape returns to the trigger', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the keyboard path is checked on the desktop tier')
+    const title = await createTask(request, testInfo, 'due keys', { dueAt: '2026-10-08' })
     await openView(page)
     await openTask(page, title)
     const trigger = page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / })
     await trigger.focus()
     await page.keyboard.press('Enter')
-    const menu = page.getByRole('menu', { name: 'Due date' })
-    await expect(menu).toBeVisible()
-    const input = menu.getByLabel('Date')
-    await input.focus()
-    await expect(input).toBeFocused()
+    const picker = page.getByRole('dialog', { name: 'Due date', exact: true })
+    await expect(picker).toBeVisible()
+    await expect(picker.getByRole('button', { name: 'Thursday, October 8, 2026', exact: true })).toBeFocused()
 
-    // Where focus is and what the box holds after each key, kept with the test so a run on
-    // another browser explains itself: Edge on Windows does not give the box the Tab stops
-    // Chromium on Linux does.
-    const trace = []
-    async function note(step) {
-      trace.push({ step, ...(await page.evaluate(() => {
-        const el = document.activeElement
-        return { active: el?.tagName + (el?.type ? `[${el.type}]` : ''), label: el?.getAttribute?.('aria-label') || el?.textContent?.slice(0, 40) || '', value: el?.value ?? null }
-      })) })
-    }
-
-    // Tab from the first segment moves to the next one, and Shift+Tab back, with focus never
-    // leaving the box (the panel's trap used to pull it to Mark complete).
-    await page.keyboard.press('Tab')
-    await note('Tab')
-    await expect(input).toBeFocused()
-    await page.keyboard.press('Shift+Tab')
-    await note('Shift+Tab')
-    await expect(input).toBeFocused()
-
-    // One digit into whichever segment is focused changes the box's value (Chromium fires change
-    // at once, which used to save the half-typed date and close the menu). Nothing is saved until
-    // Enter, which saves what the box shows, once. The unit tests cover the year-0002 case.
     const saved = []
     page.on('request', (req) => {
       if (req.method() === 'PATCH' && req.url().includes('/api/tasks/')) saved.push(req.postDataJSON())
     })
-    await page.keyboard.type('2')
-    await note('type 2')
-    await testInfo.attach('focus trace', { body: JSON.stringify(trace, null, 2), contentType: 'application/json' })
-    await expect(menu).toBeVisible()
+    await page.keyboard.press('ArrowRight')
+    await expect(picker.getByRole('button', { name: 'Friday, October 9, 2026', exact: true })).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(picker.getByRole('button', { name: 'Friday, October 16, 2026', exact: true })).toBeFocused()
     expect(saved).toEqual([])
-    const typed = await input.inputValue()
-    expect(typed).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(typed).not.toBe('2026-10-08')
     await page.keyboard.press('Enter')
-    await expect(menu).toBeHidden()
-    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual([typed])
+    await expect(picker).toBeHidden()
+    await expect.poll(() => saved.map((body) => body.dueAt)).toEqual(['2026-10-16'])
+    await expect(trigger).toBeFocused()
 
-    await trigger.focus()
     await page.keyboard.press('Enter')
-    await expect(menu).toBeVisible()
+    await expect(picker).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(menu).toBeHidden()
+    await expect(picker).toBeHidden()
     await expect(trigger).toBeFocused()
     await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
   })

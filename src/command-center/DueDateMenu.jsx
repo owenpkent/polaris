@@ -1,67 +1,64 @@
 import { useEffect, useRef, useState } from 'react'
-import { Popover, useRovingFocus } from './Menu'
-import { localIso, addDays, dueDateOnly, dueTimeOnly, joinDue } from './dueDates'
+import { Clock } from 'lucide-react'
+import { Popover } from './Menu'
+import MonthCalendar from './MonthCalendar'
+import { nextMondayIso } from './AddDuePanel'
+import { dueDateOnly, dueTimeOnly, joinDue } from './dueDates'
 
-const menuItemStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  width: '100%',
-  minHeight: 44,
-  padding: '0 14px',
-  background: 'transparent',
-  border: 'none',
-  textAlign: 'left',
-  font: 'inherit',
-  fontSize: 14,
-  color: 'var(--t1)',
-  cursor: 'pointer',
+// The popover's width on a phone (.due-pop in index.css) with its 1px borders. Below that plus
+// two 8px gutters the gutters shrink, down to none at 320px, where the window is exactly as wide
+// as the month and the popover's sides.
+const POP_OUTER_WIDTH = 334
+function popGutter() {
+  if (typeof window === 'undefined') return 8
+  return Math.max(0, Math.min(8, Math.floor((window.innerWidth - POP_OUTER_WIDTH) / 2)))
 }
 
 // The due-date picker shared by a list row's Due date cell (TaskRow.jsx) and the task panel's
-// Due date field (TaskDetailPanel.jsx): quick picks, a date box and an optional time box, and
-// Clear. `value` is the task's dueAt (a day, or a day and a time, or null); `onChange` gets the new
-// dueAt ('YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM', floating local time), or null for Clear. A quick pick
-// changes the day and keeps the time in the box (the task's, or one just typed), as the date box
-// does; Remove time keeps the day.
+// Due date field (TaskDetailPanel.jsx). It opens straight onto the month, with focus on the task's
+// day (or today): one tap or Enter on a day, or a quick date (Today, Tomorrow, Next Monday), saves
+// and closes, and No date removes the date. `value` is the task's dueAt (a day, or a day and a
+// time, or null); `onChange` gets the new dueAt ('YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM', floating local
+// time), or null for No date. Nothing is saved when the pick is what the task already has.
+//
+// A time is optional: Add time opens a time box (shown filled when the task has a time). A new day
+// keeps the time in the box, the task's or one just typed; Enter in the box saves it on the task's
+// day, or today when there is none. Remove time on a task with a time saves the day alone.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label }) {
-  const listRef = useRef(null)
-  const onKeyDown = useRovingFocus(listRef)
-  const dateOnly = dueDateOnly(value) || ''
-  const timeOnly = dueTimeOnly(value) || ''
+  return (
+    <Popover anchorRef={anchorRef} open={open} onClose={onClose} minWidth={200} maxWidth={540} gutter={popGutter()} focusSelector="[data-cal-focus]" preferFit>
+      <DuePicker anchorRef={anchorRef} onClose={onClose} value={value} dueBounds={dueBounds} onChange={onChange} label={label} />
+    </Popover>
+  )
+}
 
-  // The date and time boxes edit a draft. Chromium fires a change event for every segment edit, so
-  // the first digit of a new year would otherwise be saved as the year 0002 and close the menu
-  // before the rest could be typed. Enter in a box or the Set date button saves the draft.
-  const [draft, setDraft] = useState(dateOnly)
-  const [draftTime, setDraftTime] = useState(timeOnly)
+// Mounted each time the popover opens, so a time typed and not saved is gone the next time.
+function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label }) {
+  const day = dueDateOnly(value)
+  const taskTime = dueTimeOnly(value) || ''
+  const [time, setTime] = useState(taskTime)
+  const [showTime, setShowTime] = useState(Boolean(taskTime))
   // Chromium reports '' for a time box with a segment cleared (validity.badInput), the same as an
-  // empty one. While the box holds such a half-typed time nothing is saved from it, and the time
-  // in the draft stays the last whole one, so a half-typed time never reads as "no time".
+  // empty one. While the box holds such a half-typed time, Enter saves nothing and the time kept
+  // for a new day stays the last whole one, so a half-typed time never reads as "no time".
   const [timePartial, setTimePartial] = useState(false)
+  const timeRef = useRef(null)
+  const addTimeRef = useRef(null)
+  const focusTimeRef = useRef(false)
   useEffect(() => {
-    if (open) {
-      setDraft(dateOnly)
-      setDraftTime(timeOnly)
-      setTimePartial(false)
-    }
-  }, [open, dateOnly, timeOnly])
-  const unchanged = draft === dateOnly && draftTime === timeOnly
-  const cannotSet = !draft || unchanged || timePartial
-
-  const now = new Date()
-  const nextMondayDays = ((1 - now.getDay() + 7) % 7) || 7
+    if (!focusTimeRef.current) return
+    focusTimeRef.current = false
+    ;(showTime ? timeRef : addTimeRef).current?.focus()
+  }, [showTime])
 
   function commit(next) {
     onClose()
-    onChange(next)
+    anchorRef.current?.focus()
+    if (next !== (value || null)) onChange(next)
   }
 
-  function commitDraft() {
-    if (cannotSet) return
-    commit(joinDue(draft, draftTime))
-  }
+  const pick = (date) => commit(joinDue(date, time))
 
-  // A time with no day yet goes on today, so typing a time alone is enough.
   function changeTime(e) {
     const next = e.target.value
     if (!next && e.target.validity?.badInput) {
@@ -69,81 +66,71 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
       return
     }
     setTimePartial(false)
-    setDraftTime(next)
-    if (next && !draft) setDraft(dueBounds.today)
+    setTime(next)
   }
 
-  // Up and Down step the focused segment of the date or time box, so they stay with it instead
-  // of moving between menu items. Enter saves the draft.
-  function onDateKeyDown(e) {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.stopPropagation()
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      commitDraft()
-    }
+  function onTimeKeyDown(e) {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    if (timePartial) return
+    pick(day || dueBounds.today)
   }
+
+  function addTime() {
+    focusTimeRef.current = true
+    setShowTime(true)
+  }
+
+  function removeTime() {
+    if (taskTime) {
+      commit(day)
+      return
+    }
+    focusTimeRef.current = true
+    setTime('')
+    setTimePartial(false)
+    setShowTime(false)
+  }
+
+  const chips = [
+    { key: 'today', label: 'Today', value: dueBounds.today },
+    { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow },
+    { key: 'monday', label: 'Next Monday', value: nextMondayIso() },
+    { key: 'none', label: 'No date', value: null },
+  ]
 
   return (
-    <Popover anchorRef={anchorRef} open={open} onClose={onClose} minWidth={200}>
-      <div ref={listRef} role="menu" aria-label={label} onKeyDown={onKeyDown} style={{ padding: '6px 0' }}>
-        {[
-          { key: 'today', label: 'Today', value: dueBounds.today },
-          { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow },
-          { key: 'monday', label: 'Next Monday', value: localIso(addDays(now, nextMondayDays)) },
-          { key: 'week', label: 'In one week', value: localIso(addDays(now, 7)) },
-        ].map((opt) => (
-          <button key={opt.key} type="button" role="menuitem" data-menu-item onClick={() => commit(joinDue(opt.value, draftTime))} style={menuItemStyle}>
-            {opt.label}
+    <div role="dialog" aria-label={label} className="due-pop">
+      <div className="sheet-chips" role="group" aria-label="Quick dates">
+        {chips.map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            className="sheet-chip"
+            aria-pressed={day === chip.value}
+            onClick={() => (chip.value ? pick(chip.value) : commit(null))}
+          >
+            {chip.label}
           </button>
         ))}
-        <div role="separator" style={{ height: 1, background: 'var(--bd)', margin: '6px 0' }} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, padding: '0 14px', fontSize: 14, color: 'var(--t1)' }}>
-          <span style={{ flexShrink: 0, color: 'var(--t2)' }}>Date</span>
-          <input
-            type="date"
-            data-menu-item
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onDateKeyDown}
-            style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
-          />
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, padding: '0 14px', fontSize: 14, color: 'var(--t1)' }}>
-          <span style={{ flexShrink: 0, color: 'var(--t2)' }}>Time</span>
-          <input
-            type="time"
-            data-menu-item
-            value={draftTime}
-            onChange={changeTime}
-            onKeyDown={onDateKeyDown}
-            style={{ flexGrow: 1, minWidth: 0, height: 32, padding: '0 8px', fontSize: 13 }}
-          />
-        </label>
-        <button
-          type="button"
-          role="menuitem"
-          data-menu-item
-          disabled={cannotSet}
-          onClick={commitDraft}
-          style={{
-            ...menuItemStyle,
-            color: cannotSet ? 'var(--t3)' : 'var(--t1)',
-            cursor: cannotSet ? 'default' : 'pointer',
-          }}
-        >
-          {draftTime ? 'Set date and time' : 'Set date'}
-        </button>
-        {timeOnly && (
-          <button type="button" role="menuitem" data-menu-item onClick={() => commit(dateOnly)} style={menuItemStyle}>
-            Remove time
+      </div>
+      <MonthCalendar value={day} today={dueBounds.today} onPick={pick} />
+      <div className="due-pop-time">
+        {showTime ? (
+          <>
+            <label className="due-pop-time-field">
+              <span>Time</span>
+              <input ref={timeRef} type="time" value={time} onChange={changeTime} onKeyDown={onTimeKeyDown} />
+            </label>
+            <button type="button" className="btn" onClick={removeTime}>Remove time</button>
+          </>
+        ) : (
+          <button type="button" ref={addTimeRef} className="btn" onClick={addTime}>
+            <Clock size={16} aria-hidden="true" />
+            Add time
           </button>
         )}
-        <div role="separator" style={{ height: 1, background: 'var(--bd)', margin: '6px 0' }} />
-        <button type="button" role="menuitem" data-menu-item onClick={() => commit(null)} style={menuItemStyle}>
-          Clear
-        </button>
       </div>
-    </Popover>
+    </div>
   )
 }
