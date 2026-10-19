@@ -763,9 +763,9 @@ kbd { color: var(--t1); }
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
 
-/* The check circle in a row: a grey tick in an outlined circle at rest, filled green when done.
-   Hovering the button turns the circle green so the target reads as "complete" before the
-   click; nothing is revealed. */
+/* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
+   done. A tick at rest read as already done. Hovering the button turns the circle green and shows
+   the tick in green, so the target reads as "complete" before the click. */
 .task-check { transition: background 0.12s; }
 .task-check:hover:not(:disabled) { background: var(--green-soft); }
 .task-check:hover:not(:disabled) .task-check-circle { border-color: var(--green); color: var(--green); }
@@ -777,7 +777,7 @@ kbd { color: var(--t1); }
   height: 20px;
   border-radius: 50%;
   border: 1.5px solid var(--bd-strong);
-  color: var(--t3);
+  color: transparent;
   transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
 .task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }

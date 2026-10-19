@@ -261,8 +261,8 @@ export default function TaskRow({
           opacity: pending && !completing ? 0.6 : 1,
         }}
       >
-        {/* The check is always drawn; the circle's colour hides it until the task is done or
-            the button is hovered (.task-check-circle). */}
+        {/* The tick is always drawn but transparent until the task is done or the button is
+            hovered (.task-check-circle), so the circle is empty at rest. */}
         <span
           key={completing ? burstKey : 0}
           aria-hidden="true"
