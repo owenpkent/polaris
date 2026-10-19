@@ -6,6 +6,11 @@ import { weekdayOf } from './recurrenceRules'
 
 const PROJECTS = [{ id: 'p1', name: 'Alpha' }]
 
+// The weekday button's name in the repeat builder for a YYYY-MM-DD: "Monday".
+function weekdayName(iso) {
+  return new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))).toLocaleDateString('en-US', { weekday: 'long' })
+}
+
 afterEach(cleanup)
 
 function renderSheet(props = {}) {
@@ -114,6 +119,41 @@ describe('NewTaskSheet', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Walk')
+  })
+
+  // The date step's day and the repeat it moves are one draft: Back drops both, rather than
+  // keeping tomorrow's weekday on a task still due today (review on #75).
+  test('Back from the date step drops a repeat moved by a day picked there', async () => {
+    const { onCreate } = renderSheet()
+    const { today, tomorrow } = getDueBounds()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+    expect(screen.getByRole('button', { name: weekdayName(tomorrow) }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    // Reopened, the step starts again from the form's date and repeat.
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    expect(document.querySelector(`[data-date="${today}"]`).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: weekdayName(today) }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: today, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(today)}` }))
+  })
+
+  test('Done in the date step brings back the day and the repeat that followed it', async () => {
+    const { onCreate } = renderSheet()
+    const { today, tomorrow } = getDueBounds()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(tomorrow)}` }))
   })
 
   test('a repeat chosen on the form is sent with the task', async () => {

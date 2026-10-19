@@ -1566,6 +1566,9 @@ kbd { color: var(--t1); }
   background: var(--bg2);
 }
 .add-due-pop .add-due-foot { background: var(--bg3); }
+/* So a control above the foot, scrolled into view by focus or the arrow keys, stops clear of it
+   rather than under it; AddDuePanel.jsx measures the foot into --add-due-foot. */
+.add-due > :not(.add-due-foot) :is(button, input, select, textarea) { scroll-margin-bottom: var(--add-due-foot, 0px); }
 /* In the sheet's date step the sheet's own bottom padding would show the month scrolling under
    the bar, so the Back row after it carries that padding instead. */
 .sheet.sheet-cal { padding-bottom: 0; }
