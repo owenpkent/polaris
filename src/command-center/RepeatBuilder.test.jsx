@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import RepeatBuilder, { RepeatSelect, previewText } from './RepeatBuilder'
+import RepeatBuilder, { RepeatPicker, previewText } from './RepeatBuilder'
 
 afterEach(cleanup)
 
@@ -181,53 +181,73 @@ describe('previewText', () => {
   })
 })
 
-describe('RepeatSelect', () => {
-  test('Custom shows the builder and a preset hides it', () => {
-    const onChange = vi.fn()
-    render(<Host initial="" Component={RepeatSelect} onChange={onChange} />)
-    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
-    const select = screen.getAllByRole('combobox')[0]
-    fireEvent.change(select, { target: { value: 'custom' } })
-    expect(screen.getByRole('group', { name: 'Every' })).toBeTruthy()
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'daily' } })
-    expect(onChange).toHaveBeenLastCalledWith('daily')
-    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
-  })
+describe('RepeatPicker', () => {
+  const choice = () => screen.getByRole('combobox', { name: 'Repeats' })
 
-  test('a rule that is not a preset opens the builder', () => {
-    render(<Host initial="every 3 days" Component={RepeatSelect} />)
-    expect(screen.getByRole('group', { name: 'Every' })).toBeTruthy()
-  })
-
-  test('offers the quick picks worded from the due date, then Custom', () => {
-    render(<Host initial="" Component={RepeatSelect} />)
-    const options = within(screen.getAllByRole('combobox')[0]).getAllByRole('option').map((o) => o.textContent)
-    expect(options).toEqual([
-      'Does not repeat', 'Daily', 'Every weekday (Monday to Friday)', 'Weekends', 'Weekly on Wednesday',
-      'Every 2 weeks on Wednesday', 'Monthly on day 14', 'Monthly on the second Wednesday', 'Every 3 months on day 14',
-      'Annually on October 14', 'Custom',
+  test("offers Asana's choices, with nothing under Does not repeat", () => {
+    render(<Host initial="" Component={RepeatPicker} />)
+    expect(within(choice()).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Does not repeat', 'Daily', 'Weekly', 'Monthly', 'Yearly', 'Periodically, from when I finish it', 'Custom',
     ])
+    expect(choice().value).toBe('none')
+    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
   })
 
-  test('a quick pick writes its rule in full and stays selected, with no builder', () => {
+  test('Weekly starts on the due date weekday and shows the weekdays, without Ends or the counting choice', () => {
     const onChange = vi.fn()
-    render(<Host initial="" Component={RepeatSelect} onChange={onChange} />)
-    const select = screen.getAllByRole('combobox')[0]
-    fireEvent.change(select, { target: { value: 'FREQ=MONTHLY;BYDAY=2WE' } })
-    expect(onChange).toHaveBeenLastCalledWith('FREQ=MONTHLY;BYDAY=2WE')
-    expect(select.selectedOptions[0].textContent).toBe('Monthly on the second Wednesday')
-    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
+    render(<Host initial="" Component={RepeatPicker} onChange={onChange} />)
+    fireEvent.change(choice(), { target: { value: 'weekly' } })
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=WE')
+    expect(screen.getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.queryByRole('combobox', { name: 'Repeat unit' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Never' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'The day I finish it' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Friday' }))
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=WE,FR')
+    expect(choice().value).toBe('weekly')
   })
 
-  test('an alias shows as the quick pick it means', () => {
-    render(<Host initial="weekly" Component={RepeatSelect} />)
-    expect(screen.getAllByRole('combobox')[0].selectedOptions[0].textContent).toBe('Weekly on Wednesday')
-    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
+  test('Monthly starts on the due date day', () => {
+    const onChange = vi.fn()
+    render(<Host initial="" Component={RepeatPicker} onChange={onChange} />)
+    fireEvent.change(choice(), { target: { value: 'monthly' } })
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=MONTHLY;BYMONTHDAY=14')
+    expect(screen.getByRole('combobox', { name: 'Day of the month' }).value).toBe('14')
   })
 
-  test('a rule with an end shows as Custom with the builder', () => {
-    render(<Host initial="FREQ=DAILY;COUNT=3" Component={RepeatSelect} />)
-    expect(screen.getAllByRole('combobox')[0].value).toBe('custom')
+  test('Periodically counts from the finish and keeps its unit box', () => {
+    const onChange = vi.fn()
+    render(<Host initial="" Component={RepeatPicker} onChange={onChange} />)
+    fireEvent.change(choice(), { target: { value: 'periodic' } })
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=DAILY;X-FROM=COMPLETION')
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(onChange).toHaveBeenLastCalledWith('FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION')
+    expect(screen.getByRole('combobox', { name: 'Repeat unit' })).toBeTruthy()
+    expect(choice().value).toBe('periodic')
+  })
+
+  test('Custom opens the whole builder, and stays Custom while the rule is a plain one', () => {
+    render(<Host initial="FREQ=WEEKLY;BYDAY=WE" Component={RepeatPicker} />)
+    fireEvent.change(choice(), { target: { value: 'custom' } })
+    expect(choice().value).toBe('custom')
+    expect(screen.getByRole('radio', { name: 'Never' })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Repeat unit' })).toBeTruthy()
+  })
+
+  test('a rule with an end shows as Custom, and an alias as its choice', () => {
+    render(<Host initial="FREQ=DAILY;COUNT=3" Component={RepeatPicker} />)
+    expect(choice().value).toBe('custom')
     expect(screen.getByRole('radio', { name: /^After/ }).checked).toBe(true)
+    cleanup()
+    render(<Host initial="weekly" Component={RepeatPicker} />)
+    expect(choice().value).toBe('weekly')
+  })
+
+  test('Does not repeat clears the rule', () => {
+    const onChange = vi.fn()
+    render(<Host initial="FREQ=WEEKLY;BYDAY=WE" Component={RepeatPicker} onChange={onChange} />)
+    fireEvent.change(choice(), { target: { value: 'none' } })
+    expect(onChange).toHaveBeenLastCalledWith('')
+    expect(screen.queryByRole('group', { name: 'Every' })).toBeNull()
   })
 })

@@ -21,9 +21,10 @@ const monthKey = (iso) => iso.slice(0, 7)
 // YYYY-MM-DD. The keyboard moves as a date grid does: the arrows by a day or a week, Page Up and
 // Page Down by a month, Home and End to the ends of the week, and Enter or Space picks. Only the
 // focused day is in the Tab order. `value` is the chosen date (shown pressed), `today` is marked as
-// the current date, and the month shown starts at `value`, or `today` when there is none.
+// the current date, and the month shown starts at `value`, or `today` when there is none. `marks`
+// are the next dates of the repeat being set (AddDuePanel.jsx), shown tinted and named as repeats.
 // Days touch so seven fit at 320px with each still 44px; their focus rings are drawn inside.
-export default function MonthCalendar({ value, today, onPick, label = 'Due date' }) {
+export default function MonthCalendar({ value, today, onPick, label = 'Due date', marks = [] }) {
   const [focusIso, setFocusIso] = useState(value || today)
   const gridRef = useRef(null)
   const moveFocusRef = useRef(false)
@@ -102,7 +103,8 @@ export default function MonthCalendar({ value, today, onPick, label = 'Due date'
                       tabIndex={iso === focusIso ? 0 : -1}
                       aria-pressed={iso === value}
                       aria-current={iso === today ? 'date' : undefined}
-                      aria-label={parse(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      data-repeat={marks.includes(iso) ? '' : undefined}
+                      aria-label={`${parse(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${marks.includes(iso) ? ', repeats' : ''}`}
                       onClick={() => onPick(iso)}
                     >
                       {Number(iso.slice(8, 10))}

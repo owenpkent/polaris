@@ -1,32 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
+import { Calendar } from 'lucide-react'
 import { Popover } from './Menu'
 import AddDuePanel from './AddDuePanel'
+import { formatDueCell, getDueBounds } from './dueDates'
 
 // A single-row inline "new task" input used by the toolbar's "Add task" button and each group's
-// trailing "Add task" row. Enter with a title opens "When is it due?" (AddDuePanel.jsx) under the
-// row, on the group's date: a tap on a day or a quick pick calls onSubmit(title, { dueAt,
-// recurrence }), and Enter again keeps the group's date. Esc there goes back to the title; Esc in
-// the title, or leaving it empty, cancels.
+// trailing "Add task" row. Enter with a title, or the due date button beside it, opens "When is it
+// due?" (AddDuePanel.jsx) under the row, on the group's date, with Repeats under the month: Add task
+// there calls onSubmit(title, { dueAt, recurrence }), and Enter again keeps the group's date. Esc
+// there goes back to the title, dropping what was picked; Esc in the title, or leaving it empty,
+// cancels. A create that fails keeps what Add task handed over (the date, the repeat, and whether
+// the repeat was made in Custom), so the picker reopens on it for another try.
 export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, defaultDueAt = null, api }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [picking, setPicking] = useState(false)
+  const [dueAt, setDueAt] = useState(defaultDueAt)
   const [recurrence, setRecurrence] = useState('')
+  const [customRepeat, setCustomRepeat] = useState(false)
   const inputRef = useRef(null)
+  const rowRef = useRef(null)
+  const dueText = formatDueCell(dueAt, getDueBounds()).text || 'Due date'
 
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  async function commit(dueAt) {
+  async function commit(picked, draft) {
     const trimmed = title.trim()
     if (!trimmed || busy) return
     setPicking(false)
+    setDueAt(picked)
+    setRecurrence(draft.recurrence)
+    setCustomRepeat(draft.customRepeat)
     setBusy(true)
     setError(null)
     try {
-      await onSubmit(trimmed, { dueAt, recurrence: recurrence || null })
+      await onSubmit(trimmed, { dueAt: picked, recurrence: draft.recurrence || null })
     } catch (err) {
       setError(err.message || 'Could not add task.')
       setBusy(false)
@@ -47,38 +58,52 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   return (
     <div className="mytasks-grid" style={{ gridTemplateColumns, alignItems: 'center', minHeight: 44, borderBottom: '1px solid var(--bd)' }}>
       <span aria-hidden="true" />
-      <input
-        ref={inputRef}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => { if (!title.trim() && !busy) onCancel() }}
-        disabled={busy}
-        placeholder="Task name"
-        aria-label="New task name"
-        aria-haspopup="dialog"
-        aria-expanded={picking}
-        style={{
-          gridColumn: error ? '2' : '2 / -1',
-          minWidth: 0,
-          height: 44,
-          padding: '0 0.75rem',
-          border: '1px solid var(--bd-strong)',
-          borderRadius: 'var(--radius)',
-          background: 'var(--bg2)',
-          color: 'var(--t1)',
-          font: 'inherit',
-          fontSize: '0.9375rem',
-        }}
-      />
+      {/* The popover's anchor, so a click on the due date button is not a click outside it. Esc
+          there focuses the anchor, which hands focus on to the title. */}
+      <div
+        ref={rowRef}
+        className="inline-add"
+        tabIndex={-1}
+        onFocus={(e) => { if (e.target === e.currentTarget) inputRef.current?.focus() }}
+        style={{ gridColumn: error ? '2' : '2 / -1' }}
+      >
+        <input
+          ref={inputRef}
+          className="inline-add-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={handleKeyDown}
+          // Leaving an empty row cancels it, unless focus went to its own due date button.
+          onBlur={(e) => { if (!title.trim() && !busy && !rowRef.current?.contains(e.relatedTarget)) onCancel() }}
+          disabled={busy}
+          placeholder="Task name"
+          aria-label="New task name"
+          aria-haspopup="dialog"
+          aria-expanded={picking}
+        />
+        {/* Asana's due date cell on its new row: the date and repeat can be set without knowing that
+            Enter opens them. It needs a title first, as Add task does. */}
+        <button
+          type="button"
+          className="btn inline-add-due"
+          disabled={busy || !title.trim()}
+          aria-haspopup="dialog"
+          aria-expanded={picking}
+          aria-label={dueAt ? `Due date: ${dueText}` : 'Due date'}
+          onClick={() => setPicking(true)}
+        >
+          <Calendar size={16} aria-hidden="true" />
+          <span>{dueText}</span>
+        </button>
+      </div>
       {error && (
         <span style={{ gridColumn: '3 / -1', paddingLeft: '0.75rem', fontSize: '0.8rem', color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {error}
         </span>
       )}
-      <Popover anchorRef={inputRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={540} gutter={0} focusSelector="[data-cal-focus]">
+      <Popover anchorRef={rowRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={640} gutter={0} focusSelector="[data-cal-focus]">
         <div role="dialog" aria-label={`Due date for ${title.trim()}`} className="add-due-pop">
-          <AddDuePanel dueAt={defaultDueAt} onPick={commit} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} />
+          <AddDuePanel dueAt={dueAt} onPick={commit} recurrence={recurrence} customRepeat={customRepeat} api={api} />
         </div>
       </Popover>
     </div>

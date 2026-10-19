@@ -1569,25 +1569,28 @@ kbd { color: var(--t1); }
 
 /* "When is it due?" (AddDuePanel.jsx): the step after a new task's title, in a popover on a
    desktop (.add-due-pop) and in place of the sheet's form on a phone (.sheet-cal). */
-/* A set width: the month and the full-width Repeat box would otherwise stretch the popover to
+/* A set width: the month and the full-width Repeats box would otherwise stretch the popover to
    the window's edge. 360px less the 12px sides is room for the 308px month; at 320px the
    window less the 1px borders and 5px sides is exactly 308px. */
 .add-due-pop { width: min(360px, calc(100vw - 2px)); padding: 12px; }
 /* Above the breakpoint the popover sits under a row in the middle of the list, with about half
-   the window below it: the month goes beside the rest, so the whole step fits without scrolling
-   the heading out of sight. */
+   the window below it: the quick dates and Repeats go beside the month, as two columns, so the
+   step is little taller than the month. The month keeps Asana's place on the left. */
 @media (min-width: 641px) {
-  .add-due-pop { width: 540px; }
+  .add-due-pop { width: 620px; }
   .add-due-pop .add-due {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 308px;
-    grid-template-rows: auto auto 1fr;
+    grid-template-columns: 308px minmax(0, 1fr);
+    grid-template-areas: 'title title' 'cal chips' 'cal repeat' 'foot foot';
+    grid-template-rows: auto auto 1fr auto;
     column-gap: 20px;
     row-gap: 12px;
   }
-  .add-due-pop .add-due > .cal { grid-column: 2; grid-row: 1 / span 3; }
-  .add-due-pop .add-due > .add-due-time { grid-column: 2; grid-row: 4; }
-  .add-due-pop .add-due .sheet-chips { flex-direction: column; align-items: stretch; align-self: start; }
+  .add-due-pop .add-due-title { grid-area: title; }
+  .add-due-pop .add-due-chips { grid-area: chips; }
+  .add-due-pop .add-due > .cal { grid-area: cal; }
+  .add-due-pop .add-due-repeat { grid-area: repeat; }
+  .add-due-pop .add-due-foot { grid-area: foot; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }
@@ -1597,7 +1600,32 @@ kbd { color: var(--t1); }
 /* Add time, under the month: a button, then a time box and Remove time once opened. They wrap
    onto two lines when the box and the button do not fit side by side; the box's 160px basis
    leaves room for Remove time beside it in the 308px column under the month on a desktop. */
-.add-due-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.add-due-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 220px; min-width: 0; }
+/* Add time and the submit button, under the month and Repeats: they wrap when they do not fit. */
+/* It stays in sight at the bottom of the popover or sheet while the rest scrolls, so the date
+   picked can always be added; it sits after everything, so nothing stays under it. */
+.add-due-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--bd);
+  background: var(--bg2);
+}
+.add-due-pop .add-due-foot { background: var(--bg3); }
+/* So a control above the foot, scrolled into view by focus or the arrow keys, stops clear of it
+   rather than under it; AddDuePanel.jsx measures the foot into --add-due-foot. */
+.add-due > :not(.add-due-foot) :is(button, input, select, textarea) { scroll-margin-bottom: var(--add-due-foot, 0px); }
+/* In the sheet's date step the sheet's own bottom padding would show the month scrolling under
+   the bar, so the Back row after it carries that padding instead. */
+.sheet.sheet-cal { padding-bottom: 0; }
+.sheet-cal .sheet-actions { padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+.add-due-submit { flex: 0 0 auto; }
 .add-due-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
 .add-due-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
 .add-due .field { margin-bottom: 0; }
@@ -1630,6 +1658,29 @@ kbd { color: var(--t1); }
 .cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; box-shadow: inset 0 0 0 1px var(--blue); }
 .cal-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
+/* The next dates of the repeat being set, tinted as Asana tints them (AddDuePanel.jsx). */
+.cal-day[data-repeat] { background: var(--blue-soft); color: var(--blue); font-weight: 600; }
+
+/* Repeats for a task being added (RepeatPicker in RepeatBuilder.jsx): the choice, then what it needs. */
+.repeat-picker { display: flex; flex-direction: column; gap: 4px; }
+.repeat-picker .repeat-builder { margin-top: 4px; }
+.repeat-unit { font-size: 0.9rem; color: var(--t1); }
+
+/* The inline add row (InlineTaskInput.jsx): the name box and its due date button. */
+.inline-add { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.inline-add-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--target);
+  padding: 0 0.75rem;
+  border: 1px solid var(--bd-strong);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  color: var(--t1);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+.inline-add-due { flex: 0 0 auto; gap: 6px; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }

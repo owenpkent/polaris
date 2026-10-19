@@ -6,6 +6,11 @@ import { weekdayOf } from './recurrenceRules'
 
 const PROJECTS = [{ id: 'p1', name: 'Alpha' }]
 
+// The weekday button's name in the repeat builder for a YYYY-MM-DD: "Monday".
+function weekdayName(iso) {
+  return new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))).toLocaleDateString('en-US', { weekday: 'long' })
+}
+
 afterEach(cleanup)
 
 function renderSheet(props = {}) {
@@ -79,6 +84,7 @@ describe('NewTaskSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
     const day = screen.getAllByRole('button').find((b) => b.dataset.date?.endsWith('-15'))
     fireEvent.click(day)
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Create' }))
     expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('false')
@@ -92,6 +98,7 @@ describe('NewTaskSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '14:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     const { tomorrow } = getDueBounds()
     expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: /2:30\sPM$/ })).toBeTruthy()
@@ -114,11 +121,46 @@ describe('NewTaskSheet', () => {
     expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Walk')
   })
 
+  // The date step's day and the repeat it moves are one draft: Back drops both, rather than
+  // keeping tomorrow's weekday on a task still due today (review on #75).
+  test('Back from the date step drops a repeat moved by a day picked there', async () => {
+    const { onCreate } = renderSheet()
+    const { today, tomorrow } = getDueBounds()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+    expect(screen.getByRole('button', { name: weekdayName(tomorrow) }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    // Reopened, the step starts again from the form's date and repeat.
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    expect(document.querySelector(`[data-date="${today}"]`).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: weekdayName(today) }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: today, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(today)}` }))
+  })
+
+  test('Done in the date step brings back the day and the repeat that followed it', async () => {
+    const { onCreate } = renderSheet()
+    const { today, tomorrow } = getDueBounds()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(tomorrow)}` }))
+  })
+
   test('a repeat chosen on the form is sent with the task', async () => {
     const { onCreate } = renderSheet()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: getDueBounds().today, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` }))
   })
@@ -129,17 +171,28 @@ describe('NewTaskSheet', () => {
     const { onCreate } = renderSheet()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Laundry' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'custom' } })
     fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalled())
     expect(onCreate.mock.calls[0][0]).toMatchObject({ dueAt: getDueBounds().tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().today)}` })
   })
 
+  test('a plain Weekly follows a quick date picked after it', async () => {
+    const { onCreate } = renderSheet()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0][0]).toMatchObject({ dueAt: getDueBounds().tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(getDueBounds().tomorrow)}` })
+  })
+
   test('Custom repeat opens the builder, and the weekdays tapped there make the rule', async () => {
     const { onCreate } = renderSheet()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Gym' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'custom' } })
     for (const name of ['Monday', 'Wednesday', 'Friday']) {
       const day = screen.getByRole('button', { name })
       if (day.getAttribute('aria-pressed') !== 'true') fireEvent.click(day)
@@ -244,7 +297,7 @@ describe('NewTaskSheet', () => {
 // The title box grows with its text so a long title is seen whole while it is typed (CONTRIBUTING.md,
 // "Nothing is cut off"), and Enter goes on to the due date, where Enter again keeps the one picked.
 describe('NewTaskSheet title box', () => {
-  test('is a textarea, and Enter goes on to the due date, then Enter on the day and Create add the task', async () => {
+  test('is a textarea, and Enter goes on to the due date, then the day, Done, and Create add the task', async () => {
     const { onCreate } = renderSheet()
     const title = screen.getByRole('textbox', { name: 'New task name' })
     expect(title.tagName).toBe('TEXTAREA')
@@ -253,6 +306,7 @@ describe('NewTaskSheet title box', () => {
     expect(screen.getByRole('heading', { name: 'When is it due?' })).toBeTruthy()
     expect(document.activeElement.dataset.date).toBe(getDueBounds().today)
     fireEvent.click(document.activeElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalled())
     expect(onCreate.mock.calls[0][0].dueAt).toBe(getDueBounds().today)

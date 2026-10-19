@@ -37,6 +37,8 @@ describe('InlineTaskInput', () => {
     const { input, onSubmit } = setup()
     await openPicker(input)
     fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
     expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().tomorrow, recurrence: null })
   })
@@ -44,8 +46,9 @@ describe('InlineTaskInput', () => {
   test('a repeat chosen in the panel goes with the day', async () => {
     const { input, onSubmit } = setup()
     await openPicker(input)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'daily' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: 'daily' })
   })
@@ -58,6 +61,7 @@ describe('InlineTaskInput', () => {
     expect(document.activeElement).toBe(time)
     fireEvent.change(time, { target: { value: '09:30' } })
     fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${getDueBounds().tomorrow}T09:30`, recurrence: null }))
   })
 
@@ -81,6 +85,7 @@ describe('InlineTaskInput', () => {
     Object.defineProperty(time, 'validity', { configurable: true, value: { badInput: true, valid: false } })
     fireEvent.change(time, { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: `${getDueBounds().today}T09:30`, recurrence: null }))
   })
 
@@ -93,6 +98,7 @@ describe('InlineTaskInput', () => {
     expect(screen.queryByLabelText('Time')).toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add time' }))
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().today, recurrence: null }))
   })
 
@@ -100,6 +106,7 @@ describe('InlineTaskInput', () => {
     const { input, onSubmit } = setup()
     await openPicker(input)
     fireEvent.click(screen.getByRole('button', { name: 'No date' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: null, recurrence: null }))
   })
 
@@ -131,11 +138,78 @@ describe('InlineTaskInput', () => {
   test('a custom weekday stays when a different first day is picked', async () => {
     const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
     await openPicker(input)
-    fireEvent.change(screen.getByRole('combobox', { name: 'Repeat' }), { target: { value: 'custom' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'custom' } })
     expect(screen.getByRole('button', { name: 'Wednesday' }).getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][1]).toEqual({ dueAt: '2026-10-16', recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
+  })
+
+  // The date, time, and repeat are one draft: Esc drops the repeat a day move changed along with
+  // the day, rather than keeping a Friday repeat on a Wednesday task (review on #75).
+  test('Esc drops a repeat moved by a day picked with it, and the reopened picker starts clean', async () => {
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await openPicker(input)
+    expect(document.querySelector('[data-date="2026-10-14"]').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('combobox', { name: 'Repeats' }).value).toBe('none')
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: '2026-10-14', recurrence: null }))
+  })
+
+  // Custom on the group's Wednesday is the plain weekly rule for that day too. Esc drops it; it
+  // does not come back as a plain repeat that would follow the next day picked (review on #75).
+  test('Esc drops a Custom repeat, so a day picked after reopening moves no rule', async () => {
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'custom' } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await openPicker(input)
+    expect(screen.getByRole('combobox', { name: 'Repeats' }).value).toBe('none')
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: '2026-10-16', recurrence: null }))
+  })
+
+  // A failed create keeps the draft Add task handed over: the picker reopens on the day picked,
+  // with the repeat still in Custom, so a rule that reads as the plain weekly for that day keeps its
+  // weekday when another day is picked on the retry (review on #75).
+  test('a retry after a failed create keeps a Custom repeat that looks plain', async () => {
+    const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Nope')).mockResolvedValue(undefined)
+    const { input } = setup({ onSubmit, defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'custom' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    expect(await screen.findByText('Nope')).toBeTruthy()
+    expect(onSubmit).toHaveBeenLastCalledWith('Buy milk', { dueAt: '2026-10-14', recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
+    await openPicker(input)
+    expect(screen.getByRole('combobox', { name: 'Repeats' }).value).toBe('custom')
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
+    expect(onSubmit).toHaveBeenLastCalledWith('Buy milk', { dueAt: '2026-10-16', recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
+  })
+
+  test('a retry after a failed create reopens on the day picked, with the repeat that followed it', async () => {
+    const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Nope')).mockResolvedValue(undefined)
+    const { input } = setup({ onSubmit, defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    expect(await screen.findByText('Nope')).toBeTruthy()
+    await openPicker(input)
+    expect(document.querySelector('[data-date="2026-10-16"]').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('combobox', { name: 'Repeats' }).value).toBe('weekly')
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
+    expect(onSubmit).toHaveBeenLastCalledWith('Buy milk', { dueAt: '2026-10-16', recurrence: 'FREQ=WEEKLY;BYDAY=FR' })
   })
 
   test('a failed submit shows the error and keeps the title', async () => {
@@ -143,7 +217,50 @@ describe('InlineTaskInput', () => {
     const { input } = setup({ onSubmit })
     await openPicker(input)
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
     expect(await screen.findByText('Nope')).toBeTruthy()
     expect(input.value).toBe('Buy milk')
+  })
+
+  test('a tap on a day selects it, and a second tap on it adds the task', async () => {
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    const day = document.querySelector('[data-date="2026-10-16"]')
+    fireEvent.click(day)
+    expect(day.getAttribute('aria-pressed')).toBe('true')
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.click(day)
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: '2026-10-16', recurrence: null }))
+  })
+
+  // Enter in the title, then Enter on the day the calendar focuses, keeps the group's date.
+  test("a second pick of the group's date adds the task", async () => {
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14' })
+    await openPicker(input)
+    fireEvent.click(document.querySelector('[data-date="2026-10-14"]'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: '2026-10-14', recurrence: null }))
+  })
+
+  test('Weekly follows the day picked after it, and the next dates are tinted on the month', async () => {
+    const api = { previewRecurrence: vi.fn().mockResolvedValue({ dates: ['2026-10-23', '2026-10-30', '2026-11-06'] }) }
+    const { input, onSubmit } = setup({ defaultDueAt: '2026-10-14', api })
+    await openPicker(input)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(document.querySelector('[data-date="2026-10-16"]'))
+    expect(screen.getByRole('button', { name: 'Friday' }).getAttribute('aria-pressed')).toBe('true')
+    await waitFor(() => expect(document.querySelector('[data-date="2026-10-23"]').hasAttribute('data-repeat')).toBe(true))
+    expect(document.querySelector('[data-date="2026-10-23"]').getAttribute('aria-label')).toMatch(/, repeats$/)
+    expect(api.previewRecurrence).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=FR', '2026-10-16', 3)
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: '2026-10-16', recurrence: 'FREQ=WEEKLY;BYDAY=FR' }))
+  })
+
+  test('the due date button beside the name opens the picker once there is a name', async () => {
+    const { input } = setup({ defaultDueAt: getDueBounds().today })
+    const due = screen.getByRole('button', { name: 'Due date: Today' })
+    expect(due.disabled).toBe(true)
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.click(due)
+    expect(await screen.findByRole('dialog', { name: 'Due date for Buy milk' })).toBeTruthy()
   })
 })

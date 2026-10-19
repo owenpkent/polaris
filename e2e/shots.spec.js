@@ -307,6 +307,24 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'new-due-step-time')
   })
 
+  // "When is it due?" with Weekly chosen under the month: the weekdays, and the next dates tinted.
+  test('mytasks: new due step with a repeat', async ({ page }, testInfo) => {
+    await openView(page)
+    let scope = page
+    if (phone(testInfo)) {
+      await page.getByRole('button', { name: 'New task' }).click()
+      scope = page.getByRole('dialog', { name: 'New task' })
+    } else {
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+    }
+    await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
+    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    const due = phone(testInfo) ? scope : page.getByRole('dialog', { name: 'Due date for Book the van service' })
+    await due.getByRole('combobox', { name: 'Repeats' }).selectOption('weekly')
+    await expect(due.getByRole('grid').getByRole('button', { name: /, repeats$/ }).first()).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'new-due-step-repeat')
+  })
+
   test('mytasks: sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
