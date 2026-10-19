@@ -913,3 +913,45 @@ describe('the repeat in the panel\'s due date picker', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'daily', dueAt: getDueBounds().today }))
   })
 })
+
+describe('the completion celebration', () => {
+  // An answer that takes longer than the burst lasts, so a burst started on the click is over
+  // before the done state shows.
+  function slowly(value) {
+    return () => new Promise((resolve) => setTimeout(() => resolve(value), 750))
+  }
+
+  test('a slow completion still shows the burst once the task shows as done', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    api.completeTask.mockImplementation(slowly({ task: { ...TASK, status: 'done' } }))
+    api.getTask.mockResolvedValue(detail({ ...TASK, status: 'done' }, []))
+    const { container } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark complete' }))
+    await screen.findByRole('button', { name: 'Completed' }, { timeout: 2000 })
+    expect(container.querySelector('.complete-burst')).toBeTruthy()
+  })
+
+  test('a slow subtask completion still shows the burst on the ticked box', async () => {
+    const sub = { id: 't_s1', title: 'Passport', status: 'open' }
+    api.getTask.mockResolvedValueOnce({ ...detail(TASK, []), subtasks: [sub] })
+    api.completeTask.mockImplementation(slowly({ task: { ...sub, status: 'done' } }))
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ ...sub, status: 'done' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Passport' }))
+    const box = await screen.findByRole('checkbox', { name: 'Reopen Passport' }, { timeout: 2000 })
+    expect(box.querySelector('.complete-burst')).toBeTruthy()
+  })
+
+  test('a failed completion shows no burst', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.completeTask.mockRejectedValue(new Error('The server is down.'))
+    const { container } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark complete' }))
+    expect(await screen.findByText('The server is down.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeTruthy()
+    expect(container.querySelector('.complete-burst')).toBeNull()
+  })
+})

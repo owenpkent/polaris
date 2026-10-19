@@ -763,9 +763,9 @@ kbd { color: var(--t1); }
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
 
-/* The check circle in a row: a grey tick in an outlined circle at rest, filled green when done.
-   Hovering the button turns the circle green so the target reads as "complete" before the
-   click; nothing is revealed. */
+/* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
+   done. A tick at rest read as already done. Hovering the button turns the circle green and shows
+   the tick in green, so the target reads as "complete" before the click. */
 .task-check { transition: background 0.12s; }
 .task-check:hover:not(:disabled) { background: var(--green-soft); }
 .task-check:hover:not(:disabled) .task-check-circle { border-color: var(--green); color: var(--green); }
@@ -777,10 +777,62 @@ kbd { color: var(--t1); }
   height: 20px;
   border-radius: 50%;
   border: 1.5px solid var(--bd-strong);
-  color: var(--t3);
+  color: transparent;
   transition: border-color 0.12s, background 0.12s, color 0.12s;
 }
 .task-check-circle.is-done { border-color: var(--green); background: var(--green); color: var(--on-accent); }
+
+/* Completing a task (CompleteBurst.jsx): the check pops, its tick springs in, and a ring of
+   coloured dots bursts out of it. The dots travel at most 21px from the centre, so they stay
+   inside the 44px button. A completed row in My Tasks flashes green and fades before the
+   refetch drops it (COMPLETE_EXIT_MS). Reduced motion turns all of it off (below). */
+.check-pop { animation: check-pop 0.42s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.check-pop svg { animation: check-tick 0.32s 0.08s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes check-pop {
+  0% { transform: scale(1); }
+  30% { transform: scale(0.72); }
+  70% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+@keyframes check-tick {
+  from { transform: scale(0) rotate(-40deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.complete-burst { position: absolute; inset: 0; pointer-events: none; }
+.complete-burst i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  animation: burst-dot 0.6s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.complete-burst i:nth-child(1) { --a: 0deg; background: var(--green); }
+.complete-burst i:nth-child(2) { --a: 45deg; background: var(--blue); }
+.complete-burst i:nth-child(3) { --a: 90deg; background: var(--yellow); }
+.complete-burst i:nth-child(4) { --a: 135deg; background: var(--purple); }
+.complete-burst i:nth-child(5) { --a: 180deg; background: var(--green); }
+.complete-burst i:nth-child(6) { --a: 225deg; background: var(--orange); }
+.complete-burst i:nth-child(7) { --a: 270deg; background: var(--blue); }
+.complete-burst i:nth-child(8) { --a: 315deg; background: var(--red); }
+@keyframes burst-dot {
+  0% { transform: rotate(var(--a)) translateY(-8px) scale(0); opacity: 1; }
+  35% { transform: rotate(var(--a)) translateY(-14px) scale(1.15); opacity: 1; }
+  100% { transform: rotate(var(--a)) translateY(-18px) scale(0.2); opacity: 0; }
+}
+.mytasks-row.is-completing { animation: row-complete 0.7s ease-in both; }
+@keyframes row-complete {
+  0% { background: transparent; }
+  25% { background: var(--green-soft); opacity: 1; }
+  65% { background: var(--green-soft); opacity: 1; }
+  100% { background: var(--green-soft); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .check-pop, .check-pop svg, .mytasks-row.is-completing { animation: none; }
+  .complete-burst { display: none; }
+}
 
 /* Rows and items that touch their neighbours draw their focus ring inside. An outward ring
    reaches 4px past the box, where a panel that clips its rows (overflow: hidden), a menu that
