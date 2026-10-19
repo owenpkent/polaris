@@ -9,7 +9,7 @@ afterEach(() => cleanup())
 const DUE_BOUNDS = getDueBounds(new Date('2026-10-08T12:00:00'))
 
 // A trigger with the menu open under it, the way TaskRow and the task panel use it.
-function Harness({ value, onChange }) {
+function Harness({ value, onChange, repeat }) {
   const btnRef = useRef(null)
   const [open, setOpen] = useState(true)
   return (
@@ -23,6 +23,7 @@ function Harness({ value, onChange }) {
         dueBounds={DUE_BOUNDS}
         onChange={onChange}
         label="Due date"
+        {...repeat}
       />
     </>
   )
@@ -242,5 +243,106 @@ describe('the time', () => {
     expect(screen.getByLabelText('Time').value).toBe('21:45')
     fireEvent.click(day('Thursday, October 22, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-22T21:45')
+  })
+})
+
+// Repeats under the month, wired as TaskRow and the task panel wire it.
+function renderRepeat(value = '2026-10-08', recurrence = null, dates = ['2026-10-15', '2026-10-22', '2026-10-29']) {
+  const onChange = vi.fn()
+  const onRecurrenceChange = vi.fn()
+  const api = { previewRecurrence: vi.fn().mockResolvedValue({ dates }) }
+  render(<Harness value={value} onChange={onChange} repeat={{ recurrence, onRecurrenceChange, api }} />)
+  return { onChange, onRecurrenceChange, api, picker: () => screen.queryByRole('dialog', { name: 'Due date' }) }
+}
+
+describe('Repeats', () => {
+  test('is left out when the caller does not set the repeat', () => {
+    renderMenu()
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+  })
+
+  test('a choice saves the rule at once and keeps the picker open', () => {
+    const { onRecurrenceChange, onChange, picker } = renderRepeat()
+    const select = screen.getByLabelText('Repeats')
+    expect(select.value).toBe('none')
+    fireEvent.change(select, { target: { value: 'weekly' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(picker()).not.toBeNull()
+    // The weekly choice shows its weekdays, the due date's own pressed.
+    expect(screen.getByRole('button', { name: 'Thursday' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('the next dates of the repeat are tinted on the month', async () => {
+    const { api } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH', '2026-10-08', 3))
+    const next = await screen.findByRole('button', { name: 'Thursday, October 15, 2026, repeats' })
+    expect(next.hasAttribute('data-repeat')).toBe(true)
+    expect(day('Friday, October 16, 2026').hasAttribute('data-repeat')).toBe(false)
+  })
+
+  test('Does not repeat saves null', () => {
+    const { onRecurrenceChange } = renderRepeat('2026-10-08', 'daily')
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'none' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith(null)
+  })
+
+  test('on a task with no date, a repeat sets the date to today with it', () => {
+    const { onRecurrenceChange } = renderRepeat(null)
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith('daily', DUE_BOUNDS.today)
+    expect(day('Thursday, October 8, 2026').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  test('a time typed first goes with the date a repeat sets', () => {
+    const { onRecurrenceChange } = renderRepeat(null)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '07:30' } })
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith('daily', `${DUE_BOUNDS.today}T07:30`)
+  })
+
+  test('a plain repeat follows a newly picked day, saved with it', () => {
+    const { onChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-09', 'FREQ=WEEKLY;BYDAY=FR')
+    expect(picker()).toBeNull()
+  })
+
+  test('a repeat that does not name the day is saved with the day alone', () => {
+    const { onChange } = renderRepeat('2026-10-08', 'daily')
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
+    cleanup()
+    // The bare alias follows the due date on its own, so it is not spelled out.
+    const second = renderRepeat('2026-10-08', 'weekly')
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(second.onChange).toHaveBeenCalledWith('2026-10-09')
+  })
+
+  test('a repeat just chosen follows the day picked after it', () => {
+    const { onChange, onRecurrenceChange } = renderRepeat()
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.click(day('Monday, October 12, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-12', 'FREQ=WEEKLY;BYDAY=MO')
+  })
+
+  test('Custom opens the builder in the picker, and a rule made there keeps its days on a new day', () => {
+    const { onChange, onRecurrenceChange } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'custom' } })
+    expect(screen.getByRole('group', { name: 'Ends' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(onRecurrenceChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;INTERVAL=2;BYDAY=TH')
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
+  })
+
+  test('a rule the builder cannot show is named and left to the task panel', () => {
+    const { onChange } = renderRepeat('2026-10-08', 'FREQ=YEARLY;BYMONTH=1,7')
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(screen.getByText(/Change it under More details in the task panel\.$/)).toBeTruthy()
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
   })
 })

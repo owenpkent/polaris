@@ -81,7 +81,7 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
 // The soft background behind a phone due chip, matching the text colour formatDueCell chose.
 const CHIP_BACKGROUNDS = { 'var(--green)': 'var(--green-soft)', 'var(--red)': 'var(--red-soft)' }
 
-function DueDateCell({ task, dueBounds, onUpdate, phone }) {
+function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const due = formatDueCell(task.dueAt, dueBounds)
@@ -123,7 +123,10 @@ function DueDateCell({ task, dueBounds, onUpdate, phone }) {
         onClose={() => setOpen(false)}
         value={task.dueAt}
         dueBounds={dueBounds}
-        onChange={(value) => onUpdate(task, { dueAt: value })}
+        onChange={(value, recurrence) => onUpdate(task, recurrence === undefined ? { dueAt: value } : { dueAt: value, recurrence })}
+        recurrence={task.recurrence}
+        onRecurrenceChange={(recurrence, dueAt) => onUpdate(task, dueAt === undefined ? { recurrence } : { recurrence, dueAt })}
+        api={api}
         label={`Due date for ${task.title}`}
       />
     </div>
@@ -199,6 +202,7 @@ export default function TaskRow({
   onToggleComplete,
   onOpen,
   onQuickUpdate,
+  api,
 }) {
   const done = task.status === 'done'
   const columnIds = new Set(visibleColumns.map((c) => c.id))
@@ -292,7 +296,7 @@ export default function TaskRow({
         )}
       </span>
 
-      {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} />}
+      {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
       )}

@@ -149,6 +149,22 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // Repeats under the month: a weekly rule shows its weekday buttons, and Custom the whole builder
+  // with Ends, which make the picker grow after it has been placed.
+  test('the due date menu with a repeat, and with Custom open', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'due picker repeat', { recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
+    await openView(page)
+    await page.getByRole('button', { name: `Change due date for ${title}` }).click()
+    const menu = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await expect(menu.getByRole('button', { name: 'Thursday', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    expect(await smallTargets(menu, 'button, select')).toEqual([])
+    await expectNothingCutOff(page)
+    await menu.getByLabel('Repeats', { exact: true }).selectOption('custom')
+    await expect(menu.getByRole('group', { name: 'Ends' })).toBeVisible()
+    expect(await smallTargets(menu, 'button, select')).toEqual([])
+    await expectNothingCutOff(page)
+  })
+
   test('the goal menu in the task panel', async ({ page }) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')

@@ -31,6 +31,39 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await expect.poll(async () => (await taskByTitle(request, title)).recurrence).toBe('FREQ=MONTHLY;BYDAY=2WE')
   })
 
+  test('the due date picker sets a repeat, tints its next dates, and moves it with a new day', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat in picker', { dueAt: '2026-10-14' })
+    await openView(page)
+    await page.getByRole('button', { name: `Change due date for ${title}` }).click()
+    const picker = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await picker.getByLabel('Repeats', { exact: true }).selectOption('weekly')
+    await expect.poll(async () => (await taskByTitle(request, title)).recurrence).toBe('FREQ=WEEKLY;BYDAY=WE')
+    await expect(picker).toBeVisible()
+    await expect(picker.getByRole('button', { name: 'Wednesday, October 21, 2026, repeats', exact: true })).toBeVisible()
+    await picker.getByRole('button', { name: 'Friday, October 16, 2026', exact: true }).click()
+    await expect(picker).toBeHidden()
+    await expect.poll(async () => {
+      const task = await taskByTitle(request, title)
+      return [task.dueAt, task.recurrence]
+    }).toEqual(['2026-10-16', 'FREQ=WEEKLY;BYDAY=FR'])
+  })
+
+  test('a repeat picked in the panel\'s due date picker on a task with no date gives it today', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'repeat no date', { dueAt: null })
+    await openView(page)
+    await page.getByRole('button', { name: 'Expand No due date' }).click()
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: 'Due date, none' }).click()
+    const picker = page.getByRole('dialog', { name: 'Due date', exact: true })
+    await picker.getByLabel('Repeats', { exact: true }).selectOption('daily')
+    await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName('Due date, Today')
+    await expect(panel.getByRole('button', { name: /^Repeat, / })).toHaveAccessibleName('Repeat, daily')
+    const task = await taskByTitle(request, title)
+    expect(task.recurrence).toBe('daily')
+    expect(task.dueAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
   test('Custom sets an end and counts from the finish, and completing it counts down', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'repeat ends', { recurrence: 'weekly' })
     await openView(page)

@@ -135,3 +135,28 @@ describe('TaskRow due time', () => {
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: `${DUE_BOUNDS.tomorrow}T09:00` })
   })
 })
+
+describe('TaskRow repeat from the due date picker', () => {
+  const api = { previewRecurrence: vi.fn().mockResolvedValue({ dates: [] }) }
+
+  test('a Repeats choice saves the rule through the quick update', () => {
+    const { onQuickUpdate, task } = renderRow({ props: { api } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { recurrence: 'FREQ=WEEKLY;BYDAY=TU' })
+  })
+
+  test('a new day moves a plain weekly repeat with it in one update', () => {
+    const { onQuickUpdate, task } = renderRow({ task: { recurrence: 'FREQ=WEEKLY;BYDAY=TU' }, props: { api } })
+    fireEvent.click(screen.getByRole('button', { name: /^Change due date for Write the report, repeats / }))
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: DUE_BOUNDS.tomorrow, recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
+  })
+
+  test('a repeat on a task with no date gives it today', () => {
+    const { onQuickUpdate, task } = renderRow({ task: { dueAt: null }, props: { api } })
+    fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { recurrence: 'daily', dueAt: DUE_BOUNDS.today })
+  })
+})

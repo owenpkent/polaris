@@ -468,6 +468,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               onToggleComplete={handleToggleComplete}
               onOpen={setDetailTaskId}
               onQuickUpdate={handleQuickUpdate}
+              api={api}
             />
           ))}
         </div>
