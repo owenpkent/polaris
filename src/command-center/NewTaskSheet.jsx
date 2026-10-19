@@ -30,12 +30,12 @@ function linkLabel(url) {
 // The phone's "new task" dialog, opened by the floating Add task button on My tasks. Title, a due
 // date picked from chips or the calendar, a repeat rule, project, and notes. Enter in the title
 // opens "When is it due?" (AddDuePanel.jsx) in place of the form, as the desktop's inline row does;
-// a tap there sets the date and comes back to the form with Create focused, and Esc or Back comes
-// back without changing it. Esc on the form closes it, Tab stays inside, and focus goes back
-// to the button that opened it. `onCreate` receives the create payload and may throw. When it
-// resolves the sheet closes itself through `onClose`. Each opening is numbered, and a create that
-// finishes after the sheet was closed and opened again leaves the new draft alone: it neither
-// closes it nor puts the old request's error or busy state on it.
+// Done there sets the date, and the repeat made with it, and comes back to the form with Create
+// focused, and Esc or Back comes back without changing either. Esc on the form closes it, Tab
+// stays inside, and focus goes back to the button that opened it. `onCreate` receives the create
+// payload and may throw. When it resolves the sheet closes itself through `onClose`. Each opening
+// is numbered, and a create that finishes after the sheet was closed and opened again leaves the
+// new draft alone: it neither closes it nor puts the old request's error or busy state on it.
 //
 // `initial` ({ title, notes, sourceUrl } or null) starts the draft from a share (shareIntake.js).
 // Its link is kept with the draft, shown as one read-only line, and sent as `sourceUrl`. A new
@@ -73,6 +73,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setTitle(initialRef.current?.title || '')
     setDueAt(null)
     setRecurrence('')
+    setCustomRepeat(false)
     setStep('form')
     setProjectId('')
     setNotes(initialRef.current?.notes || '')
@@ -134,10 +135,12 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setStep('date')
   }
 
-  // Done in the date step (a date, or null for No date) brings the choice back to the form, where
-  // Create is next once there is a title to create with.
-  function pickDate(value) {
+  // Done in the date step (a date, or null for No date) brings the choice back to the form, with
+  // the repeat set beside it, where Create is next once there is a title to create with.
+  function pickDate(value, draft) {
     setDueAt(value)
+    setRecurrence(draft.recurrence)
+    setCustomRepeat(draft.customRepeat)
     returnFocusRef.current = title.trim() ? createRef : pickRef
     setStep('form')
   }
@@ -149,7 +152,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setDueAt(withDueDate(dueAt, value))
   }
 
-  // Back, or Esc: the date stays as it was.
+  // Back, or Esc: the date and the repeat stay as they were.
   function closeDateStep() {
     setStep('form')
   }
@@ -206,7 +209,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
               </button>
             </div>
             <p className="sheet-draft-title">{title.trim()}</p>
-            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} onRecurrenceChange={setRecurrence} api={api} submitLabel="Done" customRepeat={customRepeat} onCustomRepeatChange={setCustomRepeat} />
+            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} customRepeat={customRepeat} api={api} submitLabel="Done" />
             <div className="sheet-actions">
               <button type="button" className="btn" onClick={closeDateStep}>Back</button>
             </div>
