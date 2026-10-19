@@ -171,6 +171,8 @@ npm run cc -- tasks import tasks.txt --format lines               # - reads stdi
 
 Over REST, `POST /api/tasks/import` takes `{ text, format?: "auto"|"csv"|"lines", project?, dryRun? }`. A dry run answers `200 { dryRun, format, rows, count, errors, ignoredColumns }`. A real run answers `201 { format, created, count, ignoredColumns }`, or `400 { error, errors: [{ line, message }] }` with nothing created. Import is live-only: there is no MCP tool, rule action, or offline queue entry for it.
 
+Moving from Asana, repeat schedules included, is covered in [docs/asana-import.md](../docs/asana-import.md). Asana's CSV export leaves out the repeat settings.
+
 ## Backups
 
 The daemon's `backup` job copies the database once a day, to `data/backups` or to `CC_BACKUP_DIR`, and keeps the newest `CC_BACKUP_KEEP` (14). Point `CC_BACKUP_DIR` at another machine or disk: the default folder is on the same disk as the database, so it only protects against a bad write. Use a UNC path for a network share (`\\server\share\folder`), since a mapped drive letter may not exist yet when the daemon starts at logon.
