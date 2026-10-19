@@ -8,7 +8,7 @@ Prior art: the owner's alpha-osk updater (a Windows installer-based updater with
 
 ## Where things stand
 
-This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files say 2.0.0 (a test fails when they differ), so the version point below no longer holds. The first release, v2.0.0, was tagged on 2026-10-15.
+This section is the install as it was when the proposal was written. Since the build, `cc update` exists and both package.json files carry the same version (a test fails when they differ), so the version point below no longer holds. The first release, v2.0.0, was tagged on 2026-10-15, and v2.1.0 followed on 2026-10-18.
 
 - Updating is manual. On every install it is: `git pull`, `npm install` at the root, `npm --prefix command-center install`, `npm run build`, then a restart of the daemon. The owner snapshots the database first when `command-center/src/core/schema.ts` changes.
 - The daemon, the CLI, and the Windows logon task all run `command-center/src/cli.ts` straight from the git working tree with Node. There is no install step and no built server: a `git checkout` changes the code the next process runs. The dashboard is the one built thing, `npm run build` writing `dist/`, which the running daemon serves.

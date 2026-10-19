@@ -201,7 +201,7 @@ The machine's folders, budget, flags, billing choice, and API key are not stored
 
 - A read of the task answers from the run record, not the task table: the frozen brief (the same bytes the session was launched with) and the run's own facts (task id, run state, the status the session has set). It carries no live title, notes, comments, subtasks, links, or history. The brief is the only task text that reaches the session, at launch and afterwards.
 - A write (a comment, a status change) is applied live, so the owner sees it as it happens, but its response carries the same snapshot, never the task as it now stands.
-- The read-only tools are not on the run token's list, so `list_tasks`, `search_tasks`, threads, and the rest cannot be used to read around the snapshot.
+- The read-only tools are not on the run token's list, so `search_tasks`, `get_view`, `list_inbox`, threads, and the rest cannot be used to read around the snapshot.
 
 The owner can still change a task during a run; the change waits for the next run, which freezes a new brief.
 

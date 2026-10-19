@@ -39,7 +39,7 @@ On first launch, type the server URL and paste the token from `command-center/da
 
 ## What the dashboard does differently inside the app
 
-Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, which checks for the `window.Capacitor` object the shell injects. The dashboard has no dependency on Capacitor.
+Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, which asks the `window.Capacitor` object the shell injects whether it is running on a native platform. The dashboard has no dependency on Capacitor.
 
 - The default server URL is empty instead of the page's own origin, since the page's origin is the app itself.
 - No service worker is registered: the app shell is inside the app, and the offline copy and the outbox live in the dashboard's own code and work as they do in a browser.
