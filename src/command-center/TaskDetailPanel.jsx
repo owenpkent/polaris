@@ -15,6 +15,7 @@ import RepeatBuilder, { useRecurrencePreview } from './RepeatBuilder'
 import { parseRule, buildRule, defaultShape, quickPicks, matchQuickPick, countsFromCompletion } from './recurrenceRules'
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 import ThreadSection from './ThreadSection'
+import CompleteBurst, { useCelebration } from './CompleteBurst'
 
 // History entries are CcEvent rows: { id, at, kind, taskId, actor, actorName, payload },
 // plus `restore` from the server: what Put back would set, or null.
@@ -446,6 +447,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const assigneeRef = useFitToText(form?.assignee)
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
+  // The check that celebrates a completion: the task's own button, or the subtask last ticked.
+  const taskCelebration = useCelebration()
+  const subCelebration = useCelebration()
+  const [celebratedSubId, setCelebratedSubId] = useState(null)
   const [moreOpen, setMoreOpen] = useState(false)
   // The Recurrence box under More details, which the Repeat menu's Custom opens for a rule the builder cannot show.
   const recurrenceRef = useRef(null)
@@ -651,6 +656,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
   async function handleCompleteToggle() {
     setSaveError(null)
+    if (data.task.status !== 'done') taskCelebration.celebrate()
     try {
       if (data.task.status === 'done') {
         await api.reopenTask(taskId)
@@ -739,6 +745,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   }
 
   async function handleToggleSubtask(sub) {
+    if (sub.status !== 'done') {
+      setCelebratedSubId(sub.id)
+      subCelebration.celebrate()
+    }
     setSubtaskPending((prev) => new Set(prev).add(sub.id))
     try {
       if (sub.status === 'done') {
@@ -840,6 +850,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 onClick={handleCompleteToggle}
                 style={{
                   ...headerBtnStyle,
+                  position: 'relative',
                   borderRadius: 22,
                   background: done ? 'var(--green-soft)' : 'transparent',
                   borderColor: done ? 'var(--green)' : 'var(--bd-strong)',
@@ -847,8 +858,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   fontWeight: done ? 600 : 500,
                 }}
               >
-                <Check size={16} strokeWidth={2.5} aria-hidden="true" />
+                {/* Only while done: a failed completion stops the celebration at once. */}
+                <span
+                  key={taskCelebration.celebrating && done ? taskCelebration.key : 0}
+                  className={taskCelebration.celebrating && done ? 'check-pop' : undefined}
+                  style={{ display: 'flex' }}
+                >
+                  <Check size={16} strokeWidth={2.5} aria-hidden="true" />
+                </span>
                 <span>{done ? 'Completed' : 'Mark complete'}</span>
+                {taskCelebration.celebrating && done && <CompleteBurst key={taskCelebration.key} />}
               </button>
               <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
               {data.task.assignee ? (
@@ -1164,6 +1183,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             {subtasks.map((s) => {
               const subDone = s.status === 'done'
               const pending = subtaskPending.has(s.id)
+              const subCelebrating = subCelebration.celebrating && celebratedSubId === s.id && subDone
               return (
                 <div
                   key={s.id}
@@ -1183,6 +1203,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                     disabled={pending}
                     onClick={() => handleToggleSubtask(s)}
                     style={{
+                      position: 'relative',
                       width: 44,
                       height: 44,
                       display: 'flex',
@@ -1192,11 +1213,13 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                       border: 'none',
                       borderRadius: 8,
                       cursor: pending ? 'default' : 'pointer',
-                      opacity: pending ? 0.6 : 1,
+                      opacity: pending && !subCelebrating ? 0.6 : 1,
                     }}
                   >
                     <span
+                      key={subCelebrating ? subCelebration.key : 0}
                       aria-hidden="true"
+                      className={subCelebrating ? 'check-pop' : undefined}
                       style={{
                         width: 20,
                         height: 20,
@@ -1210,6 +1233,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                     >
                       {subDone && <Check size={12} strokeWidth={3} style={{ color: 'var(--on-accent)' }} />}
                     </span>
+                    {subCelebrating && <CompleteBurst key={subCelebration.key} />}
                   </button>
                   <button
                     type="button"

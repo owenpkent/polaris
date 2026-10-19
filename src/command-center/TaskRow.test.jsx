@@ -49,6 +49,21 @@ function renderRow(over = {}) {
 }
 
 describe('TaskRow', () => {
+  test('completing celebrates: the row fades and a burst plays until the row is dropped', () => {
+    const { container, rerender, task, onToggleComplete } = renderRow()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Complete Write the report' }))
+    const row = container.querySelector('.mytasks-row')
+    // The parent flips the task to done optimistically.
+    const props = { projectName: 'Alpha', projectOptions: PROJECT_OPTIONS, dueBounds: DUE_BOUNDS, visibleColumns: VISIBLE_COLUMNS, gridTemplateColumns: '44px 1fr', phone: false, onToggleComplete, onOpen: () => {}, onQuickUpdate: () => {} }
+    rerender(<TaskRow {...props} task={{ ...task, status: 'done' }} pending open={false} />)
+    expect(row.className).toContain('is-completing')
+    expect(container.querySelector('.complete-burst')).toBeTruthy()
+    // A failed completion rolls back to open and ends the celebration.
+    rerender(<TaskRow {...props} task={task} pending={false} open={false} />)
+    expect(row.className).not.toContain('is-completing')
+    expect(container.querySelector('.complete-burst')).toBe(null)
+  })
+
   test('renders the title, due label, and priority', () => {
     renderRow()
     expect(screen.getByText('Write the report')).toBeTruthy()

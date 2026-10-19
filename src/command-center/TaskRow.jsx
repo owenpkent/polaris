@@ -4,6 +4,7 @@ import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
+import CompleteBurst, { useCelebration } from './CompleteBurst'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
 // medium (the default), so a pill always means a level was chosen.
@@ -201,6 +202,11 @@ export default function TaskRow({
 }) {
   const done = task.status === 'done'
   const columnIds = new Set(visibleColumns.map((c) => c.id))
+  // Held until the refetch drops the completed row, so it never reappears between its fade and
+  // its removal. Only a completion clicked here celebrates, and a rollback (done turns false)
+  // ends it at once.
+  const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
+  const completing = celebrating && done
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && e.target === e.currentTarget) {
@@ -211,7 +217,7 @@ export default function TaskRow({
 
   return (
     <div
-      className="mytasks-grid mytasks-row"
+      className={completing ? 'mytasks-grid mytasks-row is-completing' : 'mytasks-grid mytasks-row'}
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
@@ -237,9 +243,11 @@ export default function TaskRow({
         className="task-check"
         onClick={(e) => {
           e.stopPropagation()
+          if (!done) celebrate()
           onToggleComplete(task)
         }}
         style={{
+          position: 'relative',
           width: 44,
           height: 44,
           display: 'flex',
@@ -249,14 +257,20 @@ export default function TaskRow({
           border: 'none',
           borderRadius: 8,
           cursor: pending ? 'default' : 'pointer',
-          opacity: pending ? 0.6 : 1,
+          // The check keeps its full colour while it celebrates, though the request is pending.
+          opacity: pending && !completing ? 0.6 : 1,
         }}
       >
         {/* The check is always drawn; the circle's colour hides it until the task is done or
             the button is hovered (.task-check-circle). */}
-        <span aria-hidden="true" className={done ? 'task-check-circle is-done' : 'task-check-circle'}>
+        <span
+          key={completing ? burstKey : 0}
+          aria-hidden="true"
+          className={`task-check-circle${done ? ' is-done' : ''}${completing ? ' check-pop' : ''}`}
+        >
           <Check size={12} strokeWidth={3} />
         </span>
+        {completing && <CompleteBurst key={burstKey} />}
       </button>
 
       <span
