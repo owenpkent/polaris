@@ -1597,6 +1597,7 @@ kbd { color: var(--t1); }
 .due-pop-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
 /* Repeats, under the month (RepeatPicker in RepeatBuilder.jsx). */
 .due-pop .due-pop-repeat { margin-bottom: 0; }
+.due-pop-repeat-off { align-self: flex-start; }
 /* Above the breakpoint the quick dates and the time go in a column beside the month, so the
    picker is little taller than the month and fits under a row in the middle of the list; Repeats
    runs under both, where Custom's builder has the whole width. */

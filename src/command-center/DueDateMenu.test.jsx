@@ -263,6 +263,7 @@ describe('Repeats', () => {
 
   test('a choice saves the rule at once and keeps the picker open', () => {
     const { onRecurrenceChange, onChange, picker } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     const select = screen.getByLabelText('Repeats')
     expect(select.value).toBe('none')
     fireEvent.change(select, { target: { value: 'weekly' } })
@@ -289,6 +290,7 @@ describe('Repeats', () => {
 
   test('on a task with no date, a repeat sets the date to today with it', () => {
     const { onRecurrenceChange } = renderRepeat(null)
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('daily', DUE_BOUNDS.today)
     expect(day('Thursday, October 8, 2026').getAttribute('aria-pressed')).toBe('true')
@@ -298,6 +300,7 @@ describe('Repeats', () => {
     const { onRecurrenceChange } = renderRepeat(null)
     fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '07:30' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('daily', `${DUE_BOUNDS.today}T07:30`)
   })
@@ -322,6 +325,7 @@ describe('Repeats', () => {
 
   test('a repeat just chosen follows the day picked after it', () => {
     const { onChange, onRecurrenceChange } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
     fireEvent.click(day('Monday, October 12, 2026'))
@@ -344,5 +348,59 @@ describe('Repeats', () => {
     expect(screen.getByText(/Change it under More details in the task panel\.$/)).toBeTruthy()
     fireEvent.click(day('Friday, October 9, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-09')
+  })
+})
+
+describe('the Repeat toggle', () => {
+  test('is off by default: only the Repeat button, nothing tinted, nothing asked of the server', () => {
+    const { api } = renderRepeat()
+    expect(screen.getByRole('button', { name: 'Repeat' })).toBeTruthy()
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove repeat' })).toBeNull()
+    expect(document.querySelector('[data-repeat]')).toBeNull()
+    expect(api.previewRecurrence).not.toHaveBeenCalled()
+  })
+
+  test('turning it on shows Repeats on Does not repeat, focused, and saves nothing', async () => {
+    const { onRecurrenceChange, onChange } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    const select = screen.getByLabelText('Repeats')
+    expect(select.value).toBe('none')
+    await waitFor(() => expect(document.activeElement).toBe(select))
+    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+    expect(onRecurrenceChange).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('a task that repeats opens with it on', () => {
+    renderRepeat('2026-10-08', 'daily')
+    expect(screen.getByLabelText('Repeats').value).toBe('daily')
+    expect(screen.getByRole('button', { name: 'Remove repeat' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+  })
+
+  test('Remove repeat saves no repeat, hides Repeats and the tint, and puts focus back on Repeat', async () => {
+    const { onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    await screen.findByRole('button', { name: 'Thursday, October 15, 2026, repeats' })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove repeat' }))
+    expect(onRecurrenceChange).toHaveBeenCalledWith(null)
+    expect(picker()).not.toBeNull()
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(document.querySelector('[data-repeat]')).toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Repeat' })))
+  })
+
+  test('Remove repeat before a choice is made saves nothing', () => {
+    const { onRecurrenceChange } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove repeat' }))
+    expect(onRecurrenceChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Repeat' })).toBeTruthy()
+  })
+
+  test('a rule the builder cannot show has no Remove repeat, so it is not lost by accident', () => {
+    renderRepeat('2026-10-08', 'FREQ=YEARLY;BYMONTH=1,7')
+    expect(screen.queryByRole('button', { name: 'Remove repeat' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
   })
 })

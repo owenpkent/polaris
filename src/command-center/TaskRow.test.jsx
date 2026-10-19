@@ -142,6 +142,7 @@ describe('TaskRow repeat from the due date picker', () => {
   test('a Repeats choice saves the rule through the quick update', () => {
     const { onQuickUpdate, task } = renderRow({ props: { api } })
     fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { recurrence: 'FREQ=WEEKLY;BYDAY=TU' })
   })
@@ -156,6 +157,7 @@ describe('TaskRow repeat from the due date picker', () => {
   test('a repeat on a task with no date gives it today', () => {
     const { onQuickUpdate, task } = renderRow({ task: { dueAt: null }, props: { api } })
     fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { recurrence: 'daily', dueAt: DUE_BOUNDS.today })
   })

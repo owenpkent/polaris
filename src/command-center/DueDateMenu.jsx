@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { Clock, Repeat } from 'lucide-react'
 import { Popover } from './Menu'
 import MonthCalendar from './MonthCalendar'
 import { nextMondayIso } from './AddDuePanel'
@@ -27,9 +27,11 @@ function popGutter() {
 // keeps the time in the box, the task's or one just typed; Enter in the box saves it on the task's
 // day, or today when there is none. Remove time on a task with a time saves the day alone.
 //
-// With `onRecurrenceChange`, Repeats sits under the month (RepeatPicker in RepeatBuilder.jsx, as
-// Asana has it), with the next dates of the repeat tinted on the month. `recurrence` is the task's
-// rule (null for none). A choice there saves at once: `onRecurrenceChange` gets the rule (null for
+// With `onRecurrenceChange`, a Repeat button sits under the month, off by default as Add time is.
+// It opens Repeats (RepeatPicker in RepeatBuilder.jsx, as Asana has it) on Does not repeat, so
+// opening it saves nothing, and the next dates of the repeat are tinted on the month. A task that
+// already repeats opens with it shown. `recurrence` is the task's rule (null for none). Remove
+// repeat saves null and closes it again. A choice there saves at once: `onRecurrenceChange` gets the rule (null for
 // Does not repeat) and, on a task with no date, today as its dueAt too, since a repeat counts from
 // the due date. The picker stays open, so Custom's builder can be tapped through, each change saved
 // as it is made. A plain repeat follows a newly picked day (followDate in recurrenceRules.js):
@@ -61,8 +63,19 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
   const [day, setDay] = useState(() => dueDateOnly(value))
   const [rule, setRule] = useState(recurrence || '')
   const [customRepeat, setCustomRepeat] = useState(false)
+  // Off until turned on, as Add time is; a task that already repeats opens with it on.
+  const [showRepeat, setShowRepeat] = useState(Boolean(recurrence))
+  const repeatRef = useRef(null)
+  const addRepeatRef = useRef(null)
+  const focusRepeatRef = useRef(false)
+  useEffect(() => {
+    if (!focusRepeatRef.current) return
+    focusRepeatRef.current = false
+    if (showRepeat) repeatRef.current?.querySelector('select')?.focus()
+    else addRepeatRef.current?.focus()
+  }, [showRepeat])
   const savedDue = useRef(value || null)
-  const marks = useRecurrencePreview(onRecurrenceChange ? api : null, rule || null, day || undefined)
+  const marks = useRecurrencePreview(onRecurrenceChange && showRepeat ? api : null, rule || null, day || undefined)
   const repeatFrom = day || dueBounds.today
   const unreadable = Boolean(rule) && !parseRule(rule, repeatFrom)
   const taskTime = dueTimeOnly(value) || ''
@@ -141,6 +154,23 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     setShowTime(false)
   }
 
+  // Repeat opens Repeats on Does not repeat, so opening it saves nothing; the choice made there is
+  // saved. Remove repeat saves no repeat when there was one, and closes it again.
+  function addRepeat() {
+    focusRepeatRef.current = true
+    setShowRepeat(true)
+  }
+
+  function removeRepeat() {
+    focusRepeatRef.current = true
+    setShowRepeat(false)
+    setCustomRepeat(false)
+    if (rule) {
+      setRule('')
+      onRecurrenceChange(null)
+    }
+  }
+
   const chips = [
     { key: 'today', label: 'Today', value: dueBounds.today },
     { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow },
@@ -163,7 +193,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
           </button>
         ))}
       </div>
-      <MonthCalendar value={day} today={dueBounds.today} marks={rule && marks ? marks : []} onPick={pick} />
+      <MonthCalendar value={day} today={dueBounds.today} marks={showRepeat && rule && marks ? marks : []} onPick={pick} />
       <div className="due-pop-time">
         {showTime ? (
           <>
@@ -184,9 +214,17 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
       {onRecurrenceChange && (
         unreadable ? (
           <p className="due-pop-repeat repeat-note">{`Repeats ${repeatLabel(rule)}. Change it under More details in the task panel.`}</p>
-        ) : (
-          <div className="field due-pop-repeat">
+        ) : showRepeat ? (
+          <div ref={repeatRef} className="field due-pop-repeat">
             <RepeatPicker id={`${uid}-repeat`} value={rule} onChange={changeRule} dueIso={repeatFrom} api={api} preview={marks} onCustomChange={setCustomRepeat} />
+            <button type="button" className="btn due-pop-repeat-off" onClick={removeRepeat}>Remove repeat</button>
+          </div>
+        ) : (
+          <div className="due-pop-repeat">
+            <button type="button" ref={addRepeatRef} className="btn" onClick={addRepeat}>
+              <Repeat size={16} aria-hidden="true" />
+              Repeat
+            </button>
           </div>
         )
       )}
