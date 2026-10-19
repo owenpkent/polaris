@@ -183,7 +183,7 @@ Projects are never deleted. Archiving one hides it and keeps its tasks.
 
 ### Step 2: Add a few tasks
 
-On **My tasks**, click **Add task** (on a phone, the floating **New task** button), give it a name, and pick your project. To give it a due date or make it repeat, use the date button beside the name (on a phone, the sheet's Due date and Repeats fields): pick a day, choose how often it repeats under **Repeats**, then click **Add task**. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
+On **My tasks**, click **Add task** and give it a name. To give it a due date or make it repeat, use the date button beside the name, or press Enter: pick a day, choose how often it repeats under **Repeats**, then click **Add task**. Set its project afterwards from the row's Project cell. On a phone, the floating **New task** button opens a sheet with the same Due date and Repeats choices and a Project field, and **Create** adds the task. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
 
 The toolbar filters by readiness (Ready: could be started now; Blocked: waiting on an unfinished task), project, goal, priority, source, and assignee. You can also click a row's due date, project, or priority to change it in place.
 
@@ -270,7 +270,7 @@ Every device keeps a copy of what it has read. When the host cannot be reached, 
 
 Only the host should ever open the database. On every other computer, use a browser and MCP over HTTPS, and nothing else:
 
-- The desktop app always starts its own daemon with its own local database.
+- The desktop app runs its own daemon with its own local database. It reuses a daemon already on the port only when that daemon proves it holds the api token of the app's own database.
 - `npm run cc` and the stdio MCP server open `command-center/data/polaris.db` (or `CC_DB`) on the machine they run on.
 
 Run any of those on a second computer and you get a second, empty Polaris that never syncs with the first.
