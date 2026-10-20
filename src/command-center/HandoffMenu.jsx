@@ -117,9 +117,10 @@ export default function HandoffMenu({ task, project, onNotice }) {
   const sourceIsVscode = typeof task.sourceUrl === 'string' && task.sourceUrl.startsWith('vscode://')
 
   return (
-    <div style={{ position: 'relative' }}>
-      {/* A quiet icon button in the panel's header row (TaskDetailPanel.jsx); its name is the
-          menu's, and the menu items say in words what each one does. */}
+    <div className="panel-handoff" style={{ position: 'relative' }}>
+      {/* A quiet toolbar button in the panel's header row (TaskDetailPanel.jsx): "Hand off" beside
+          the icon on a wide screen, the icon alone on a phone (.panel-action-label in index.css).
+          Its name is the menu's, and the menu items say in words what each one does. */}
       <button
         type="button"
         ref={btnRef}
@@ -131,6 +132,7 @@ export default function HandoffMenu({ task, project, onNotice }) {
         className="toolbar-btn panel-action"
       >
         <SquareTerminal size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <span className="panel-action-label">Hand off</span>
         <ChevronDown size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
       </button>
       <Popover anchorRef={btnRef} open={open} onClose={closeMenu} minWidth={240}>

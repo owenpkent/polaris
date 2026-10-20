@@ -778,6 +778,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
   // A subtask is an ordinary task made under this one (the server gives it the parent's project).
   // The box stays open with focus in it, so a list is typed one name after another, as in Asana.
+  // It works offline like the list's Add task: api.createTask is queued by the outbox as
+  // create_task, and the queued subtask is added to this task's copy (outbox.js, addCreatedTask).
   async function handleAddSubtask() {
     const title = subtaskDraft.trim()
     if (!title || subtaskBusy) return
@@ -1237,7 +1239,6 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   className="icon-btn"
                   aria-label="Add subtask"
                   title="Add subtask"
-                  disabled={offline}
                   onClick={openSubtaskBox}
                 >
                   <Plus size={18} aria-hidden="true" />
@@ -1342,7 +1343,6 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   aria-busy={subtaskBusy}
                   placeholder="Write a subtask name"
                   autoComplete="off"
-                  disabled={offline}
                 />
               </div>
             ) : (
@@ -1350,7 +1350,6 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 ref={addSubtaskRowRef}
                 type="button"
                 className="subtask-add-row"
-                disabled={offline}
                 onClick={openSubtaskBox}
               >
                 <Plus size={16} aria-hidden="true" style={{ flexShrink: 0 }} />

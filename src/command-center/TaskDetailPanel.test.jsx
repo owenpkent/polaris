@@ -1008,14 +1008,23 @@ describe('the subtasks header and Add subtask', () => {
     expect(api.createTask).not.toHaveBeenCalled()
   })
 
-  test('offline, both ways to add a subtask are off', async () => {
+  // Like the list's Add task: api.createTask is queued by the outbox (create_task) when the server
+  // is away, so adding a subtask stays on offline.
+  test('offline, both ways to add a subtask stay on, and Enter still creates it', async () => {
     api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } })
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
     const buttons = await screen.findAllByRole('button', { name: 'Add subtask' })
     expect(buttons).toHaveLength(2)
 
     act(() => { markOffline() })
-    for (const b of buttons) expect(b.disabled).toBe(true)
+    for (const b of buttons) expect(b.disabled).toBe(false)
+    fireEvent.click(buttons[0])
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    expect(box.disabled).toBe(false)
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' })
     resetOfflineStatus()
   })
 
