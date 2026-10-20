@@ -35,22 +35,86 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: 'Change due date for Renew domain for the portfolio site' })).not.toHaveText(/Today|Tomorrow/)
   })
 
-  test('Add task creates a task from the keyboard and shows it in the list', async ({ page, request }, testInfo) => {
-    const title = `UI test typed ${testInfo.project.name}`
+  // As in Asana's list: Enter adds the task on the group's date at once, and the row empties for
+  // the next one, so several can be typed in a row. Esc then closes the empty row.
+  test('Add task creates tasks from the keyboard, one after another, on the group date', async ({ page, request }, testInfo) => {
+    const first = `UI test typed ${testInfo.project.name}`
+    const second = `UI test typed next ${testInfo.project.name}`
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
     const input = page.getByRole('textbox', { name: 'New task name' })
     await expect(input).toBeFocused()
+    await expect(input).toHaveAttribute('placeholder', 'Write a task name')
+    await input.fill(first)
+    await input.press('Enter')
+    await expect(row(page, first)).toBeVisible()
+    await expect(page.getByRole('button', { name: `Change due date for ${first}` })).toHaveText('Today')
+    await expect(input).toHaveValue('')
+    await expect(input).toBeFocused()
+    await input.fill(second)
+    await input.press('Enter')
+    await expect(row(page, second)).toBeVisible()
+    await expect(page.getByRole('button', { name: `Change due date for ${second}` })).toHaveText('Today')
+    await input.press('Escape')
+    await expect(input).toHaveCount(0)
+    const titles = await listTaskTitles(request)
+    expect(titles).toContain(first)
+    expect(titles).toContain(second)
+  })
+
+  test("a group's Add task opens the new row at the top of that group, on its date", async ({ page, request }, testInfo) => {
+    const title = `UI test tomorrow add ${testInfo.project.name}`
+    await openView(page)
+    const tomorrow = page.locator('section').filter({ has: page.getByRole('button', { name: 'Collapse Tomorrow' }) })
+    await tomorrow.getByRole('button', { name: 'Add task' }).click()
+    const input = tomorrow.getByRole('textbox', { name: 'New task name' })
+    await expect(input).toBeFocused()
+    // In place, above the group's rows.
+    const firstRow = tomorrow.getByRole('button', { name: /^Open / }).first()
+    const inputBox = await input.boundingBox()
+    const rowBox = await firstRow.boundingBox()
+    expect(inputBox.y).toBeLessThan(rowBox.y)
+    await expect(tomorrow.getByRole('button', { name: 'Due date: Tomorrow' })).toBeVisible()
     await input.fill(title)
     await input.press('Enter')
-    // "When is it due?" opens on the row's date with that day focused, so Enter again keeps it.
-    const due = page.getByRole('dialog', { name: `Due date for ${title}` })
-    await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
-    await expect.poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label'))).toBe(`Due date for ${title}`)
+    await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toHaveText('Tomorrow')
+    await expect(input).toHaveValue('')
+    // Leaving the empty row closes it with nothing more saved.
+    const before = (await listTaskTitles(request)).length
+    await input.blur()
+    await expect(input).toHaveCount(0)
+    expect((await listTaskTitles(request)).length).toBe(before)
+  })
+
+  // A task with open subtasks shows their count after its name, as Asana's list does, and the
+  // count is the button that shows them under it.
+  test('a subtask count after a name shows the subtasks under the row', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const parentTitle = await createTask(request, testInfo, 'subtask parent')
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    const subs = [`${parentTitle} first step`, `${parentTitle} second step`]
+    for (const sub of subs) {
+      const res = await request.post('/api/tasks', { headers, data: { title: sub, parentId: parent.id } })
+      expect(res.ok()).toBeTruthy()
+    }
+    await openView(page)
+    const toggle = page.getByRole('button', { name: `2 open subtasks of ${parentTitle}`, exact: true })
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(await smallTargets(row(page, parentTitle), 'button')).toEqual([])
+    await toggle.focus()
     await page.keyboard.press('Enter')
-    await expect(row(page, title)).toBeVisible()
-    await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toHaveText('Today')
-    expect(await listTaskTitles(request)).toContain(title)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // The panel did not open: the count is its own control.
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0)
+    const shown = page.getByRole('button', { name: `Open ${subs[0]}`, exact: true })
+    await expect(shown).toBeVisible()
+    await expect(page.getByRole('button', { name: `Open ${subs[1]}`, exact: true })).toBeVisible()
+    await shown.getByText(subs[0], { exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Task details' }).getByRole('textbox', { name: 'Task title' })).toHaveValue(subs[0])
+    await page.keyboard.press('Escape')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(shown).toHaveCount(0)
   })
 
   test('Add task asks when it is due, and a repeat and a day picked there are saved', async ({ page, request }, testInfo) => {
@@ -60,7 +124,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.getByRole('button', { name: 'Add task' }).first().click()
     const input = page.getByRole('textbox', { name: 'New task name' })
     await input.fill(title)
-    await input.press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: `Due date for ${title}` })
     expect(await smallTargets(due, 'button, select')).toEqual([])
     await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
@@ -107,7 +171,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.getByRole('button', { name: 'Add task' }).first().click()
     const input = page.getByRole('textbox', { name: 'New task name' })
     await input.fill('UI test not yet')
-    await input.press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: 'Due date for UI test not yet' })
     await expect(due).toBeVisible()
     await page.keyboard.press('Escape')

@@ -870,6 +870,47 @@ kbd { color: var(--t1); }
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
 
+/* A row's name cell (TaskRow.jsx): the name, which is shortened when it must be, then Waiting
+   and the subtask count, which never are. A subtask shown under its parent has its check here. */
+.mytasks-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
+@media (max-width: 640px) {
+  .mytasks-name-body { flex-wrap: wrap; }
+}
+/* The subtask count after a name, as Asana shows it: a quiet chip inside a 44px button that
+   shows the subtasks under the row. */
+.subtask-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--t2);
+  cursor: pointer;
+}
+.subtask-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 16px;
+  transition: color 0.12s, box-shadow 0.12s;
+}
+.subtask-toggle:hover .subtask-chip,
+.subtask-toggle[aria-expanded='true'] .subtask-chip { color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd-strong); }
+/* The new row's empty circle, where a row's check is. */
+.inline-add-check { display: flex; align-items: center; justify-content: center; width: var(--target); height: var(--target); }
+
 /* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
    done. A tick at rest read as already done. Hovering the button turns the circle green and shows
    the tick in green, so the target reads as "complete" before the click. */

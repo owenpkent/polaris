@@ -113,6 +113,24 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // A long name with Waiting and a subtask count after it (TaskRow.jsx): the name is shortened,
+  // never what follows it, and the subtasks shown under it, indented, keep their columns.
+  test('a long waiting title with its subtasks shown under it', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const title = await createTask(request, testInfo, `${WORDY} parent`, { status: 'waiting' })
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title)
+    for (const sub of [`${WORDY} first subtask`, `${WORDY} second subtask`]) {
+      const res = await request.post('/api/tasks', { headers, data: { title: `${sub} ${testInfo.project.name}`, parentId: parent.id } })
+      expect(res.ok()).toBeTruthy()
+    }
+    await openView(page)
+    const toggle = page.getByRole('button', { name: `2 open subtasks of ${title}`, exact: true })
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('button', { name: `Open ${WORDY} first subtask ${testInfo.project.name}`, exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
   test('the sort, filter, and group menus', async ({ page }) => {
     await openView(page)
     for (const name of ['Sort', 'Filter', 'Group']) {
@@ -215,7 +233,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     } else {
       await page.getByRole('button', { name: 'Add task' }).first().click()
       await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
       scope = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     }
     await expect(scope.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
@@ -232,7 +250,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
     // Seen as it opens, before the cut-off check scrolls any control into view: the popover is not
@@ -254,7 +272,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     await due.getByRole('button', { name: 'Add time' }).click()
     await expect(due.getByLabel('Time', { exact: true })).toBeFocused()
