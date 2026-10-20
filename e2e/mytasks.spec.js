@@ -419,8 +419,8 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await openTask(page, title)
     const panel = page.getByRole('dialog', { name: 'Task details' })
     await panel.getByRole('button', { name: 'Assign to claude-code' }).click()
-    // The chip (found by its title) and the live region both read "Assigned to claude-code".
-    await expect(panel.getByTitle('claude-code')).toBeVisible()
+    // Take back names who has it in its title, and the live region reads "Assigned to claude-code".
+    await expect(panel.getByTitle('Assigned to claude-code. Take back.')).toBeVisible()
     await expect(panel.getByRole('status')).toHaveText('Assigned to claude-code')
     await expect(panel.getByRole('button', { name: 'Take back' })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Take back' })).toBeFocused()
@@ -428,6 +428,30 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Assign to claude-code' })).toBeFocused()
     await expect(panel.getByRole('status')).toHaveText('Assignment cleared')
+  })
+
+  test('the + beside Subtasks adds subtasks one after another, and Esc closes only the box', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'add subtasks')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: 'Add subtask' }).first().click()
+    const box = panel.getByRole('textbox', { name: 'Subtask name' })
+    await expect(box).toBeFocused()
+    await box.fill('Pack the charger')
+    await box.press('Enter')
+    await expect(panel.getByRole('checkbox', { name: 'Complete Pack the charger' })).toBeVisible()
+    await expect(box).toHaveValue('')
+    await expect(box).toBeFocused()
+    await box.fill('Print the tickets')
+    await box.press('Enter')
+    await expect(panel.getByRole('checkbox', { name: 'Complete Print the tickets' })).toBeVisible()
+    await expect(panel.getByText('0 / 2', { exact: true })).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(box).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'Add subtask' }).last()).toBeFocused()
   })
 })
 

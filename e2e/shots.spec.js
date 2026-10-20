@@ -112,6 +112,38 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'panel-assigned')
   })
 
+  // The Subtasks section as Asana draws it: the done / total chip and + in its header, a done
+  // subtask greyed, an open one, and the name box open under them. The task is made here.
+  test('mytasks: panel subtasks', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'shot subtasks')
+    await openView(page)
+    await openTask(page, title)
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.getByRole('button', { name: 'Add subtask' }).first().click()
+    const box = dialog.getByRole('textbox', { name: 'Subtask name' })
+    for (const name of ['Book the venue', 'Send the invitations']) {
+      await box.fill(name)
+      await box.press('Enter')
+      await expect(dialog.getByRole('checkbox', { name: `Complete ${name}` })).toBeVisible()
+    }
+    await dialog.getByRole('checkbox', { name: 'Complete Book the venue' }).click()
+    await expect(dialog.getByText('1 / 2', { exact: true })).toBeVisible()
+    // Ticking moved focus off the empty box, which closed it; the + opens it again.
+    await dialog.getByRole('button', { name: 'Add subtask' }).first().click()
+    await expect(box).toBeFocused()
+    await shot(page, testInfo, 'mytasks', 'panel-subtasks')
+  })
+
+  // Scrolled to the end: the header row stays at the top with its line drawn under it.
+  test('mytasks: panel scrolled', async ({ page }, testInfo) => {
+    await openView(page)
+    await openTask(page, 'Reply to accessibility audit feedback')
+    const dialog = page.getByRole('dialog', { name: 'Task details' })
+    await dialog.evaluate((el) => { el.scrollTop = el.scrollHeight })
+    await expect(dialog.getByRole('button', { name: 'Mark complete' })).toBeInViewport()
+    await shot(page, testInfo, 'mytasks', 'panel-scrolled')
+  })
+
   // The panel's Thread section with a claim, an objection, and evidence posted against it, so the
   // type chips and the Objections only toggle are in the shot. The task is made here, due today.
   test('mytasks: panel thread', async ({ page, request }, testInfo) => {

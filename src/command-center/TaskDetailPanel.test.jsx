@@ -22,6 +22,7 @@ const api = {
   saveTaskAsChecklist: vi.fn(),
   previewRecurrence: vi.fn(),
   skipOccurrence: vi.fn(),
+  createTask: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -379,7 +380,7 @@ describe('Assign to AI', () => {
     await act(async () => { fireEvent.click(assign) })
 
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'claude-code' })
-    await screen.findByTitle('claude-code')
+    await screen.findByTitle('Assigned to claude-code. Take back.')
   })
 
   test('the label uses the name the server gives as the default agent', async () => {
@@ -405,7 +406,7 @@ describe('Assign to AI', () => {
 
     expect(api.updateTask).toHaveBeenCalledTimes(1)
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'scribe' })
-    await screen.findByTitle('scribe')
+    await screen.findByTitle('Assigned to scribe. Take back.')
   })
 
   test('if the name cannot be loaded, a click assigns nothing and says so', async () => {
@@ -428,7 +429,7 @@ describe('Assign to AI', () => {
 
     const button = await screen.findByRole('button', { name: 'Assign to claude-code' })
     await act(async () => { fireEvent.click(button) })
-    await screen.findByTitle('claude-code')
+    await screen.findByTitle('Assigned to claude-code. Take back.')
     const box = screen.getByLabelText('Assignee')
     expect(box.value).toBe('claude-code')
 
@@ -452,14 +453,17 @@ describe('Assign to AI', () => {
     expect(api.updateTask).toHaveBeenCalledTimes(1)
   })
 
-  test('an assigned task shows a chip and Take back, which clears the assignee', async () => {
+  // The header row is compact (Asana's), so the old "Assigned to" chip is gone: the Assignee field
+  // shows who has it, and Take back names them in its description.
+  test('an assigned task names the assignee on Take back, which clears the assignee', async () => {
     api.getTask.mockResolvedValueOnce(detail({ ...TASK, assignee: 'scribe' }, []))
     api.updateTask.mockResolvedValue({ task: { ...TASK, assignee: null } })
     api.getTask.mockResolvedValue(detail({ ...TASK, assignee: null }, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
 
-    expect(await screen.findByText('Assigned to scribe')).toBeTruthy()
-    const takeBack = screen.getByRole('button', { name: 'Take back' })
+    const takeBack = await screen.findByRole('button', { name: 'Take back' })
+    expect(takeBack.getAttribute('title')).toBe('Assigned to scribe. Take back.')
+    expect(screen.getByRole('textbox', { name: 'Assignee' }).value).toBe('scribe')
     await act(async () => { fireEvent.click(takeBack) })
 
     expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: null })
@@ -486,8 +490,7 @@ describe('Assign to AI', () => {
     api.getTask.mockResolvedValue(detail({ ...TASK, untrustedText: true, assignee: 'scribe' }, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
 
-    expect(await screen.findByText('Assigned to scribe')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Take back' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Take back' })).toBeTruthy()
   })
 
   test('after Assign, focus moves to Take back and the change is announced', async () => {
@@ -574,7 +577,7 @@ describe('save as checklist', () => {
   test('a task with no subtasks, or with third-party text, does not offer it', async () => {
     api.getTask.mockResolvedValueOnce(detail(TASK, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
-    await screen.findByText('No subtasks.')
+    await screen.findByText('Add subtask')
     expect(screen.queryByRole('button', { name: 'Save as checklist' })).toBeNull()
     cleanup()
 
@@ -953,5 +956,73 @@ describe('the completion celebration', () => {
     expect(await screen.findByText('The server is down.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Mark complete' })).toBeTruthy()
     expect(container.querySelector('.complete-burst')).toBeNull()
+  })
+})
+
+describe('the subtasks header and Add subtask', () => {
+  const SUBS = [
+    { id: 't_s1', title: 'Passport', status: 'done' },
+    { id: 't_s2', title: 'Charger', status: 'open' },
+  ]
+
+  test('the header counts done over all, with the words for a screen reader', async () => {
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: SUBS })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    expect(await screen.findByText('1 / 2')).toBeTruthy()
+    expect(screen.getByText('1 of 2 done')).toBeTruthy()
+  })
+
+  test('the + opens the name box, Enter adds the subtask under this task and leaves the box open', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    api.createTask.mockResolvedValue({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } })
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+    const onChanged = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} onChanged={onChanged} />)
+
+    const [plus] = await screen.findAllByRole('button', { name: 'Add subtask' })
+    expect(plus.getAttribute('aria-label')).toBe('Add subtask')
+    fireEvent.click(plus)
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: '  Tickets  ' } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' })
+    expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('')
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  test('Esc closes the name box and leaves the panel open', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Half typed' } })
+    fireEvent.keyDown(box, { key: 'Escape' })
+
+    expect(screen.queryByRole('textbox', { name: 'Subtask name' })).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(api.createTask).not.toHaveBeenCalled()
+  })
+
+  test('offline, both ways to add a subtask are off', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const buttons = await screen.findAllByRole('button', { name: 'Add subtask' })
+    expect(buttons).toHaveLength(2)
+
+    act(() => { markOffline() })
+    for (const b of buttons) expect(b.disabled).toBe(true)
+    resetOfflineStatus()
+  })
+
+  test('an inbox task offers no Add subtask: the owner accepts it first', async () => {
+    api.getTask.mockResolvedValue(detail({ ...TASK, status: 'inbox' }, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    await screen.findByText('No subtasks.')
+    expect(screen.queryByRole('button', { name: 'Add subtask' })).toBeNull()
   })
 })
