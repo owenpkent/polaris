@@ -1028,6 +1028,121 @@ describe('the subtasks header and Add subtask', () => {
     resetOfflineStatus()
   })
 
+  // The box stays editable while the create is out, so the next name can be typed on a slow
+  // connection. When the answer lands, only the name that was sent is cleared.
+  test('a name typed while the create is out is kept, and only the one sent is cleared', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    const create = deferred()
+    api.createTask.mockReturnValue(create.promise)
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+    expect(box.getAttribute('aria-busy')).toBe('true')
+    expect(box.readOnly).toBe(false)
+
+    fireEvent.change(box, { target: { value: 'Next subtask being typed' } })
+    // A second Enter while the first is out sends nothing, and drops nothing.
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+    await act(async () => { create.resolve({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } }) })
+
+    expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
+    const after = screen.getByRole('textbox', { name: 'Subtask name' })
+    expect(after.value).toBe('Next subtask being typed')
+    expect(after.getAttribute('aria-busy')).toBe('false')
+
+    // Now that it is free again, Enter sends the kept name.
+    api.createTask.mockResolvedValue({ task: { id: 't_s4', title: 'Next subtask being typed', parentId: 't_1', status: 'open' } })
+    await act(async () => { fireEvent.keyDown(after, { key: 'Enter' }) })
+    expect(api.createTask).toHaveBeenLastCalledWith({ title: 'Next subtask being typed', parentId: 't_1' })
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('')
+  })
+
+  test('the box closed with Esc and reopened while the create is out keeps what is typed in it', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    const create = deferred()
+    api.createTask.mockReturnValue(create.promise)
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'Subtask name' })).toBeNull()
+
+    fireEvent.click(screen.getByText('Add subtask'))
+    const reopened = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(reopened, { target: { value: 'Charger' } })
+    await act(async () => { create.resolve({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } }) })
+
+    expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('Charger')
+  })
+
+  // The create's continuation belongs to the task that was open when Enter was pressed. Once
+  // the panel has moved to another task, its answer must not reload the old task into the panel,
+  // nor touch the box now shown, and an edit made after it lands goes to the task on screen.
+  test('a create still out when the panel moves to another task never writes the old task into it', async () => {
+    const SECOND = { ...TASK, id: 't_2', title: 'Second title' }
+    api.getTask.mockImplementation(async (id) => (id === 't_2' ? detail(SECOND, []) : detail(TASK, [])))
+    const create = deferred()
+    api.createTask.mockReturnValue(create.promise)
+    api.updateTask.mockResolvedValue({ task: SECOND })
+    const onChanged = vi.fn()
+    const { rerender } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} onChanged={onChanged} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' })
+
+    rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} onChanged={onChanged} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Task title' }).value).toBe('Second title'))
+    // The next task's box starts closed and free, whatever is still out for the last one.
+    expect(screen.queryByRole('textbox', { name: 'Subtask name' })).toBeNull()
+    fireEvent.click(screen.getByText('Add subtask'))
+    const nextBox = await screen.findByRole('textbox', { name: 'Subtask name' })
+    expect(nextBox.getAttribute('aria-busy')).toBe('false')
+    fireEvent.change(nextBox, { target: { value: 'Half typed for the second' } })
+
+    api.getTask.mockClear()
+    await act(async () => { create.resolve({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } }) })
+    expect(screen.getByRole('textbox', { name: 'Task title' }).value).toBe('Second title')
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('Half typed for the second')
+    expect(api.getTask).not.toHaveBeenCalled()
+    // The list is still told a task was made.
+    expect(onChanged).toHaveBeenCalled()
+
+    const title = screen.getByRole('textbox', { name: 'Task title' })
+    fireEvent.change(title, { target: { value: 'Second title, edited' } })
+    await act(async () => { fireEvent.blur(title) })
+    expect(api.updateTask).toHaveBeenCalledWith('t_2', { title: 'Second title, edited' })
+    expect(api.getTask).toHaveBeenCalledWith('t_2')
+    expect(api.getTask).not.toHaveBeenCalledWith('t_1')
+  })
+
+  test('a slow load of the last task is dropped once the panel has moved on', async () => {
+    const SECOND = { ...TASK, id: 't_2', title: 'Second title' }
+    const first = deferred()
+    api.getTask.mockImplementation((id) => (id === 't_2' ? Promise.resolve(detail(SECOND, [])) : first.promise))
+    const { rerender } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    expect(screen.getByText('Loading task…')).toBeTruthy()
+
+    rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Task title' }).value).toBe('Second title'))
+    await act(async () => { first.resolve(detail(TASK, [])) })
+
+    expect(screen.getByRole('textbox', { name: 'Task title' }).value).toBe('Second title')
+    expect(screen.queryByText('Loading task…')).toBeNull()
+  })
+
   test('an inbox task offers no Add subtask: the owner accepts it first', async () => {
     api.getTask.mockResolvedValue(detail({ ...TASK, status: 'inbox' }, []))
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)

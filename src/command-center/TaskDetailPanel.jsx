@@ -446,7 +446,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [subtaskBusy, setSubtaskBusy] = useState(false)
   const subtaskInputRef = useRef(null)
   const addSubtaskRowRef = useRef(null)
-  useEffect(() => { setAddingSubtask(false); setSubtaskDraft('') }, [taskId])
+  useEffect(() => { setAddingSubtask(false); setSubtaskDraft(''); setSubtaskBusy(false) }, [taskId])
+  // Which opening of the panel this render belongs to: the count goes up each time the panel
+  // moves to another task. A request made under an earlier task (a load, or a subtask create)
+  // checks it before writing anything, so its answer never lands in the task now shown.
+  const openingRef = useRef({ taskId, seq: 0 })
+  if (openingRef.current.taskId !== taskId) openingRef.current = { taskId, seq: openingRef.current.seq + 1 }
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   // The check that celebrates a completion: the task's own button, or the subtask last ticked.
@@ -502,12 +507,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // sent: those fields count as changed only if they moved on since, so the
   // server's version (a trimmed title, say) replaces what was sent.
   const load = useCallback(async ({ quiet = false, sent = {} } = {}) => {
+    const opening = openingRef.current.seq
+    const stale = () => openingRef.current.seq !== opening
     if (!quiet) {
       setLoading(true)
       setError(null)
     }
     try {
       const res = await api.getTask(taskId)
+      // The panel has moved to another task meanwhile: this answer belongs to the old one.
+      if (stale()) return
       const fresh = {
         title: res.task.title || '',
         notes: res.task.notes || '',
@@ -533,9 +542,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         return merged
       })
     } catch (err) {
-      if (!quiet) setError(err.message || 'Could not load this task.')
+      if (!quiet && !stale()) setError(err.message || 'Could not load this task.')
     } finally {
-      if (!quiet) setLoading(false)
+      if (!quiet && !stale()) setLoading(false)
     }
   }, [api, taskId])
 
@@ -778,22 +787,33 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
   // A subtask is an ordinary task made under this one (the server gives it the parent's project).
   // The box stays open with focus in it, so a list is typed one name after another, as in Asana.
+  // It stays editable while the create is out, so the next name can be typed on a slow
+  // connection: only the exact text that was sent is cleared, and anything typed since stays.
   // It works offline like the list's Add task: api.createTask is queued by the outbox as
   // create_task, and the queued subtask is added to this task's copy (outbox.js, addCreatedTask).
   async function handleAddSubtask() {
-    const title = subtaskDraft.trim()
+    const sent = subtaskDraft
+    const title = sent.trim()
     if (!title || subtaskBusy) return
+    // The panel may have moved to another task by the time the create answers (openingRef). The
+    // list is told either way, but nothing from this task is written into the next one's panel.
+    const opening = openingRef.current.seq
+    const stale = () => openingRef.current.seq !== opening
     setSaveError(null)
     setSubtaskBusy(true)
     try {
       await api.createTask({ title, parentId: taskId })
-      setSubtaskDraft('')
+      if (stale()) {
+        onChanged?.()
+        return
+      }
+      setSubtaskDraft((current) => (current === sent ? '' : current))
       await load({ quiet: true })
       onChanged?.()
     } catch (err) {
-      setSaveError(err.message || 'Could not add that subtask.')
+      if (!stale()) setSaveError(err.message || 'Could not add that subtask.')
     } finally {
-      setSubtaskBusy(false)
+      if (!stale()) setSubtaskBusy(false)
     }
   }
 
