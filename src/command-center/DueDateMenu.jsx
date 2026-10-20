@@ -223,8 +223,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
           <p className="due-pop-repeat repeat-note">{`Repeats ${repeatLabel(rule)}. Change it under More details in the task panel.`}</p>
         ) : showRepeat ? (
           <div ref={repeatRef} className="field due-pop-repeat">
-            <RepeatPicker id={`${uid}-repeat`} value={rule} onChange={changeRule} dueIso={repeatFrom} api={api} preview={marks} onCustomChange={(custom) => setFollowsDay(!custom)} />
-            <button type="button" className="btn due-pop-repeat-off" onClick={removeRepeat}>Remove repeat</button>
+            <RepeatPicker id={`${uid}-repeat`} value={rule} onChange={changeRule} dueIso={repeatFrom} api={api} preview={marks} onCustomChange={(custom) => setFollowsDay(!custom)} onRemove={removeRepeat} />
           </div>
         ) : (
           <div className="due-pop-repeat">
