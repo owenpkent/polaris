@@ -91,6 +91,44 @@ describe('offline task edits', () => {
     expect((await client.getTask(task.id)).task.assignee).toBe('scribe')
   })
 
+  // Store.createTask gives a subtask with no project of its own the parent's project. The copy does
+  // the same, so until the queue is sent the child is in the parent's project everywhere the
+  // dashboard looks: its own Project field, My tasks grouped by project, and the project's board.
+  test('a subtask made offline takes its parent\'s project, as the server gives it', async () => {
+    const client = createApiClient('http://x', 'tok')
+    const PARENT = { ...TASK, id: 't_bbbbbbbbbb', title: 'Plan the trip', projectId: 'p_one', sectionId: 's_one' }
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { tasks: [PARENT], total: 1 }))
+    await client.listTasks(MY_TASKS_QUERY)
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { task: PARENT, subtasks: [], comments: [] }))
+    await client.getTask(PARENT.id)
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { project: { id: 'p_one', name: 'One' }, sections: [], tasks: [PARENT] }))
+    await client.getProject('p_one')
+    await vi.waitFor(async () => expect(await cacheGet('http://x/api/projects/p_one')).not.toBeNull())
+    const sent = []
+    global.fetch.mockImplementation(async (url, init) => {
+      sent.push(JSON.parse(init.body))
+      throw new TypeError('Failed to fetch')
+    })
+
+    const { task } = await client.createTask({ title: 'Book the hotel', parentId: PARENT.id })
+    expect(task).toMatchObject({ parentId: PARENT.id, projectId: 'p_one', sectionId: null })
+    expect((await client.getTask(task.id)).task.projectId).toBe('p_one')
+    const mine = (await client.listTasks(MY_TASKS_QUERY)).tasks
+    expect(mine.find((t) => t.id === task.id).projectId).toBe('p_one')
+    expect((await client.getProject('p_one')).tasks.map((t) => t.id)).toEqual([task.id, PARENT.id])
+    expect((await client.getTask(PARENT.id)).subtasks.map((t) => t.id)).toEqual([task.id])
+    // The op goes to the server as it was written: the server works the project out itself.
+    expect(sent[0]).toMatchObject({ title: 'Book the hotel', parentId: PARENT.id })
+    expect(sent[0].projectId).toBeUndefined()
+
+    // A subtask of a task made offline finds its parent in the parent's own stored detail.
+    const child = await client.createTask({ title: 'Compare rooms', parentId: task.id })
+    expect(child.task.projectId).toBe('p_one')
+    // A project named outright is kept, and a parent the copy does not hold gives none.
+    expect((await client.createTask({ title: 'Elsewhere', parentId: PARENT.id, projectId: 'p_two' })).task.projectId).toBe('p_two')
+    expect((await client.createTask({ title: 'Loose', parentId: TASK.id })).task.projectId).toBeNull()
+  })
+
   test('completing and commenting offline show at once', async () => {
     const client = createApiClient('http://x', 'tok')
     await seed(client)
