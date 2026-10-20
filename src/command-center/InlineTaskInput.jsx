@@ -91,7 +91,14 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     inputRef.current?.focus()
   }
 
+  // Whether an IME composition is open, so the Enter that confirms a candidate in a Chinese,
+  // Japanese, or Korean input method is not the Enter that adds the task. Browsers mark that key
+  // differently: Chrome fires it with isComposing, Safari after compositionend with keyCode 229,
+  // and some fire it before compositionend with neither, which the flag covers.
+  const composing = useRef(false)
+
   function handleKeyDown(e) {
+    if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key === 'Enter') {
       e.preventDefault()
       commit(dueAt, { recurrence, customRepeat })
@@ -122,6 +129,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { composing.current = true }}
+          onCompositionEnd={() => { composing.current = false }}
           // Leaving an empty row closes it, unless focus went to its own due date button.
           onBlur={handleBlur}
           // Read-only rather than disabled while it saves, so focus stays in the row for the next.

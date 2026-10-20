@@ -52,6 +52,31 @@ describe('InlineTaskInput', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
+  // Enter is also the key that accepts a candidate in Chinese, Japanese, and Korean input methods.
+  // Confirming one must not add a half-written task, however the browser marks that key (review
+  // on #83).
+  test('Enter that confirms an IME composition does not add the task; the next plain Enter adds it once', async () => {
+    const { input, onSubmit, onCancel } = setup({ defaultDueAt: getDueBounds().today })
+    fireEvent.compositionStart(input)
+    fireEvent.change(input, { target: { value: 'にほ' } })
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 })
+    // Safari: compositionend first, then the confirming Enter with keyCode 229 and isComposing false.
+    fireEvent.compositionEnd(input)
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 })
+    // Others: the confirming Enter before compositionend, marked by neither.
+    fireEvent.compositionStart(input)
+    fireEvent.change(input, { target: { value: 'にほん' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.compositionEnd(input)
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(input.value).toBe('にほん')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    expect(onSubmit).toHaveBeenCalledWith('にほん', { dueAt: getDueBounds().today, recurrence: null })
+    await waitFor(() => expect(input.value).toBe(''))
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
   test('the row after one added from the picker starts on the group date with no repeat', async () => {
     const today = getDueBounds().today
     const { input, onSubmit } = setup({ defaultDueAt: today })
