@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing } from './support.js'
+import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing, applyViewSettings } from './support.js'
 
 // The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
 // targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
@@ -108,10 +108,27 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     expect(await smallTargets(panel, 'button')).toEqual([])
   })
 
-  test('sort menu items', async ({ page }) => {
+  test('sort and group popover controls', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    expect(await smallTargets(page.getByRole('menu', { name: 'Sort tasks' }), '[role="menuitemcheckbox"]')).toEqual([])
+    expect(await smallTargets(page.getByRole('dialog', { name: 'Sort tasks' }))).toEqual([])
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    expect(await smallTargets(page.getByRole('dialog', { name: 'Group tasks' }))).toEqual([])
+  })
+
+  test('filter popover controls, with every long group open', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Filter', exact: true }).click()
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    for (const name of ['Project', 'Goal', 'Source', 'Assignee']) await pop.getByRole('button', { name: `${name}, any` }).click()
+    expect(await smallTargets(pop, 'button, [role="checkbox"]')).toEqual([])
+  })
+
+  test('the toolbar with a filter, sort, and grouping applied', async ({ page }) => {
+    await openView(page)
+    await applyViewSettings(page)
+    expect(await smallTargets(page.getByRole('toolbar', { name: 'Tasks' }))).toEqual([])
   })
 })
 
