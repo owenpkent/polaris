@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import BoardTab from './BoardTab'
 
 let connected = true
@@ -171,6 +171,70 @@ describe('BoardTab', () => {
     fireEvent.keyDown(within(lane).getByRole('textbox', { name: 'New task in No section' }), { key: 'Escape' })
     expect(within(lane).queryByRole('textbox')).toBeNull()
     expect(within(lane).getByRole('button', { name: 'Add task to No section' })).toBeTruthy()
+  })
+
+  // A second project, so a request can be left pending while the board is switched away from the
+  // first. The answer for each project is keyed by the id the board asks for.
+  function twoProjects() {
+    const beta = { id: 'p2', name: 'Beta', counts: { open: 1 } }
+    api.listProjects.mockResolvedValue({ projects: [project(), beta] })
+    api.getProject.mockImplementation(async (id) => (id === 'p2'
+      ? { project: beta, sections: [{ id: 's9', name: 'Later' }], tasks: [{ id: 'b1', title: 'Beta card', sectionId: 's9', status: 'open', priority: 'none', dueAt: null }] }
+      : { project: project(), sections: SECTIONS, tasks: boardTasks() }))
+  }
+
+  // Lets the continuation after a resolved request run to its end (its awaits and the zero exit
+  // delay jsdom gives a completion), so what it did, or did not, is on screen.
+  const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+
+  test('a completion that finishes after a switch to another project does not bring the old board back', async () => {
+    twoProjects()
+    let finish
+    api.completeTask.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    render(<BoardTab />)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    await waitFor(() => expect(api.completeTask).toHaveBeenCalledWith('t1'))
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Project' }), { target: { value: 'p2' } })
+    const later = await screen.findByRole('region', { name: 'Later' })
+    expect(within(later).getByText('Beta card')).toBeTruthy()
+
+    finish()
+    await settle()
+    expect(screen.getByRole('combobox', { name: 'Project' }).value).toBe('p2')
+    expect(within(screen.getByRole('region', { name: 'Later' })).getByText('Beta card')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Todo' })).toBeNull()
+    expect(api.getProject.mock.calls.filter(([id]) => id === 'p1')).toHaveLength(1)
+  })
+
+  test('a create that finishes after a switch to another project leaves that project on the board, and the next Add task goes there', async () => {
+    twoProjects()
+    let finish
+    api.createTask.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    render(<BoardTab />)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('button', { name: 'Add task to Todo' }))
+    const box = within(todo).getByRole('textbox', { name: 'New task in Todo' })
+    fireEvent.change(box, { target: { value: 'Slow card' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Slow card', projectId: 'p1', sectionId: 's1' }))
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Project' }), { target: { value: 'p2' } })
+    await screen.findByRole('region', { name: 'Later' })
+
+    finish({ task: { id: 'slow' } })
+    await settle()
+    expect(screen.getByRole('combobox', { name: 'Project' }).value).toBe('p2')
+    expect(screen.queryByRole('region', { name: 'Todo' })).toBeNull()
+    expect(api.getProject.mock.calls.filter(([id]) => id === 'p1')).toHaveLength(1)
+
+    const later = screen.getByRole('region', { name: 'Later' })
+    fireEvent.click(within(later).getByRole('button', { name: 'Add task to Later' }))
+    const next = within(later).getByRole('textbox', { name: 'New task in Later' })
+    fireEvent.change(next, { target: { value: 'Beta task' } })
+    fireEvent.keyDown(next, { key: 'Enter' })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Beta task', projectId: 'p2', sectionId: 's9' }))
   })
 
   test('a failed board load shows the error banner, and Retry loads again and clears it', async () => {

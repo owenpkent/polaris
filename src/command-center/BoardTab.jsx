@@ -241,13 +241,39 @@ function LaneAddTask({ section, onCreate }) {
   const openerRef = useRef(null)
   const formRef = useRef(null)
   const reopenFocus = useRef(false)
+  const mounted = useRef(true)
   const fitRef = useFitToText(title, inputRef)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
     else if (reopenFocus.current) {
       reopenFocus.current = false
       openerRef.current?.focus()
+    }
+  }, [open])
+
+  // Whether a pointer is pressed while the card is open, so a click elsewhere that takes focus
+  // from an empty card waits for the release before the card closes: closing on the press would
+  // swap the tall card for the short Add task row and move what is under it (the lane's Show done)
+  // up before the release, which would then land on whatever moved under the pointer instead.
+  const pointerDown = useRef(false)
+  useEffect(() => {
+    if (!open) return undefined
+    const down = () => { pointerDown.current = true }
+    const up = () => { pointerDown.current = false }
+    window.addEventListener('pointerdown', down, true)
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('pointercancel', up, true)
+    return () => {
+      pointerDown.current = false
+      window.removeEventListener('pointerdown', down, true)
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('pointercancel', up, true)
     }
   }, [open])
 
@@ -258,6 +284,23 @@ function LaneAddTask({ section, onCreate }) {
     setError(null)
   }
 
+  function closeIfLeftEmpty() {
+    const input = inputRef.current
+    if (!mounted.current || !input || input.value.trim() || formRef.current?.contains(document.activeElement)) return
+    close()
+  }
+
+  function handleBlur(e) {
+    // Leaving an empty card closes it, unless focus went to one of its own buttons.
+    if (title.trim() || busy || formRef.current?.contains(e.relatedTarget)) return
+    if (!pointerDown.current) {
+      close()
+      return
+    }
+    // After the release and the click it makes, which run in the same task as pointerup.
+    window.addEventListener('pointerup', () => setTimeout(closeIfLeftEmpty, 0), { once: true, capture: true })
+  }
+
   async function submit() {
     const trimmed = title.trim()
     if (!trimmed || busy) return
@@ -265,13 +308,14 @@ function LaneAddTask({ section, onCreate }) {
     setError(null)
     try {
       await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
+      if (!mounted.current) return
       setTitle('')
     } catch (err) {
+      if (!mounted.current) return
       setError(err.message || 'Could not add task.')
-    } finally {
-      setBusy(false)
-      inputRef.current?.focus()
     }
+    setBusy(false)
+    inputRef.current?.focus()
   }
 
   if (!open) {
@@ -284,14 +328,7 @@ function LaneAddTask({ section, onCreate }) {
   }
 
   return (
-    <div
-      ref={formRef}
-      className="board-card board-add-card"
-      onBlur={(e) => {
-        // Leaving an empty card closes it, unless focus went to one of its own buttons.
-        if (!title.trim() && !busy && !formRef.current?.contains(e.relatedTarget)) close()
-      }}
-    >
+    <div ref={formRef} className="board-card board-add-card" onBlur={handleBlur}>
       <textarea
         ref={fitRef}
         rows={1}
@@ -448,6 +485,16 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
 
   useEventRefresh(fetchBoard, { enabled: connected && Boolean(projectRef) })
 
+  // The project on screen now, for a complete or a create whose request outlives a switch to
+  // another project: the refresh it ends with is for the project it started in, so it is dropped
+  // unless that project is still the one selected. Otherwise it would load the old project's lanes
+  // over the new one's while the selector still named the new one.
+  const selectedRef = useRef(projectRef)
+  useEffect(() => { selectedRef.current = projectRef }, [projectRef])
+  const refreshIfShown = useCallback(async (pid) => {
+    if (selectedRef.current === pid) await fetchBoard()
+  }, [fetchBoard])
+
   const columns = useMemo(() => {
     if (!board) return []
     const sections = board.sections || []
@@ -491,6 +538,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
 
   const handleToggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
+    const pid = projectRef
     setError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
     if (!wasDone) setExitingIds((prev) => new Set(prev).add(task.id))
@@ -503,7 +551,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
         await api.completeTask(task.id)
         await exit
       }
-      await fetchBoard()
+      await refreshIfShown(pid)
     } catch (err) {
       setTaskStatus(task.id, task.status)
       setError(err.message || 'Could not update that task.')
@@ -511,14 +559,16 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
       setPendingIds((prev) => without(prev, task.id))
       setExitingIds((prev) => without(prev, task.id))
     }
-  }, [api, fetchBoard, setTaskStatus])
+  }, [api, projectRef, refreshIfShown, setTaskStatus])
 
-  // A new task from a lane's Add task: this project, that lane's section (null for No section).
+  // A new task from a lane's Add task: the selected project, that lane's section (null for No
+  // section). The project is read when the card is submitted, never from a board that may still be
+  // the last project's while the next one loads.
   const handleCreate = useCallback(async (title, sectionId) => {
-    const pid = board?.project?.id || projectRef
+    const pid = projectRef
     await api.createTask({ title, projectId: pid, sectionId })
-    await fetchBoard()
-  }, [api, board, projectRef, fetchBoard])
+    await refreshIfShown(pid)
+  }, [api, projectRef, refreshIfShown])
 
   const handleToggleMenu = useCallback((taskId) => {
     setOpenMoveId((prev) => (prev === taskId ? null : taskId))
