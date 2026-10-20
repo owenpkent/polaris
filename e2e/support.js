@@ -111,6 +111,24 @@ export async function listTaskTitles(request) {
   return (body.tasks || []).filter((t) => ACTIVE.has(t.status)).map((t) => t.title)
 }
 
+// Applies a filter (Urgent), a sort (Name, descending), and a grouping (Project) from the My tasks
+// toolbar's popovers, closing each, so the toolbar shows all three as chips with their X buttons.
+// The choices live in this browser's storage only; nothing on the server changes.
+export async function applyViewSettings(page) {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Sort', exact: true }).click()
+  const sort = page.getByRole('dialog', { name: 'Sort tasks' })
+  await sort.getByRole('combobox', { name: 'Sort by' }).selectOption('name')
+  await sort.getByRole('combobox', { name: 'Direction' }).selectOption('desc')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Group', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('project')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Group: Project' }).waitFor()
+}
+
 // Opens a task's detail panel by clicking its title. Clicking the middle of a desktop row would
 // land on an inline cell (due date, project, priority) and open that cell's menu instead.
 export async function openTask(page, title) {

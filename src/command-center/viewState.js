@@ -37,9 +37,18 @@ export const STATE_FILTER_OPTIONS = [
   { id: 'blocked', label: 'Blocked' },
 ]
 
+// The sort and grouping a new list starts with. The toolbar names a sort or grouping on its button
+// only when it differs from these, and its Reset buttons come back to them.
+export const DEFAULT_SORT = { field: 'due', dir: 'asc' }
+export const DEFAULT_GROUP = 'due'
+
+export function isDefaultSort(sort) {
+  return sort.field === DEFAULT_SORT.field && sort.dir === DEFAULT_SORT.dir
+}
+
 const DEFAULT_VIEW = {
-  sort: { field: 'due', dir: 'asc' },
-  group: 'due',
+  sort: DEFAULT_SORT,
+  group: DEFAULT_GROUP,
   filters: { projectIds: [], priorities: [], sources: [], goalIds: [], states: [], assignees: [] },
 }
 
@@ -96,7 +105,7 @@ export function useViewState() {
 
   // Toggling the same field flips direction; picking a new field starts
   // ascending, unless a direction is passed explicitly (the toolbar's Sort
-  // menu offers both directions for every field directly).
+  // popover sets the field and the direction with a select each).
   const setSort = useCallback((field, dir) => {
     commit((prev) => ({
       ...prev,
@@ -119,7 +128,9 @@ export function useViewState() {
     commit((prev) => ({ ...prev, filters: { projectIds: [], priorities: [], sources: [], goalIds: [], states: [], assignees: [] } }))
   }, [commit])
 
-  return { view, setSort, setGroup, toggleFilter, clearFilters }
+  const resetSort = useCallback(() => commit((prev) => ({ ...prev, sort: DEFAULT_SORT })), [commit])
+
+  return { view, setSort, setGroup, toggleFilter, clearFilters, resetSort }
 }
 
 export function activeFilterCount(filters) {

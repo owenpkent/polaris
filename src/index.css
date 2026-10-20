@@ -693,6 +693,113 @@ kbd { color: var(--t1); }
 .toolbar-btn.is-active { background: var(--blue-soft); color: var(--blue); border-color: var(--blue); }
 .toolbar-btn.is-active:hover { color: var(--blue); }
 
+/* Filter, Sort, and Group while their setting is in effect: the button ("Filter: 2") and an X
+   that clears it, drawn as one tinted chip as in Asana. The edge is an inset shadow, so the chip
+   is exactly as tall as the 44px buttons in it; the two buttons keep 8px apart, and their focus
+   rings are drawn inside (the outline-offset rule below). */
+.toolbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.toolbar-chip.is-active { background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); }
+.toolbar-chip.is-active .toolbar-btn { background: transparent; border-color: transparent; padding-right: 4px; }
+/* Blue on --bg-hover falls short of 4.5:1 in the light theme, so a hovered chip's label turns to
+   --t1, as a plain toolbar button's does. An open one keeps the chip's tint: its popover shows it
+   is open. */
+.toolbar-chip.is-active .toolbar-btn:hover { background: var(--bg-hover); color: var(--t1); }
+.toolbar-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--target);
+  height: var(--target);
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toolbar-chip-clear:hover { background: var(--bg-hover); }
+
+/* The Filter, Sort, and Group popovers (TaskListToolbar.jsx), laid out as Asana's: a title with
+   Clear or Reset at its right, then the controls. Filter puts its short groups first as chips and
+   its long ones after as rows that open to their lists. */
+.view-pop { padding: 4px 0 8px; }
+.view-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 14px;
+}
+.view-pop-title { min-width: 0; font-size: 15px; font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+.view-pop-reset {
+  min-height: var(--target);
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.view-pop-reset:hover { background: var(--bg-hover); }
+.view-pop-reset:disabled { color: var(--t3); background: transparent; cursor: default; }
+.view-pop-label { padding: 8px 14px 6px; font-size: 12px; color: var(--t2); }
+.view-pop-divided { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--bd); }
+.view-pop-group > .sheet-chips { padding: 0 14px 4px; }
+.view-pop-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 14px; }
+.view-pop-row select {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: var(--target);
+  padding: 0 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.filter-section-toggle,
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--t1);
+  text-align: left;
+  cursor: pointer;
+}
+.filter-option { padding-left: 40px; }
+.filter-section-name { flex: 1 1 auto; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.filter-section-summary { flex-shrink: 0; font-size: 13px; color: var(--t2); }
+.filter-section-summary.is-set { color: var(--blue); font-weight: 600; }
+.filter-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--t2);
+  background: transparent;
+  color: var(--on-accent);
+}
+.filter-box.is-checked { border-color: var(--blue); background: var(--blue); }
+
 @media (max-width: 640px) {
   .mytasks-toolbar {
     flex-direction: column;
@@ -843,6 +950,7 @@ kbd { color: var(--t1); }
 .mytasks-list :focus-visible,
 .mytasks-colhead :focus-visible,
 .nav-item:focus-visible,
+.toolbar-chip :focus-visible,
 [data-popover] :focus-visible,
 .surface [role='row']:focus-visible,
 .surface [role='row'] :focus-visible { outline-offset: -2px; }
@@ -1667,23 +1775,34 @@ kbd { color: var(--t1); }
    window less the 1px borders and 5px sides is exactly 308px. */
 .add-due-pop { width: min(360px, calc(100vw - 2px)); padding: 12px; }
 /* Above the breakpoint the popover sits under a row in the middle of the list, with about half
-   the window below it: the quick dates and Repeats go beside the month, as two columns, so the
-   step is little taller than the month. The month keeps Asana's place on the left. */
+   the window below it, so the quick dates and Repeats go beside the month (which keeps Asana's
+   place on the left) and the step is little taller than the month. Repeats needs the month's
+   width beside its labels for the weekdays, so a popover too narrow for that (a window just over
+   the breakpoint) puts Repeats under both columns instead, by the container query below. */
 @media (min-width: 641px) {
-  .add-due-pop { width: 620px; }
+  .add-due-pop { width: min(768px, calc(100vw - 16px)); container: add-due / inline-size; }
   .add-due-pop .add-due {
     display: grid;
     grid-template-columns: 308px minmax(0, 1fr);
-    grid-template-areas: 'title title' 'cal chips' 'cal repeat' 'foot foot';
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-areas: 'title title' 'cal chips' 'repeat repeat' 'foot foot';
+    grid-template-rows: auto auto auto auto;
     column-gap: 20px;
     row-gap: 12px;
   }
   .add-due-pop .add-due-title { grid-area: title; }
-  .add-due-pop .add-due-chips { grid-area: chips; }
+  .add-due-pop .add-due-chips { grid-area: chips; flex-direction: column; align-items: stretch; align-self: start; }
   .add-due-pop .add-due > .cal { grid-area: cal; }
   .add-due-pop .add-due-repeat { grid-area: repeat; }
   .add-due-pop .add-due-foot { grid-area: foot; }
+}
+/* Inside the 12px sides: the 308px month, a 20px gap, then a 96px label, a 12px gap, and the
+   308px weekdays. */
+@container add-due (min-width: 744px) {
+  .add-due-pop .add-due {
+    grid-template-areas: 'title title' 'cal chips' 'cal repeat' 'foot foot';
+    grid-template-rows: auto auto 1fr auto;
+  }
+  .add-due-pop .add-due-chips { flex-direction: row; align-items: center; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }
@@ -1745,7 +1864,6 @@ kbd { color: var(--t1); }
 .due-pop-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
 /* Repeats, under the month (RepeatPicker in RepeatBuilder.jsx). */
 .due-pop .due-pop-repeat { margin-bottom: 0; }
-.due-pop-repeat-off { align-self: flex-start; }
 /* Above the breakpoint the quick dates and the time go in a column beside the month, so the
    picker is little taller than the month and fits under a row in the middle of the list; Repeats
    runs under both, where Custom's builder has the whole width. */
@@ -1795,9 +1913,13 @@ kbd { color: var(--t1); }
 /* The next dates of the repeat being set, tinted as Asana tints them (AddDuePanel.jsx). */
 .cal-day[data-repeat] { background: var(--blue-soft); color: var(--blue); font-weight: 600; }
 
-/* Repeats for a task being added (RepeatPicker in RepeatBuilder.jsx): the choice, then what it needs. */
-.repeat-picker { display: flex; flex-direction: column; gap: 4px; }
-.repeat-picker .repeat-builder { margin-top: 4px; }
+/* Repeats for a task being added (RepeatPicker in RepeatBuilder.jsx): the choice, then what it
+   needs. The choice fills its row beside the label, with Remove repeat after it in the picker. */
+.repeat-picker { display: flex; flex-direction: column; gap: 8px; }
+.repeat-picker .repeat-builder { margin-top: 0; }
+.repeat-picker-head .repeat-controls { flex-wrap: nowrap; column-gap: 4px; }
+.repeat-picker-head select, .field .repeat-picker-head select { flex: 1 1 auto; width: auto; min-width: 0; min-height: var(--target); }
+.repeat-picker-head .icon-btn { flex: 0 0 auto; }
 .repeat-unit { font-size: 0.9rem; color: var(--t1); }
 
 /* The inline add row (InlineTaskInput.jsx): the name box and its due date button. */
@@ -1818,16 +1940,49 @@ kbd { color: var(--t1); }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }
-.repeat-builder { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-.repeat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.repeat-builder .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
+.repeat-builder { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* One row per setting, as Asana's repeat reads: the label on the left, its controls beside it.
+   Where the two do not fit (a phone, or the weekdays in a narrow box) the controls go under the
+   label. A fieldset's legend is floated so it lays out as the row's first item. */
+.repeat-row { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 12px; row-gap: 0; min-width: 0; }
+.repeat-set { margin: 0; padding: 0; border: none; min-width: 0; }
+.repeat-set > legend { float: left; padding: 0; }
+.repeat-label { flex: 0 0 6rem; display: flex; align-items: center; min-height: var(--target); margin: 0; }
+.repeat-builder .field-label, .repeat-picker .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
+/* Wrapped lines of controls keep 6px apart, room for the 2px focus ring and its 2px offset. */
+.repeat-controls { flex: 1 1 12rem; display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 6px; min-width: 0; }
+.repeat-stack { flex-direction: column; align-items: flex-start; }
 .repeat-builder select, .field .repeat-builder select { width: auto; min-width: var(--target); min-height: var(--target); }
 .repeat-builder input[type='date'], .field .repeat-builder input[type='date'] { width: auto; max-width: 100%; min-width: 0; min-height: var(--target); padding: 0 12px; }
 .repeat-stepper { display: inline-flex; align-items: center; gap: 8px; }
 .repeat-count { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--t1); }
-.repeat-days { display: flex; flex-wrap: wrap; gap: 8px; }
-.repeat-day { min-width: var(--target); padding: 0 8px; }
-.repeat-month { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; border: none; }
+/* The weekdays: seven touching days in one strip, drawn as the month's days are, so the row is
+   the month's 308px and every day keeps a 44px target. Focus rings are inside. */
+.repeat-days {
+  flex: 1 1 308px;
+  max-width: 308px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(var(--target), 1fr));
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--bd);
+}
+.repeat-day {
+  min-width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.repeat-day:hover:not(:disabled) { background: var(--bg-hover); }
+.repeat-day:focus-visible { outline-offset: -2px; }
+.repeat-day:disabled { cursor: default; }
+.repeat-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
+.repeat-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 .repeat-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--target); font-size: 0.9rem; color: var(--t1); }
 .repeat-preview { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 .repeat-note { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }

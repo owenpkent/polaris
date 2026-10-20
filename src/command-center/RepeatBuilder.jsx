@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import { Minus, Plus } from 'lucide-react'
+import { Minus, Plus, X } from 'lucide-react'
 import { useOffline } from './offlineStatus'
 import {
   WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, MAX_COUNT, UNITS,
@@ -82,10 +82,15 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   const countOptions = Array.from({ length: MAX_COUNT }, (_, i) => i + 1)
   if (!countOptions.includes(shape.count)) countOptions.push(shape.count)
 
+  // Laid out as Asana lays its repeat out under the month: each row a label on the left and its
+  // controls beside it, wrapping under the label only where the two do not fit. A plain choice
+  // (compact) has no Every row: its interval is one, and a rule with more is Custom.
   return (
     <div className="repeat-builder">
+      {(!compact || shape.fromCompletion) && (
       <div className="repeat-row">
-        <span className="field-label" id={`${uid}-every`}>Every</span>
+        <span className="field-label repeat-label" id={`${uid}-every`}>Every</span>
+        <div className="repeat-controls">
         <div className="repeat-stepper" role="group" aria-labelledby={`${uid}-every`}>
           <button
             type="button"
@@ -124,19 +129,23 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
           ))}
         </select>
         )}
+        </div>
       </div>
+      )}
 
       {!compact && (
-      <fieldset className="repeat-month">
-        <legend className="field-label">Next one counts from</legend>
-        <label className="repeat-choice">
-          <input type="radio" name={`${uid}-from`} checked={!shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: false })} />
-          <span>The due date</span>
-        </label>
-        <label className="repeat-choice">
-          <input type="radio" name={`${uid}-from`} checked={shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: true })} />
-          <span>The day I finish it</span>
-        </label>
+      <fieldset className="repeat-row repeat-set">
+        <legend className="field-label repeat-label">Counts from</legend>
+        <div className="repeat-controls">
+          <label className="repeat-choice">
+            <input type="radio" name={`${uid}-from`} checked={!shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: false })} />
+            <span>The due date</span>
+          </label>
+          <label className="repeat-choice">
+            <input type="radio" name={`${uid}-from`} checked={shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: true })} />
+            <span>The day I finish it</span>
+          </label>
+        </div>
       </fieldset>
       )}
 
@@ -146,7 +155,8 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
 
       {!shape.fromCompletion && shape.unit === 'week' && (
         <div className="repeat-row">
-          <span className="field-label" id={`${uid}-on`}>On</span>
+          <span className="field-label repeat-label" id={`${uid}-on`}>On</span>
+          {/* Seven touching days, lettered as the month's columns are, so the row is the month's width. */}
           <div className="repeat-days" role="group" aria-labelledby={`${uid}-on`}>
             {WEEKDAYS.map((day) => {
               const on = shape.weekdays.includes(day)
@@ -154,7 +164,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
                 <button
                   key={day}
                   type="button"
-                  className="sheet-chip repeat-day"
+                  className="repeat-day"
                   aria-pressed={on}
                   aria-label={WEEKDAY_NAMES[day]}
                   // The last day picked stays: a weekly rule on no day is the due date's own day,
@@ -162,7 +172,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
                   disabled={disabled || (on && shape.weekdays.length === 1)}
                   onClick={() => update({ weekdays: on ? shape.weekdays.filter((d) => d !== day) : [...shape.weekdays, day] })}
                 >
-                  {WEEKDAY_NAMES[day].slice(0, 2)}
+                  {WEEKDAY_NAMES[day].slice(0, 1)}
                 </button>
               )
             })}
@@ -171,8 +181,9 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
       )}
 
       {!shape.fromCompletion && shape.unit === 'month' && (
-        <fieldset className="repeat-month">
-          <legend className="field-label">On</legend>
+        <fieldset className="repeat-row repeat-set">
+          <legend className="field-label repeat-label">On</legend>
+          <div className="repeat-controls repeat-stack">
           <label className="repeat-choice">
             <input type="radio" name={`${uid}-month`} checked={shape.monthMode === 'day'} disabled={disabled} onChange={() => update({ monthMode: 'day' })} />
             <span>Day</span>
@@ -205,6 +216,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
               {WEEKDAYS.map((d) => <option key={d} value={d}>{WEEKDAY_NAMES[d]}</option>)}
             </select>
           </label>
+          </div>
         </fieldset>
       )}
 
@@ -213,8 +225,9 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
       )}
 
       {!compact && (
-      <fieldset className="repeat-month">
-        <legend className="field-label">Ends</legend>
+      <fieldset className="repeat-row repeat-set">
+        <legend className="field-label repeat-label">Ends</legend>
+        <div className="repeat-controls">
         <label className="repeat-choice">
           <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'never'} disabled={disabled} onChange={() => update({ ends: 'never' })} />
           <span>Never</span>
@@ -245,6 +258,7 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
           </select>
           <span>{shape.count === 1 ? 'time' : 'times'}</span>
         </label>
+        </div>
       </fieldset>
       )}
 
@@ -264,15 +278,16 @@ const FREQUENCIES = [
 ]
 
 // Repeats, for a task being added, as Asana lays it out under its calendar: one choice of how
-// often, and under it only what that choice needs (the stepper for every N, the weekdays of a
-// weekly rule, the day of a monthly one). Custom opens the whole builder, with Ends and the
-// from-the-finish choice. `value` is the rule ('' for none) and `onChange` gets the new one. A
+// often, and under it only what that choice needs (the weekdays of a weekly rule, the day of a
+// monthly one, the stepper of Periodically). Custom opens the whole builder, with every N, Ends,
+// and the from-the-finish choice. `value` is the rule ('' for none) and `onChange` gets the new one. A
 // choice writes its rule in full for the due date (frequencyRule), and the caller moves a plain
 // rule along when another date is picked (followDate in recurrenceRules.js), unless it was made
 // in Custom: `onCustomChange` tells it whether Custom is chosen, since a Custom rule can read the
 // same as a plain one, and `initialCustom` starts it there (the sheet's date step, opened after
-// Custom was chosen on its form). `preview` is passed through to the builder.
-export function RepeatPicker({ value, onChange, dueIso, api, disabled = false, id, preview, initialCustom = false, onCustomChange }) {
+// Custom was chosen on its form). `preview` is passed through to the builder. With `onRemove`, a
+// Remove repeat button sits beside the choice (the due date picker, where Repeat is turned on).
+export function RepeatPicker({ value, onChange, dueIso, api, disabled = false, id, preview, initialCustom = false, onCustomChange, onRemove }) {
   const ownId = useId()
   const selectId = id || ownId
   const [custom, setOwnCustom] = useState(initialCustom)
@@ -280,8 +295,9 @@ export function RepeatPicker({ value, onChange, dueIso, api, disabled = false, i
   const frequency = custom && value ? 'custom' : frequencyOf(value, dueIso)
   return (
     <div className="repeat-picker">
-      <div className="repeat-picker-head">
-        <label htmlFor={selectId}>Repeats</label>
+      <div className="repeat-row repeat-picker-head">
+        <label className="field-label repeat-label" htmlFor={selectId}>Repeats</label>
+        <div className="repeat-controls">
         <select
           id={selectId}
           value={frequency}
@@ -295,6 +311,12 @@ export function RepeatPicker({ value, onChange, dueIso, api, disabled = false, i
         >
           {FREQUENCIES.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
         </select>
+        {onRemove && (
+          <button type="button" className="icon-btn" aria-label="Remove repeat" title="Remove repeat" disabled={disabled} onClick={onRemove}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        )}
+        </div>
       </div>
       {frequency !== 'none' && (
         // Keyed by the choice, so a builder opened for one choice starts from the new rule.

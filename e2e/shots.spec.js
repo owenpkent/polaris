@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -344,22 +344,48 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   test('mytasks: sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    await expect(page.getByRole('menu', { name: 'Sort tasks' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'sort-menu')
   })
 
   test('mytasks: filter menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter' }).click()
-    await expect(page.getByRole('menuitemcheckbox', { name: 'Urgent' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'filter-menu')
+  })
+
+  // A chip pressed and the Project list open, with one project chosen: the toolbar reads Filter: 2.
+  test('mytasks: filter menu with choices', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Filter' }).click()
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    await pop.getByRole('button', { name: 'Urgent', exact: true }).click()
+    await pop.getByRole('button', { name: 'Project, any' }).click()
+    await pop.getByRole('checkbox').first().click()
+    await expect(page.getByRole('button', { name: 'Filter: 2' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'filter-menu-choices')
+  })
+
+  test('mytasks: group menu', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Group tasks' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'group-menu')
+  })
+
+  // A filter, a sort, and a grouping applied: each shows on its button, with an X beside it.
+  test('mytasks: view settings applied', async ({ page }, testInfo) => {
+    await openView(page)
+    await applyViewSettings(page)
+    await shot(page, testInfo, 'mytasks', 'view-settings-applied')
   })
 
   // The list with the Blocked filter on: only the seeded task that another task holds.
   test('mytasks: blocked filter', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter', exact: true }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Blocked' }).click()
+    await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Blocked', exact: true }).click()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('button', { name: 'Open Assemble the standing desk' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Open Choose a standing desk' })).toHaveCount(0)
