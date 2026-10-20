@@ -1,6 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { TOKEN } from './server.js'
 import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
@@ -223,7 +224,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     } else {
       await page.getByRole('button', { name: 'Add task' }).first().click()
       await page.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
       await expect(page.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
     }
     await shot(page, testInfo, 'mytasks', 'new-due-step')
@@ -317,7 +318,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    if (phone(testInfo)) await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    else await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     await page.getByRole('button', { name: 'Add time' }).click()
     await page.getByLabel('Time', { exact: true }).fill('09:30')
     await shot(page, testInfo, 'mytasks', 'new-due-step-time')
@@ -334,11 +336,27 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    if (phone(testInfo)) await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    else await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = phone(testInfo) ? scope : page.getByRole('dialog', { name: 'Due date for Book the van service' })
     await due.getByRole('combobox', { name: 'Repeats' }).selectOption('weekly')
     await expect(due.getByRole('grid').getByRole('button', { name: /, repeats$/ }).first()).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'new-due-step-repeat')
+  })
+
+  // A task's subtask count after its name, pressed: its open subtasks as rows under it.
+  test('mytasks: subtasks', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const parentTitle = await createTask(request, testInfo, 'Pack for the trip')
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    for (const sub of ['Find the charger', 'Book the accessible taxi']) {
+      expect((await request.post('/api/tasks', { headers, data: { title: sub, parentId: parent.id } })).ok()).toBeTruthy()
+    }
+    await openView(page)
+    const toggle = page.getByRole('button', { name: `2 open subtasks of ${parentTitle}`, exact: true })
+    await toggle.click()
+    await expect(page.getByRole('button', { name: 'Open Book the accessible taxi', exact: true }).first()).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'subtasks')
   })
 
   test('mytasks: sort menu', async ({ page }, testInfo) => {

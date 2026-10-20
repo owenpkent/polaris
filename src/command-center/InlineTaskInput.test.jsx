@@ -14,7 +14,7 @@ function setup(props = {}) {
 
 async function openPicker(input, title = 'Buy milk') {
   fireEvent.change(input, { target: { value: title } })
-  fireEvent.keyDown(input, { key: 'Enter' })
+  fireEvent.click(screen.getByRole('button', { name: /^Due date(: .+)?$/ }))
   return screen.findByRole('dialog', { name: `Due date for ${title}` })
 }
 
@@ -26,11 +26,76 @@ describe('InlineTaskInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
-  test('Enter with a title opens the due date dialog', async () => {
+  test('the due date button opens the due date dialog', async () => {
     const { input } = setup()
     const dialog = await openPicker(input)
     expect(dialog.parentElement.closest('body')).toBe(document.body)
     expect(screen.getByRole('heading', { name: 'When is it due?' })).toBeTruthy()
+  })
+
+  // As in Asana's list: Enter adds the task on the group's date at once, and the row empties for
+  // the next one, with focus kept in it.
+  test("Enter with a title adds it on the group's date and empties the row for the next", async () => {
+    const today = getDueBounds().today
+    const { input, onSubmit, onCancel } = setup({ defaultDueAt: today })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(input.value).toBe(''))
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: today, recurrence: null })
+    expect(document.activeElement).toBe(input)
+    fireEvent.change(input, { target: { value: 'Buy bread' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
+    expect(onSubmit).toHaveBeenLastCalledWith('Buy bread', { dueAt: today, recurrence: null })
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  test('the row after one added from the picker starts on the group date with no repeat', async () => {
+    const today = getDueBounds().today
+    const { input, onSubmit } = setup({ defaultDueAt: today })
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(input.value).toBe(''))
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().tomorrow, recurrence: 'daily' })
+    expect(screen.getByRole('button', { name: 'Due date: Today' })).toBeTruthy()
+    fireEvent.change(input, { target: { value: 'Buy bread' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith('Buy bread', { dueAt: today, recurrence: null }))
+  })
+
+  test('the name box says what to write', () => {
+    const { input } = setup()
+    expect(input.getAttribute('placeholder')).toBe('Write a task name')
+  })
+
+  test('leaving the row empty closes it with nothing saved', () => {
+    const { input, onSubmit, onCancel } = setup()
+    fireEvent.blur(input)
+    expect(onCancel).toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  // Closing on the press would move the rows under it up, and the release would land on another
+  // row than the one pressed (the check of the task below, say). It closes after the click.
+  test('an empty row left by a press elsewhere closes only after the release', async () => {
+    const { input, onCancel } = setup()
+    fireEvent.pointerDown(document.body)
+    input.blur()
+    expect(onCancel).not.toHaveBeenCalled()
+    fireEvent.pointerUp(document.body)
+    expect(onCancel).not.toHaveBeenCalled()
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+  })
+
+  test('leaving the row with a name in it keeps it open', () => {
+    const { input, onCancel } = setup()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.blur(input)
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
   test('Tomorrow submits the title with tomorrow and no recurrence', async () => {

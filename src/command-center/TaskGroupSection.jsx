@@ -1,14 +1,16 @@
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import TaskRow from './TaskRow'
+import { TaskTree } from './TaskRow'
 import InlineTaskInput from './InlineTaskInput'
 
 // One collapsible group of the My Tasks list (Overdue, Today, Tomorrow, ...): a header row with
 // the title and count, then its rows. The groups sit one after another inside the list's single
 // panel (MyTasksTab), so a section has no surface of its own.
 // `addRow`, when present, describes the trailing "Add task" row for this
-// group ({ dueAt }); `inlineAdd`, when present, is this group's own active
+// group ({ dueAt }), which opens the inline input at the top of the group, as
+// Asana's does; `inlineAdd`, when present, is this group's own active
 // inline input ({ position: 'top' | 'bottom' }) -- already filtered to this
 // group by the caller, so any other group's inline input has no effect here.
+// `subtasksByParent` (indexSubtasks in TaskRow.jsx) gives each row its subtask count.
 export default function TaskGroupSection({
   title,
   tasks,
@@ -16,6 +18,7 @@ export default function TaskGroupSection({
   onToggleCollapse,
   dueBounds,
   projectNameById,
+  subtasksByParent,
   projectOptions,
   visibleColumns,
   gridTemplateColumns,
@@ -52,21 +55,22 @@ export default function TaskGroupSection({
       {!collapsed && (
         <div>
           {inlineAdd?.position === 'top' && (
-            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {tasks.map((task) => (
-            <TaskRow
+            <TaskTree
               key={task.id}
               task={task}
-              projectName={projectNameById.get(task.projectId)}
+              subtasksByParent={subtasksByParent}
+              projectNameById={projectNameById}
               projectOptions={projectOptions}
               visibleColumns={visibleColumns}
               gridTemplateColumns={gridTemplateColumns}
               phone={phone}
               dueBounds={dueBounds}
-              pending={pendingIds.has(task.id)}
-              open={task.id === openTaskId}
+              pendingIds={pendingIds}
+              openTaskId={openTaskId}
               onToggleComplete={onToggleComplete}
               onOpen={onOpenTask}
               onQuickUpdate={onQuickUpdate}
@@ -75,11 +79,11 @@ export default function TaskGroupSection({
           ))}
 
           {inlineAdd?.position === 'bottom' && (
-            <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {addRow && !inlineAdd && (
-            <button type="button" className="mytasks-add-row" onClick={() => onOpenInlineAdd('bottom')}>
+            <button type="button" className="mytasks-add-row" onClick={() => onOpenInlineAdd('top')}>
               <Plus size={16} aria-hidden="true" /> Add task
             </button>
           )}

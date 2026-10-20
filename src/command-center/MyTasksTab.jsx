@@ -7,7 +7,7 @@ import { shareToTaskFields } from './shareIntake'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
-import TaskRow from './TaskRow'
+import { TaskTree, indexSubtasks } from './TaskRow'
 import { completeExitDelay } from './CompleteBurst'
 import TaskListToolbar from './TaskListToolbar'
 import ColumnHeader from './ColumnHeader'
@@ -85,7 +85,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const [detailTaskId, setDetailTaskId] = useState(null)
   const [pendingIds, setPendingIds] = useState(() => new Set())
   const [collapsedOverrides, setCollapsedOverrides] = useState(() => loadCollapsed())
-  const [inlineAdd, setInlineAdd] = useState(null) // { groupId, dueAt, position } | null; groupId null == ungrouped top add
+  const [inlineAdd, setInlineAdd] = useState(null) // { groupId, dueAt, position, seq } | null; groupId null == ungrouped top add
+  // Each opening of the inline row is a new row (its key), so a row left empty that closes after
+  // the click that opened another one can only close itself.
+  const inlineSeq = useRef(0)
   const [legendOpen, setLegendOpen] = useState(false)
   // The phone tier creates tasks through a sheet opened by the floating Add task button; the
   // toolbar's inline row is desktop only (index.css hides it under 640px).
@@ -229,6 +232,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   useEventRefresh(refresh, { enabled: connected })
 
   const goalWork = useMemo(() => goalWorkIndex(goals), [goals])
+  // Each task's open subtasks, from the whole list rather than the filtered one, for the count
+  // after a row's name and the rows it shows under it (TaskTree in TaskRow.jsx).
+  const subtasksByParent = useMemo(() => indexSubtasks(tasks), [tasks])
   const states = useMemo(() => stateIndex(stateViews), [stateViews])
 
   // Global "?" toggles the shortcuts dialog, unless the user is typing.
@@ -276,7 +282,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
   const openInlineAdd = useCallback((groupId, dueAt, position) => {
     ensureExpanded('due', groupId)
-    setInlineAdd({ groupId, dueAt, position })
+    setInlineAdd({ groupId, dueAt, position, seq: ++inlineSeq.current })
   }, [ensureExpanded])
 
   const closeInlineAdd = useCallback(() => setInlineAdd(null), [])
@@ -286,19 +292,19 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     if (view.group === 'due') {
       openInlineAdd('today', dueBounds.today, 'top')
     } else {
-      setInlineAdd({ groupId: null, dueAt: dueBounds.today, position: 'top' })
+      setInlineAdd({ groupId: null, dueAt: dueBounds.today, position: 'top', seq: ++inlineSeq.current })
     }
   }, [view.group, openInlineAdd])
 
-  // The row's "When is it due?" step (InlineTaskInput.jsx) hands over the date picked there,
-  // which starts on the group's own date, and a repeat rule if one was chosen.
+  // The inline row (InlineTaskInput.jsx) hands over the group's date, or the date and repeat
+  // picked in its "When is it due?" step. The row stays open for the next task, as Asana's does;
+  // Esc or leaving it empty closes it.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
     if (dueAt) payload.dueAt = dueAt
     if (recurrence) payload.recurrence = recurrence
     await api.createTask(payload)
     await fetchTasks()
-    setInlineAdd(null)
   }, [api, fetchTasks, inlineAdd])
 
   // The sheet closes itself once this resolves, and only if it is still the opening that sent
@@ -394,6 +400,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const commonRowProps = {
     dueBounds,
     projectNameById,
+    subtasksByParent,
     projectOptions,
     visibleColumns,
     gridTemplateColumns,
@@ -458,22 +465,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       content = (
         <div>
           {sortedTasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              projectName={projectNameById.get(task.projectId)}
-              projectOptions={projectOptions}
-              visibleColumns={visibleColumns}
-              gridTemplateColumns={gridTemplateColumns}
-              phone={phone}
-              dueBounds={dueBounds}
-              pending={pendingIds.has(task.id)}
-              open={task.id === detailTaskId}
-              onToggleComplete={handleToggleComplete}
-              onOpen={setDetailTaskId}
-              onQuickUpdate={handleQuickUpdate}
-              api={api}
-            />
+            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />
           ))}
         </div>
       )
@@ -531,7 +523,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           ) : (
             <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
-                <InlineTaskInput gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
               {content}
             </div>

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Check, Repeat } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ListTree, Repeat } from 'lucide-react'
 import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
@@ -186,10 +186,49 @@ function PriorityCell({ task, onUpdate }) {
   )
 }
 
+// How deep subtasks open under a task in the list; a subtask that deep shows its count only.
+const MAX_SUBTASK_DEPTH = 3
+
+// The count of a task's open subtasks after its name, as Asana's list shows it, and the control
+// that shows them under it: one button, the whole 44px cell height, which says how many and,
+// through aria-expanded, whether they are shown. It never opens the task.
+function SubtaskToggle({ task, count, expanded, onToggle }) {
+  const label = `${count} open ${count === 1 ? 'subtask' : 'subtasks'} of ${task.title}`
+  if (!onToggle) {
+    return (
+      <span className="subtask-chip is-static" role="img" aria-label={label}>
+        <ListTree size={12} aria-hidden="true" />
+        {count}
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className="subtask-toggle"
+      aria-expanded={expanded}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+    >
+      <span className="subtask-chip" aria-hidden="true">
+        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <ListTree size={12} />
+        {count}
+      </span>
+    </button>
+  )
+}
+
 // One task row in the My Tasks grid. The row opens the task detail panel
 // (click or Enter while focused); the check circle and the Due
 // date/Project/Priority cells are their own controls so completing a task,
 // or changing one of those three fields, never requires opening the panel.
+// `depth` above 0 is a subtask shown under its parent (TaskTree below): the check moves into the
+// name cell, indented, so the columns still line up. `subtaskCount` and `onToggleExpand` draw the
+// subtask count after the name; `expanded` says whether the subtasks are shown under the row.
 export default function TaskRow({
   task,
   projectName,
@@ -204,6 +243,10 @@ export default function TaskRow({
   onOpen,
   onQuickUpdate,
   api,
+  depth = 0,
+  subtaskCount = 0,
+  expanded = false,
+  onToggleExpand,
 }) {
   const done = task.status === 'done'
   const columnIds = new Set(visibleColumns.map((c) => c.id))
@@ -220,13 +263,76 @@ export default function TaskRow({
     }
   }
 
+  const check = (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
+      disabled={pending}
+      className="task-check"
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!done) celebrate()
+        onToggleComplete(task)
+      }}
+      style={{
+        position: 'relative',
+        flex: '0 0 auto',
+        width: 44,
+        height: 44,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 8,
+        cursor: pending ? 'default' : 'pointer',
+        // The check keeps its full colour while it celebrates, though the request is pending.
+        opacity: pending && !completing ? 0.6 : 1,
+      }}
+    >
+      {/* The tick is always drawn but transparent until the task is done or the button is
+          hovered (.task-check-circle), so the circle is empty at rest. */}
+      <span
+        key={completing ? burstKey : 0}
+        aria-hidden="true"
+        className={`task-check-circle${done ? ' is-done' : ''}${completing ? ' check-pop' : ''}`}
+      >
+        <Check size={12} strokeWidth={3} />
+      </span>
+      {completing && <CompleteBurst key={burstKey} />}
+    </button>
+  )
+
+  const nameText = phone
+    ? {
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+        fontSize: '0.9375rem',
+        color: done ? 'var(--t2)' : 'var(--t1)',
+        textDecoration: done ? 'line-through' : 'none',
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        padding: '10px 0',
+      }
+    : {
+        ...cellStyle,
+        fontSize: '0.875rem',
+        color: done ? 'var(--t2)' : 'var(--t1)',
+        textDecoration: done ? 'line-through' : 'none',
+      }
+
   return (
     <div
       className={completing ? 'mytasks-grid mytasks-row is-completing' : 'mytasks-grid mytasks-row'}
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
-      data-task-id={task.id}
+      data-task-id={depth === 0 ? task.id : undefined}
+      data-subtask-id={depth > 0 ? task.id : undefined}
       onClick={() => onOpen(task.id)}
       onKeyDown={handleKeyDown}
       style={{
@@ -239,75 +345,28 @@ export default function TaskRow({
         boxShadow: open ? 'inset 3px 0 0 var(--blue)' : undefined,
       }}
     >
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
-        disabled={pending}
-        className="task-check"
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!done) celebrate()
-          onToggleComplete(task)
-        }}
-        style={{
-          position: 'relative',
-          width: 44,
-          height: 44,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'transparent',
-          border: 'none',
-          borderRadius: 8,
-          cursor: pending ? 'default' : 'pointer',
-          // The check keeps its full colour while it celebrates, though the request is pending.
-          opacity: pending && !completing ? 0.6 : 1,
-        }}
-      >
-        {/* The tick is always drawn but transparent until the task is done or the button is
-            hovered (.task-check-circle), so the circle is empty at rest. */}
-        <span
-          key={completing ? burstKey : 0}
-          aria-hidden="true"
-          className={`task-check-circle${done ? ' is-done' : ''}${completing ? ' check-pop' : ''}`}
-        >
-          <Check size={12} strokeWidth={3} />
-        </span>
-        {completing && <CompleteBurst key={burstKey} />}
-      </button>
+      {depth === 0 ? check : <span aria-hidden="true" />}
 
-      <span
-        style={
-          phone
-            ? {
-                ...cellStyle,
-                fontSize: '0.9375rem',
-                color: done ? 'var(--t2)' : 'var(--t1)',
-                textDecoration: done ? 'line-through' : 'none',
-                whiteSpace: 'normal',
-                overflow: 'hidden',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                padding: '10px 0',
-              }
-            : {
-                ...cellStyle,
-                fontSize: '0.875rem',
-                color: done ? 'var(--t2)' : 'var(--t1)',
-                textDecoration: done ? 'line-through' : 'none',
-                paddingRight: 12,
-              }
-        }
-      >
-        {plainTitle(task.title)}
-        {task.status === 'waiting' && (
-          <span style={{ display: 'inline-block', marginLeft: '0.6rem', fontSize: '0.75rem', color: 'var(--t2)' }}>
-            Waiting
-          </span>
+      {/* The name, then what follows it (Waiting, the subtask count), which never shrinks: a long
+          name is shortened instead, whole in the row's accessible name and in the panel. */}
+      <span className="mytasks-name" style={{ paddingRight: phone ? 0 : 12 }}>
+        {depth > 0 && (
+          <>
+            {depth > 1 && <span aria-hidden="true" style={{ flex: '0 0 auto', width: (depth - 1) * 24 }} />}
+            {check}
+          </>
         )}
+        {/* On a phone a name too long for its line takes the line, and what follows it wraps
+            under it, rather than squeezing the name to a word or two. */}
+        <span className="mytasks-name-body">
+          <span style={nameText}>{plainTitle(task.title)}</span>
+          {task.status === 'waiting' && (
+            <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
+          )}
+          {subtaskCount > 0 && (
+            <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
+          )}
+        </span>
       </span>
 
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
@@ -328,5 +387,56 @@ export default function TaskRow({
       {columnIds.has('priority') && <PriorityCell task={task} onUpdate={onQuickUpdate} />}
       {columnIds.has('source') && <span style={cellStyle}>{SOURCE_LABELS[task.sourceType] || ''}</span>}
     </div>
+  )
+}
+
+// A task's open subtasks, from the list the view already loaded (each task carries its parentId),
+// in their order on the parent: position, then creation.
+export function indexSubtasks(tasks) {
+  const byParent = new Map()
+  for (const t of tasks) {
+    if (!t.parentId) continue
+    if (!byParent.has(t.parentId)) byParent.set(t.parentId, [])
+    byParent.get(t.parentId).push(t)
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+  }
+  return byParent
+}
+
+// A row and, once its subtask count is pressed, its open subtasks as rows under it, as Asana's
+// list shows them. A subtask keeps its own row in its own group as well; the ones shown here are
+// the parent's, in the parent's order. Which rows are open is kept per row and not stored.
+export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, ...rowProps }) {
+  const [expanded, setExpanded] = useState(false)
+  const children = subtasksByParent?.get(task.id) || []
+  const canExpand = children.length > 0 && depth < MAX_SUBTASK_DEPTH
+  return (
+    <>
+      <TaskRow
+        {...rowProps}
+        task={task}
+        depth={depth}
+        projectName={projectNameById.get(task.projectId)}
+        pending={pendingIds.has(task.id)}
+        open={task.id === openTaskId}
+        subtaskCount={children.length}
+        expanded={canExpand && expanded}
+        onToggleExpand={canExpand ? () => setExpanded((v) => !v) : undefined}
+      />
+      {canExpand && expanded && children.map((child) => (
+        <TaskTree
+          key={child.id}
+          {...rowProps}
+          task={child}
+          depth={depth + 1}
+          subtasksByParent={subtasksByParent}
+          projectNameById={projectNameById}
+          pendingIds={pendingIds}
+          openTaskId={openTaskId}
+        />
+      ))}
+    </>
   )
 }

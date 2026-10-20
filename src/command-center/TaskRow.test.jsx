@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import TaskRow from './TaskRow'
+import TaskRow, { TaskTree, indexSubtasks } from './TaskRow'
 import { getDueBounds } from './dueDates'
 
 afterEach(() => cleanup())
@@ -185,5 +185,72 @@ describe('TaskRow repeat from the due date picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onQuickUpdate).toHaveBeenCalledWith(task, { recurrence: 'daily', dueAt: DUE_BOUNDS.today })
+  })
+})
+
+describe('TaskTree subtasks', () => {
+  const parent = baseTask({ id: 'p', title: 'Plan the trip' })
+  const tasks = [
+    parent,
+    baseTask({ id: 's2', title: 'Book the hotel', parentId: 'p', position: 2 }),
+    baseTask({ id: 's1', title: 'Book the train', parentId: 'p', position: 1 }),
+    baseTask({ id: 'x', title: 'Unrelated' }),
+  ]
+
+  function renderTree(onOpen = vi.fn()) {
+    render(
+      <TaskTree
+        task={parent}
+        subtasksByParent={indexSubtasks(tasks)}
+        projectNameById={new Map([['p1', 'Alpha']])}
+        pendingIds={new Set()}
+        openTaskId={null}
+        projectOptions={PROJECT_OPTIONS}
+        dueBounds={DUE_BOUNDS}
+        visibleColumns={VISIBLE_COLUMNS}
+        gridTemplateColumns="44px 1fr 100px 100px 100px 80px"
+        phone={false}
+        onToggleComplete={vi.fn()}
+        onOpen={onOpen}
+        onQuickUpdate={vi.fn()}
+      />
+    )
+    return { onOpen }
+  }
+
+  test('indexSubtasks groups by parent in the parent\'s order', () => {
+    const index = indexSubtasks(tasks)
+    expect(index.get('p').map((t) => t.id)).toEqual(['s1', 's2'])
+    expect(index.has('x')).toBe(false)
+  })
+
+  test('a task with open subtasks shows their count, and the count shows them under it', () => {
+    const { onOpen } = renderTree()
+    const toggle = screen.getByRole('button', { name: '2 open subtasks of Plan the trip' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.textContent).toBe('2')
+    expect(screen.queryByRole('button', { name: 'Open Book the train' })).toBeNull()
+    fireEvent.click(toggle)
+    expect(onOpen).not.toHaveBeenCalled()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    const rows = screen.getAllByRole('button', { name: /^Open / }).map((r) => r.getAttribute('aria-label'))
+    expect(rows).toEqual(['Open Plan the trip', 'Open Book the train', 'Open Book the hotel'])
+    // A subtask row has its own check, and opens its own task.
+    expect(screen.getByRole('checkbox', { name: 'Complete Book the train' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Book the train' }))
+    expect(onOpen).toHaveBeenCalledWith('s1')
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('button', { name: 'Open Book the train' })).toBeNull()
+  })
+
+  test('a task with no open subtasks shows no count', () => {
+    renderRow()
+    expect(screen.queryByRole('button', { name: /open subtask/ })).toBeNull()
+  })
+
+  test('Waiting stays beside the name, outside the part a long name shortens', () => {
+    renderRow({ task: { status: 'waiting' } })
+    const waiting = screen.getByText('Waiting')
+    expect(waiting.parentElement.className).toBe('mytasks-name-body')
   })
 })
