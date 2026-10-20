@@ -68,6 +68,40 @@ test.describe('Board', { tag: ['@flow'] }, () => {
     await expect(card(lane(page, 'No section'), title)).toBeVisible()
   })
 
+  test('a card completes from its check circle by keyboard, files under Show done, and reopens', async ({ page, request }, testInfo) => {
+    const title = await newCard(request, testInfo, 'complete')
+    await openView(page, 'board')
+    const backlog = lane(page, 'Backlog')
+    await backlog.getByRole('checkbox', { name: `Complete ${title}`, exact: true }).focus()
+    await page.keyboard.press('Space')
+    await expect(card(backlog, title)).toHaveCount(0)
+    await backlog.getByRole('button', { name: /^Show \d+ done$/ }).click()
+    const reopen = backlog.getByRole('checkbox', { name: `Reopen ${title}`, exact: true })
+    await expect(reopen).toBeChecked()
+    await reopen.click()
+    await expect(backlog.getByRole('checkbox', { name: `Complete ${title}`, exact: true })).not.toBeChecked()
+  })
+
+  test("a lane's Add task puts a new card in that lane and stays open for the next", async ({ page }, testInfo) => {
+    const title = `UI test board add ${testInfo.project.name} ${Date.now()}`
+    await openView(page, 'board')
+    const doing = lane(page, 'Doing')
+    await doing.getByRole('button', { name: 'Add task to Doing', exact: true }).click()
+    const box = doing.getByRole('textbox', { name: 'New task in Doing' })
+    await expect(box).toBeFocused()
+    await box.fill(title)
+    await page.keyboard.press('Enter')
+    await expect(card(doing, title)).toBeVisible()
+    await expect(box).toHaveValue('')
+    await expect(box).toBeFocused()
+    expect(await smallTargets(doing, 'button')).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(box).toHaveCount(0)
+    await expect(doing.getByRole('button', { name: 'Add task to Doing', exact: true })).toBeFocused()
+    await openView(page, 'board')
+    await expect(card(lane(page, 'Doing'), title)).toBeVisible()
+  })
+
   test('clicking a card opens its details with the project and section filled in', async ({ page }) => {
     await openView(page, 'board')
     await card(lane(page, 'Doing'), 'Board card gamma').click()

@@ -152,8 +152,8 @@ export function formatDueCell(dueAt, bounds, locale) {
   return out(parsed.toLocaleDateString('en-US', opts), null, ', ')
 }
 
-// A due date in a short form for places with no Today or weekday words (a board card, a goal's
-// task list): "Oct 18", or "Oct 18, 9:00 AM" with a time.
+// A due date in a short form for places with no Today or weekday words (a goal's task list, an
+// import preview): "Oct 18", or "Oct 18, 9:00 AM" with a time.
 export function formatDueShort(dueAt, locale) {
   const d = dueDateOnly(dueAt)
   if (d === null) return ''

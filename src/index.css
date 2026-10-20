@@ -979,12 +979,17 @@ kbd { color: var(--t1); }
   border: 1px solid var(--bd-surface);
   border-radius: var(--radius);
 }
+.board-lane-title { min-width: 0; font-size: 14px; font-weight: 600; color: var(--t1); overflow-wrap: break-word; }
+.board-lane-count { font-size: 13px; color: var(--t3); }
+/* A card, as Asana's board draws one: the check circle, then the card face (title, priority pill,
+   and a foot with the assignee and the due date), then the Move arrow. Each is a 44px target; the
+   face reaches the card's top and bottom edges, so the whole card opens the task. The circle and
+   the title's first line share a centre line, 26px down. */
 .board-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: start;
-  gap: 4px;
-  padding: 12px 6px 12px 14px;
+  padding: 4px;
   background: var(--bg2);
   border: 1px solid var(--bd-surface);
   border-radius: var(--radius);
@@ -993,6 +998,94 @@ kbd { color: var(--t1); }
 }
 .board-card:hover { background: var(--bg3); box-shadow: var(--shadow-2); }
 .board-card.is-menu-open { border-color: var(--blue); }
+.board-card-check {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+}
+.board-card-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: calc(var(--target) + 8px);
+  margin: -4px 0;
+  padding: 16px 4px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.board-card-title { min-width: 0; font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
+.board-card-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--t2); }
+.board-card-move {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--t2);
+  background: transparent;
+  border: none;
+}
+.board-card-move[aria-expanded='true'] { color: var(--t1); background: var(--bg3); }
+/* The controls sit edge to edge inside the card, so their rings are drawn inside them. */
+.board-card :focus-visible { outline-offset: -2px; }
+/* A completed card flashes green and fades in place before the refetch files it under Show done
+   (COMPLETE_EXIT_MS, as a My tasks row does). */
+.board-card.is-completing { animation: card-complete 0.7s ease-in both; }
+@keyframes card-complete {
+  0% { background: var(--bg2); }
+  25% { background: var(--green-soft); opacity: 1; }
+  65% { background: var(--green-soft); opacity: 1; }
+  100% { background: var(--green-soft); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-card.is-completing { animation: none; }
+}
+/* A lane's Add task: a quiet row (at the top of an empty lane, under the last open card
+   otherwise) that opens a blank card with the name box and its two buttons. */
+.board-add-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 0 14px 0 18px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--t2);
+  font-size: 14px;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.board-add-task:hover { background: var(--bg-hover); color: var(--t1); }
+.board-card.board-add-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.board-card.board-add-card:hover { background: var(--bg2); box-shadow: var(--shadow-1); }
+.board-add-title {
+  flex-shrink: 0;
+  width: 100%;
+  min-height: var(--target);
+  padding: 11px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  resize: none;
+  overflow: hidden;
+}
+.board-add-error { font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
+.board-add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Board at phone width: a lane is sized to the viewport minus the page's two
    16px gutters (app-main-full's phone padding), the strip's own gap, and a

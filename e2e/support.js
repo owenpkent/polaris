@@ -910,3 +910,36 @@ export async function longNames(page) {
     }
   )
 }
+
+// The seeded Board cards with what a card can carry and the seed leaves off: due dates (today,
+// tomorrow, overdue, later in the week), a repeat, and an assignee, for a shot or a check that
+// needs to see them. The project's answer is rewritten on its way to the page, as longNames does,
+// so the shared seeded project is never changed. Days count from the browser's frozen clock.
+export async function boardCardExtras(page) {
+  const now = await page.evaluate(() => Date.now()).catch(() => Date.now())
+  const day = (n) => {
+    const d = new Date(now)
+    d.setDate(d.getDate() + n)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const extras = {
+    'Board card alpha': { dueAt: day(0), assignee: 'Sam Rivera' },
+    'Board card beta': { dueAt: day(1) },
+    'Board card gamma': { dueAt: day(-2), recurrence: 'FREQ=WEEKLY;BYDAY=MO' },
+    'Board milestone delta': { dueAt: day(4), assignee: 'Alex Chen' },
+  }
+  await page.route(
+    (url) => /^\/api\/projects\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      if (!isGet(route)) return route.fallback()
+      try {
+        const response = await route.fetch()
+        const body = await response.json()
+        for (const task of body.tasks || []) Object.assign(task, extras[task.title] || {})
+        await route.fulfill({ response, json: body })
+      } catch {
+        // gone
+      }
+    }
+  )
+}

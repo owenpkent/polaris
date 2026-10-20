@@ -31,8 +31,11 @@ beforeEach(() => {
   localStorage.clear()
   Object.assign(api, {
     listProjects: vi.fn().mockResolvedValue({ projects: [project()] }),
-    getProject: vi.fn().mockResolvedValue({ sections: SECTIONS, tasks: boardTasks() }),
+    getProject: vi.fn().mockResolvedValue({ project: project(), sections: SECTIONS, tasks: boardTasks() }),
     moveTask: vi.fn().mockResolvedValue({}),
+    completeTask: vi.fn().mockResolvedValue({}),
+    reopenTask: vi.fn().mockResolvedValue({}),
+    createTask: vi.fn().mockResolvedValue({ task: { id: 'new' } }),
   })
 })
 
@@ -106,6 +109,68 @@ describe('BoardTab', () => {
     await screen.findByRole('region', { name: 'Todo' })
     fireEvent.click(screen.getByText('Task One'))
     expect((await screen.findByTestId('task-detail-panel')).textContent).toBe('t1')
+  })
+
+  test("a card's check circle completes the task, and a done card's check reopens it", async () => {
+    render(<BoardTab />)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    const check = within(todo).getByRole('checkbox', { name: 'Complete Task One' })
+    expect(check.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(check)
+    await waitFor(() => expect(api.completeTask).toHaveBeenCalledWith('t1'))
+    await waitFor(() => expect(api.getProject).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(within(todo).getByRole('button', { name: 'Show 1 done' }))
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Reopen Task Four' }))
+    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledWith('t4'))
+  })
+
+  test('a failed complete puts the card back and says so', async () => {
+    api.completeTask.mockRejectedValueOnce(new Error('Could not update that task.'))
+    render(<BoardTab />)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not update that task.')
+    expect(within(todo).getByRole('checkbox', { name: 'Complete Task One' }).getAttribute('aria-checked')).toBe('false')
+  })
+
+  test('a card shows its due date in the words and colours the list uses', async () => {
+    const today = new Date()
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    api.getProject.mockResolvedValue({
+      project: project(),
+      sections: SECTIONS,
+      tasks: [{ id: 't9', title: 'Due card', sectionId: 's1', status: 'open', priority: 'none', dueAt: iso }],
+    })
+    render(<BoardTab />)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    const due = within(todo).getByText('Today')
+    expect(due.style.color).toBe('var(--green)')
+  })
+
+  test("a lane's Add task creates a task in this project and that section, and stays open for the next", async () => {
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    fireEvent.change(box, { target: { value: 'Fresh card' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Fresh card', projectId: 'p1', sectionId: 's2' }))
+    await waitFor(() => expect(within(doing).getByRole('textbox', { name: 'New task in Doing' }).value).toBe(''))
+  })
+
+  test('Add task in No section sends a null section, and Esc closes it', async () => {
+    render(<BoardTab />)
+    const lane = await screen.findByRole('region', { name: 'No section' })
+    fireEvent.click(within(lane).getByRole('button', { name: 'Add task to No section' }))
+    const box = within(lane).getByRole('textbox', { name: 'New task in No section' })
+    fireEvent.change(box, { target: { value: 'Loose card' } })
+    fireEvent.click(within(lane).getByRole('button', { name: 'Add task' }))
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Loose card', projectId: 'p1', sectionId: null }))
+
+    fireEvent.keyDown(within(lane).getByRole('textbox', { name: 'New task in No section' }), { key: 'Escape' })
+    expect(within(lane).queryByRole('textbox')).toBeNull()
+    expect(within(lane).getByRole('button', { name: 'Add task to No section' })).toBeTruthy()
   })
 
   test('a failed board load shows the error banner, and Retry loads again and clears it', async () => {

@@ -1,11 +1,13 @@
 import { useId, useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban, Repeat } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, ChevronRight, FolderKanban, Plus, Repeat } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
-import { Loading, EmptyState, ErrorBanner, Avatar, isOverdue } from './shared'
-import { formatDueShort, plainTitle } from './dueDates'
+import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
+import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
+import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
+import { oneLine, useFitToText } from './useFitToText'
 import { Popover } from './Menu'
 import { useRequestGuard } from './useRequestGuard'
 
@@ -25,7 +27,7 @@ function rememberBoardProject(id) {
   try { localStorage.setItem(BOARD_PROJECT_KEY, id) } catch { /* storage unavailable */ }
 }
 
-// Priority is a soft pill in the card meta row, as in the list (.priority-pill in index.css);
+// Priority is a soft pill on the card, as in the list (.priority-pill in index.css);
 // none/medium (the default) render nothing.
 const PRIORITY_META = {
   low: { label: 'Low', className: 'badge priority-pill is-low' },
@@ -119,74 +121,101 @@ function MoveMenu({ task, destinations, onMove, onClose, anchorRef }) {
   )
 }
 
-function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
-  const overdue = isOverdue(task)
+// The check circle before a card's title: the list's (TaskRow.jsx), with the same celebration
+// (CompleteBurst.jsx) and the same classes, so a task completes the same way wherever it is.
+function CardCheck({ task, pending, completing, burstKey, onToggle }) {
+  const done = task.status === 'done'
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
+      disabled={pending}
+      className="task-check board-card-check"
+      onClick={onToggle}
+      // The check keeps its full colour while it celebrates, though the request is pending.
+      style={{ cursor: pending ? 'default' : 'pointer', opacity: pending && !completing ? 0.6 : 1 }}
+    >
+      {/* The tick is drawn but transparent until the task is done or the button is hovered. */}
+      <span
+        key={completing ? burstKey : 0}
+        aria-hidden="true"
+        className={`task-check-circle${done ? ' is-done' : ''}${completing ? ' check-pop' : ''}`}
+      >
+        <Check size={12} strokeWidth={3} />
+      </span>
+      {completing && <CompleteBurst key={burstKey} />}
+    </button>
+  )
+}
+
+// A card as Asana draws one: the check circle, the title, the priority pill, and a foot with the
+// assignee and the due date in the list's words and colours (formatDueCell). The card face opens
+// the task, and the arrow at the top right moves it to another lane, so nothing needs a drag.
+function BoardCard({ task, dueBounds, pending, onToggleComplete, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
+  const done = task.status === 'done'
   const priority = PRIORITY_META[task.priority]
-  const hasMeta = Boolean(task.dueAt || task.recurrence || priority || task.assignee)
+  const due = formatDueCell(task.dueAt, dueBounds)
+  const repeat = repeatLabel(task.recurrence)
+  const hasFoot = Boolean(due.text || repeat || task.assignee)
   const anchorRef = useRef(null)
+  // Held until the refetch drops the card into its lane's done list, as a list row is held.
+  const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
+  const completing = celebrating && done
+
+  const classes = ['board-card']
+  if (menuOpen) classes.push('is-menu-open')
+  if (completing) classes.push('is-completing')
 
   return (
     <div style={{ position: 'relative' }}>
-      <div className={menuOpen ? 'board-card is-menu-open' : 'board-card'}>
-        <button
-          type="button"
-          onClick={() => onOpen(task.id)}
-          style={{
-            display: 'block',
-            // The button takes over the card's top, bottom, and left padding (negative margin,
-            // equal padding), so the whole card face is the click target. Without this a card
-            // with no due date or priority is a single 22px line, under the 44px minimum.
-            width: 'calc(100% + 14px)',
-            minWidth: 0,
-            minHeight: 'var(--target)',
-            textAlign: 'left',
-            background: 'transparent',
-            border: 'none',
-            borderRadius: 'var(--radius)',
-            padding: '12px 0 12px 14px',
-            margin: '-12px 0 -12px -14px',
-            font: 'inherit',
-            color: 'inherit',
-            cursor: 'pointer',
+      <div className={classes.join(' ')} data-task-id={task.id}>
+        <CardCheck
+          task={task}
+          pending={pending}
+          completing={completing}
+          burstKey={burstKey}
+          onToggle={() => {
+            if (!done) celebrate()
+            onToggleComplete(task)
           }}
-        >
-          <div className="board-card-title" style={{ fontSize: 14, lineHeight: 1.4, color: 'var(--t1)', paddingTop: 2 }}>{plainTitle(task.title)}</div>
-          {hasMeta && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', marginTop: 8, fontSize: 13, color: 'var(--t2)' }}>
-              {task.dueAt && (
-                <span style={{ color: overdue ? 'var(--red)' : 'var(--t2)' }}>{formatDueShort(task.dueAt)}</span>
-              )}
-              {task.recurrence && <Repeat size={12} aria-hidden="true" className="repeat-glyph" style={{ marginLeft: task.dueAt ? -4 : 0 }} />}
-              {priority && <span className={priority.className}>{priority.label}</span>}
+        />
+
+        <button type="button" className="board-card-open" onClick={() => onOpen(task.id)}>
+          <span
+            className="board-card-title"
+            style={{ color: done ? 'var(--t2)' : 'var(--t1)', textDecoration: done ? 'line-through' : 'none' }}
+          >
+            {plainTitle(task.title)}
+          </span>
+          {priority && (
+            <span className="board-card-chips">
+              <span className={priority.className}>{priority.label}</span>
+            </span>
+          )}
+          {hasFoot && (
+            <span className="board-card-foot">
               {task.assignee && (
                 // The initials stand for the name here; the panel spells it out.
-                <span style={{ marginLeft: 'auto', display: 'inline-flex' }} title={task.assignee}>
+                <span style={{ display: 'inline-flex' }} title={task.assignee}>
                   <Avatar name={task.assignee} size={22} />
                 </span>
               )}
-            </div>
+              {due.text && <span style={{ color: due.color || 'var(--t2)' }}>{due.text}</span>}
+              {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
+            </span>
           )}
         </button>
 
         <button
           type="button"
           ref={anchorRef}
+          className="board-card-move"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-label={`Move ${task.title}`}
           onClick={() => onToggleMenu(task.id)}
-          style={{
-            width: 44,
-            height: 44,
-            marginTop: -8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 8,
-            color: menuOpen ? 'var(--t1)' : 'var(--t2)',
-            background: menuOpen ? 'var(--bg3)' : 'transparent',
-            border: 'none',
-          }}
         >
           <ArrowRight size={18} aria-hidden="true" />
         </button>
@@ -199,36 +228,131 @@ function BoardCard({ task, destinations, onMove, onOpen, menuOpen, onToggleMenu,
   )
 }
 
-function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onCloseMenu, onMove, onOpen }) {
+// "Add task" in a lane, as Asana's board has it: a quiet row that opens a blank card in place.
+// Enter or the Add task button saves it into this lane's section and leaves a fresh card open for
+// the next one; Esc or Cancel, or leaving the card empty, closes it. A create is queued offline
+// like any task edit (outbox.js), so this stays on with the server away, as the list's Add task does.
+function LaneAddTask({ section, onCreate }) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const inputRef = useRef(null)
+  const openerRef = useRef(null)
+  const formRef = useRef(null)
+  const reopenFocus = useRef(false)
+  const fitRef = useFitToText(title, inputRef)
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+    else if (reopenFocus.current) {
+      reopenFocus.current = false
+      openerRef.current?.focus()
+    }
+  }, [open])
+
+  function close({ focusOpener = false } = {}) {
+    reopenFocus.current = focusOpener
+    setOpen(false)
+    setTitle('')
+    setError(null)
+  }
+
+  async function submit() {
+    const trimmed = title.trim()
+    if (!trimmed || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
+      setTitle('')
+    } catch (err) {
+      setError(err.message || 'Could not add task.')
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  if (!open) {
+    return (
+      <button type="button" ref={openerRef} className="board-add-task" aria-label={`Add task to ${section.name}`} onClick={() => setOpen(true)}>
+        <Plus size={16} aria-hidden="true" />
+        <span>Add task</span>
+      </button>
+    )
+  }
+
+  return (
+    <div
+      ref={formRef}
+      className="board-card board-add-card"
+      onBlur={(e) => {
+        // Leaving an empty card closes it, unless focus went to one of its own buttons.
+        if (!title.trim() && !busy && !formRef.current?.contains(e.relatedTarget)) close()
+      }}
+    >
+      <textarea
+        ref={fitRef}
+        rows={1}
+        className="board-add-title"
+        value={title}
+        onChange={(e) => setTitle(oneLine(e.target.value))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            submit()
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            close({ focusOpener: true })
+          }
+        }}
+        readOnly={busy}
+        placeholder="Write a task name"
+        aria-label={`New task in ${section.name}`}
+      />
+      {error && <div role="alert" className="board-add-error">{error}</div>}
+      <div className="board-add-actions">
+        <button type="button" className="btn btn-primary" disabled={busy || !title.trim()} onClick={submit}>Add task</button>
+        <button type="button" className="btn-ghost" onClick={() => close({ focusOpener: true })}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function Column({ section, tasks, destinations, dueBounds, pendingIds, exitingIds, openMoveId, onToggleMenu, onCloseMenu, onMove, onOpen, onToggleComplete, onCreate }) {
   const [showDone, setShowDone] = useState(false)
-  const active = tasks.filter((t) => t.status !== 'done')
-  const done = tasks.filter((t) => t.status === 'done')
+  // A card being completed stays among the open ones until its celebration ends.
+  const active = tasks.filter((t) => t.status !== 'done' || exitingIds.has(t.id))
+  const done = tasks.filter((t) => t.status === 'done' && !exitingIds.has(t.id))
   const titleId = useId()
+
+  const cardProps = (task) => ({
+    task,
+    dueBounds,
+    pending: pendingIds.has(task.id),
+    onToggleComplete,
+    destinations,
+    onMove,
+    onOpen,
+    menuOpen: openMoveId === task.id,
+    onToggleMenu,
+    onCloseMenu,
+  })
 
   // A labelled region, so a screen reader (and the UI tests) can address a lane by its name.
   return (
     <section aria-labelledby={titleId} className="board-lane">
       <div className="board-lane-head">
-        <h2 id={titleId} className="board-lane-title" style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{section.name}</h2>
-        <div style={{ fontSize: 13, color: 'var(--t3)' }}>{tasks.length}</div>
+        <h2 id={titleId} className="board-lane-title">{section.name}</h2>
+        <div className="board-lane-count">{tasks.length}</div>
       </div>
 
-      {tasks.length === 0 && (
-        <div style={{ fontSize: 13, color: 'var(--t2)', padding: '8px 0' }}>No tasks</div>
-      )}
+      {active.map((task) => <BoardCard key={task.id} {...cardProps(task)} />)}
 
-      {active.map((task) => (
-        <BoardCard
-          key={task.id}
-          task={task}
-          destinations={destinations}
-          onMove={onMove}
-          onOpen={onOpen}
-          menuOpen={openMoveId === task.id}
-          onToggleMenu={onToggleMenu}
-          onCloseMenu={onCloseMenu}
-        />
-      ))}
+      {/* At the top of an empty lane and under the last open card otherwise, as in Asana. */}
+      <LaneAddTask section={section} onCreate={onCreate} />
 
       {done.length > 0 && (
         <>
@@ -253,22 +377,17 @@ function Column({ section, tasks, destinations, openMoveId, onToggleMenu, onClos
             {showDone ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
             <span>{showDone ? 'Hide done' : `Show ${done.length} done`}</span>
           </button>
-          {showDone && done.map((task) => (
-            <BoardCard
-              key={task.id}
-              task={task}
-              destinations={destinations}
-              onMove={onMove}
-              onOpen={onOpen}
-              menuOpen={openMoveId === task.id}
-              onToggleMenu={onToggleMenu}
-              onCloseMenu={onCloseMenu}
-            />
-          ))}
+          {showDone && done.map((task) => <BoardCard key={task.id} {...cardProps(task)} />)}
         </>
       )}
     </section>
   )
+}
+
+const without = (set, id) => {
+  const next = new Set(set)
+  next.delete(id)
+  return next
 }
 
 // `projectId`, when set, is the project the sidebar asked for (App.jsx): it replaces the remembered
@@ -293,6 +412,9 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   const [error, setError] = useState(null)
   const [detailTaskId, setDetailTaskId] = useState(null)
   const [openMoveId, setOpenMoveId] = useState(null)
+  // Cards whose complete or reopen is on its way, and completed cards still celebrating in place.
+  const [pendingIds, setPendingIds] = useState(() => new Set())
+  const [exitingIds, setExitingIds] = useState(() => new Set())
 
   useEffect(() => {
     if (!connected) return
@@ -361,6 +483,43 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     }
   }, [api, board])
 
+  // The list's completion (MyTasksTab.jsx): flip the card at once, keep a completed card in its
+  // place while the check celebrates, then refetch, which files it under the lane's done toggle.
+  const setTaskStatus = useCallback((id, status) => {
+    setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === id ? { ...t, status } : t)) } : b))
+  }, [])
+
+  const handleToggleComplete = useCallback(async (task) => {
+    const wasDone = task.status === 'done'
+    setError(null)
+    setPendingIds((prev) => new Set(prev).add(task.id))
+    if (!wasDone) setExitingIds((prev) => new Set(prev).add(task.id))
+    setTaskStatus(task.id, wasDone ? 'open' : 'done')
+    try {
+      if (wasDone) {
+        await api.reopenTask(task.id)
+      } else {
+        const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
+        await api.completeTask(task.id)
+        await exit
+      }
+      await fetchBoard()
+    } catch (err) {
+      setTaskStatus(task.id, task.status)
+      setError(err.message || 'Could not update that task.')
+    } finally {
+      setPendingIds((prev) => without(prev, task.id))
+      setExitingIds((prev) => without(prev, task.id))
+    }
+  }, [api, fetchBoard, setTaskStatus])
+
+  // A new task from a lane's Add task: this project, that lane's section (null for No section).
+  const handleCreate = useCallback(async (title, sectionId) => {
+    const pid = board?.project?.id || projectRef
+    await api.createTask({ title, projectId: pid, sectionId })
+    await fetchBoard()
+  }, [api, board, projectRef, fetchBoard])
+
   const handleToggleMenu = useCallback((taskId) => {
     setOpenMoveId((prev) => (prev === taskId ? null : taskId))
   }, [])
@@ -368,6 +527,8 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   const handleCloseMenu = useCallback(() => setOpenMoveId(null), [])
 
   if (!connected) return <NotConnected />
+
+  const dueBounds = getDueBounds()
 
   return (
     <div>
@@ -423,11 +584,16 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
               section={section}
               tasks={tasks}
               destinations={destinations}
+              dueBounds={dueBounds}
+              pendingIds={pendingIds}
+              exitingIds={exitingIds}
               openMoveId={openMoveId}
               onToggleMenu={handleToggleMenu}
               onCloseMenu={handleCloseMenu}
               onMove={handleMove}
               onOpen={setDetailTaskId}
+              onToggleComplete={handleToggleComplete}
+              onCreate={handleCreate}
             />
           ))}
         </div>
