@@ -693,6 +693,113 @@ kbd { color: var(--t1); }
 .toolbar-btn.is-active { background: var(--blue-soft); color: var(--blue); border-color: var(--blue); }
 .toolbar-btn.is-active:hover { color: var(--blue); }
 
+/* Filter, Sort, and Group while their setting is in effect: the button ("Filter: 2") and an X
+   that clears it, drawn as one tinted chip as in Asana. The edge is an inset shadow, so the chip
+   is exactly as tall as the 44px buttons in it; the two buttons keep 8px apart, and their focus
+   rings are drawn inside (the outline-offset rule below). */
+.toolbar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+.toolbar-chip.is-active { background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); }
+.toolbar-chip.is-active .toolbar-btn { background: transparent; border-color: transparent; padding-right: 4px; }
+/* Blue on --bg-hover falls short of 4.5:1 in the light theme, so a hovered chip's label turns to
+   --t1, as a plain toolbar button's does. An open one keeps the chip's tint: its popover shows it
+   is open. */
+.toolbar-chip.is-active .toolbar-btn:hover { background: var(--bg-hover); color: var(--t1); }
+.toolbar-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--target);
+  height: var(--target);
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.toolbar-chip-clear:hover { background: var(--bg-hover); }
+
+/* The Filter, Sort, and Group popovers (TaskListToolbar.jsx), laid out as Asana's: a title with
+   Clear or Reset at its right, then the controls. Filter puts its short groups first as chips and
+   its long ones after as rows that open to their lists. */
+.view-pop { padding: 4px 0 8px; }
+.view-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 14px;
+}
+.view-pop-title { min-width: 0; font-size: 15px; font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+.view-pop-reset {
+  min-height: var(--target);
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.view-pop-reset:hover { background: var(--bg-hover); }
+.view-pop-reset:disabled { color: var(--t3); background: transparent; cursor: default; }
+.view-pop-label { padding: 8px 14px 6px; font-size: 12px; color: var(--t2); }
+.view-pop-divided { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--bd); }
+.view-pop-group > .sheet-chips { padding: 0 14px 4px; }
+.view-pop-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 14px; }
+.view-pop-row select {
+  flex: 1 1 120px;
+  min-width: 0;
+  min-height: var(--target);
+  padding: 0 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.filter-section-toggle,
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--target);
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--t1);
+  text-align: left;
+  cursor: pointer;
+}
+.filter-option { padding-left: 40px; }
+.filter-section-name { flex: 1 1 auto; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.filter-section-summary { flex-shrink: 0; font-size: 13px; color: var(--t2); }
+.filter-section-summary.is-set { color: var(--blue); font-weight: 600; }
+.filter-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: 1.5px solid var(--t2);
+  background: transparent;
+  color: var(--on-accent);
+}
+.filter-box.is-checked { border-color: var(--blue); background: var(--blue); }
+
 @media (max-width: 640px) {
   .mytasks-toolbar {
     flex-direction: column;
@@ -843,6 +950,7 @@ kbd { color: var(--t1); }
 .mytasks-list :focus-visible,
 .mytasks-colhead :focus-visible,
 .nav-item:focus-visible,
+.toolbar-chip :focus-visible,
 [data-popover] :focus-visible,
 .surface [role='row']:focus-visible,
 .surface [role='row'] :focus-visible { outline-offset: -2px; }

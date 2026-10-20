@@ -157,18 +157,18 @@ test.describe('keyboard-only sweep', { tag: ['@a11y'] }, () => {
 
 test.describe('roving focus in a menu', { tag: ['@a11y'] }, () => {
   // Menu.jsx (useRovingFocus) handles ArrowDown, ArrowUp, Home, and End; its Popover handles
-  // Escape, closing the menu and returning focus to the trigger. The Sort menu's items come from
-  // SORT_FIELDS in viewState.js, each field ascending then descending.
-  test('the Sort menu moves with ArrowDown, ArrowUp, End, and Home, and Escape returns focus', async ({ page }) => {
+  // Escape, closing the menu and returning focus to the trigger. The top bar's Theme menu is a
+  // Menu on every width: System, Light, Dark.
+  test('the Theme menu moves with ArrowDown, ArrowUp, End, and Home, and Escape returns focus', async ({ page }) => {
     await openView(page)
-    const sort = page.getByRole('button', { name: 'Sort' })
-    await sort.focus()
+    const theme = page.getByRole('button', { name: 'Theme' })
+    await theme.focus()
     await page.keyboard.press('Enter')
-    const menu = page.getByRole('menu', { name: 'Sort tasks' })
+    const menu = page.getByRole('menu', { name: 'Theme' })
     await expect(menu).toBeVisible()
-    const first = menu.getByRole('menuitemcheckbox', { name: 'Due date (ascending)' })
-    const second = menu.getByRole('menuitemcheckbox', { name: 'Due date (descending)' })
-    const last = menu.getByRole('menuitemcheckbox', { name: 'Name (descending)' })
+    const first = menu.getByRole('menuitemradio', { name: 'System' })
+    const second = menu.getByRole('menuitemradio', { name: 'Light' })
+    const last = menu.getByRole('menuitemradio', { name: 'Dark' })
 
     await expect(first).toBeFocused()
     await page.keyboard.press('ArrowDown')
@@ -182,22 +182,60 @@ test.describe('roving focus in a menu', { tag: ['@a11y'] }, () => {
 
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
-    await expect(sort).toBeFocused()
+    await expect(theme).toBeFocused()
   })
 
   test('ArrowDown wraps from the last item to the first, and ArrowUp from the first to the last', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).focus()
+    await page.getByRole('button', { name: 'Theme' }).focus()
     await page.keyboard.press('Enter')
-    const menu = page.getByRole('menu', { name: 'Sort tasks' })
-    const first = menu.getByRole('menuitemcheckbox', { name: 'Due date (ascending)' })
-    const last = menu.getByRole('menuitemcheckbox', { name: 'Name (descending)' })
+    const menu = page.getByRole('menu', { name: 'Theme' })
+    const first = menu.getByRole('menuitemradio', { name: 'System' })
+    const last = menu.getByRole('menuitemradio', { name: 'Dark' })
     await expect(first).toBeFocused()
     await page.keyboard.press('ArrowUp')
     await expect(last).toBeFocused()
     await page.keyboard.press('ArrowDown')
     await expect(first).toBeFocused()
     await page.keyboard.press('Escape')
+  })
+})
+
+// The toolbar's Filter, Sort, and Group open popovers of ordinary controls (TaskListToolbar.jsx):
+// Tab moves between them, a select takes the arrow keys, and Escape closes and returns focus.
+test.describe('the toolbar popovers by keyboard', { tag: ['@a11y'] }, () => {
+  test('Sort opens on its field select, Tab reaches the direction, and Escape returns focus', async ({ page }) => {
+    await openView(page)
+    const sort = page.getByRole('button', { name: 'Sort', exact: true })
+    await sort.focus()
+    await page.keyboard.press('Enter')
+    const pop = page.getByRole('dialog', { name: 'Sort tasks' })
+    await expect(pop.getByRole('combobox', { name: 'Sort by' })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(pop.getByRole('combobox', { name: 'Direction' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+    await expect(sort).toBeFocused()
+  })
+
+  test('Filter opens on its first chip, Space toggles it, and the X beside the button is reachable', async ({ page }) => {
+    await openView(page)
+    const filter = page.getByRole('button', { name: 'Filter', exact: true })
+    await filter.focus()
+    await page.keyboard.press('Enter')
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    const ready = pop.getByRole('button', { name: 'Ready', exact: true })
+    await expect(ready).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(ready).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+    const applied = page.getByRole('button', { name: 'Filter: 1' })
+    await expect(applied).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Clear filters' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(filter).toBeFocused()
   })
 })
 
