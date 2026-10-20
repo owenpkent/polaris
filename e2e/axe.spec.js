@@ -128,8 +128,20 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
   test('the sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    await expect(page.getByRole('menu', { name: 'Sort tasks' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await audit(page, testInfo, 'sort menu open')
+  })
+
+  // The Filter popover with a choice made and a long group open, so the chips, the open list, and
+  // the toolbar's chip with its X are all audited.
+  test('the filter menu', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Filter', exact: true }).click()
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    await pop.getByRole('button', { name: 'Urgent', exact: true }).click()
+    await pop.getByRole('button', { name: 'Project, any' }).click()
+    await expect(pop.getByRole('checkbox', { name: 'No project' })).toBeVisible()
+    await audit(page, testInfo, 'filter menu open')
   })
 
   test('the theme menu', async ({ page }, testInfo) => {

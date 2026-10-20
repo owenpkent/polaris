@@ -122,7 +122,7 @@ describe('RepeatBuilder', () => {
   test('counting from the finish hides the day choices and writes X-FROM; the due date brings them back', () => {
     const onChange = vi.fn()
     render(<Host onChange={onChange} />)
-    const from = screen.getByRole('group', { name: 'Next one counts from' })
+    const from = screen.getByRole('group', { name: 'Counts from' })
     expect(within(from).getByRole('radio', { name: 'The due date' }).checked).toBe(true)
 
     fireEvent.click(within(from).getByRole('radio', { name: 'The day I finish it' }))

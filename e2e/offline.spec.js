@@ -146,15 +146,16 @@ test('a task moved out of a goal\'s project offline leaves the Goal filter', { t
 
   await openView(page, 'mytasks')
   await page.getByRole('button', { name: 'Filter', exact: true }).click()
-  await page.getByRole('menuitemcheckbox', { name: goal }).click()
+  await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Goal, any' }).click()
+  await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('checkbox', { name: goal }).click()
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: 'Filter (1)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
   await expect(page.getByText(title, { exact: true })).toBeVisible()
 
   await goOffline(page)
   await page.reload()
   await expect(page.getByRole('status').filter({ hasText: 'Offline.' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Filter (1)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
   await expect(page.getByText(title, { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: `Change project for ${title}` }).click()

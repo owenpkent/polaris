@@ -119,7 +119,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
   const columns = useColumnsState()
   const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
-  const { view, setSort, setGroup, toggleFilter, clearFilters } = useViewState()
+  const { view, setSort, setGroup, toggleFilter, clearFilters, resetSort } = useViewState()
 
   const projectNameById = useMemo(() => {
     const map = new Map()
@@ -483,6 +483,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           tasks={tasks}
           view={view}
           onSetSort={setSort}
+          onResetSort={resetSort}
           onSetGroup={setGroup}
           onToggleFilter={toggleFilter}
           onClearFilters={clearFilters}

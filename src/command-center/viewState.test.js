@@ -446,6 +446,20 @@ describe('useViewState', () => {
     expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
   })
 
+  test('resetSort goes back to due date ascending and leaves the rest alone', () => {
+    const { result } = renderHook(() => useViewState())
+    act(() => {
+      result.current.setSort('priority', 'desc')
+      result.current.setGroup('project')
+    })
+    act(() => {
+      result.current.resetSort()
+    })
+    expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
+    expect(result.current.view.group).toBe('project')
+    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort).toEqual({ field: 'due', dir: 'asc' })
+  })
+
   test('setSort respects an explicit direction argument', () => {
     const { result } = renderHook(() => useViewState())
     act(() => {

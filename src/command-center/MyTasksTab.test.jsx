@@ -217,12 +217,12 @@ describe('MyTasksTab goal filter', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('The Goal filter is on, but the goals could not be loaded.')
     expect(alert.textContent).toContain('Request failed (500)')
-    expect(screen.getByRole('button', { name: 'Filter (1)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filter: 1' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Open Sign the build' })).toBeNull()
 
     // The chosen goal stays in the filter menu, so it can be switched off without the goals.
-    fireEvent.click(screen.getByRole('button', { name: 'Filter (1)' }))
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Goal not loaded' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Filter: 1' }))
+    expect(screen.getByRole('checkbox', { name: 'Goal not loaded' }).getAttribute('aria-checked')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })
 
     api.listGoals.mockResolvedValue({ goals: [SHIP] })
@@ -306,14 +306,14 @@ describe('MyTasksTab readiness filter', () => {
     expect(api.getView).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
-    const ready = screen.getByRole('menuitemcheckbox', { name: 'Ready' })
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Blocked' }).getAttribute('aria-checked')).toBe('false')
+    const ready = screen.getByRole('button', { name: 'Ready' })
+    expect(screen.getByRole('button', { name: 'Blocked' }).getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(ready)
     await waitFor(() => expect(api.getView).toHaveBeenCalledWith('ready'))
     expect(await screen.findByRole('button', { name: 'Open Free to start' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open Must finish first' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Open Held back' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Filter (1)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filter: 1' })).toBeTruthy()
     expect(api.getView).not.toHaveBeenCalledWith('blocked')
   })
 
@@ -326,7 +326,7 @@ describe('MyTasksTab readiness filter', () => {
     expect(await screen.findByRole('button', { name: 'Open Held back' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Open Free to start' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Filter (1)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Filter: 1' }))
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(await screen.findByRole('button', { name: 'Open Free to start' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open Held back' })).toBeTruthy()
@@ -342,7 +342,7 @@ describe('MyTasksTab readiness filter', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('The Ready filter is on, but its tasks could not be loaded.')
     expect(alert.textContent).toContain('Request failed (500)')
-    expect(screen.getByRole('button', { name: 'Filter (1)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Filter: 1' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Open Free to start' })).toBeNull()
 
     api.getView.mockResolvedValue(READY)
@@ -374,19 +374,24 @@ describe('MyTasksTab assignee filter', () => {
     expect(await screen.findByRole('button', { name: 'Open Sign the build' })).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
-    const unassigned = screen.getByRole('menuitemcheckbox', { name: 'Unassigned' })
+    // The long groups are closed rows until opened; none has anything chosen yet.
+    expect(screen.queryByRole('checkbox', { name: 'Unassigned' })).toBeNull()
+    const assignee = screen.getByRole('button', { name: 'Assignee, any' })
+    expect(assignee.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(assignee)
+    const unassigned = screen.getByRole('checkbox', { name: 'Unassigned' })
     expect(unassigned.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('menuitemcheckbox', { name: 'scribe' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'scribe' })).toBeTruthy()
     fireEvent.click(unassigned)
 
-    expect(screen.getByRole('button', { name: 'Filter (1)' })).toBeTruthy()
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Unassigned' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Filter: 1' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'Unassigned' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.queryByRole('button', { name: 'Open Sign the build' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open File the receipts' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Unassigned' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'scribe' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Unassigned' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'scribe' }))
     expect(screen.getByRole('button', { name: 'Open Sign the build' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Open Water the plants' })).toBeNull()
 

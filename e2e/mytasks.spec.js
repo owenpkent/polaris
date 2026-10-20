@@ -310,8 +310,11 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('sorting by name descending reorders rows inside a group', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Name (descending)' }).click()
+    const sort = page.getByRole('dialog', { name: 'Sort tasks' })
+    await sort.getByRole('combobox', { name: 'Sort by' }).selectOption('name')
+    await sort.getByRole('combobox', { name: 'Direction' }).selectOption('desc')
     await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Name, descending' })).toBeVisible()
     await expect(row(page, 'Review dashboard focus ring contrast')).toBeVisible()
     const labels = await page
       .getByRole('button', { name: /^Open Re(ply to accessibility|view dashboard)/ })
@@ -322,7 +325,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('filtering by Urgent leaves only urgent tasks and Clear filters restores the rest', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter' }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Urgent' }).click()
+    await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
     await expect(row(page, 'Reply to accessibility audit feedback')).toBeVisible()
     await expect(row(page, 'Renew domain for the portfolio site')).toHaveCount(0)
     await page.getByRole('button', { name: 'Clear filters' }).click()
@@ -343,9 +347,11 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(panel).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Filter', exact: true }).click()
-    await page.getByRole('menuitemcheckbox', { name: goal }).click()
+    const filter = page.getByRole('dialog', { name: 'Filter tasks' })
+    await filter.getByRole('button', { name: 'Goal, any' }).click()
+    await filter.getByRole('checkbox', { name: goal }).click()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Filter (1)' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
     await expect(row(page, title)).toBeVisible()
     await expect(row(page, 'Renew domain for the portfolio site')).toHaveCount(0)
 
@@ -363,9 +369,10 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('Blocked leaves the held task, whose panel names its blocker, and Ready leaves the blocker', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter', exact: true }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Blocked' }).click()
+    const filter = page.getByRole('dialog', { name: 'Filter tasks' })
+    await filter.getByRole('button', { name: 'Blocked', exact: true }).click()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Filter (1)' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
     await expect(row(page, 'Assemble the standing desk')).toBeVisible()
     await expect(row(page, 'Choose a standing desk')).toHaveCount(0)
     await expect(row(page, 'Reply to accessibility audit feedback')).toHaveCount(0)
@@ -378,26 +385,58 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Escape')
     await expect(panel).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Filter (1)' }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Blocked' }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Ready' }).click()
+    await page.getByRole('button', { name: 'Filter: 1' }).click()
+    await filter.getByRole('button', { name: 'Blocked', exact: true }).click()
+    await filter.getByRole('button', { name: 'Ready', exact: true }).click()
     await page.keyboard.press('Escape')
     await expect(row(page, 'Choose a standing desk')).toBeVisible()
     await expect(row(page, 'Reply to accessibility audit feedback')).toBeVisible()
     await expect(row(page, 'Assemble the standing desk')).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Filter (1)' }).click()
+    await page.getByRole('button', { name: 'Filter: 1' }).click()
     await page.getByRole('button', { name: 'Clear filters' }).click()
     await page.keyboard.press('Escape')
     await expect(row(page, 'Assemble the standing desk')).toBeVisible()
   })
 
-  test('the sort menu closes on Esc', async ({ page }) => {
+  test('the sort popover closes on Esc', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    await expect(page.getByRole('menu', { name: 'Sort tasks' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('menu', { name: 'Sort tasks' })).toHaveCount(0)
+    await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toHaveCount(0)
+  })
+
+  // Asana's toolbar: what is applied shows on the button, and the X beside it clears it.
+  test('the toolbar names an applied filter, sort, and grouping, and each X clears its own', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('priority')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('priority')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Filter', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true }).click()
+    await page.keyboard.press('Escape')
+
+    const toolbar = page.getByRole('toolbar', { name: 'Tasks' })
+    await expect(toolbar.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
+    await expect(toolbar.getByRole('button', { name: 'Sort: Priority, ascending' })).toBeVisible()
+    await expect(toolbar.getByRole('button', { name: 'Group: Priority' })).toBeVisible()
+    await expect(row(page, 'Renew domain for the portfolio site')).toHaveCount(0)
+
+    // The choices are kept across a reload, in the same saved form as before.
+    await page.reload()
+    await expect(toolbar.getByRole('button', { name: 'Filter: 1' })).toBeVisible()
+
+    await toolbar.getByRole('button', { name: 'Clear filters' }).click()
+    await expect(toolbar.getByRole('button', { name: 'Filter', exact: true })).toBeFocused()
+    await toolbar.getByRole('button', { name: 'Reset sort' }).click()
+    await expect(toolbar.getByRole('button', { name: 'Sort', exact: true })).toBeFocused()
+    await toolbar.getByRole('button', { name: 'Reset grouping' }).click()
+    await expect(toolbar.getByRole('button', { name: 'Group', exact: true })).toBeFocused()
+    await expect(toolbar.getByRole('button', { name: /^(Clear filters|Reset sort|Reset grouping)$/ })).toHaveCount(0)
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {

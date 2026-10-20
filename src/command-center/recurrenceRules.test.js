@@ -313,7 +313,8 @@ describe('frequencyOf and frequencyRule', () => {
   test('name the Repeats choice a rule is', () => {
     expect(frequencyOf('', '2026-10-20')).toBe('none')
     expect(frequencyOf('daily', '2026-10-20')).toBe('daily')
-    expect(frequencyOf('FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH', '2026-10-20')).toBe('weekly')
+    expect(frequencyOf('FREQ=WEEKLY;BYDAY=TU,TH', '2026-10-20')).toBe('weekly')
+    expect(frequencyOf('FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH', '2026-10-20')).toBe('custom')
     expect(frequencyOf('FREQ=MONTHLY;BYDAY=1FR', '2026-10-20')).toBe('monthly')
     expect(frequencyOf('yearly', '2026-10-20')).toBe('yearly')
     expect(frequencyOf('FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION', '2026-10-20')).toBe('periodic')
