@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets, applyViewSettings } from './support.js'
+import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -331,6 +331,22 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page, 'board')
     await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
     await expect(page.getByRole('region', { name: 'No section', exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test('the Board cards with due dates, a repeat, and assignees', async ({ page }) => {
+    await boardCardExtras(page)
+    await openView(page, 'board')
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test("the Board with a lane's Add task open on a long name", async ({ page }) => {
+    await openView(page, 'board')
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
+    const lane = page.getByRole('region', { name: 'No section', exact: true })
+    await lane.getByRole('button', { name: 'Add task to No section' }).click()
+    await lane.getByRole('textbox', { name: 'New task in No section' }).fill(`A new card${LONG_SUFFIX}${LONG_SUFFIX}`)
     await expectNothingCutOff(page)
   })
 

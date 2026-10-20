@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -449,6 +449,24 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.getByRole('button', { name: 'Accept' }).first().click()
     await expect(page.getByRole('button', { name: 'Accept as task' })).toBeVisible()
     await shot(page, testInfo, 'inbox', 'accept')
+  })
+
+  // The seeded cards with due dates (today, tomorrow, overdue), a repeat, and assignees, which the
+  // seed leaves off (boardCardExtras in e2e/support.js).
+  test('board: cards', async ({ page }, testInfo) => {
+    await boardCardExtras(page)
+    await openView(page, 'board')
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
+    await shot(page, testInfo, 'board', 'cards')
+  })
+
+  // A lane's Add task open, with a name typed in.
+  test('board: add task', async ({ page }, testInfo) => {
+    await openView(page, 'board')
+    const lane = page.getByRole('region', { name: 'Doing', exact: true })
+    await lane.getByRole('button', { name: 'Add task to Doing' }).click()
+    await lane.getByRole('textbox', { name: 'New task in Doing' }).fill('Write the release notes for the board')
+    await shot(page, testInfo, 'board', 'add-task')
   })
 
   for (const view of ['board', 'goals', 'projects', 'checklists', 'rules', 'github']) {
