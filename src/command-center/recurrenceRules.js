@@ -336,14 +336,16 @@ export function matchQuickPick(rule, dueIso) {
 
 // The Repeats choice a rule is, as the add-task picker (RepeatPicker in RepeatBuilder.jsx) lists
 // them after Asana's: 'none', 'daily', 'weekly', 'monthly', 'yearly', 'periodic' (counted from the
-// day the task is finished), or 'custom' for a rule that needs the full builder (an end, the last
-// day of February, or one the builder cannot show).
+// day the task is finished), or 'custom' for a rule that needs the full builder (an end, every
+// two or more, the last day of February, or one the builder cannot show). As in Asana, every N
+// is a Custom choice except for Periodically, whose N is its one setting.
 const FREQUENCY_OF_UNIT = { day: 'daily', week: 'weekly', month: 'monthly', year: 'yearly' }
 export function frequencyOf(rule, dueIso) {
   if (!String(rule || '').trim()) return 'none'
   const shape = parseRule(rule, dueIso)
   if (!shape || shape.ends !== 'never' || shape.yearLastFeb) return 'custom'
   if (shape.fromCompletion) return 'periodic'
+  if (shape.interval > 1) return 'custom'
   return FREQUENCY_OF_UNIT[shape.unit]
 }
 

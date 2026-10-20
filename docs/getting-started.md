@@ -183,7 +183,7 @@ Projects are never deleted. Archiving one hides it and keeps its tasks.
 
 ### Step 2: Add a few tasks
 
-On **My tasks**, click **Add task** and give it a name. To give it a due date or make it repeat, use the date button beside the name, or press Enter: pick a day, choose how often it repeats under **Repeats**, then click **Add task**. Set its project afterwards from the row's Project cell. On a phone, the floating **New task** button opens a sheet with the same Due date and Repeats choices and a Project field, and **Create** adds the task. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
+On **My tasks**, click **Add task**, give it a name, and press Enter: it is added on the group's date, and the row empties so you can type the next one (Esc closes it). To give it another due date or make it repeat, use the date button beside the name before Enter: pick a day, choose how often it repeats under **Repeats**, then click **Add task**. Set its project afterwards from the row's Project cell. On a phone, the floating **New task** button opens a sheet with the same Due date and Repeats choices and a Project field, and **Create** adds the task. Add two or three more. Click a task to open its panel, where you can set its due date, priority, status, notes, recurrence, and assignee, comment on it, and see its subtasks and anything blocking it.
 
 The toolbar filters by readiness (Ready: could be started now; Blocked: waiting on an unfinished task), project, goal, priority, source, and assignee. You can also click a row's due date, project, or priority to change it in place.
 

@@ -111,6 +111,24 @@ export async function listTaskTitles(request) {
   return (body.tasks || []).filter((t) => ACTIVE.has(t.status)).map((t) => t.title)
 }
 
+// Applies a filter (Urgent), a sort (Name, descending), and a grouping (Project) from the My tasks
+// toolbar's popovers, closing each, so the toolbar shows all three as chips with their X buttons.
+// The choices live in this browser's storage only; nothing on the server changes.
+export async function applyViewSettings(page) {
+  await page.getByRole('button', { name: 'Filter', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Sort', exact: true }).click()
+  const sort = page.getByRole('dialog', { name: 'Sort tasks' })
+  await sort.getByRole('combobox', { name: 'Sort by' }).selectOption('name')
+  await sort.getByRole('combobox', { name: 'Direction' }).selectOption('desc')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Group', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('project')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Group: Project' }).waitFor()
+}
+
 // Opens a task's detail panel by clicking its title. Clicking the middle of a desktop row would
 // land on an inline cell (due date, project, priority) and open that cell's menu instead.
 export async function openTask(page, title) {
@@ -903,6 +921,39 @@ export async function longNames(page) {
         if (!(response.headers()['content-type'] || '').includes('json')) return await route.fulfill({ response })
         const body = await response.json()
         lengthen(body)
+        await route.fulfill({ response, json: body })
+      } catch {
+        // gone
+      }
+    }
+  )
+}
+
+// The seeded Board cards with what a card can carry and the seed leaves off: due dates (today,
+// tomorrow, overdue, later in the week), a repeat, and an assignee, for a shot or a check that
+// needs to see them. The project's answer is rewritten on its way to the page, as longNames does,
+// so the shared seeded project is never changed. Days count from the browser's frozen clock.
+export async function boardCardExtras(page) {
+  const now = await page.evaluate(() => Date.now()).catch(() => Date.now())
+  const day = (n) => {
+    const d = new Date(now)
+    d.setDate(d.getDate() + n)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const extras = {
+    'Board card alpha': { dueAt: day(0), assignee: 'Sam Rivera' },
+    'Board card beta': { dueAt: day(1) },
+    'Board card gamma': { dueAt: day(-2), recurrence: 'FREQ=WEEKLY;BYDAY=MO' },
+    'Board milestone delta': { dueAt: day(4), assignee: 'Alex Chen' },
+  }
+  await page.route(
+    (url) => /^\/api\/projects\/[^/]+$/.test(url.pathname),
+    async (route) => {
+      if (!isGet(route)) return route.fallback()
+      try {
+        const response = await route.fetch()
+        const body = await response.json()
+        for (const task of body.tasks || []) Object.assign(task, extras[task.title] || {})
         await route.fulfill({ response, json: body })
       } catch {
         // gone

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
+import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -113,6 +113,24 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // A long name with Waiting and a subtask count after it (TaskRow.jsx): the name is shortened,
+  // never what follows it, and the subtasks shown under it, indented, keep their columns.
+  test('a long waiting title with its subtasks shown under it', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const title = await createTask(request, testInfo, `${WORDY} parent`, { status: 'waiting' })
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title)
+    for (const sub of [`${WORDY} first subtask`, `${WORDY} second subtask`]) {
+      const res = await request.post('/api/tasks', { headers, data: { title: `${sub} ${testInfo.project.name}`, parentId: parent.id } })
+      expect(res.ok()).toBeTruthy()
+    }
+    await openView(page)
+    const toggle = page.getByRole('button', { name: `2 open subtasks of ${title}`, exact: true })
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('button', { name: `Open ${WORDY} first subtask ${testInfo.project.name}`, exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
   test('the sort, filter, and group menus', async ({ page }) => {
     await openView(page)
     for (const name of ['Sort', 'Filter', 'Group']) {
@@ -120,6 +138,23 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       await expectNothingCutOff(page)
       await page.keyboard.press('Escape')
     }
+  })
+
+  // The Filter popover at its tallest, every long group open, and the toolbar with all three
+  // settings applied, where each button carries its value and an X and the row has to wrap.
+  test('the filter menu with every group open, and the toolbar with settings applied', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Filter', exact: true }).click()
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    for (const name of ['Project', 'Goal', 'Source', 'Assignee']) await pop.getByRole('button', { name: `${name}, any` }).click()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+
+    await applyViewSettings(page)
+    await expectNothingCutOff(page)
+    await page.getByRole('button', { name: 'Sort: Name, descending' }).click()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
   })
 
   // The due date picker opens on the month, which has to fit seven 44px days at 320px (the
@@ -198,7 +233,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     } else {
       await page.getByRole('button', { name: 'Add task' }).first().click()
       await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
       scope = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     }
     await expect(scope.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
@@ -215,7 +250,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     await expect(due.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
     // Seen as it opens, before the cut-off check scrolls any control into view: the popover is not
@@ -237,7 +272,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
     await page.getByRole('textbox', { name: 'New task name' }).fill(WORDY)
-    await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = page.getByRole('dialog', { name: `Due date for ${WORDY}` })
     await due.getByRole('button', { name: 'Add time' }).click()
     await expect(due.getByLabel('Time', { exact: true })).toBeFocused()
@@ -314,6 +349,22 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page, 'board')
     await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
     await expect(page.getByRole('region', { name: 'No section', exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test('the Board cards with due dates, a repeat, and assignees', async ({ page }) => {
+    await boardCardExtras(page)
+    await openView(page, 'board')
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test("the Board with a lane's Add task open on a long name", async ({ page }) => {
+    await openView(page, 'board')
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
+    const lane = page.getByRole('region', { name: 'No section', exact: true })
+    await lane.getByRole('button', { name: 'Add task to No section' }).click()
+    await lane.getByRole('textbox', { name: 'New task in No section' }).fill(`A new card${LONG_SUFFIX}${LONG_SUFFIX}`)
     await expectNothingCutOff(page)
   })
 

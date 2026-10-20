@@ -1,7 +1,8 @@
 import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
+import { TOKEN } from './server.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -255,7 +256,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     } else {
       await page.getByRole('button', { name: 'Add task' }).first().click()
       await page.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
       await expect(page.getByRole('heading', { name: 'When is it due?' })).toBeVisible()
     }
     await shot(page, testInfo, 'mytasks', 'new-due-step')
@@ -349,7 +350,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    if (phone(testInfo)) await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    else await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     await page.getByRole('button', { name: 'Add time' }).click()
     await page.getByLabel('Time', { exact: true }).fill('09:30')
     await shot(page, testInfo, 'mytasks', 'new-due-step-time')
@@ -366,32 +368,74 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       await page.getByRole('button', { name: 'Add task' }).first().click()
     }
     await scope.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
-    await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    if (phone(testInfo)) await scope.getByRole('textbox', { name: 'New task name' }).press('Enter')
+    else await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const due = phone(testInfo) ? scope : page.getByRole('dialog', { name: 'Due date for Book the van service' })
     await due.getByRole('combobox', { name: 'Repeats' }).selectOption('weekly')
     await expect(due.getByRole('grid').getByRole('button', { name: /, repeats$/ }).first()).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'new-due-step-repeat')
   })
 
+  // A task's subtask count after its name, pressed: its open subtasks as rows under it.
+  test('mytasks: subtasks', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const parentTitle = await createTask(request, testInfo, 'Pack for the trip')
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    for (const sub of ['Find the charger', 'Book the accessible taxi']) {
+      expect((await request.post('/api/tasks', { headers, data: { title: sub, parentId: parent.id } })).ok()).toBeTruthy()
+    }
+    await openView(page)
+    const toggle = page.getByRole('button', { name: `2 open subtasks of ${parentTitle}`, exact: true })
+    await toggle.click()
+    await expect(page.getByRole('button', { name: 'Open Book the accessible taxi', exact: true }).first()).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'subtasks')
+  })
+
   test('mytasks: sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()
-    await expect(page.getByRole('menu', { name: 'Sort tasks' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'sort-menu')
   })
 
   test('mytasks: filter menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter' }).click()
-    await expect(page.getByRole('menuitemcheckbox', { name: 'Urgent' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Urgent', exact: true })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'filter-menu')
+  })
+
+  // A chip pressed and the Project list open, with one project chosen: the toolbar reads Filter: 2.
+  test('mytasks: filter menu with choices', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Filter' }).click()
+    const pop = page.getByRole('dialog', { name: 'Filter tasks' })
+    await pop.getByRole('button', { name: 'Urgent', exact: true }).click()
+    await pop.getByRole('button', { name: 'Project, any' }).click()
+    await pop.getByRole('checkbox').first().click()
+    await expect(page.getByRole('button', { name: 'Filter: 2' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'filter-menu-choices')
+  })
+
+  test('mytasks: group menu', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Group tasks' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'group-menu')
+  })
+
+  // A filter, a sort, and a grouping applied: each shows on its button, with an X beside it.
+  test('mytasks: view settings applied', async ({ page }, testInfo) => {
+    await openView(page)
+    await applyViewSettings(page)
+    await shot(page, testInfo, 'mytasks', 'view-settings-applied')
   })
 
   // The list with the Blocked filter on: only the seeded task that another task holds.
   test('mytasks: blocked filter', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter', exact: true }).click()
-    await page.getByRole('menuitemcheckbox', { name: 'Blocked' }).click()
+    await page.getByRole('dialog', { name: 'Filter tasks' }).getByRole('button', { name: 'Blocked', exact: true }).click()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('button', { name: 'Open Assemble the standing desk' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Open Choose a standing desk' })).toHaveCount(0)
@@ -455,6 +499,24 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.getByRole('button', { name: 'Accept' }).first().click()
     await expect(page.getByRole('button', { name: 'Accept as task' })).toBeVisible()
     await shot(page, testInfo, 'inbox', 'accept')
+  })
+
+  // The seeded cards with due dates (today, tomorrow, overdue), a repeat, and assignees, which the
+  // seed leaves off (boardCardExtras in e2e/support.js).
+  test('board: cards', async ({ page }, testInfo) => {
+    await boardCardExtras(page)
+    await openView(page, 'board')
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
+    await shot(page, testInfo, 'board', 'cards')
+  })
+
+  // A lane's Add task open, with a name typed in.
+  test('board: add task', async ({ page }, testInfo) => {
+    await openView(page, 'board')
+    const lane = page.getByRole('region', { name: 'Doing', exact: true })
+    await lane.getByRole('button', { name: 'Add task to Doing' }).click()
+    await lane.getByRole('textbox', { name: 'New task in Doing' }).fill('Write the release notes for the board')
+    await shot(page, testInfo, 'board', 'add-task')
   })
 
   for (const view of ['board', 'goals', 'projects', 'checklists', 'rules', 'github']) {

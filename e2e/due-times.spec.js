@@ -120,7 +120,7 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     } else {
       await page.getByRole('button', { name: 'Add task' }).first().click()
       await page.getByRole('textbox', { name: 'New task name' }).fill(title)
-      await page.getByRole('textbox', { name: 'New task name' }).press('Enter')
+      await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
       scope = page.getByRole('dialog', { name: `Due date for ${title}` })
     }
     await scope.getByRole('button', { name: 'Add time' }).click()
