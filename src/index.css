@@ -2200,7 +2200,8 @@ kbd { color: var(--t1); }
 .repeat-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .repeat-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 .repeat-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--target); font-size: 0.9rem; color: var(--t1); }
-.repeat-preview { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+/* One line high while empty, so the dates arriving do not grow the builder (RepeatBuilder.jsx). */
+.repeat-preview { margin: 0; min-height: 1lh; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 .repeat-note { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {

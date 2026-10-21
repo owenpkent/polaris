@@ -49,7 +49,11 @@ export function previewText(dates, fromCompletion = false) {
 // `value` is the rule string and `onChange` gets the new one (recurrenceRules.js picks the
 // shortest form the server accepts). `dueIso` is the task's due date, which the rule starts from.
 // With `api`, the next three dates are shown under it; `preview` hands in dates already fetched
-// (the add-task picker marks them on its calendar too) so they are not asked for twice.
+// (the add-task picker marks them on its calendar too) so they are not asked for twice. The line
+// holds its place from the start (empty until the dates come, or for good when they cannot), so
+// their arrival never grows the builder: a due date popover that opens upward from a row low on
+// the screen is anchored at its bottom, and growth would move every control above the line,
+// quick dates and month included, from under the owner's pointer.
 //
 // `compact` is the add-task picker's form (RepeatPicker below): the unit is the Repeats choice
 // above it, so it shows as words, and the from-the-finish and Ends choices are left to Custom. A
@@ -262,7 +266,11 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
       </fieldset>
       )}
 
-      {previewText(dates, shape.fromCompletion) && <p className="repeat-preview" role="status">{previewText(dates, shape.fromCompletion)}</p>}
+      {(preview !== undefined || api?.previewRecurrence) && (
+        <p className="repeat-preview" role={previewText(dates, shape.fromCompletion) ? 'status' : undefined}>
+          {previewText(dates, shape.fromCompletion)}
+        </p>
+      )}
     </div>
   )
 }
