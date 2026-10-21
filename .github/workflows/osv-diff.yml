@@ -104,7 +104,7 @@ jobs:
           echo "RESULTS_DIR=$RESULTS_DIR" >> "$GITHUB_ENV"
       - name: Scan the merge base
         id: scan-old
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         continue-on-error: true
         with:
           scan-args: |-
@@ -139,7 +139,7 @@ jobs:
           ls -l old-results.json new-results.json results.sarif
       - name: Scan the pull request head
         id: scan-new
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         continue-on-error: true
         with:
           scan-args: |-
@@ -172,7 +172,7 @@ jobs:
       # self-test can require a failure where the gate requires a pass.
       - name: Report what the pull request introduces
         id: report
-        uses: google/osv-scanner-action/osv-reporter-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-reporter-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         continue-on-error: true
         with:
           scan-args: |-
