@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, SquareTerminal } from 'lucide-react'
 import { Popover, useRovingFocus } from './Menu'
 
 // "Hand off to Claude Code" header menu: builds a prompt for a coding agent
@@ -8,22 +8,6 @@ import { Popover, useRovingFocus } from './Menu'
 // project has one, and opens VS Code at the line for a task that still carries
 // a vscode:// source from the removed code TODO scan. Shown for every task.
 // Nothing here writes anywhere -- Polaris never writes to a repo or GitHub.
-
-const headerMenuBtnStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-  height: 44,
-  padding: '0 14px',
-  border: '1px solid var(--bd-strong)',
-  borderRadius: 8,
-  background: 'var(--raised)',
-  boxShadow: 'var(--shadow-btn)',
-  color: 'var(--t1)',
-  fontSize: 14,
-  flexShrink: 0,
-  whiteSpace: 'nowrap',
-}
 
 const menuItemStyle = {
   display: 'flex',
@@ -133,18 +117,23 @@ export default function HandoffMenu({ task, project, onNotice }) {
   const sourceIsVscode = typeof task.sourceUrl === 'string' && task.sourceUrl.startsWith('vscode://')
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="panel-handoff" style={{ position: 'relative' }}>
+      {/* A quiet toolbar button in the panel's header row (TaskDetailPanel.jsx): "Hand off" beside
+          the icon on a wide screen, the icon alone on a phone (.panel-action-label in index.css).
+          Its name is the menu's, and the menu items say in words what each one does. */}
       <button
         type="button"
         ref={btnRef}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Hand off to Claude Code"
+        title="Hand off to Claude Code"
         onClick={() => setOpen((v) => !v)}
-        className="hover-surface"
-        style={headerMenuBtnStyle}
+        className="toolbar-btn panel-action"
       >
-        <span>Hand off to Claude Code</span>
-        <ChevronDown size={14} aria-hidden="true" />
+        <SquareTerminal size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <span className="panel-action-label">Hand off</span>
+        <ChevronDown size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
       </button>
       <Popover anchorRef={btnRef} open={open} onClose={closeMenu} minWidth={240}>
         <div ref={listRef} role="menu" aria-label="Hand off to Claude Code" onKeyDown={onKeyDown} style={{ padding: '6px 0' }}>

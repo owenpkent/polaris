@@ -166,6 +166,27 @@ describe('RepeatBuilder', () => {
     await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalled())
     expect(screen.queryByRole('status')).toBeNull()
   })
+
+  // The dates come a moment after the builder shows. Their line is there, empty, from the start,
+  // so a picker placed before they arrive does not grow and move when they do.
+  test('holds the line for the next dates while they load', async () => {
+    let resolve
+    const api = { previewRecurrence: vi.fn(() => new Promise((r) => { resolve = r })) }
+    const { container } = render(<Host api={api} />)
+    const line = container.querySelector('.repeat-preview')
+    expect(line).not.toBeNull()
+    expect(line.textContent).toBe('')
+    expect(screen.queryByRole('status')).toBeNull()
+    await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalled())
+    resolve({ dates: ['2026-10-24'] })
+    expect(await screen.findByRole('status')).toBe(line)
+    expect(line.textContent).toBe('Next: Sat, Oct 24')
+  })
+
+  test('has no line for the dates without a way to ask for them', () => {
+    const { container } = render(<Host />)
+    expect(container.querySelector('.repeat-preview')).toBeNull()
+  })
 })
 
 describe('previewText', () => {

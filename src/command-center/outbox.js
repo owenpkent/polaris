@@ -110,7 +110,9 @@ async function findCachedTask(baseUrl, id) {
   if (detail?.data?.task) return detail.data.task
   let found = null
   await cachePatchAll((data) => {
-    if (!found && Array.isArray(data?.tasks)) found = data.tasks.find((t) => t?.id === id) || null
+    for (const key of ['tasks', 'subtasks']) {
+      if (!found && Array.isArray(data?.[key])) found = data[key].find((t) => t?.id === id) || null
+    }
     return undefined
   })
   return found
@@ -167,9 +169,14 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
   await refreshPendingCount(origin)
 
   if (kind === 'create_task') {
+    // A subtask made with no project of its own takes its parent's, as Store.createTask does on
+    // the server (and will again when this op is replayed), so the copy shows it under the
+    // parent's project at once: in My tasks, in the project's board, and in its own Project
+    // field. Only the project is inherited there; the section is not.
+    const parent = opBody.parentId && opBody.projectId == null ? await findCachedTask(baseUrl, opBody.parentId) : null
     const task = {
-      notes: '', priority: 'none', dueAt: null, startAt: null, projectId: null, sectionId: null, parentId: null,
-      recurrence: null, assignee: null, ...opBody,
+      notes: '', priority: 'none', dueAt: null, startAt: null, sectionId: null, parentId: null,
+      recurrence: null, assignee: null, ...opBody, projectId: opBody.projectId ?? parent?.projectId ?? null,
       id: taskId, status: 'open', sourceType: null, sourceUrl: opBody.sourceUrl ?? null, untrustedText: false, customFields: {},
       createdAt: at, updatedAt: at, completedAt: null, offlineCreated: true,
     }

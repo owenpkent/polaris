@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useId } from 'react'
-import { X, Check, Calendar, ChevronDown, ChevronRight, Plus, Repeat } from 'lucide-react'
+import { X, Check, Calendar, ChevronDown, ChevronRight, Plus, Repeat, Bot, UserX } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
 import { Loading, ErrorBanner, StatusChip, ProjectChip, Avatar, formatDate, PRIORITY_COLORS, STATUS_LABELS } from './shared'
@@ -415,22 +415,6 @@ function IconButton({ children, onClick, ariaLabel }) {
 
 const sectionHeading = { fontSize: 14, fontWeight: 600, color: 'var(--t1)' }
 
-// The outlined 44px control shared by the header buttons here (Mark complete, Assign to, Take
-// back). Hand off to Claude Code is deliberately a different, raised style (HandoffMenu.jsx).
-const headerBtnStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  height: 44,
-  padding: '0 16px',
-  border: '1px solid var(--bd-strong)',
-  borderRadius: 8,
-  background: 'transparent',
-  color: 'var(--t1)',
-  fontSize: 14,
-  whiteSpace: 'nowrap',
-}
-
 // Elements the Tab-trap cycles between (mirrors NavDrawer's focus trap).
 const FOCUSABLE_SELECTOR =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]'
@@ -450,6 +434,24 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // unmounts both and mounts new ones, which must be measured even when the text is the same.
   const titleRef = useFitToText(form?.title)
   const assigneeRef = useFitToText(form?.assignee)
+  // Notes grow with their text too, so the box has no frame or scroll bar of its own at rest.
+  const notesRef = useFitToText(form?.notes)
+  const notesId = useId()
+  // The header row draws its bottom line only once the panel has scrolled under it.
+  const [scrolled, setScrolled] = useState(false)
+  // Add subtask: the name box at the end of the list, open after the header's + or the
+  // Add subtask row is used, and the name typed there.
+  const [addingSubtask, setAddingSubtask] = useState(false)
+  const [subtaskDraft, setSubtaskDraft] = useState('')
+  const [subtaskBusy, setSubtaskBusy] = useState(false)
+  const subtaskInputRef = useRef(null)
+  const addSubtaskRowRef = useRef(null)
+  useEffect(() => { setAddingSubtask(false); setSubtaskDraft(''); setSubtaskBusy(false) }, [taskId])
+  // Which opening of the panel this render belongs to: the count goes up each time the panel
+  // moves to another task. A request made under an earlier task (a load, or a subtask create)
+  // checks it before writing anything, so its answer never lands in the task now shown.
+  const openingRef = useRef({ taskId, seq: 0 })
+  if (openingRef.current.taskId !== taskId) openingRef.current = { taskId, seq: openingRef.current.seq + 1 }
   const [projectInfo, setProjectInfo] = useState(null)
   const [subtaskPending, setSubtaskPending] = useState(() => new Set())
   // The check that celebrates a completion: the task's own button, or the subtask last ticked.
@@ -505,12 +507,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // sent: those fields count as changed only if they moved on since, so the
   // server's version (a trimmed title, say) replaces what was sent.
   const load = useCallback(async ({ quiet = false, sent = {} } = {}) => {
+    const opening = openingRef.current.seq
+    const stale = () => openingRef.current.seq !== opening
     if (!quiet) {
       setLoading(true)
       setError(null)
     }
     try {
       const res = await api.getTask(taskId)
+      // The panel has moved to another task meanwhile: this answer belongs to the old one.
+      if (stale()) return
       const fresh = {
         title: res.task.title || '',
         notes: res.task.notes || '',
@@ -536,9 +542,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         return merged
       })
     } catch (err) {
-      if (!quiet) setError(err.message || 'Could not load this task.')
+      if (!quiet && !stale()) setError(err.message || 'Could not load this task.')
     } finally {
-      if (!quiet) setLoading(false)
+      if (!quiet && !stale()) setLoading(false)
     }
   }, [api, taskId])
 
@@ -779,6 +785,48 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     }
   }
 
+  // A subtask is an ordinary task made under this one (the server gives it the parent's project).
+  // The box stays open with focus in it, so a list is typed one name after another, as in Asana.
+  // It stays editable while the create is out, so the next name can be typed on a slow
+  // connection: only the exact text that was sent is cleared, and anything typed since stays.
+  // It works offline like the list's Add task: api.createTask is queued by the outbox as
+  // create_task, and the queued subtask is added to this task's copy (outbox.js, addCreatedTask).
+  async function handleAddSubtask() {
+    const sent = subtaskDraft
+    const title = sent.trim()
+    if (!title || subtaskBusy) return
+    // The panel may have moved to another task by the time the create answers (openingRef). The
+    // list is told either way, but nothing from this task is written into the next one's panel.
+    const opening = openingRef.current.seq
+    const stale = () => openingRef.current.seq !== opening
+    setSaveError(null)
+    setSubtaskBusy(true)
+    try {
+      await api.createTask({ title, parentId: taskId })
+      if (stale()) {
+        onChanged?.()
+        return
+      }
+      setSubtaskDraft((current) => (current === sent ? '' : current))
+      await load({ quiet: true })
+      onChanged?.()
+    } catch (err) {
+      if (!stale()) setSaveError(err.message || 'Could not add that subtask.')
+    } finally {
+      if (!stale()) setSubtaskBusy(false)
+    }
+  }
+
+  function openSubtaskBox() {
+    setAddingSubtask(true)
+    requestAnimationFrame(() => subtaskInputRef.current?.focus())
+  }
+
+  function closeSubtaskBox() {
+    setAddingSubtask(false)
+    setSubtaskDraft('')
+  }
+
   // Puts back what one history entry changed (core/restore.ts). The server
   // says what that would set, as `restore`.
   async function handleRestore(entry) {
@@ -818,6 +866,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const sourceLabel = data?.task ? (SOURCE_LABELS[data.task.sourceType] || 'Manual') : ''
   const subtasks = data?.subtasks || []
   const subtasksDone = subtasks.filter((s) => s.status === 'done').length
+  // Propose, do not act: an inbox item is the owner's to accept before work is planned under it.
+  const canAddSubtask = Boolean(data?.task) && data.task.status !== 'inbox'
 
   return (
     <div
@@ -825,6 +875,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       role="dialog"
       aria-modal="true"
       aria-label="Task details"
+      onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
       style={{
         position: 'fixed',
         top: 56,
@@ -838,36 +889,38 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         zIndex: 200,
         overflowY: 'auto',
         boxSizing: 'border-box',
-        padding: '16px 28px 24px',
+        // No top padding: the sticky header row brings its own, so it sits flush at the top.
+        // A control reached with Tab scrolls clear of that row instead of under it.
+        padding: '0 28px 24px',
+        scrollPaddingTop: 72,
         display: 'flex',
         flexDirection: 'column',
         gap: 20,
       }}
     >
       <div role="status" className="sr-only">{assignNotice}</div>
-      {loading && <Loading label="Loading task…" />}
-      <ErrorBanner message={error} onRetry={load} />
+      {(loading || error) && (
+        // The panel has no top padding of its own (the header row brings it), so these do.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 16 }}>
+          {loading && <Loading label="Loading task…" />}
+          <ErrorBanner message={error} onRetry={load} />
+        </div>
+      )}
 
       {!loading && data && form && (
         <>
-          {/* The actions wrap onto as many rows as they need; Close stays on the first row at the
-              right, so it never drops below them (the phone rule in index.css pins it the same way). */}
-          <div className="task-panel-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
-              <button
-                type="button"
-                className="hover-surface"
-                onClick={handleCompleteToggle}
-                style={{
-                  ...headerBtnStyle,
-                  position: 'relative',
-                  borderRadius: 22,
-                  background: done ? 'var(--green-soft)' : 'transparent',
-                  borderColor: done ? 'var(--green)' : 'var(--bd-strong)',
-                  color: done ? 'var(--green)' : 'var(--t1)',
-                  fontWeight: done ? 600 : 500,
-                }}
-              >
+          {/* One row, as Asana's pane has it: Mark complete on the left, the quiet actions and Close
+              on the right. Close is pinned to the row's top right (index.css), so when the actions
+              cannot all fit (a phone at 320px, a long agent name) they wrap under it and it never
+              moves. The row sticks to the top while the panel scrolls, so the way out and Mark
+              complete stay in reach. */}
+          <div className={scrolled ? 'task-panel-header is-scrolled' : 'task-panel-header'}>
+            <button
+              type="button"
+              className={done ? 'panel-complete is-done' : 'panel-complete'}
+              onClick={handleCompleteToggle}
+            >
+              <span className="panel-complete-pill">
                 {/* Only while done: a failed completion stops the celebration at once. */}
                 <span
                   key={taskCelebration.celebrating && done ? taskCelebration.key : 0}
@@ -877,29 +930,25 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                   <Check size={16} strokeWidth={2.5} aria-hidden="true" />
                 </span>
                 <span>{done ? 'Completed' : 'Mark complete'}</span>
-                {taskCelebration.celebrating && done && <CompleteBurst key={taskCelebration.key} />}
-              </button>
-              <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
+              </span>
+              {taskCelebration.celebrating && done && <CompleteBurst key={taskCelebration.key} />}
+            </button>
+            <div className="task-panel-actions">
               {data.task.assignee ? (
-                <>
-                  <span
-                    className="badge badge-software"
-                    title={data.task.assignee}
-                    style={{ maxWidth: '100%', display: 'inline-block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}
-                  >
-                    Assigned to {data.task.assignee}
-                  </span>
-                  <button
-                    ref={takeBackBtnRef}
-                    type="button"
-                    className="hover-surface"
-                    onClick={handleTakeBack}
-                    disabled={offline || assignBusy}
-                    style={headerBtnStyle}
-                  >
-                    {assignBusy ? 'Taking back…' : 'Take back'}
-                  </button>
-                </>
+                // Who has it is in the Assignee field below, with its avatar; the button names them
+                // too, for whoever reads the header alone. Its label hides on a phone (index.css).
+                <button
+                  ref={takeBackBtnRef}
+                  type="button"
+                  className="toolbar-btn panel-action"
+                  onClick={handleTakeBack}
+                  disabled={offline || assignBusy}
+                  aria-label={assignBusy ? 'Taking back…' : 'Take back'}
+                  title={`Assigned to ${data.task.assignee}. Take back.`}
+                >
+                  <UserX size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+                  <span className="panel-action-label">{assignBusy ? 'Taking back…' : 'Take back'}</span>
+                </button>
               ) : data.task.status === 'inbox' || data.task.untrustedText ? null : (
                 // Propose, do not act: the owner accepts an inbox item first, and text written by a
                 // third party (untrustedText) is never handed to an agent by one click. The Assignee
@@ -907,14 +956,17 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 <button
                   ref={assignBtnRef}
                   type="button"
-                  className="hover-surface"
+                  className="toolbar-btn panel-action"
                   onClick={handleAssignToAgent}
                   disabled={offline || assignBusy}
-                  style={headerBtnStyle}
+                  aria-label={assignBusy ? 'Assigning…' : `Assign to ${agentName ?? 'agent'}`}
+                  title={`Assign to ${agentName ?? 'agent'}`}
                 >
-                  {assignBusy ? 'Assigning…' : `Assign to ${agentName ?? 'agent'}`}
+                  <Bot size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+                  <span className="panel-action-label">{assignBusy ? 'Assigning…' : `Assign to ${agentName ?? 'agent'}`}</span>
                 </button>
               )}
+              <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
             </div>
             <span className="task-panel-close">
               <IconButton ariaLabel="Close task details" onClick={onClose}>
@@ -1174,36 +1226,46 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
           {saveError && <div style={{ color: 'var(--red)', fontSize: '0.82rem' }}>{saveError}</div>}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={sectionHeading}>Notes</div>
+          {/* Asana's description: no box at rest, only the text or the placeholder, and the inset
+              box with its focus ring while it is being written in (.panel-notes in index.css). */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label htmlFor={notesId} style={sectionHeading}>Notes</label>
             <textarea
+              ref={notesRef}
+              id={notesId}
+              className="panel-notes"
+              rows={1}
               value={form.notes}
               onChange={(e) => { const { value } = e.target; setForm((f) => ({ ...f, notes: value })) }}
               onBlur={() => { if (form.notes !== data.task.notes) patchTask({ notes: form.notes }) }}
-              placeholder="Add notes"
-              aria-label="Notes"
-              style={{
-                minHeight: 72,
-                padding: '12px 14px',
-                border: '1px solid var(--bd-strong)',
-                borderRadius: 8,
-                background: 'var(--bg-inset)',
-                fontSize: 14,
-                color: 'var(--t1)',
-                resize: 'vertical',
-                width: '100%',
-              }}
+              placeholder="What is this task about?"
             />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+            {/* Asana's header line: the name, a done / total chip, and a + that opens the name box
+                at the end of the list. */}
+            <div className="panel-section-head">
               <div style={sectionHeading}>Subtasks</div>
               {subtasks.length > 0 && (
-                <div style={{ fontSize: 13, color: 'var(--t2)' }}>{subtasksDone} of {subtasks.length} done</div>
+                <span className="count-chip">
+                  <span aria-hidden="true">{subtasksDone} / {subtasks.length}</span>
+                  <span className="sr-only">{subtasksDone} of {subtasks.length} done</span>
+                </span>
+              )}
+              {canAddSubtask && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Add subtask"
+                  title="Add subtask"
+                  onClick={openSubtaskBox}
+                >
+                  <Plus size={18} aria-hidden="true" />
+                </button>
               )}
             </div>
-            {subtasks.length === 0 && (
+            {subtasks.length === 0 && !canAddSubtask && (
               <div style={{ fontSize: 13, color: 'var(--t2)', padding: '8px 0' }}>No subtasks.</div>
             )}
             {subtasks.map((s) => {
@@ -1211,16 +1273,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               const pending = subtaskPending.has(s.id)
               const subCelebrating = subCelebration.celebrating && celebratedSubId === s.id && subDone
               return (
-                <div
-                  key={s.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '44px minmax(0, 1fr)',
-                    alignItems: 'center',
-                    minHeight: 44,
-                    borderBottom: '1px solid var(--bd)',
-                  }}
-                >
+                <div key={s.id} className="subtask-row">
                   <button
                     type="button"
                     role="checkbox"
@@ -1286,6 +1339,43 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 </div>
               )
             })}
+            {canAddSubtask && (addingSubtask ? (
+              <div className="subtask-row">
+                <span className="subtask-add-circle" aria-hidden="true" />
+                <input
+                  ref={subtaskInputRef}
+                  className="subtask-add-input"
+                  value={subtaskDraft}
+                  onChange={(e) => setSubtaskDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleAddSubtask()
+                    } else if (e.key === 'Escape') {
+                      // The panel closes on Esc (a window listener); here it closes only the box.
+                      e.stopPropagation()
+                      closeSubtaskBox()
+                      requestAnimationFrame(() => addSubtaskRowRef.current?.focus())
+                    }
+                  }}
+                  onBlur={() => { if (!subtaskDraft.trim() && !subtaskBusy) closeSubtaskBox() }}
+                  aria-label="Subtask name"
+                  aria-busy={subtaskBusy}
+                  placeholder="Write a subtask name"
+                  autoComplete="off"
+                />
+              </div>
+            ) : (
+              <button
+                ref={addSubtaskRowRef}
+                type="button"
+                className="subtask-add-row"
+                onClick={openSubtaskBox}
+              >
+                <Plus size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+                <span>Add subtask</span>
+              </button>
+            ))}
             {subtasks.length > 0 && !data.task.untrustedText && (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
                 <button

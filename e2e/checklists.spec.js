@@ -59,13 +59,14 @@ test.describe('Checklists', { tag: ['@flow'] }, () => {
     const panel = page.getByRole('dialog', { name: 'Task details' })
     await expect(panel).toBeVisible()
     await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(name)
-    await expect(panel.getByText('0 of 3 done')).toBeVisible()
+    // The Subtasks header's count chip, done / total as Asana writes it.
+    await expect(panel.getByText('0 / 3', { exact: true })).toBeVisible()
     const order = await panel.getByRole('checkbox').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
     expect(order).toEqual([`Complete ${items[2]}`, `Complete ${items[0]}`, `Complete ${items[1]}`])
 
     await panel.getByRole('checkbox', { name: `Complete ${items[0]}` }).click()
     await expect(panel.getByRole('checkbox', { name: `Reopen ${items[0]}` })).toHaveAttribute('aria-checked', 'true')
-    await expect(panel.getByText('1 of 3 done')).toBeVisible()
+    await expect(panel.getByText('1 / 3', { exact: true })).toBeVisible()
 
     await page.keyboard.press('Escape')
     await expect(panel).toHaveCount(0)

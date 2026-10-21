@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { createGoal, createTask, expectNoHorizontalOverflow, isPhone, listTaskTitles, openView } from './support.js'
+import { createGoal, createTask, expectNoHorizontalOverflow, isPhone, listTaskTitles, openTask, openView } from './support.js'
 import { TOKEN } from './global-setup.js'
 
 // The offline clone (initiatives/offline-clone.md). Cutting the browser's network stands in for
@@ -169,4 +169,36 @@ test('a task moved out of a goal\'s project offline leaves the Goal filter', { t
   const after = await (await request.get('/api/goals', { headers: { Authorization: `Bearer ${TOKEN}` } })).json()
   expect(after.goals.find((g) => g.id === goalId).linkedWork.projectIds.length).toBe(1)
   await expect(page.getByText(title, { exact: true })).toBeHidden()
+})
+
+// Add subtask in the task panel is a create like the list's Add task (api.createTask, queued as
+// create_task with the parent's id), so it stays on offline, shows at once, and reaches the server
+// under its parent when the server returns.
+test('a subtask added offline in the task panel reaches the server under its parent', { tag: ['@flow'] }, async ({ page, request }, testInfo) => {
+  const title = await createTask(request, testInfo, 'offline subtask')
+  const name = `Offline step ${testInfo.project.name} ${Date.now()}`
+  await openView(page, 'mytasks')
+  // Opened once online, so this device has the task's detail in its copy.
+  await openTask(page, title)
+  await page.keyboard.press('Escape')
+  await goOffline(page)
+  await page.reload()
+  await expect(page.getByRole('status').filter({ hasText: 'Offline.' })).toBeVisible()
+
+  await openTask(page, title)
+  const panel = page.getByRole('dialog', { name: 'Task details' })
+  const add = panel.getByRole('button', { name: 'Add subtask' }).first()
+  await expect(add).toBeEnabled()
+  await add.click()
+  const box = panel.getByRole('textbox', { name: 'Subtask name' })
+  await box.fill(name)
+  await box.press('Enter')
+  await expect(panel.getByRole('checkbox', { name: `Complete ${name}` })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: '1 change waiting' })).toBeVisible()
+
+  await page.context().setOffline(false)
+  await expect(page.getByRole('status').filter({ hasText: '1 offline change sent.' })).toBeVisible({ timeout: 20000 })
+  await page.reload()
+  await openTask(page, title)
+  await expect(page.getByRole('dialog', { name: 'Task details' }).getByRole('checkbox', { name: `Complete ${name}` })).toBeVisible()
 })

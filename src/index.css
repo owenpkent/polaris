@@ -994,7 +994,10 @@ kbd { color: var(--t1); }
 .toolbar-chip :focus-visible,
 [data-popover] :focus-visible,
 .surface [role='row']:focus-visible,
-.surface [role='row'] :focus-visible { outline-offset: -2px; }
+.surface [role='row'] :focus-visible,
+.subtask-row :focus-visible,
+.subtask-add-row:focus-visible,
+.panel-section-head :focus-visible { outline-offset: -2px; }
 
 /* Drop the divider under the last row so it does not double up with the
    panel's own border. */
@@ -1244,22 +1247,194 @@ kbd { color: var(--t1); }
    snapping settles a swipe or flick on one lane instead of between two; only
    this strip scrolls (overflow-x: auto, set above, is unchanged), the page
    itself never does. */
-/* Task panel header at phone width: the two action buttons need the full
-   row and wrap onto their own lines, which pushed Close down below them.
-   Pin Close to the top right instead and reserve its width, so the way out
-   of the panel is always the first thing in reach. DOM order is unchanged,
-   so Close still comes last in the tab cycle. */
-@media (max-width: 640px) {
-  .task-panel-header {
-    position: relative;
-    padding-right: 52px;
-  }
-  .task-panel-close {
-    position: absolute;
-    top: 0;
-    right: 0;
-  }
+/* Task panel (TaskDetailPanel.jsx), laid out after Asana's task pane.
+   The header is one row that sticks to the top of the panel while it scrolls: Mark complete on the
+   left, the quiet actions (Assign to or Take back, Hand off to Claude Code) at the right, and Close
+   pinned to the top right corner with its width reserved, so when the actions cannot all fit (a
+   phone at 320px, a long agent name) they wrap under the row and Close never moves. DOM order is
+   unchanged, so Close still comes last in the tab cycle. The row bleeds over the panel's 28px side
+   padding so its background covers what scrolls under it, and draws its bottom line only once
+   something has (`is-scrolled`). */
+.task-panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -28px;
+  padding: 12px 72px 8px 28px;
+  background: var(--bg3);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
 }
+.task-panel-header.is-scrolled { border-bottom-color: var(--bd); }
+.task-panel-close {
+  position: absolute;
+  top: 12px;
+  right: 20px;
+}
+.task-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+/* Mark complete: a small outlined button as Asana draws it, inside a 44px target. The ring is
+   drawn round the visible button, not the target. */
+.panel-complete {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--t1);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.panel-complete-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--bd-strong);
+  border-radius: var(--radius);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.panel-complete:hover .panel-complete-pill { background: var(--bg-hover); }
+.panel-complete.is-done .panel-complete-pill { background: var(--green-soft); border-color: var(--green); color: var(--green); font-weight: 600; }
+.panel-complete:focus-visible { outline: none; }
+.panel-complete:focus-visible .panel-complete-pill { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* The header's quiet actions are toolbar buttons that may wrap their label (a long agent name). On
+   a phone they show the icon alone; the name stays on the button (aria-label) and in its title. */
+.panel-action {
+  height: auto;
+  min-height: var(--target);
+  min-width: var(--target);
+  gap: 4px;
+  padding: 0 8px;
+  justify-content: center;
+  flex-shrink: 1;
+  white-space: normal;
+  text-align: left;
+}
+/* On a wide screen the row stays one row: the actions shrink rather than wrap under Mark
+   complete, and a long Assign to label wraps inside its own button. Hand off keeps its size. */
+@media (min-width: 641px) {
+  .task-panel-header { flex-wrap: nowrap; }
+  .task-panel-header > .panel-complete { flex-shrink: 0; }
+  .task-panel-actions { flex: 1 1 auto; flex-wrap: nowrap; }
+  .panel-handoff { flex-shrink: 0; }
+}
+.panel-action-label { min-width: 0; overflow-wrap: break-word; }
+.panel-action:disabled { opacity: 0.55; }
+.panel-action:disabled:hover { background: transparent; color: var(--t2); }
+@media (max-width: 640px) {
+  .panel-action-label { display: none; }
+}
+/* Notes, as Asana's description: no frame at rest, only the text or its placeholder, with a hover
+   tint; the inset box and the focus ring while it is written in. It grows with its text
+   (useFitToText), so it never scrolls inside itself. The negative margin lines the text up with
+   the heading above it. */
+.panel-notes {
+  display: block;
+  flex-shrink: 0;
+  width: calc(100% + 20px);
+  min-height: var(--target);
+  margin: 0 -10px;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--t1);
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* Only where there is a real pointer: a phone keeps :hover after a tap, which would leave the
+   tint behind like a box. */
+@media (hover: hover) {
+  .panel-notes:hover { background: var(--bg-hover); }
+}
+.panel-notes:hover { border-color: transparent; }
+.panel-notes:focus { background: var(--bg-inset); border-color: var(--blue); box-shadow: var(--shadow-inset); }
+/* A section heading with its count and add button on one line (Subtasks). */
+.panel-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+}
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.subtask-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  min-height: var(--target);
+  border-bottom: 1px solid var(--bd);
+}
+.panel-section-head + .subtask-row { border-top: 1px solid var(--bd); }
+.subtask-add-circle {
+  justify-self: center;
+  width: 20px;
+  height: 20px;
+  border: 2px dashed var(--t3);
+  border-radius: 50%;
+}
+.subtask-add-input {
+  min-width: 0;
+  height: var(--target);
+  padding: 0 8px;
+  margin-left: -8px;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  font-size: 14px;
+}
+.subtask-add-input:focus { background: var(--bg-inset); border-color: var(--blue); }
+/* The quiet Add subtask row at the end of the list. */
+.subtask-add-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: var(--target);
+  /* The + sits where the check circles above it do, and the words where their names start. */
+  padding: 0 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--t2);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.subtask-add-row:hover:not(:disabled) { background: var(--bg-hover); color: var(--t1); }
+.subtask-add-row:disabled { opacity: 0.55; cursor: default; }
 
 /* GitHub repos (GithubTab.jsx): a table on a wide screen. On a phone each repo is a card, cells on
    their own lines and each switch beside its label, so no switch sits past the edge of a table
@@ -2025,7 +2200,8 @@ kbd { color: var(--t1); }
 .repeat-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .repeat-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 .repeat-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: var(--target); font-size: 0.9rem; color: var(--t1); }
-.repeat-preview { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+/* One line high while empty, so the dates arriving do not grow the builder (RepeatBuilder.jsx). */
+.repeat-preview { margin: 0; min-height: 1lh; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 .repeat-note { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {

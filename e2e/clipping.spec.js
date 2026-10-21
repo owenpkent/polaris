@@ -185,17 +185,22 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   })
 
   // Repeats under the month: a weekly rule shows its weekday buttons, and Custom the whole builder
-  // with Ends, which make the picker grow after it has been placed.
+  // with Ends, which make the picker grow after it has been placed. The next dates of the rule
+  // come from the server a moment after the picker opens (useRecurrencePreview in
+  // RepeatBuilder.jsx); their line holds its place from the start, and the sweep waits for them
+  // all the same, so it measures the picker as the owner sees it once it has settled.
   test('the due date menu with a repeat, and with Custom open', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'due picker repeat', { recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
     await openView(page)
     await page.getByRole('button', { name: `Change due date for ${title}` }).click()
     const menu = page.getByRole('dialog', { name: `Due date for ${title}` })
     await expect(menu.getByRole('button', { name: 'Thursday', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(menu.getByRole('status')).toHaveText(/^Next: /)
     expect(await smallTargets(menu, 'button, select')).toEqual([])
     await expectNothingCutOff(page)
     await menu.getByLabel('Repeats', { exact: true }).selectOption('custom')
     await expect(menu.getByRole('group', { name: 'Ends' })).toBeVisible()
+    await expect(menu.getByRole('status')).toHaveText(/^Next: /)
     expect(await smallTargets(menu, 'button, select')).toEqual([])
     await expectNothingCutOff(page)
   })
@@ -390,7 +395,7 @@ const PANELS = [
     },
   },
   {
-    // The seed assigns this one, so the Assignee field and the Assigned to label hold a name.
+    // The seed assigns this one, so the Assignee field holds a name and the header shows Take back.
     name: 'for an assigned task',
     open: async (page) => {
       await openView(page)
@@ -410,6 +415,23 @@ const PANELS = [
       const { title } = await seedThread(request, testInfo, 'clip', [{ type: 'claim', body: 'A claim long enough to wrap onto a second line in the panel at every width.', confidence: 'medium' }])
       await openView(page, 'threads')
       await page.getByRole('button', { name: startsWith(`Open ${title}`) }).click()
+    },
+  },
+  {
+    // A subtask in the list, the count chip and + in the Subtasks header, and the name box open
+    // under the list, in the panel's own column.
+    name: 'with the Add subtask box open',
+    open: async (page, request, testInfo) => {
+      const title = await createTask(request, testInfo, 'clip subtasks')
+      await openView(page)
+      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).getByText(startsWith(title)).click()
+      const dialog = page.getByRole('dialog', { name: 'Task details' })
+      await dialog.getByRole('button', { name: 'Add subtask' }).first().click()
+      const box = dialog.getByRole('textbox', { name: 'Subtask name' })
+      await box.fill('A first step with a name long enough to wrap onto a second line in the panel')
+      await box.press('Enter')
+      await expect(dialog.getByRole('checkbox', { name: startsWith('Complete A first step') })).toBeVisible()
+      await expect(box).toBeFocused()
     },
   },
   {
