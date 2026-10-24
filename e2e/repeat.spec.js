@@ -13,6 +13,34 @@ async function taskByTitle(request, title) {
 // The task panel's Repeat menu (quick picks worded from the due date) and its custom builder
 // (Ends, and "Next one counts from"), driven as the owner would, with what reaches the server read
 // back over the API. 2026-10-14 is a Wednesday, the second of its month.
+
+// A YYYY-MM-DD day as MonthCalendar.jsx names its button ("Wednesday, October 13, 2027").
+function dayName(iso) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function isoDay(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function shiftDay(iso, days) {
+  const d = new Date(`${iso}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return isoDay(d)
+}
+
+// The next dates a repeat tints come from the server's own calendar (the preview route passes its
+// today, and recurrence skips what is already past), while the browser's clock is frozen at the
+// seed. A due date in the past would therefore tint nothing before the real today. A Wednesday
+// about a year out keeps the test off the calendar; one on or before the 21st so that the Friday
+// after it and the Wednesday after that share its month in the picker.
+function wednesdayAYearOut() {
+  const d = new Date()
+  d.setHours(12, 0, 0, 0)
+  d.setDate(d.getDate() + 365)
+  while (d.getDay() !== 3 || d.getDate() > 21) d.setDate(d.getDate() + 1)
+  return isoDay(d)
+}
 test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
   test('the Repeat menu offers quick picks from the due date and saves the one picked', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'repeat picks', { dueAt: '2026-10-14' })
@@ -32,8 +60,11 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
   })
 
   test('the due date picker turns a repeat on, tints its next dates, moves it with a new day, and removes it', async ({ page, request }, testInfo) => {
-    const title = await createTask(request, testInfo, 'repeat in picker', { dueAt: '2026-10-14' })
+    // Due a year out, in the Later group that starts collapsed.
+    const due = wednesdayAYearOut()
+    const title = await createTask(request, testInfo, 'repeat in picker', { dueAt: due })
     await openView(page)
+    await page.getByRole('button', { name: 'Expand Later' }).click()
     const cell = page.getByRole('button', { name: `Change due date for ${title}` })
     await cell.click()
     const picker = page.getByRole('dialog', { name: `Due date for ${title}` })
@@ -47,13 +78,14 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await repeats.selectOption('weekly')
     await expect.poll(async () => (await taskByTitle(request, title)).recurrence).toBe('FREQ=WEEKLY;BYDAY=WE')
     await expect(picker).toBeVisible()
-    await expect(picker.getByRole('button', { name: 'Wednesday, October 21, 2026, repeats', exact: true })).toBeVisible()
-    await picker.getByRole('button', { name: 'Friday, October 16, 2026', exact: true }).click()
+    await expect(picker.getByRole('button', { name: `${dayName(shiftDay(due, 7))}, repeats`, exact: true })).toBeVisible()
+    const friday = shiftDay(due, 2)
+    await picker.getByRole('button', { name: dayName(friday), exact: true }).click()
     await expect(picker).toBeHidden()
     await expect.poll(async () => {
       const task = await taskByTitle(request, title)
       return [task.dueAt, task.recurrence]
-    }).toEqual(['2026-10-16', 'FREQ=WEEKLY;BYDAY=FR'])
+    }).toEqual([friday, 'FREQ=WEEKLY;BYDAY=FR'])
 
     // A task that repeats opens with it on; Remove repeat saves no repeat and turns it off.
     await cell.click()
