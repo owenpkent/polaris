@@ -135,8 +135,8 @@ test('runJob on a SkippedError: reports ok:true, skipped:true, and clears lastEr
 });
 
 test('the import job without an initiatives/ folder is skipped, not failed, and touches nothing', async () => {
-  // fakeApp's repoRoot does not exist, so there is no initiatives/ to read: the public repo and an
-  // installed desktop app look the same. The job reads only that folder, so it is safe to run here.
+  // fakeApp's repoRoot does not exist, so there is no initiatives/ to read, as in the public repo.
+  // The job reads only that folder, so it is safe to run here.
   const app = fakeApp();
   const importJob = JOBS.find((j) => j.name === 'import')!;
   const outcome = await runJob(app, importJob);

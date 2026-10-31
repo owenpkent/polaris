@@ -65,7 +65,7 @@ export function resolveDashboardDir(config: Config, stderr: (line: string) => vo
 
 /**
  * The UI test server's fake GitHub (src/dev/githubFake.ts), and the one place that reads
- * CC_GITHUB_FAKE. Only `serve` calls this; the daemon and the desktop shell never set the flag.
+ * CC_GITHUB_FAKE. Only `serve` calls this; the daemon never sets the flag.
  * Anything but exactly "1" leaves the module unloaded, so the server keeps the real fetch, has no
  * sync jobs, and holds whatever sign-in the secret store holds. With "1" the fake refuses to start
  * unless CC_SECRETS_DIR and CC_DB point at scratch locations.

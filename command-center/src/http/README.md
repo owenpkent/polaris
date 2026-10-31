@@ -61,8 +61,8 @@ for a route is `401`. Four routes check no bearer token: the webhook route verif
 /api/github/app/callback` and `GET /api/github/callback`), which GitHub redirects the browser to,
 accept only a valid single-use `state` value in its place; and `GET /api/identity` answers a
 challenge with an HMAC keyed with the api token, so a client that has the token can tell this
-server from anything else on the port before sending the token to it (the desktop shell does
-this; see `identity.ts`). The proof gives nothing away, and the route takes nothing but the
+server from anything else on the port before sending the token to it (the updater's health
+check does this; see `identity.ts`). The proof gives nothing away, and the route takes nothing but the
 challenge.
 
 ### Tailscale identity
@@ -272,7 +272,7 @@ configured at all.
 - `backup-routes.ts` -- backup status, encryption on and off, and the restore drill (`/api/backup*`).
 - `update-routes.ts` -- the update icon's state and the update request table (`/api/update*`): reads the updater's status file, never runs anything.
 - `version.ts` -- the running version, from command-center/package.json.
-- `identity.ts` -- `GET /api/identity`: the HMAC proof the desktop shell asks for before it sends the api token (see [Auth](#auth)).
+- `identity.ts` -- `GET /api/identity`: the HMAC proof the updater's health check asks for before it sends the api token (see [Auth](#auth)).
 - `warnings.ts` -- the `warnings` on `GET /api/sync`: a failing job, a stale backup, or a failed or stopped update, shown as a banner by the dashboard.
 - `schemas.ts` -- zod request-body schemas.
 - `mcp.ts` -- mounts `createMcpServer` on Streamable HTTP in stateless mode.

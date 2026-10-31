@@ -131,11 +131,11 @@ The full guide, with the MCP calls and the ticket flavours, is in [docs/decision
 - One server. The dashboard can talk to one daemon at a time, and two daemons do not sync with each other.
 - No sync service and no cloud copy. Your data is the SQLite file and the backups you configure.
 - No phone app in a store. The dashboard installs as a web app from the browser at phone width, and [mobile/](mobile/README.md) builds an Android app around the same dashboard for the owner's own phone. Either one needs a server the phone can reach, which the app never provides itself.
-- No Linux or macOS desktop shell yet. The Tauri shell targets Windows; on other platforms you run the daemon and open a browser.
+- No desktop app. You run the daemon and open a browser, or install the dashboard as a web app from the browser.
 
 ## Known failures and limitations
 
-- Windows is the first-class platform. The desktop shell, the logon task installer, and DPAPI secrets are Windows only. Elsewhere the secret store is a `secrets.json` next to the database with mode 0600, and the server refuses it if group or others can read it.
+- Windows is the first-class platform. The logon task installer and DPAPI secrets are Windows only. Elsewhere the secret store is a `secrets.json` next to the database with mode 0600, and the server refuses it if group or others can read it.
 - The default backup folder is on the same disk as the database, so it protects only against a bad write. Set `CC_BACKUP_DIR` to another disk or machine. Two machines sharing one backup folder overwrite each other's copy for the day.
 - Connecting the GitHub App has to be done in a browser on the machine that runs the daemon, because GitHub redirects each step to 127.0.0.1.
 - A daemon started while an old one still holds the port exits at once with `EADDRINUSE`. Wait for the old one to let go.

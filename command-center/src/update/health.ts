@@ -1,6 +1,6 @@
 // The health check after a restart (docs/update-proposal.md, section 1, step 8). "Something
 // answers on the port" is not enough: the daemon must first prove it holds this install's api
-// token, through the same challenge the desktop shell uses (http/identity.ts), and only then is
+// token, through the identity challenge (http/identity.ts), and only then is
 // the token sent as a bearer credential to GET /api/health, which must say ok and name the
 // version that was just installed. The token is read by the caller from the file next to the
 // database and never printed.

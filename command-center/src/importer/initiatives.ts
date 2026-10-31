@@ -41,7 +41,7 @@ export function initiativesDir(repoRoot: string): string {
 
 /**
  * Whether there is anything to import. The importer is for a repo that keeps its plans as
- * initiatives/*.md; a checkout without that folder (the public repo, an installed desktop app)
+ * initiatives/*.md; a checkout without that folder (the public repo)
  * has nothing for it to do, and the callers say so instead of reporting zero counts.
  */
 export function hasInitiatives(repoRoot: string): boolean {
