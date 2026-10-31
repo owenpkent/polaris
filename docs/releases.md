@@ -48,6 +48,8 @@ Releases are batched: one is cut when there is something worth installing, not f
    What changed, in a few lines. Name any migration."
    ```
 
+   git asks for the key's passphrase in the terminal, so the tag is made from a terminal, not from a tool or script that has none. Keep the notes in a file and pass `-F notes.txt` instead of `-m`, so a failed attempt (a wrong passphrase) costs only a retry; git's message that the notes were left in `.git/TAG_EDITMSG` is not true when they were given with `-m` or `-F`.
+
 6. Push the tag: `git push origin v2.1.0`. Installs find it with a credential-free `git fetch --tags`.
 7. Make a GitHub release for the tag with the same notes, for people reading the repository. Installs never read it: the signature on the tag is what they trust, and GitHub's own signing (the web-flow key on merge commits) proves nothing to them.
 
