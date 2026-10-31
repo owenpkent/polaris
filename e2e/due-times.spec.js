@@ -99,10 +99,13 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await menu.getByRole('button', { name: 'Tomorrow', exact: true }).click()
     await expect(cell).toHaveText(/^Tomorrow\s?4:45\sPM$/)
 
-    // A day of the month, three days on, chosen with one tap.
+    // A day of the month, three days on, chosen with one tap. The picker opens on the month of the
+    // task's current day, which is now tomorrow: on the last day of a month that is already the next
+    // month, and a move from the original day would have gone one month too far.
+    const tomorrow = shiftDay(day, 1)
     const later = shiftDay(day, 3)
     await cell.click()
-    if (later.slice(0, 7) !== day.slice(0, 7)) await menu.getByRole('button', { name: 'Next month' }).click()
+    if (later.slice(0, 7) !== tomorrow.slice(0, 7)) await menu.getByRole('button', { name: 'Next month' }).click()
     await menu.getByRole('button', { name: dayName(later), exact: true }).click()
     await expect(menu).toBeHidden()
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toBe(`${later}T16:45`)
