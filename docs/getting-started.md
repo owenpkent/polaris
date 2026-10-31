@@ -191,7 +191,7 @@ The toolbar filters by readiness (Ready: could be started now; Blocked: waiting 
 
 ### Step 3: Look at the views
 
-- **Board** shows one project at a time, with its sections as columns, and lets you move tasks between them.
+- **Board** shows one project at a time, with its sections as lanes of cards. Tick a card's check to complete it, use Add task at the foot of a lane to add one there, and move a card with its arrow.
 - `npm run cc -- views` lists the built-in and saved views, and `npm run cc -- view ready` shows what you could start right now.
 
 ### Step 4: Understand the inbox
