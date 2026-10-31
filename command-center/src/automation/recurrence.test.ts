@@ -286,7 +286,8 @@ test('a floating due time with no seconds keeps its time and its form', () => {
 });
 
 test('completing a weekly task due at a time through openApp makes the next one at the same time', () => {
-  const app = openApp({ dbPath: ':memory:', timezone: 'America/Chicago' });
+  // The clock is pinned: the store skips past today, so with the real one this test went stale on 2026-10-27.
+  const app = openApp({ dbPath: ':memory:', timezone: 'America/Chicago' }, { now: () => new Date('2026-10-21T15:00:00Z') });
   try {
     const t = app.store.createTask({ title: 'Standup notes', dueAt: '2026-10-20T09:00', recurrence: 'weekly' });
     assert.equal(app.store.completeTask(t.id).next?.dueAt, '2026-10-27T09:00');

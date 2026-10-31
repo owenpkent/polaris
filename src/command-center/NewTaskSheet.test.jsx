@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, afterEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import NewTaskSheet from './NewTaskSheet'
 import { getDueBounds } from './dueDates'
@@ -11,7 +11,18 @@ function weekdayName(iso) {
   return new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))).toLocaleDateString('en-US', { weekday: 'long' })
 }
 
-afterEach(cleanup)
+// The clock is pinned to a mid-month weekday: the date step's calendar shows the current month,
+// so on the last day of a month "tomorrow" has no cell and the tests below went stale. Only Date
+// is faked, so waitFor and focus timers keep running.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(2026, 9, 21, 10, 0, 0))
+})
+
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 function renderSheet(props = {}) {
   const onCreate = vi.fn().mockResolvedValue(undefined)

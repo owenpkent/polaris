@@ -19,22 +19,33 @@ export interface App {
   close(): void;
 }
 
-export function openApp(overrides: Partial<Config> = {}): App {
+export interface AppOptions {
+  /**
+   * The clock the app and its store read. Left out, the real one. Tests that assert on dates pin
+   * it, so a fixed due date in a test does not go stale when the calendar passes it.
+   */
+  now?: () => Date;
+}
+
+export function openApp(overrides: Partial<Config> = {}, options: AppOptions = {}): App {
   const config = { ...loadConfig(), ...overrides };
+  const now = options.now ?? (() => new Date());
+  const today = () => todayIn(config.timezone, now());
   const store = openStore(config.dbPath, {
-    nextOccurrence: (rule, prev, context) => nextOccurrence(rule, prev, todayIn(config.timezone), context),
-    today: () => todayIn(config.timezone),
+    now: () => now().toISOString(),
+    nextOccurrence: (rule, prev, context) => nextOccurrence(rule, prev, today(), context),
+    today,
     timezone: config.timezone,
     dayOf: (iso) => todayIn(config.timezone, new Date(iso)),
     validateRecurrence: (rule) => {
-      const today = todayIn(config.timezone);
-      try { nextOccurrence(rule, today, today); return null; } catch (e) { return e instanceof Error ? e.message : String(e); }
+      const t = today();
+      try { nextOccurrence(rule, t, t); return null; } catch (e) { return e instanceof Error ? e.message : String(e); }
     },
   });
   return {
     config,
     store,
-    today: () => todayIn(config.timezone),
+    today,
     close: () => store.db.close(),
   };
 }
