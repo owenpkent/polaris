@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { memorySecretStore } from '../ingest/secrets.ts';
@@ -209,4 +209,26 @@ test('the signature gate takes exactly one SSH signature block and names any oth
   assert.match(signatureFormatProblem(tag('-----BEGIN SOMETHING ELSE-----\nx\n-----END SOMETHING ELSE-----\n'))!, /signed with SOMETHING ELSE, not SSH/);
   assert.equal(signatureFormatProblem(tag('  -----BEGIN SSH SIGNATURE-----\n')), 'no signature found', 'a header is a whole line, as git writes it');
   assert.ok(NO_OTHER_SIGNATURE_PROGRAMS.includes('-c') && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.openpgp.program=')) && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.x509.program=')));
+});
+
+// The desktop app was removed in 2026-10 (PR #100), but a checkout that built or tested it still
+// holds its generated output. Those paths stay in the repo's .gitignore, because runUpdate
+// refuses a tree with untracked files and would otherwise be blocked on every such checkout.
+test('old desktop build output in a checkout is still ignored, so the updater is not blocked by it', async (t) => {
+  const r = repos(t);
+  const ignore = readFileSync(join(import.meta.dirname, '..', '..', '..', '.gitignore'), 'utf8');
+  r.commit(r.clone, 'the real .gitignore', { '.gitignore': ignore });
+  const leftovers = [
+    'desktop/src-tauri/resources/command-center/package.json',
+    'desktop/src-tauri/binaries/node-x86_64-pc-windows-msvc.exe',
+    'desktop/src-tauri/target/debug/polaris-desktop.exe',
+    'desktop/src-tauri/gen/schemas/desktop-schema.json',
+    'desktop/release/latest.json',
+    'desktop-test-output/run-1/error-context.md',
+  ];
+  for (const name of leftovers) {
+    mkdirSync(join(r.clone, name, '..'), { recursive: true });
+    writeFileSync(join(r.clone, name), 'left behind by the old desktop build\n');
+  }
+  assert.deepEqual(await git(realExec(), r.clone).statusLines(), []);
 });
