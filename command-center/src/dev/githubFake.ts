@@ -1,6 +1,6 @@
 // A fake GitHub for the UI tests (initiatives/ui-ux-testing.md, phase 9, option A) and for nothing
 // else. `serve` loads this module only when CC_GITHUB_FAKE is exactly "1" (githubFakeFromEnv in
-// http/commands.ts); the daemon and the desktop shell never set that, and nothing else imports it.
+// http/commands.ts); the daemon never sets that, and nothing else imports it.
 //
 // The fake is a `fetch` that answers, from the fixtures below, the GET endpoints that
 // ingest/github/sync.ts, ingest/github/repoFiles.ts, and the GitHub routes read. Any other URL is

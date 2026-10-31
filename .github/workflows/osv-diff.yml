@@ -5,8 +5,7 @@
 # base and on the pull request head, and the reporter compares the two, so a finding that is
 # already in main never blocks an unrelated change, and one that main fixed after this branch was
 # cut is not charged to it either. What is scanned: the three npm lockfiles (dashboard,
-# command-center, mobile) and the desktop shell's Cargo.lock. Gradle is not scanned; Capacitor
-# pins the Android versions.
+# command-center, mobile). Gradle is not scanned; Capacitor pins the Android versions.
 #
 # This is the scan sequence of google/osv-scanner-action's reusable pull request workflow,
 # written out here instead of called, for one reason: that workflow writes both result files
@@ -113,7 +112,6 @@ jobs:
             --lockfile=package-lock.json
             --lockfile=command-center/package-lock.json
             --lockfile=mobile/package-lock.json
-            --lockfile=desktop/src-tauri/Cargo.lock
       - name: Check out the pull request head with a clean tree
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -148,7 +146,6 @@ jobs:
             --lockfile=package-lock.json
             --lockfile=command-center/package-lock.json
             --lockfile=mobile/package-lock.json
-            --lockfile=desktop/src-tauri/Cargo.lock
       # The scanner exits non-zero both when it finds something (the reporter's job to judge) and
       # when the scan itself breaks, so continue-on-error cannot tell them apart. A broken scan
       # writes no file, and the reporter reads a missing --new file as "nothing new". So both

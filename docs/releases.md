@@ -79,11 +79,3 @@ The keys in `release-signers` on `main`, for checking a fingerprint before sayin
 | polaris-release | ED25519 | `SHA256:SgblxfPsvIrosQE5pPclL9f+jPJDMrh8Nv6I462zpm8` | 2026-10-15 |
 
 A key added or removed later gets a row here in the same change that edits `release-signers`.
-
-## The desktop app's updater key
-
-The desktop app (desktop/, command-center/README.md under "Desktop app") updates through Tauri's own updater, not `cc update`, and has its own key: a minisign key at `~/.tauri/polaris.key`, separate from the release key above. Its public half is the `pubkey` in desktop/src-tauri/tauri.conf.json, so every installed copy carries it and accepts only builds it signed.
-
-- The key has a password. `npm run desktop -- build` and `npm run desktop -- release` ask for it at the terminal before anything slow runs, check it by signing a scratch file, and hand it to the Tauri CLI through the child's environment only. It is never read from an env var or a command line.
-- Keep the key file and its password in the password manager. Lose either and no installed copy can update again: a new key needs a reinstall by hand, because the installed copies only trust the old one.
-- `npm run desktop -- release` publishes to the releases repo, owenpkent/polaris-releases, where the app looks for `latest.json`.

@@ -1,20 +1,20 @@
 // The identity check: proof to a client that the server answering on a port is the Command
 // Center holding this database's api token, given before the client sends that token anywhere.
 //
-// The desktop shell (desktop/src-tauri/src/main.rs) needs it. It reads the api token from the
-// file next to the database and opens the dashboard on whatever answers on the port. Before this
-// check it sent the token as a bearer credential to that process first and took any 2xx as the
-// daemon, so another local account that bound the port while the daemon was stopped would have
-// been handed the token and then the whole dashboard to serve. Now the shell sends a fresh random
-// challenge, the daemon answers with an HMAC of it keyed with the token, and the shell computes
-// the same. Only a process that knows the token can answer, and the answer discloses nothing: an
-// HMAC of a chosen message does not give the key away.
+// The updater's health check (update/health.ts) needs it, as the desktop shell did before it was
+// removed. A client that reads the api token from the file next to the database and talks to
+// whatever answers on the port must not send the token as a bearer credential first and take any
+// 2xx as the daemon: another local account that bound the port while the daemon was stopped would
+// be handed the token. So the client sends a fresh random challenge, the daemon answers with an
+// HMAC of it keyed with the token, and the client computes the same. Only a process that knows
+// the token can answer, and the answer discloses nothing: an HMAC of a chosen message does not
+// give the key away.
 //
 // The proof also covers the port the request arrived on, so a process on the expected port cannot
 // forward the challenge to a real daemon listening elsewhere and hand back its answer.
 //
-// The Rust side of this is `identity_proof` in main.rs. The two must agree byte for byte; the
-// vector in identity.test.ts is the one both test against.
+// The vector in identity.test.ts pins the proof byte for byte, so an older updater still verifies
+// a newer daemon.
 import { createHmac } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { HttpError, sendJson } from './errors.ts';
@@ -23,7 +23,7 @@ import type { Router } from './router.ts';
 export const IDENTITY_PATH = '/api/identity';
 
 /** A fixed protocol constant kept from before the Constellation to Polaris rename, so a previous release's
- *  updater (update/health.ts) and desktop app still verify the daemon. Do not change it. */
+ *  updater (update/health.ts) still verifies the daemon. Do not change it. */
 const IDENTITY_DOMAIN = 'constellation-identity';
 
 /** The message the proof is an HMAC of: a fixed label, the listening port, and the challenge. */

@@ -3,6 +3,14 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- The desktop app is removed: the Tauri shell under desktop/, its build and release script, its
+  Rust tests and UI tests, their CI workflow, and the cargo dependency updates. The dashboard is
+  a web app that installs from the browser, and the daemon runs as a service or in a terminal;
+  an installed copy of the old app keeps working against its own daemon but gets no update.
+  `GET /api/identity` stays, for the updater's health check. No schema migration.
+
 ## 2.1.0 (2026-10-18)
 
 - Due times: a due date can carry an optional time of day, set and removed in the due date menu,

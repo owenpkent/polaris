@@ -9,8 +9,8 @@
 # not use the reusable pull request workflow, for the reason given there. Keep the scanner version
 # and the lockfile list here in step with osv-diff.yml.
 #
-# What is scanned: the three npm lockfiles (dashboard, command-center, mobile) and the desktop
-# shell's Cargo.lock. Gradle is not scanned; Capacitor pins the Android versions.
+# What is scanned: the three npm lockfiles (dashboard, command-center, mobile). Gradle is not
+# scanned; Capacitor pins the Android versions.
 #
 # Permissions: the reusable workflow declares `security-events: write` on its job (for the SARIF
 # upload to Code Scanning), and a caller must grant at least what a called job asks for, even
@@ -46,4 +46,3 @@ jobs:
         --lockfile=package-lock.json
         --lockfile=command-center/package-lock.json
         --lockfile=mobile/package-lock.json
-        --lockfile=desktop/src-tauri/Cargo.lock

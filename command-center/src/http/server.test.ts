@@ -233,9 +233,9 @@ test('GET /api/identity proves the server holds the api token without being sent
   });
 });
 
-test('the identity proof matches the vector the desktop shell tests against', () => {
-  // Shared with desktop/src-tauri/src/main.rs (identity_proof_matches_the_daemon). Changing the
-  // message format means updating both.
+test('the identity proof matches the pinned vector', () => {
+  // An installed updater from an earlier release verifies the daemon with this proof, so the
+  // message format cannot change.
   assert.equal(
     identityProof('test-api-token-0000000000000000', 8788, '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'),
     IDENTITY_VECTOR,

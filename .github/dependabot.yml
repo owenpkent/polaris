@@ -35,20 +35,6 @@ updates:
       npm-mobile-minor-patch:
         update-types: [minor, patch]
 
-  - package-ecosystem: cargo
-    directory: /desktop/src-tauri
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      cargo-minor-patch:
-        update-types: [minor, patch]
-    # glib is not ours: it comes in through Tauri 2's GTK 0.18 stack (gtk, gdk, webkit2gtk), which
-    # pins glib 0.18, so the security update for GHSA-wrw7-89jp-8q8g (fixed in glib 0.20) cannot be
-    # resolved and its job fails on every run. The alert stays open in the Security tab on purpose.
-    # Remove this when Tauri moves to a GTK that takes glib 0.20.
-    ignore:
-      - dependency-name: glib
 
   - package-ecosystem: github-actions
     directory: /

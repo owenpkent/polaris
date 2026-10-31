@@ -60,15 +60,8 @@ desktop.ini
 # Playwright UI test output
 .playwright/
 .playwright-perf/
-desktop-test-output/
 playwright-report/
 
-# Desktop app (Tauri). These are made by scripts/desktop.mjs at build time.
-desktop/src-tauri/target/
-desktop/src-tauri/gen/
-desktop/src-tauri/binaries/
-desktop/src-tauri/resources/
-desktop/release/
 
 # Claude Code settings, local to each machine
 .claude/

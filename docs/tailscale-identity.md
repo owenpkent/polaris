@@ -7,13 +7,13 @@ Polaris is reached from a phone or a second computer through `tailscale serve` o
 ## Where things stand
 
 - The server binds to loopback and trusts three bearer tokens, one per route group: api for `/api/*`, mcp for `/mcp`, mcp-readonly for `/mcp/readonly` (command-center/src/http/server.ts, types.ts). Each route accepts only its own token. That separation is what keeps an agent with an MCP token away from the REST route that enables a rule, and invariants.test.ts group 3 states it.
-- Four routes take no token: the GitHub webhook (HMAC), the two GitHub sign-in callbacks (single-use state), and `GET /api/identity` (an HMAC challenge for the desktop shell).
+- Four routes take no token: the GitHub webhook (HMAC), the two GitHub sign-in callbacks (single-use state), and `GET /api/identity` (an HMAC challenge for the updater's health check).
 - The dashboard keeps `{ baseUrl, token }` in localStorage (src/command-center/ConnectionContext.jsx). A production build defaults the server URL to the page's own origin, so a dashboard opened through `tailscale serve` already knows where the server is and only lacks the token.
 - `tailscale serve` adds three headers to every request it forwards from a user-owned device: `Tailscale-User-Login`, `Tailscale-User-Name`, and `Tailscale-User-Profile-Pic`. It deletes any such headers the client sent first, sets none for a tagged device, and sets none for a Funnel (public) request (tailscale/tailscale, ipn/ipnlocal/serve.go, `addTailscaleIdentityHeaders`). The login is the user's email as Tailscale knows it, Q-encoded only when it holds non-ASCII characters.
 
 ## Alternatives
 
-- **Keep the token, make it easier to hand over.** A QR code or a one-time link from the Settings page, carrying the `#cc-url=...&cc-token=...` handoff the desktop shell and the UI tests already use. Buys: no new trust. Costs: the token still lives in every browser, a lost phone still means rotating it everywhere, and the handoff has to be made on the host, where the token is.
+- **Keep the token, make it easier to hand over.** A QR code or a one-time link from the Settings page, carrying the `#cc-url=...&cc-token=...` handoff the UI tests already use. Buys: no new trust. Costs: the token still lives in every browser, a lost phone still means rotating it everywhere, and the handoff has to be made on the host, where the token is.
 - **Tailscale identity (chosen).** The daemon accepts a request on `/api/*` as the owner when it arrives from the proxy on the same machine carrying the owner's login. Buys: nothing to paste, nothing stored on the device, a lost phone is removed from the tailnet and that is the whole revocation. Costs: a second way into the REST API, described under "What this trusts" below.
 - **An OAuth or OIDC login.** The right answer for a public address, and the "when to ask" list in CLAUDE.md puts it off until the owner wants one. Far more than a tailnet needs.
 
@@ -42,7 +42,7 @@ Polaris is reached from a phone or a second computer through `tailscale serve` o
 
 - Every token keeps working everywhere it works today. Turning identity on removes no path.
 - MCP stays token-only. An agent connecting over HTTP MCP from a tailnet device still configures the mcp token, and the read-only endpoint still takes only the read-only token.
-- The desktop shell, the CLI, the GitHub sign-in, backups, and the offline copy are untouched.
+- The CLI, the GitHub sign-in, backups, and the offline copy are untouched.
 
 ## What this trusts
 

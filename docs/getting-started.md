@@ -137,7 +137,7 @@ You want the daemon to start on its own when the host starts.
 powershell -ExecutionPolicy Bypass -File ..\scripts\install-command-center-task.ps1
 ```
 
-It runs the daemon as you while you are logged on, and writes its output to `command-center/data/daemon.log`. The same script with `-Uninstall` removes it. There is also a Windows desktop app in [desktop/](../desktop/) that starts the daemon for you.
+It runs the daemon as you while you are logged on, and writes its output to `command-center/data/daemon.log`. The same script with `-Uninstall` removes it.
 
 **Linux.** Use a systemd unit. Polaris does not ship one, so here is a minimal example. Change the user and paths to match yours:
 
@@ -270,7 +270,6 @@ Every device keeps a copy of what it has read. When the host cannot be reached, 
 
 Only the host should ever open the database. On every other computer, use a browser and MCP over HTTPS, and nothing else:
 
-- The desktop app runs its own daemon with its own local database. It reuses a daemon already on the port only when that daemon proves it holds the api token of the app's own database.
 - `npm run cc` and the stdio MCP server open `command-center/data/polaris.db` (or `CC_DB`) on the machine they run on.
 
 Run any of those on a second computer and you get a second, empty Polaris that never syncs with the first.
@@ -426,7 +425,7 @@ Then restart: `sudo systemctl restart polaris` on Linux, or stop and start the l
 | The service will not start at boot | Usually something it depends on is not ready yet, such as a network share for backups | Read `journalctl -u polaris -b`. Do not make the service require a network mount: a failed mount should fail the backup job, not Polaris. |
 | "Offline. Showing data from ..." | The dashboard cannot reach the daemon | Check the daemon is running and, from another device, that `tailscale serve status` still shows the proxy. Your task edits are queued meanwhile. |
 | **Connect** fails on the Settings view, or the "Not connected yet" strip stays | The token was refused | Paste the current `api-token`, or check `CC_TAILSCALE_LOGIN` matches your Tailscale login exactly. |
-| An empty Polaris on a second computer | The desktop app, `npm run cc`, or stdio MCP was run there and made its own database | Use the browser and MCP over HTTPS on that computer instead. See the second-database trap in section 4. |
+| An empty Polaris on a second computer | `npm run cc` or stdio MCP was run there and made its own database | Use the browser and MCP over HTTPS on that computer instead. See the second-database trap in section 4. |
 | The Android app cannot connect | The daemon does not allow the app's origin | Set `CC_CORS_ORIGINS=https://localhost` and restart. Use the HTTPS tailnet address. |
 
 ## 9. Where to go next

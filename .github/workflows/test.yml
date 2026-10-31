@@ -151,11 +151,11 @@ jobs:
   # Which parts of the tree a pull request touches, for jobs that only matter when they change.
   # `ui` gates the UI test parts. It is written as everything except a list of paths that cannot
   # change what the UI tests run, so a new file anywhere else runs them: add a path to the
-  # exclusions only when that is certain. The other two outputs are not used yet:
-  # .github/workflows/android.yml and desktop-ui.yml are path-filtered at the workflow level on
-  # their open pull requests, and are meant to become jobs here gated with
-  # `if: needs.changes.outputs.android == 'true'`. Keep those lists in step with the paths those
-  # workflows use. Pull requests only, because a push run has no base to compare.
+  # exclusions only when that is certain. The other output is not used yet:
+  # .github/workflows/android.yml is path-filtered at the workflow level on its open pull
+  # requests, and is meant to become a job here gated with
+  # `if: needs.changes.outputs.android == 'true'`. Keep that list in step with the paths that
+  # workflow uses. Pull requests only, because a push run has no base to compare.
   changes:
     name: Which paths changed
     if: github.event_name == 'pull_request'
@@ -167,7 +167,6 @@ jobs:
     outputs:
       ui: ${{ steps.ui-filter.outputs.ui }}
       android: ${{ steps.filter.outputs.android }}
-      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       # A step of its own, because `every` applies to all the filters in a step: a file counts
       # only when it matches every pattern, which is what lets `ui` say "anything but these".
@@ -180,15 +179,12 @@ jobs:
               - '**'
               - '!**/*.md'
               - '!docs/**'
-              - '!desktop/**'
               - '!mobile/**'
-              - '!scripts/desktop.mjs'
               - '!scripts/install-*'
               - '!release-signers'
               - '!LICENSE'
               - '!.github/dependabot.yml'
               - '!.github/workflows/android.yml'
-              - '!.github/workflows/desktop-ui.yml'
               - '!.github/workflows/nightly-properties.yml'
               - '!.github/workflows/weekly.yml'
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
@@ -201,10 +197,6 @@ jobs:
               - 'public/**'
               - 'package.json'
               - 'package-lock.json'
-            desktop:
-              - 'desktop/**'
-              - 'scripts/desktop.mjs'
-              - 'command-center/src/http/identity.ts'
 
   # Known-vulnerability gate for pull requests: fails only on an advisory the pull request
   # introduces. The steps, and why they are written out instead of using the reusable pull request
