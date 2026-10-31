@@ -3,13 +3,48 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.2.0 (2026-10-31)
 
+No schema migration.
+
+- My tasks after Asana's list: Add task opens a row at the top of its group with an empty check
+  circle, Enter saves on the group's date and opens the next row, and the due date button beside
+  the name opens "When is it due?" for another date or a repeat. A row with open subtasks shows
+  their count as a button that lists them indented under the parent. The toolbar's Filter, Sort,
+  and Group are popovers that name what is applied in a chip with a clear button; saved views
+  keep their format.
+- The task panel after Asana's task pane: a header that sticks while the panel scrolls, with
+  Mark complete, Assign and Hand off as toolbar buttons and Close pinned right; notes with no
+  frame at rest; a subtask done count and a + button, so subtasks can be added from the panel
+  (queued offline as an ordinary create).
+- Board cards complete and reopen in place with the list's check circle, show the due date,
+  repeat glyph, and assignee, and every lane has Add task, which opens a blank card and stays
+  open for the next name.
+- The due date picker opens straight onto the month calendar: quick chips Today, Tomorrow, Next
+  Monday, and No date; one tap on a day saves; Add time reveals a time box. Repeats is in the
+  picker, with the next dates tinted on the month; a plain repeat follows a newly picked day, and
+  a rule the builder cannot show points to the task panel instead. A new task's date and repeat
+  are picked the same way, and the repeat picker is laid out in Asana's rows: plain choices
+  without a stepper, one strip of weekdays, and a repeat every two or more units reads as Custom.
+- Completing a task celebrates a little: the check pops, the row flashes and fades, the panel's
+  Mark complete and subtask checks do the same, all off under reduced motion. The check circle
+  is empty at rest.
+- Fixes: a subtask made offline gets its parent's project; a pending subtask create stays with
+  the task it was typed under; the board refreshes for the selected project and keeps the add
+  card until the click lands; Enter that confirms an IME composition no longer adds a task; the
+  picker's next-dates line no longer moves it once placed.
 - The desktop app is removed: the Tauri shell under desktop/, its build and release script, its
   Rust tests and UI tests, their CI workflow, and the cargo dependency updates. The dashboard is
   a web app that installs from the browser, and the daemon runs as a service or in a terminal;
   an installed copy of the old app keeps working against its own daemon but gets no update.
-  `GET /api/identity` stays, for the updater's health check. No schema migration.
+  `GET /api/identity` stays, for the updater's health check. The ignore rules for the old app's
+  build output stay, so a checkout that built it is not blocked by untracked files when it
+  updates.
+- Docs: how to move tasks and their repeat schedules from Asana (docs/asana-import.md), and a
+  sweep bringing the docs in line with the code after 2.1.0.
+- Tests that read the real clock are pinned, so they no longer go stale as the calendar moves.
+- Dependencies: npm audit fixes (body-parser, fast-uri, undici), the MCP SDK, zod, and the
+  GitHub Actions used by CI.
 
 ## 2.1.0 (2026-10-18)
 
