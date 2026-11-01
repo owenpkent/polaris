@@ -36,7 +36,9 @@ const UNIT_FREQ: Record<string, string> = {
 function resolveAlias(input: string): string {
   const trimmed = input.trim();
   const lower = trimmed.toLowerCase();
-  if (ALIASES[lower]) return ALIASES[lower];
+  // Own keys only: a rule named __proto__ or constructor must be refused as an invalid rule,
+  // not read an inherited value off the alias table.
+  if (Object.hasOwn(ALIASES, lower)) return ALIASES[lower];
   const everyMatch = EVERY_N_RE.exec(lower);
   if (everyMatch) {
     const n = Number(everyMatch[1]);

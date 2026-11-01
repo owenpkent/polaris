@@ -295,3 +295,11 @@ test('completing a weekly task due at a time through openApp makes the next one 
     assert.equal(app.store.createTask({ title: 'From an agent', dueAt: '2026-10-20T14:00:00.000Z' }).dueAt, '2026-10-20T09:00');
   } finally { app.close(); }
 });
+
+// Found by the nightly property run (seed 12345): a rule named for an inherited object key read a
+// function off the alias table and crashed with a TypeError instead of being refused.
+test('regression: a rule named __proto__ or constructor is an invalid rule, not a TypeError', () => {
+  for (const rule of ['__proto__', 'constructor', 'hasOwnProperty', 'toString']) {
+    assert.throws(() => nextOccurrence(rule, '2026-01-15', '2026-01-15'), /^Error: invalid /);
+  }
+});

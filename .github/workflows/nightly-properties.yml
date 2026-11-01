@@ -1,15 +1,22 @@
-# The property tests (command-center/src/core/outbox.property.test.ts) with a fresh random seed and
-# a large run count every night. The normal suite runs the same tests with a fixed seed and 60
-# runs, so a push is repeatable; this run is where new inputs get explored.
+# The property tests (command-center/src/**/*.property.test.ts) with a fresh random seed and a
+# large run count every night: the parsers that read third-party text (repo checklists, imported
+# task text, due dates, recurrence rules, HTTP bodies), the offline outbox merge, and the fence
+# that keeps a thread post's body inside its data block. The normal suite runs the same tests with
+# a fixed seed and 60 runs, so a push is repeatable; this run is where new inputs get explored.
 #
 # THE RULE when this fails: fix the bug, then add the shrunk input from the log as a named
 # regression test (a plain example in the matching *.test.ts, so it runs on every push). Do not
 # loosen the property, and do not just rerun until it goes green. The log prints the seed and the
-# path; to replay it locally:
-#   CC_PROPERTY_SEED=<seed> CC_PROPERTY_PATH=<path> node --test command-center/src/core/outbox.property.test.ts
+# path; to replay it locally, from command-center/:
+#   CC_PROPERTY_SEED=<seed> CC_PROPERTY_PATH=<path> node --test src/<dir>/<name>.property.test.ts
+#
+# A failure opens the issue "Nightly property failure" (or adds a comment when it is already open)
+# with the seed, the run, and the tail of the log, so a red night is not just an email to whoever
+# last touched the cron line. Only the report job may write issues; the tests run with read access.
 #
 # Ubuntu, because the server suite passes there (#31) and Linux minutes cost half of Windows.
-# Nothing here is a pull request check.
+# Nothing here is a pull request check. GitHub stops a schedule after 60 days without a commit;
+# a manual run restarts it.
 name: Nightly property tests
 
 on:
@@ -20,6 +27,14 @@ on:
       runs:
         description: Runs per property
         default: '20000'
+      seed:
+        description: Seed (blank picks one at random)
+        default: ''
+
+# A manual run should not cancel the night's, and the night's should not cancel a manual one.
+concurrency:
+  group: nightly-properties-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -28,7 +43,11 @@ jobs:
   properties:
     name: Property tests, random seed
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    outputs:
+      seed: ${{ steps.seed.outputs.seed }}
+      runs: ${{ steps.seed.outputs.runs }}
+      tail: ${{ steps.tests.outputs.tail }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -41,11 +60,91 @@ jobs:
       - run: npm ci
         working-directory: command-center
       - name: Pick a seed
-        run: echo "CC_PROPERTY_SEED=$(( (RANDOM << 15) | RANDOM ))" >> "$GITHUB_ENV"
-      - name: Property tests
-        working-directory: command-center
+        id: seed
         env:
-          CC_PROPERTY_RUNS: ${{ inputs.runs || '20000' }}
+          INPUT_SEED: ${{ inputs.seed }}
+          INPUT_RUNS: ${{ inputs.runs }}
+        run: |
+          seed="${INPUT_SEED:-$(( (RANDOM << 15) | RANDOM ))}"
+          runs="${INPUT_RUNS:-20000}"
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "runs=$runs" >> "$GITHUB_OUTPUT"
+          echo "CC_PROPERTY_SEED=$seed" >> "$GITHUB_ENV"
+          echo "CC_PROPERTY_RUNS=$runs" >> "$GITHUB_ENV"
+      - name: Property tests
+        id: tests
+        working-directory: command-center
+        shell: bash
         run: |
           echo "seed: $CC_PROPERTY_SEED, runs per property: $CC_PROPERTY_RUNS"
-          node --test --test-reporter=spec "src/**/*.property.test.ts"
+          set +e
+          node --test --test-reporter=spec "src/**/*.property.test.ts" 2>&1 | tee property-tests.log
+          status=${PIPESTATUS[0]}
+          set -e
+          # The failing properties and their counterexamples, for the issue, as the `tail`
+          # output: bounded, cut on whole lines, closed by a delimiter the log cannot contain.
+          # The log keeps everything; this is the part a reader needs first.
+          node ../scripts/property-failure-summary.mjs property-tests.log
+          exit "$status"
+      - name: Keep the full log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: property-tests-log
+          path: command-center/property-tests.log
+          retention-days: 30
+
+  report:
+    name: Open or update the failure issue
+    needs: properties
+    if: always() && needs.properties.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: File the failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SEED: ${{ needs.properties.outputs.seed }}
+          RUNS: ${{ needs.properties.outputs.runs }}
+          TAIL: ${{ needs.properties.outputs.tail }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          title='Nightly property failure'
+          body_file="$(mktemp)"
+          {
+            echo "A property test failed in the nightly run with a random seed."
+            echo
+            echo "- Run: $RUN_URL"
+            echo "- Commit: $SHA"
+            echo "- Seed: $SEED, runs per property: $RUNS"
+            echo "- Full log: the property-tests-log artifact on the run (kept 30 days)."
+            echo
+            echo 'Replay from command-center/, with the path the log prints for the failing property:'
+            echo
+            echo '```sh'
+            echo "CC_PROPERTY_SEED=$SEED CC_PROPERTY_PATH=<path> node --test src/<dir>/<name>.property.test.ts"
+            echo '```'
+            echo
+            echo "Fix the bug, then add the shrunk input as a named regression test next to the code. Do not loosen the property."
+            echo
+            echo '<details><summary>Failing properties and log tail</summary>'
+            echo
+            echo '```'
+            # Printed as data: the log can contain third-party-shaped text from the generators.
+            printf '%s\n' "$TAIL" | sed 's/```/` ` `/g'
+            echo '```'
+            echo '</details>'
+          } > "$body_file"
+          existing="$(gh issue list --state open --search "\"$title\" in:title" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$body_file"
+            echo "commented on #$existing"
+          else
+            gh issue create --title "$title" --body-file "$body_file" --label bug
+            echo "opened a new issue"
+          fi
