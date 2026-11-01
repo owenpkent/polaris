@@ -361,3 +361,5 @@ From the repo root, `npm run test:fast` runs these two plus the dashboard unit t
 Tests never read `data/`. They use `openStore(':memory:')` or a temp folder, make no network calls, and must not depend on the machine: no real paths under the dev folder, and no reliance on a real GitHub sign-in (pass a token, or an in-memory secret store, explicitly).
 
 The source uses erasable TypeScript only (no enums, namespaces, or parameter properties), and relative imports end in `.ts`.
+
+Two nightly runs look for what the suite does not state: `nightly-properties.yml` reruns the `*.property.test.ts` files with a random seed and many more inputs, and `fuzz.yml` runs the Jazzer.js targets in `fuzz/` (`npm run fuzz -- <target>`) against the parsers that read text the owner did not write. Each opens a GitHub issue when it finds something. Both are described under Gates and Coverage-guided fuzzing in CONTRIBUTING.md.

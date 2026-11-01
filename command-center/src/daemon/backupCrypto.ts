@@ -71,11 +71,15 @@ export function encryptFile(source: string, dest: string, passphrase: string, op
 
 /** The decrypted bytes. Throws BackupDecryptError for a file that is not an encrypted backup, and for a wrong passphrase or a damaged file, which cannot be told apart. */
 export function decryptBuffer(file: string, passphrase: string): Buffer {
-  const all = readFileSync(file);
-  if (all.length < HEADER_BYTES + TAG_BYTES || !all.subarray(0, 4).equals(MAGIC)) throw new BackupDecryptError(`${file} is not an encrypted Polaris backup`);
+  return decryptBytes(readFileSync(file), passphrase, file);
+}
+
+/** decryptBuffer on bytes already in memory. `name` is the file the errors name. */
+export function decryptBytes(all: Buffer, passphrase: string, name = 'backup'): Buffer {
+  if (all.length < HEADER_BYTES + TAG_BYTES || !all.subarray(0, 4).equals(MAGIC)) throw new BackupDecryptError(`${name} is not an encrypted Polaris backup`);
   const [version, logN, r, p] = all.subarray(4, 8);
-  if (version !== VERSION) throw new BackupDecryptError(`${file} uses backup format ${version}, and this code reads format ${VERSION}`);
-  if (logN < 10 || logN > MAX_LOG_N || r !== SCRYPT_R || p !== SCRYPT_P) throw new BackupDecryptError(`${file} has key settings this code will not run`);
+  if (version !== VERSION) throw new BackupDecryptError(`${name} uses backup format ${version}, and this code reads format ${VERSION}`);
+  if (logN < 10 || logN > MAX_LOG_N || r !== SCRYPT_R || p !== SCRYPT_P) throw new BackupDecryptError(`${name} has key settings this code will not run`);
   const header = all.subarray(0, HEADER_BYTES);
   const decipher = createDecipheriv('chacha20-poly1305', deriveKey(passphrase, all.subarray(8, 24), logN, r, p), all.subarray(24, 36), { authTagLength: TAG_BYTES });
   decipher.setAAD(header, { plaintextLength: all.length - HEADER_BYTES - TAG_BYTES });
@@ -83,7 +87,7 @@ export function decryptBuffer(file: string, passphrase: string): Buffer {
   try {
     return Buffer.concat([decipher.update(all.subarray(HEADER_BYTES, all.length - TAG_BYTES)), decipher.final()]);
   } catch {
-    throw new BackupDecryptError(`${file} could not be decrypted: the passphrase is wrong, or the file is damaged`);
+    throw new BackupDecryptError(`${name} could not be decrypted: the passphrase is wrong, or the file is damaged`);
   }
 }
 

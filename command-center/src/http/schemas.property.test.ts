@@ -25,3 +25,13 @@ for (const [name, schema] of parsers) {
     check(fc.anything(), (v) => { assert.equal(typeof schema.safeParse(v).success, 'boolean'); });
   });
 }
+
+// The coverage-guided fuzzer (fuzz/) does not instrument zod, so this check lives here, not there.
+for (const [name, schema] of parsers) {
+  test(`property: ${name} accepts its own output, so what a route stores is what the schema allows`, () => {
+    check(fc.jsonValue(), (v) => {
+      const result = schema.safeParse(v) as { success: boolean; data?: unknown };
+      if (result.success) assert.ok(schema.safeParse(result.data).success, `${name} refuses its own output for ${JSON.stringify(v)}`);
+    });
+  });
+}

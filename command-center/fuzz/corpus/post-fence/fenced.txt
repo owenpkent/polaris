@@ -1,0 +1,7 @@
+Here is code:
+```js
+console.log(1)
+```
+and ````
+`````
+inline `code` too

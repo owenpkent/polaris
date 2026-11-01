@@ -38,3 +38,13 @@ test('withOneFewer leaves COUNT=1 and a rule with no COUNT alone', () => {
   assert.equal(withOneFewer('FREQ=DAILY'), 'FREQ=DAILY');
   assert.equal(withOneFewer('every 2 weeks'), 'every 2 weeks');
 });
+
+// Found by fuzz/targets/recurrence.fuzz.ts: Number() of a 100-digit COUNT is 2e99, and lowering it
+// wrote "COUNT=2.02402e+99", which the next read did not recognise as a COUNT.
+test('regression: a COUNT past the safe integer range is not a COUNT, so the rule is left as written', () => {
+  const huge = `FREQ=DAILY;COUNT=${'2024020000'.repeat(10)}`;
+  assert.equal(remainingCount(huge), null);
+  assert.equal(withOneFewer(huge), huge);
+  const edge = `FREQ=DAILY;COUNT=${Number.MAX_SAFE_INTEGER}`;
+  assert.equal(remainingCount(withOneFewer(edge)), Number.MAX_SAFE_INTEGER - 1);
+});
