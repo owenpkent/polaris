@@ -178,7 +178,12 @@ function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutbo
       // A link saved with a share (quick add from the share sheet). Only the URL: no sourceType,
       // so an offline create can never look like it came from an external source.
       sourceUrl: typeof b.sourceUrl === 'string' && b.sourceUrl ? b.sourceUrl : null,
-    }, 'human', { id: op.taskId });
+    }, 'human', {
+      id: op.taskId,
+      // The number the device's copy showed the task at (outbox.js), so the manual order the
+      // owner saw, and any move made against it, is the order after replay.
+      position: typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : undefined,
+    });
     return { task, conflicts: [], held: [] };
   }
 

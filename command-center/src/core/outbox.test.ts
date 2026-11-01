@@ -33,6 +33,32 @@ test('a task created offline keeps the id the device gave it, and a replay adds 
   assert.equal(store.searchTasks({ text: 'Made on the train' }).length, 1);
 });
 
+test('a task created offline keeps the number its device showed it at, so a move made beside it holds after replay', () => {
+  const { store } = storeAt('2026-09-21T12:00:00.000Z');
+  const a = store.createTask({ title: 'A' });
+  const b = store.createTask({ title: 'B' });
+  assert.deepEqual([a.position, b.position], [1, 2]);
+  // The device's copy showed A(1), B(2). Offline, it made C after the last (3) and moved A below C (4).
+  // Meanwhile the PC made E, which took 3 on the server: numbered afresh at replay, C would land on 4
+  // beside A and the tie would put A back above it.
+  const e = store.createTask({ title: 'E' });
+  assert.equal(e.position, 3);
+  const results = applyOutbox(store, [
+    op({ kind: 'create_task', taskId: 't_offline0c1', body: { title: 'C', position: 3 } }),
+    op({ kind: 'move_task', taskId: a.id, base: a.updatedAt, body: { position: 4 } }),
+  ]);
+  assert.deepEqual(results.map((r) => r.status), ['applied', 'applied']);
+  assert.equal(store.requireTask('t_offline0c1').position, 3);
+  assert.equal(store.requireTask(a.id).position, 4);
+  const titles = store.searchTasks({ orderBy: 'position' }).map((t) => t.title);
+  assert.ok(titles.indexOf('C') < titles.indexOf('A'), `A stays below C: ${titles.join(', ')}`);
+  assert.deepEqual(titles.slice(0, 2), ['B', 'E']);
+  // Without a number the created task goes last, as it does online.
+  const [r] = applyOutbox(store, [op({ kind: 'create_task', taskId: 't_offline0d1', body: { title: 'D' } })]);
+  assert.equal(r.status, 'applied');
+  assert.equal(store.requireTask('t_offline0d1').position, 5);
+});
+
 test('when both sides changed a field, the newer edit wins and the older value goes to history', () => {
   const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
   const task = store.createTask({ title: 'Original' });

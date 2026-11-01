@@ -515,11 +515,16 @@ export class Store {
     return (r?.p ?? 0) + 1;
   }
 
-  /** `opts.id` is for a task a dashboard created offline, which already carries the id it minted. */
-  createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string } = {}): Task {
+  /**
+   * `opts` is for a task a dashboard created offline (core/outbox.ts): it already carries the id
+   * it minted, and the position its copy showed it at, so a move the owner made beside it while
+   * offline still holds once both are replayed. Without a position the task goes last.
+   */
+  createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string; position?: number } = {}): Task {
     this.validate(input);
     if (input.dueAt != null) input = { ...input, dueAt: this.localDue(input.dueAt) };
     if (opts.id !== undefined && !TASK_ID_PATTERN.test(opts.id)) throw new ValidationError(`not a task id: ${opts.id}`);
+    if (opts.position !== undefined && !Number.isFinite(opts.position)) throw new ValidationError('position must be a finite number');
     const now = this.now();
     const status = input.status ?? 'open';
     // Propose, do not act: third-party text may only ever enter as an inbox suggestion, whichever
@@ -544,7 +549,7 @@ export class Store {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, projectId, sectionId, input.parentId ?? null, input.title.trim(), input.notes ?? '', status, input.priority ?? 'none',
           input.dueAt ?? null, input.startAt ?? null, input.estimateMinutes ?? null, input.recurrence ?? null, normalizeAssignee(input.assignee),
-          input.isMilestone ? 1 : 0, this.nextPosition(), input.sourceType ?? null, input.sourceId ?? null,
+          input.isMilestone ? 1 : 0, opts.position ?? this.nextPosition(), input.sourceType ?? null, input.sourceId ?? null,
           input.sourceUrl ?? null, input.confidence ?? null, untrustedText ? 1 : 0, JSON.stringify(input.customFields ?? {}), now, now,
           status === 'done' ? now : null]);
       this.emit('task.created', id, actor, {

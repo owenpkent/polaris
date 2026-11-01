@@ -159,7 +159,8 @@ describe('offline task edits', () => {
           ['update_task', TASK.id, TASK.updatedAt],
           ['create_task', made.id, null],
         ])
-        expect(sent.ops[1].body).toEqual({ title: 'Made offline' })
+        // The copy's one task has no position, so the new one is numbered after 0.
+        expect(sent.ops[1].body).toEqual({ title: 'Made offline', position: 1 })
         // Offline mode must still be on here: nothing may reload before the edits are in.
         expect(getOfflineState().offline).toBe(true)
         return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
@@ -171,6 +172,30 @@ describe('offline task edits', () => {
     expect(calls).toEqual(['http://x/api/events', 'http://x/api/outbox'])
     expect(getOfflineState()).toMatchObject({ offline: false, pending: 0 })
     expect(getOfflineState().lastSync).toMatchObject({ failed: false, synced: 2, conflicts: [] })
+  })
+
+  test('a task made offline is numbered after the last in the copy, shows there, and carries the number to the server', async () => {
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, {
+      tasks: [{ ...TASK, position: 1 }, { ...TASK, id: 't_bbbbbbbbbb', title: 'Second', position: 2.5 }], total: 2,
+    }))
+    await client.listTasks(MY_TASKS_QUERY)
+    global.fetch.mockImplementation(down)
+
+    const { task } = await client.createTask({ title: 'Made offline' })
+    expect(task.position).toBe(3.5)
+    expect((await client.listTasks(MY_TASKS_QUERY)).tasks.find((t) => t.id === task.id).position).toBe(3.5)
+
+    let sent = null
+    global.fetch.mockImplementation(async (url, init) => {
+      if (url === 'http://x/api/outbox') {
+        sent = JSON.parse(init.body)
+        return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+      }
+      return jsonResponse(200, { events: [], headId: 9 })
+    })
+    await client.getEvents()
+    expect(sent.ops.map((o) => [o.kind, o.body])).toEqual([['create_task', { title: 'Made offline', position: 3.5 }]])
   })
 
   test('a due time set offline shows in the copy and is replayed as written', async () => {

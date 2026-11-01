@@ -137,6 +137,22 @@ function patchTaskEverywhere(id, fields) {
   })
 }
 
+/**
+ * The number after the last task in the copy, as Store.nextPosition answers for a new task on the
+ * server. An offline create carries it, so the task shows last under the manual sort at once and
+ * stays where the owner saw it once the create is replayed.
+ */
+async function nextCachedPosition() {
+  let max = 0
+  await cachePatchAll((data) => {
+    if (!data || typeof data !== 'object') return undefined
+    const seen = [data.task, ...(Array.isArray(data.tasks) ? data.tasks : []), ...(Array.isArray(data.subtasks) ? data.subtasks : [])]
+    for (const t of seen) if (typeof t?.position === 'number' && Number.isFinite(t.position) && t.position > max) max = t.position
+    return undefined
+  })
+  return max + 1
+}
+
 async function addCreatedTask(baseUrl, myTasksUrl, task) {
   const projectUrl = task.projectId ? `${baseUrl}/api/projects/${encodeURIComponent(task.projectId)}` : null
   const parentUrl = task.parentId ? `${baseUrl}/api/tasks/${encodeURIComponent(task.parentId)}` : null
@@ -164,6 +180,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
   if (kind === 'create_task') {
     opBody = {}
     for (const field of CREATE_FIELDS) if (body[field] !== undefined) opBody[field] = body[field]
+    opBody.position = await nextCachedPosition()
   }
   await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })
   await refreshPendingCount(origin)

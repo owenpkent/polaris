@@ -7,7 +7,9 @@ const api = {}
 let connected = true
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected, api }) }))
-vi.mock('./useEvents', () => ({ useEventRefresh: () => {} }))
+// The poll's callback is kept so a test can fire a refresh at a chosen moment.
+let refreshFromEvents = () => {}
+vi.mock('./useEvents', () => ({ useEventRefresh: (cb) => { refreshFromEvents = cb } }))
 
 const PHONE_QUERIES = Object.values(BREAKPOINT_QUERIES)
 
@@ -503,5 +505,45 @@ describe('MyTasksTab manual sort queues moves', () => {
     await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
     expect(positions.t3).toBe(0)
     await waitFor(() => expect(order()).toEqual(['Open Three', 'Open One', 'Open Two']))
+  })
+
+  test('a poll between two queued moves keeps the later move on screen, so a third move goes on from it', async () => {
+    stubMatchMedia(1280)
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const positions = { t1: 1, t2: 2, t3: 3, t4: 4 }
+    const pending = []
+    api.listTasks.mockImplementation(() => Promise.resolve({
+      tasks: [base('t1', 'One'), base('t2', 'Two'), base('t3', 'Three'), base('t4', 'Four')].map((t) => ({ ...t, position: positions[t.id] })),
+    }))
+    api.moveTask = vi.fn((id, { position }) => new Promise((resolve) => {
+      pending.push(() => { positions[id] = position; resolve({ task: {} }) })
+    }))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Four' })
+
+    const handle = screen.getByRole('button', { name: 'Reorder Four' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(order()).toEqual(['Open One', 'Open Four', 'Open Two', 'Open Three'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+
+    // The first write lands (Four at 2.5), and the event it raises makes the list poll while the
+    // second write (1.5) is still on its way. The server's in-between order must not show.
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(2))
+    await act(async () => { refreshFromEvents() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(order()).toEqual(['Open One', 'Open Four', 'Open Two', 'Open Three'])
+
+    // A third step up goes on from where the row is shown, to the top.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Four' }), { key: 'ArrowUp' })
+    expect(order()).toEqual(['Open Four', 'Open One', 'Open Two', 'Open Three'])
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(3))
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(3))
+    expect(api.moveTask.mock.calls.map((c) => c[1].position)).toEqual([2.5, 1.5, 0])
+    expect(positions.t4).toBe(0)
+    await waitFor(() => expect(order()).toEqual(['Open Four', 'Open One', 'Open Two', 'Open Three']))
   })
 })
