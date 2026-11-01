@@ -81,16 +81,10 @@ jobs:
           node --test --test-reporter=spec "src/**/*.property.test.ts" 2>&1 | tee property-tests.log
           status=${PIPESTATUS[0]}
           set -e
-          # The failing properties and their counterexamples, for the issue. The log keeps
-          # everything; this is the part a reader needs first.
-          {
-            echo 'tail<<CC_EOF'
-            awk '/property failed|not ok|Counterexample|Shrunk|Error:/ { print NR ": " $0 }' property-tests.log | head -c 6000
-            echo
-            echo '--- last 40 lines ---'
-            tail -n 40 property-tests.log | head -c 6000
-            echo 'CC_EOF'
-          } >> "$GITHUB_OUTPUT"
+          # The failing properties and their counterexamples, for the issue, as the `tail`
+          # output: bounded, cut on whole lines, closed by a delimiter the log cannot contain.
+          # The log keeps everything; this is the part a reader needs first.
+          node ../scripts/property-failure-summary.mjs property-tests.log
           exit "$status"
       - name: Keep the full log
         if: always()
