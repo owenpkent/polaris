@@ -175,6 +175,7 @@ describe('TaskRow repeat from the due date picker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Change due date for Write the report' }))
     fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
     expect(onQuickUpdate).toHaveBeenLastCalledWith(task, { dueAt: DUE_BOUNDS.tomorrow, recurrence: 'FREQ=WEEKLY;BYDAY=WE' })
   })

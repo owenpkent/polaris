@@ -246,7 +246,11 @@ describe('the time', () => {
   })
 })
 
-// Repeats under the month, wired as TaskRow and the task panel wire it.
+// Repeats, a second view of the picker in place of the month, wired as TaskRow and the task panel
+// wire it. openRepeat clicks the repeat button, whatever it is named (Repeat, or Repeats and the rule).
+const openRepeat = () => fireEvent.click(screen.getByRole('button', { name: /^Repeats?( |$)/ }))
+const goBack = () => fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
 function renderRepeat(value = '2026-10-08', recurrence = null, dates = ['2026-10-15', '2026-10-22', '2026-10-29']) {
   const onChange = vi.fn()
   const onRecurrenceChange = vi.fn()
@@ -276,6 +280,7 @@ describe('Repeats', () => {
 
   test('the next dates of the repeat are tinted on the month', async () => {
     const { api } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
     await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH', '2026-10-08', 3))
     const next = await screen.findByRole('button', { name: 'Thursday, October 15, 2026, repeats' })
     expect(next.hasAttribute('data-repeat')).toBe(true)
@@ -284,15 +289,17 @@ describe('Repeats', () => {
 
   test('Does not repeat saves null', () => {
     const { onRecurrenceChange } = renderRepeat('2026-10-08', 'daily')
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'none' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith(null)
   })
 
   test('on a task with no date, a repeat sets the date to today with it', () => {
     const { onRecurrenceChange } = renderRepeat(null)
-    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('daily', DUE_BOUNDS.today)
+    goBack()
     expect(day('Thursday, October 8, 2026').getAttribute('aria-pressed')).toBe('true')
   })
 
@@ -300,7 +307,7 @@ describe('Repeats', () => {
     const { onRecurrenceChange } = renderRepeat(null)
     fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
     fireEvent.change(screen.getByLabelText('Time'), { target: { value: '07:30' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'daily' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('daily', `${DUE_BOUNDS.today}T07:30`)
   })
@@ -317,8 +324,10 @@ describe('Repeats', () => {
 
   test('a plain repeat chosen again in Repeats follows the day picked after it, saved with it', () => {
     const { onChange, onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
+    goBack()
     fireEvent.click(day('Friday, October 9, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-09', 'FREQ=WEEKLY;BYDAY=FR')
     expect(picker()).toBeNull()
@@ -328,6 +337,7 @@ describe('Repeats', () => {
   // close does not turn it back into a plain repeat that follows the day (review on #77).
   test('a rule made in Custom keeps its days after the picker is closed and opened again', () => {
     const { onChange, onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'custom' } })
     expect(onRecurrenceChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;BYDAY=TH')
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -351,19 +361,22 @@ describe('Repeats', () => {
 
   test('a repeat just chosen follows the day picked after it', () => {
     const { onChange, onRecurrenceChange } = renderRepeat()
-    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
     expect(onRecurrenceChange).toHaveBeenCalledWith('FREQ=WEEKLY;BYDAY=TH')
+    goBack()
     fireEvent.click(day('Monday, October 12, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-12', 'FREQ=WEEKLY;BYDAY=MO')
   })
 
   test('Custom opens the builder in the picker, and a rule made there keeps its days on a new day', () => {
     const { onChange, onRecurrenceChange } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    openRepeat()
     fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'custom' } })
     expect(screen.getByRole('group', { name: 'Ends' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
     expect(onRecurrenceChange).toHaveBeenLastCalledWith('FREQ=WEEKLY;INTERVAL=2;BYDAY=TH')
+    goBack()
     fireEvent.click(day('Friday, October 9, 2026'))
     expect(onChange).toHaveBeenCalledWith('2026-10-09')
   })
@@ -377,7 +390,7 @@ describe('Repeats', () => {
   })
 })
 
-describe('the Repeat toggle', () => {
+describe('the Repeat button and the repeat view', () => {
   test('is off by default: only the Repeat button, nothing tinted, nothing asked of the server', () => {
     const { api } = renderRepeat()
     expect(screen.getByRole('button', { name: 'Repeat' })).toBeTruthy()
@@ -387,31 +400,86 @@ describe('the Repeat toggle', () => {
     expect(api.previewRecurrence).not.toHaveBeenCalled()
   })
 
-  test('turning it on shows Repeats on Does not repeat, focused, and saves nothing', async () => {
+  test('the button opens Repeats on Does not repeat in place of the month, focused, and saves nothing', async () => {
     const { onRecurrenceChange, onChange } = renderRepeat()
     fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
     const select = screen.getByLabelText('Repeats')
     expect(select.value).toBe('none')
     await waitFor(() => expect(document.activeElement).toBe(select))
     expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+    expect(screen.queryByRole('grid')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy()
     expect(onRecurrenceChange).not.toHaveBeenCalled()
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  test('a task that repeats opens with it on', () => {
-    renderRepeat('2026-10-08', 'daily')
-    expect(screen.getByLabelText('Repeats').value).toBe('daily')
-    expect(screen.getByRole('button', { name: 'Remove repeat' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+  test('Back returns to the month with focus on the repeat button, saving nothing', async () => {
+    const { onRecurrenceChange, onChange } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Repeat' }))
+    goBack()
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(screen.getByRole('grid', { name: 'Due date, October 2026' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Repeat' })))
+    expect(onRecurrenceChange).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
   })
 
-  test('Remove repeat saves no repeat, hides Repeats and the tint, and puts focus back on Repeat', async () => {
+  test('a task that repeats opens on the month, and the button names the rule', async () => {
+    const { api } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    expect(screen.getByRole('grid', { name: 'Due date, October 2026' })).toBeTruthy()
+    expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Repeats weekly on Thu' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+    // The next dates are tinted on the month without the repeat view being opened.
+    await waitFor(() => expect(api.previewRecurrence).toHaveBeenCalled())
+    await screen.findByRole('button', { name: 'Thursday, October 15, 2026, repeats' })
+  })
+
+  test('the button on a task that repeats opens Repeats on its rule', async () => {
+    renderRepeat('2026-10-08', 'daily')
+    openRepeat()
+    const select = screen.getByLabelText('Repeats')
+    expect(select.value).toBe('daily')
+    expect(screen.getByRole('button', { name: 'Remove repeat' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(select))
+  })
+
+  test('a rule chosen in Repeats names the button after Back', async () => {
+    renderRepeat()
+    openRepeat()
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'weekly' } })
+    goBack()
+    const button = screen.getByRole('button', { name: 'Repeats weekly on Thu' })
+    await waitFor(() => expect(document.activeElement).toBe(button))
+  })
+
+  test('Custom stays chosen after Back, and Repeats opens again after the picker is closed', () => {
+    renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
+    openRepeat()
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'custom' } })
+    expect(screen.getByRole('group', { name: 'Ends' })).toBeTruthy()
+    goBack()
+    openRepeat()
+    expect(screen.getByLabelText('Repeats').value).toBe('custom')
+    expect(screen.getByRole('group', { name: 'Ends' })).toBeTruthy()
+    // Closed and opened again, the saved rule is the same text, and Repeats still opens.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Due date' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Due' }))
+    openRepeat()
+    expect(screen.getByLabelText('Repeats')).toBeTruthy()
+  })
+
+  test('Remove repeat saves no repeat, returns to the month without the tint, and puts focus on Repeat', async () => {
     const { onRecurrenceChange, picker } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
     await screen.findByRole('button', { name: 'Thursday, October 15, 2026, repeats' })
+    openRepeat()
     fireEvent.click(screen.getByRole('button', { name: 'Remove repeat' }))
     expect(onRecurrenceChange).toHaveBeenCalledWith(null)
     expect(picker()).not.toBeNull()
     expect(screen.queryByLabelText('Repeats')).toBeNull()
+    expect(screen.getByRole('grid', { name: 'Due date, October 2026' })).toBeTruthy()
     expect(document.querySelector('[data-repeat]')).toBeNull()
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Repeat' })))
   })
@@ -427,6 +495,6 @@ describe('the Repeat toggle', () => {
   test('a rule the builder cannot show has no Remove repeat, so it is not lost by accident', () => {
     renderRepeat('2026-10-08', 'FREQ=YEARLY;BYMONTH=1,7')
     expect(screen.queryByRole('button', { name: 'Remove repeat' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Repeat' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Repeat/ })).toBeNull()
   })
 })
