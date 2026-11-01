@@ -32,6 +32,33 @@ test('the nightly workflow fuzzes every target', () => {
   assert.deepEqual(listed, targets);
 });
 
+// Review of #112: RegExp, the reference the pattern target compares against, backtracks for
+// longer than the fuzzer's per-input timeout on this 35-byte input, after Polaris's own matcher
+// has answered in under a millisecond. The reference now runs under its own budget, so the target
+// finishes quickly and reports nothing: a slow reference is not a finding about our code.
+test('the pattern target finishes fast when the reference RegExp would hang', async () => {
+  const { fuzz } = await import('../../fuzz/targets/pattern.fuzz.ts');
+  const { oracleTimeouts, stopOracle } = await import('../../fuzz/targets/regexOracle.ts');
+  const before = oracleTimeouts();
+  const start = Date.now();
+  fuzz(Buffer.from(`^((a*)*)*$\0${'a'.repeat(23)}!`));
+  assert.ok(Date.now() - start < 3000, `took ${Date.now() - start} ms`);
+  assert.equal(oracleTimeouts(), before + 1, 'the reference ran out of budget once');
+  // The oracle still compares where RegExp answers in time, with a fresh worker after the timeout.
+  fuzz(Buffer.from('^a+b$\0aaab'));
+  await stopOracle();
+});
+
+test('the regex oracle answers true, false, syntax, or timeout, and never throws', async () => {
+  const { regexWithin, stopOracle } = await import('../../fuzz/targets/regexOracle.ts');
+  assert.equal(regexWithin('^a+$', 'aaa'), true);
+  assert.equal(regexWithin('^a+$', 'aab'), false);
+  assert.equal(regexWithin('(', 'x'), 'syntax');
+  assert.equal(regexWithin('^((a*)*)*$', `${'a'.repeat(23)}!`, 100), 'timeout');
+  assert.equal(regexWithin('^a+$', 'aaa'), true, 'a new worker serves the call after a timeout');
+  await stopOracle();
+});
+
 for (const t of targets) {
   test(`fuzz target ${t} runs on the empty input, its seeds, and random bytes`, async () => {
     const mod = await import(`../../fuzz/targets/${t}.fuzz.ts`) as { fuzz: (data: Buffer) => void | Promise<void> };

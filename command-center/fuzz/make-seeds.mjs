@@ -51,9 +51,10 @@ for (const [i, r] of ['FREQ=WEEKLY;BYDAY=MO,WE;COUNT=5', 'RRULE:FREQ=MONTHLY;BYM
   write(recurrence, `rule-${i}.txt`, selector(i, r));
 }
 
-// pattern: pattern, NUL, text.
+// pattern: pattern, NUL, text. The last one makes RegExp, the reference, backtrack for seconds
+// (review of #112): it stays in the corpus so every run proves the bounded oracle holds.
 const pattern = corpus('pattern');
-for (const [i, [p, t]] of [['^(a|b)+c?$', 'ababc'], ['\\bfix(es|ed)?\\b', 'this fixes it'], ['[^\\d\\s]{2,5}x*', 'ab12 cdx'], ['(?:foo|bar){1,}baz.', 'foobarbaz!'], ['a*?b+?', 'aaab']].entries()) {
+for (const [i, [p, t]] of [['^(a|b)+c?$', 'ababc'], ['\\bfix(es|ed)?\\b', 'this fixes it'], ['[^\\d\\s]{2,5}x*', 'ab12 cdx'], ['(?:foo|bar){1,}baz.', 'foobarbaz!'], ['a*?b+?', 'aaab'], ['^((a*)*)*$', `${'a'.repeat(23)}!`]].entries()) {
   write(pattern, `pattern-${i}.txt`, Buffer.concat([Buffer.from(p), Buffer.from([0]), Buffer.from(t)]));
 }
 

@@ -1,12 +1,15 @@
 import { compilePattern } from '../../src/automation/pattern.ts';
 import { isPatternError, rethrowUnless } from './expected.ts';
+import { regexWithin } from './regexOracle.ts';
 
 // The bounded regular expression engine behind the 'matches' rule condition: a pattern written by
 // the owner or an agent, run against titles written by third parties. The input splits at the
 // first NUL into the pattern and the text. A pattern is compiled or refused with PatternError;
 // matching must finish (the per-input timeout is the bound) and, where JavaScript's RegExp also
-// accepts the pattern, agree with it. The oracle runs only on short text, because RegExp itself
-// backtracks and a hang there would be its bug, not ours.
+// accepts the pattern, agree with it. RegExp itself backtracks, so the reference runs in a worker
+// with its own budget (regexOracle.ts): a reference that runs out of time is no comparison, not a
+// finding, and never reaches the fuzzer's per-input timeout. The length limits keep the common
+// case cheap; they are not what bounds it.
 export function fuzz(data: Buffer): void {
   const nul = data.indexOf(0);
   const source = (nul < 0 ? data : data.subarray(0, nul)).toString('utf8');
@@ -20,11 +23,9 @@ export function fuzz(data: Buffer): void {
   }
   const ours = compiled.test(text);
   if (source.length > 40 || text.length > 24) return;
-  let theirs: boolean;
-  try {
-    theirs = new RegExp(source).test(text);
-  } catch {
-    return; // RegExp refuses a pattern we accept: the module promises agreement only where both accept.
-  }
+  const theirs = regexWithin(source, text);
+  // 'syntax': RegExp refuses a pattern we accept, and the module promises agreement only where
+  // both accept. 'timeout': the reference ran out of budget, so there is nothing to compare.
+  if (typeof theirs !== 'boolean') return;
   if (ours !== theirs) throw new Error(`pattern ${JSON.stringify(source)} on ${JSON.stringify(text)}: ours ${ours}, RegExp ${theirs}`);
 }
