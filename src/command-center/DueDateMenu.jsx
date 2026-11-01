@@ -75,6 +75,10 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
   const [custom, setCustom] = useState(false)
   // Repeats in place of the month.
   const [showRepeat, setShowRepeat] = useState(false)
+  // The month the calendar shows, held here because Repeats unmounts the calendar: Back returns to
+  // the month the owner had browsed to, not the saved due date's. It follows the chosen day.
+  const [calendarFocus, setCalendarFocus] = useState(() => day || dueBounds.today)
+  useEffect(() => { setCalendarFocus(day || dueBounds.today) }, [day, dueBounds.today])
   const repeatRef = useRef(null)
   const addRepeatRef = useRef(null)
   const focusRepeatRef = useRef(false)
@@ -233,7 +237,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
           </button>
         ))}
       </div>
-      <MonthCalendar value={day} today={dueBounds.today} marks={rule && marks ? marks : []} onPick={pick} />
+      <MonthCalendar value={day} today={dueBounds.today} marks={rule && marks ? marks : []} onPick={pick} focus={calendarFocus} onFocusChange={setCalendarFocus} />
       <div className="due-pop-time">
         {showTime ? (
           <>

@@ -424,6 +424,18 @@ describe('the Repeat button and the repeat view', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  test('Back returns to the month the owner had browsed to, not the one of the due date', async () => {
+    const { onRecurrenceChange, onChange } = renderRepeat()
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    expect(screen.getByRole('grid', { name: 'Due date, December 2026' })).toBeTruthy()
+    openRepeat()
+    goBack()
+    expect(screen.getByRole('grid', { name: 'Due date, December 2026' })).toBeTruthy()
+    expect(onRecurrenceChange).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   test('a task that repeats opens on the month, and the button names the rule', async () => {
     const { api } = renderRepeat('2026-10-08', 'FREQ=WEEKLY;BYDAY=TH')
     expect(screen.getByRole('grid', { name: 'Due date, October 2026' })).toBeTruthy()
