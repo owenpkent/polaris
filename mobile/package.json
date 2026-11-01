@@ -19,8 +19,8 @@
     "@capacitor/cli": "^8.6.0"
   },
   "overrides": {
-    "glob": {
-      "minimatch": "^11.0.1"
+    "rimraf": {
+      "glob": "^14.0.3"
     }
   }
 }
