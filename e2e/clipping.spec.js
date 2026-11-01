@@ -350,6 +350,19 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // Compact density (src/density.js) packs the rows and cards; nothing in them may be cut off.
+  test('My tasks and the Board on the long titles under Compact density', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
+    await openView(page)
+    await page.getByRole('button', { name: 'Expand No due date' }).click()
+    await expect(page.getByRole('button', { name: `Open ${URL_TITLE}`, exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+    await openView(page, 'board')
+    await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
+    await expect(page.getByRole('region', { name: 'No section', exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
   test('the Board on the long titles', async ({ page }) => {
     await openView(page, 'board')
     await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })

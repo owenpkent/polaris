@@ -109,7 +109,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   }
 
   return (
-    <div className="mytasks-grid inline-add-row" style={{ gridTemplateColumns, alignItems: 'center', minHeight: 44, borderBottom: '1px solid var(--bd)' }}>
+    <div className="mytasks-grid inline-add-row" style={{ gridTemplateColumns, alignItems: 'center', minHeight: 'var(--row)', borderBottom: '1px solid var(--bd)' }}>
       {/* The empty circle a row has, so the new row reads as the task it will be. */}
       <span aria-hidden="true" className="inline-add-check">
         <span className="task-check-circle" />

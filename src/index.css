@@ -9,10 +9,19 @@
    System/Light/Dark choice and writes data-theme onto <html>.
 
    Contrast targets (WCAG 2.2): text tokens reach at least 4.5:1
-   on every surface (bg-inset, bg, bg2, bg3, bg-hover), t1 and t2 reach 7:1 on
-   bg, and --bd-strong reaches 3:1 on every surface so control edges stay
-   visible. --bd is for decorative dividers only; never use it as the sole edge
-   of a control. Measured ratios are noted next to the text tokens (on bg / bg3).
+   on every surface (bg-inset, bg, bg2, bg3, and each of them under bg-hover
+   and bg-active), t1 and t2 reach 7:1 on bg, and --bd-strong reaches 3:1 on
+   every surface so control edges stay visible. --bd is for decorative
+   dividers only; never use it as the sole edge of a control. Measured ratios
+   are noted next to the text tokens (on bg / bg3).
+
+   Every color has one job, as in a stepped scale (Radix Colors, for one):
+   surfaces, then state layers (hover, pressed, selected), then lines, then
+   solid fills, then text. A job never borrows another's token, so a hovered
+   row can never be the colour of the line under it. Hover, pressed, and the
+   two divider tokens are translucent washes of the text colour rather than
+   fixed colours: one value then reads the same on every surface, and a line
+   (11%) is always about twice as strong as a hover (5%) wherever both sit.
 
    Depth model: recessed things (inputs, board lanes) are darker than the page,
    raised things (sheets, cards, buttons, top bar) are lighter and carry a crisp
@@ -21,24 +30,27 @@
 :root {
   color-scheme: dark;
 
-  /* Each layer is a clear step lighter than the one below it (about 1.2:1),
-     so surfaces never blend into each other. The light theme cannot repeat
-     those steps -- white is the ceiling, so its layers are 1.03-1.08:1 apart
-     and it leans on the ring in --shadow-* for separation instead. */
-  --bg-inset: #101216;
-  --bg: #17191e;
-  --bg2: #282c34;
-  --bg3: #333842;
-  --bg-hover: #3e4450;
-  --bg-zebra: #353a44; /* alternate list rows on bg2 */
+  /* Each layer is a small step lighter than the one below it (1.05-1.1:1),
+     with the hairline in --bd-surface and the ring in --shadow-* doing the
+     separating. Bigger steps made the sidebar and top bar louder than the
+     page they frame. */
+  --bg-inset: #111317;
+  --bg: #16181d;
+  --bg2: #1d2026;
+  --bg3: #25282f;
+  /* State layers: hover and pressed, on any surface. Never a resting background (a chip at rest
+     uses --neutral-soft): a wash this faint only reads as a change. */
+  --bg-hover: color-mix(in srgb, var(--t1) 5%, transparent);
+  --bg-active: color-mix(in srgb, var(--t1) 9%, transparent);
+  --bg-zebra: color-mix(in srgb, var(--t1) 3%, var(--bg2)); /* alternate list rows on bg2 */
   --bg-selected: color-mix(in srgb, var(--blue) 16%, var(--bg2));
-  --bd: #434955;
-  --bd-surface: #4a505b;
-  --bd-strong: #8c94a2;
+  --bd: color-mix(in srgb, var(--t1) 11%, transparent);
+  --bd-surface: color-mix(in srgb, var(--t1) 13%, transparent);
+  --bd-strong: #848c9a; /* 5.2 / 4.4 */
 
-  --t1: #f3f5f8; /* 16.1 / 10.8 */
-  --t2: #c2c9d3; /* 10.5 / 7.1 */
-  --t3: #aab2bd; /* 8.2 / 5.5, placeholders and counts */
+  --t1: #f3f5f8; /* 16.3 / 13.5 */
+  --t2: #c2c9d3; /* 10.6 / 8.8 */
+  --t3: #aab2bd; /* 8.3 / 6.9, placeholders and counts */
 
   --blue: #80bcff;
   --blue-hover: #a3cfff;
@@ -52,10 +64,20 @@
   /* Text that sits on a solid accent fill (primary and success buttons). */
   --on-accent: #0b1220;
 
-  /* Top of an accent button's gradient. Here the fill is pale and --on-accent
-     is dark, so the lit edge goes toward white: 10.8:1 blue, 12.2:1 green. */
-  --blue-top: color-mix(in srgb, var(--blue) 80%, white);
-  --green-top: color-mix(in srgb, var(--green) 80%, white);
+  /* Project and person colours (colorFor in shared.jsx). Ten hues 36 degrees apart at one
+     OKLCH lightness and chroma (L 0.78, C 0.115 here), so no project reads louder or muddier
+     than another and neighbours on the wheel stay apart. Listed in hash order, not hue order.
+     --on-accent on each measures 8.9-9.8:1, for the initials on an avatar. */
+  --proj-1: #60c4f3;
+  --proj-2: #f2a172;
+  --proj-3: #71ce9d;
+  --proj-4: #c6a5f4;
+  --proj-5: #d7b35b;
+  --proj-6: #98b5fe;
+  --proj-7: #f898a0;
+  --proj-8: #46cece;
+  --proj-9: #e89ad0;
+  --proj-10: #a9c46e;
 
   /* Soft tints for chips, selected rows, and banners. Opaque, mixed into --bg2: a transparent
      tint takes its luminance from whatever sits behind it, and over the task panel (--bg3,
@@ -79,46 +101,60 @@
      drop shadow. A resting surface (--shadow-1) is almost all ring: the list
      and the cards sit on the page rather than float over it, and only menus,
      panels, and dialogs (--shadow-pop) carry a real drop. */
-  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.4);
+  /* The ring is the edge of a button with no border of its own (.btn-ghost on a .btn). */
+  --shadow-btn: inset 0 0 0 1px rgba(255, 255, 255, 0.09), 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.45), 0 14px 28px rgba(0, 0, 0, 0.35);
   --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 0 0 1px rgba(0, 0, 0, 0.6), 0 6px 12px rgba(0, 0, 0, 0.45), 0 18px 40px rgba(0, 0, 0, 0.5);
   --shadow-inset: inset 0 2px 3px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(0, 0, 0, 0.2);
-  --shadow-accent: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.45), 0 2px 3px rgba(0, 0, 0, 0.4);
+  --shadow-fill: 0 1px 2px rgba(0, 0, 0, 0.4); /* a solid accent fill (primary, success) */
   --shadow-bar: 0 1px 0 rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.35); /* top bar */
   --lane-edge: rgba(0, 0, 0, 0.55); /* Board lane border */
   --shadow-lane: var(--shadow-inset), 0 1px 0 rgba(255, 255, 255, 0.06);
-  --raised: linear-gradient(180deg, var(--bg-hover), var(--bg3));
-  --raised-hover: linear-gradient(180deg, #48505c, var(--bg-hover));
+  /* A button's face: flat, one step above --bg3 so it stands off every surface it sits on. */
+  --raised: #2b2f37;
+  --raised-hover: #343841;
   --overlay: rgba(6, 7, 10, 0.66);
   --target: 44px;
+  /* Row density (src/density.js): a task row and a group header in My tasks, and the controls
+     on a board card. Comfortable keeps them at the 44px target; Compact, the owner's choice per
+     device, packs them so more tasks fit on screen. */
+  --row: var(--target);
+  --row-head: var(--target);
+  --section-gap: 20px;
+}
+:root[data-density='compact'] {
+  --row: 32px;
+  --row-head: 36px;
+  --section-gap: 12px;
 }
 
 /* Light theme, applied when the pre-paint script in index.html (mirrored by
    src/theme.js) sets data-theme="light" on <html>. Same depth model, flipped:
    recessed things are a step darker than the page, raised things go toward
-   white, and hover darkens rather than lightens, so --raised is defined here
-   rather than derived from --bg-hover. The layers are much closer together
+   white, and the state layers and lines are washes of dark ink rather than
+   light, so hover darkens rather than lightens. The layers are much closer together
    than in the dark theme (see the note there); what separates a card from the
    page here is the 1px ink ring in --shadow-*, not luminance. Every text and accent color is
    re-picked rather than lightened, since a pale accent that reads well on
-   #17191e has no contrast left on white. */
+   #16181d has no contrast left on white. */
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg-inset: #e8ebf0;
-  --bg: #f1f3f7;
-  --bg2: #fbfcfe;
+  --bg-inset: #eaedf1;
+  --bg: #f4f5f8;
+  --bg2: #fcfcfd;
   --bg3: #ffffff;
-  --bg-hover: #d8dfea; /* 1.12 on bg-inset, 1.34 on bg3: visible on every surface */
-  --bg-zebra: #f2f4f8; /* alternate list rows on bg2 */
-  --bd: #d9dee6;
-  --bd-surface: #d2d8e2;
-  --bd-strong: #6f7887; /* 4.0 / 4.5, and 3.7 on bg-inset */
+  --bg-hover: color-mix(in srgb, var(--t1) 4.5%, transparent);
+  --bg-active: color-mix(in srgb, var(--t1) 8%, transparent);
+  --bg-zebra: color-mix(in srgb, var(--t1) 2.5%, var(--bg2)); /* alternate list rows on bg2 */
+  --bd: color-mix(in srgb, var(--t1) 11%, transparent);
+  --bd-surface: color-mix(in srgb, var(--t1) 13%, transparent);
+  --bd-strong: #6f7887; /* 4.1 / 4.5, and 3.3 on bg-inset under bg-active */
 
-  --t1: #12151b; /* 16.5 / 18.3 */
-  --t2: #474e5b; /* 7.5 / 8.4 */
-  --t3: #5c6473; /* 5.4 / 6.0, placeholders and counts */
+  --t1: #12151b; /* 16.8 / 18.3 */
+  --t2: #474e5b; /* 7.7 / 8.4 */
+  --t3: #5c6473; /* 5.5 / 6.0, placeholders and counts */
 
   --blue: #1560c8; /* 5.3 / 5.9 */
   --blue-hover: #0e4ba3; /* darker, not lighter: hover deepens in this theme */
@@ -132,12 +168,18 @@
   /* Text on a solid accent fill (primary and success buttons). */
   --on-accent: #ffffff;
 
-  /* Here the fill is deep and --on-accent is white, so the lit edge can only
-     lift a little before the white label drops under 4.5:1. At 92% the top of
-     the gradient still measures 5.1:1 blue and 5.2:1 green; at the 80% the
-     dark theme uses it would be 4.0:1. */
-  --blue-top: color-mix(in srgb, var(--blue) 92%, white);
-  --green-top: color-mix(in srgb, var(--green) 92%, white);
+  /* The same ten hues as the dark theme at L 0.54, C 0.14: deep enough that the white
+     initials on an avatar measure 4.8-5.5:1, and a dot or mark 4.8:1 or more on white. */
+  --proj-1: #0f79a0;
+  --proj-2: #ac5102;
+  --proj-3: #108354;
+  --proj-4: #8057b1;
+  --proj-5: #8a6901;
+  --proj-6: #4a69bf;
+  --proj-7: #b14554;
+  --proj-8: #0b7f7f;
+  --proj-9: #a14989;
+  --proj-10: #617a07;
 
   /* Opaque, like the dark theme's: a transparent tint takes its luminance from
      whatever sits behind it, and over a recessed surface that drops the accent
@@ -155,17 +197,17 @@
 
   /* Shadows stay crisp but lose the heavy black ring, which reads as grime on
      a white surface: a thin ink-tinted ring plus a short, soft drop. */
-  --shadow-btn: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.1), 0 1px 2px rgba(16, 20, 28, 0.1);
+  --shadow-btn: 0 0 0 1px rgba(16, 20, 28, 0.12), 0 1px 2px rgba(16, 20, 28, 0.08);
   --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.07), 0 1px 2px rgba(16, 20, 28, 0.05);
   --shadow-2: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.09), 0 3px 6px rgba(16, 20, 28, 0.08), 0 10px 22px rgba(16, 20, 28, 0.08);
   --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 0 0 1px rgba(16, 20, 28, 0.11), 0 4px 10px rgba(16, 20, 28, 0.1), 0 14px 32px rgba(16, 20, 28, 0.12);
   --shadow-inset: inset 0 1px 2px rgba(16, 20, 28, 0.1), inset 0 0 0 1px rgba(16, 20, 28, 0.06);
-  --shadow-accent: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 0 0 1px rgba(16, 20, 28, 0.14), 0 1px 2px rgba(16, 20, 28, 0.12);
+  --shadow-fill: 0 1px 2px rgba(16, 20, 28, 0.16);
   --shadow-bar: 0 1px 0 rgba(16, 20, 28, 0.06), 0 2px 8px rgba(16, 20, 28, 0.06);
   --lane-edge: var(--bd);
   --shadow-lane: var(--shadow-inset);
-  --raised: linear-gradient(180deg, #ffffff, #eef1f6);
-  --raised-hover: linear-gradient(180deg, #f8fafc, #e4e9f1);
+  --raised: #ffffff;
+  --raised-hover: #f1f3f6;
   --overlay: rgba(23, 26, 33, 0.38);
 }
 
@@ -398,7 +440,7 @@ kbd { color: var(--t1); }
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--blue), var(--purple));
+  background: var(--blue);
   border-radius: 999px;
   transition: width 0.4s ease;
 }
@@ -424,20 +466,21 @@ kbd { color: var(--t1); }
 .btn:hover:not(:disabled) { background: var(--raised-hover); border-color: var(--t3); }
 .btn:active:not(:disabled) { box-shadow: var(--shadow-inset); }
 .btn:disabled { opacity: 0.55; box-shadow: none; }
+/* A filled button is one flat colour: no gradient, no lit edge, no glow. */
 .btn-primary {
-  background: linear-gradient(180deg, var(--blue-top), var(--blue));
+  background: var(--blue);
   border-color: var(--blue);
   color: var(--on-accent);
   font-weight: 600;
-  box-shadow: var(--shadow-accent);
+  box-shadow: var(--shadow-fill);
 }
 .btn-primary:hover:not(:disabled) { background: var(--blue-hover); border-color: var(--blue-hover); }
 .btn-success {
-  background: linear-gradient(180deg, var(--green-top), var(--green));
+  background: var(--green);
   border-color: var(--green);
   color: var(--on-accent);
   font-weight: 600;
-  box-shadow: var(--shadow-accent);
+  box-shadow: var(--shadow-fill);
 }
 .btn-success:hover:not(:disabled) { background: var(--green-hover); border-color: var(--green-hover); }
 .btn-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 70%, var(--bg)); }
@@ -463,7 +506,7 @@ kbd { color: var(--t1); }
    win over the inline background. */
 .hover-surface { transition: background 0.15s; }
 .hover-surface:hover:not(:disabled) { background: var(--bg-hover) !important; }
-.hover-surface:active:not(:disabled) { background: color-mix(in srgb, var(--bg-hover) 70%, var(--t3)) !important; }
+.hover-surface:active:not(:disabled) { background: var(--bg-active) !important; }
 
 /* Square 44px button for a single icon. Always pair with aria-label. */
 .icon-btn {
@@ -578,7 +621,7 @@ kbd { color: var(--t1); }
 .nav-item.is-indented { padding-left: 28px; }
 .nav-item-icon { display: inline-flex; flex-shrink: 0; color: var(--t3); }
 .nav-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav-item:hover { background: var(--bg3); color: var(--t1); }
+.nav-item:hover { background: var(--bg-hover); color: var(--t1); }
 .nav-item[aria-current='page'] { background: var(--bg-selected); color: var(--t1); font-weight: 600; }
 .nav-item[aria-current='page'] .nav-item-icon { color: var(--blue); }
 /* The sidebar's project list (src/Sidebar.jsx): a small label, then one .nav-item per project
@@ -619,9 +662,8 @@ kbd { color: var(--t1); }
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  background: linear-gradient(180deg, var(--blue-top), var(--blue));
+  background: var(--blue);
   color: var(--on-accent);
-  box-shadow: var(--shadow-accent);
 }
 @media (min-width: 641px) {
   .topbar-menu-btn { display: none; }
@@ -822,47 +864,48 @@ kbd { color: var(--t1); }
 
 /* The My Tasks list is a flat table on the page, not a card: a column header stuck to the top,
    then every group in turn with its own header row (title and count) and its rows under it.
-   Hairlines run under each row and, from the third column on, between the columns, so the
-   grid reads as a spreadsheet the way a tracker's list does. The first two children of a row
-   (the check and the name) share one cell visually, so the rules start after them. */
+   A hairline runs under each row and nowhere else: the columns are told apart by alignment and
+   the space between them, not by lines, so the list reads as a list rather than a spreadsheet.
+   The column header is the quietest text on the page (small, --t3); the group headers are the
+   loudest, so the eye lands on the groups first. */
 .mytasks-colhead {
   min-height: 40px;
   align-items: stretch;
   font-size: 12px;
-  color: var(--t2);
+  color: var(--t3);
   border-bottom: 1px solid var(--bd);
   background: var(--bg);
 }
 .mytasks-colhead > :nth-child(n+3),
-.mytasks-row > :nth-child(n+3) {
-  border-left: 1px solid var(--bd);
-  padding-left: 8px;
-}
+.mytasks-row > :nth-child(n+3) { padding-left: 12px; }
+/* Dates, counts, and anything else with digits in the list line up in columns. */
+.mytasks-grid, .mytasks-section-count, .board-card-foot, .board-lane-count { font-variant-numeric: tabular-nums; }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
 /* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
 .mytasks-row > :last-child { padding-right: 4px; }
-.mytasks-section + .mytasks-section { padding-top: 16px; }
+.mytasks-section + .mytasks-section { padding-top: var(--section-gap); }
 .mytasks-section-header {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
+  min-height: var(--row-head);
   padding-right: 12px;
   border-bottom: 1px solid var(--bd);
 }
 .mytasks-section-header.is-collapsed { border-bottom-color: transparent; }
-.mytasks-section-title { font-size: 14px; font-weight: 600; color: var(--t1); }
+.mytasks-section-header .icon-btn { height: var(--row-head); }
+.mytasks-section-title { font-size: 15px; font-weight: 650; color: var(--t1); letter-spacing: -0.005em; }
 .mytasks-section-count { margin-left: 8px; font-size: 13px; color: var(--t3); }
 .mytasks-add-row {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: var(--target);
+  min-height: var(--row);
   padding-left: 14px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid transparent;
   color: var(--t3);
   text-align: left;
   font-size: 14px;
@@ -885,7 +928,7 @@ kbd { color: var(--t1); }
   align-items: center;
   justify-content: center;
   min-width: var(--target);
-  min-height: var(--target);
+  min-height: var(--row);
   padding: 0 4px;
   background: transparent;
   border: none;
@@ -909,7 +952,7 @@ kbd { color: var(--t1); }
 .subtask-toggle:hover .subtask-chip,
 .subtask-toggle[aria-expanded='true'] .subtask-chip { color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd-strong); }
 /* The new row's empty circle, where a row's check is. */
-.inline-add-check { display: flex; align-items: center; justify-content: center; width: var(--target); height: var(--target); }
+.inline-add-check { display: flex; align-items: center; justify-content: center; width: var(--target); height: var(--row); }
 
 /* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
    done. A tick at rest read as already done. Hovering the button turns the circle green and shows
@@ -1149,6 +1192,13 @@ kbd { color: var(--t1); }
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .board-card:hover { background: var(--bg3); box-shadow: var(--shadow-2); }
+/* Compact density: the check, the face, and the arrow are as tall as a compact row, and the face
+   loses most of its padding, so a card with a title and a date is about 60px rather than 80px. */
+:root[data-density='compact'] .board-card { padding: 2px; }
+:root[data-density='compact'] .board-card-check,
+:root[data-density='compact'] .board-card-move { height: var(--row); }
+:root[data-density='compact'] .board-card-open { min-height: calc(var(--row) + 4px); margin: -2px 0; padding: 8px 4px 8px; gap: 6px; }
+:root[data-density='compact'] .board-add-task { min-height: var(--row); }
 .board-card.is-menu-open { border-color: var(--blue); }
 .board-card-check {
   position: relative;
@@ -1187,11 +1237,14 @@ kbd { color: var(--t1); }
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--t2);
+  color: var(--t3);
   background: transparent;
   border: none;
+  transition: color 0.12s, background 0.12s;
 }
-.board-card-move[aria-expanded='true'] { color: var(--t1); background: var(--bg3); }
+.board-card:hover .board-card-move { color: var(--t2); }
+.board-card-move:hover { color: var(--t1); background: var(--bg-hover); }
+.board-card-move[aria-expanded='true'] { color: var(--t1); background: var(--bg-active); }
 /* The controls sit edge to edge inside the card, so their rings are drawn inside them. */
 .board-card :focus-visible { outline-offset: -2px; }
 /* A completed card flashes green and fades in place before the refetch files it under Show done
@@ -1218,7 +1271,7 @@ kbd { color: var(--t1); }
   background: transparent;
   border: none;
   border-radius: var(--radius);
-  color: var(--t2);
+  color: var(--t3);
   font-size: 14px;
   text-align: left;
   transition: background 0.12s, color 0.12s;
@@ -1383,7 +1436,7 @@ kbd { color: var(--t1); }
   min-height: 22px;
   padding: 0 8px;
   border-radius: 999px;
-  background: var(--bg-hover);
+  background: var(--neutral-soft);
   color: var(--t2);
   font-size: 12px;
   font-weight: 600;

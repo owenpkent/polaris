@@ -11,11 +11,11 @@ import { isNativeApp } from './nativeApp'
 // Every setting on one page, one card per area, with a row of jump buttons at the top so a long
 // page on a phone is one tap from any card. The jump moves focus to the card as well as scrolling,
 // so a keyboard or screen reader user lands where a sighted one does.
-export default function SettingsTab({ theme, onThemeChange }) {
+export default function SettingsTab({ theme, onThemeChange, density, onDensityChange }) {
   const refs = useRef({})
   const sections = [
     { id: 'connection', label: 'Connection', node: <SettingsForm /> },
-    { id: 'appearance', label: 'Appearance', node: <AppearanceSettings theme={theme} onThemeChange={onThemeChange} /> },
+    { id: 'appearance', label: 'Appearance', node: <AppearanceSettings theme={theme} onThemeChange={onThemeChange} density={density} onDensityChange={onDensityChange} /> },
     { id: 'agents', label: 'Agents', node: <AgentSettings /> },
     // Reminders are scheduled on the phone, so the card exists only in the Android app.
     ...(isNativeApp() ? [{ id: 'reminders', label: 'Reminders', node: <ReminderSettings /> }] : []),
