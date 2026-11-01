@@ -1,7 +1,7 @@
 {
   "name": "polaris-mobile",
   "private": true,
-  "version": "0.1.0",
+  "version": "2.2.0",
   "description": "Android shell for the Polaris dashboard",
   "scripts": {
     "sync": "cap sync android",
