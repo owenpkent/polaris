@@ -74,7 +74,7 @@ export const moveTaskBodySchema = z.object({
   project: z.string().nullable().optional(),
   section: z.string().nullable().optional(),
   parentId: z.string().nullable().optional(),
-  position: z.number().int().optional(),
+  position: z.number().finite().optional(),
 }).strict();
 
 // POST /api/outbox: the edits a dashboard made while the server was unreachable. `kind` is a

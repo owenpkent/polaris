@@ -17,7 +17,8 @@ import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
 import { getDueBounds, groupTasks, bucketForTask } from './dueDates'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
-import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, STATE_FILTER_OPTIONS } from './viewState'
+import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
+import ReorderableRows from './ReorderableRows'
 import { useRequestGuard } from './useRequestGuard'
 
 const GROUPS_STORAGE_KEY = 'cc-mytasks-groups-v1'
@@ -136,9 +137,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, narrowPanel, panelOpen: Boolean(detailTaskId) }),
     [columns.hidden, narrow900, narrow600, phone, narrowPanel, detailTaskId]
   )
+  // Under the manual sort every row leads with its reorder handle (ReorderHandle.jsx), so the
+  // grid, the column header, and the inline add row all take the extra 44px column.
+  const reorderable = isManualSort(view.sort)
   const gridTemplateColumns = useMemo(
-    () => buildGridTemplate(visibleColumns, columns.widths, { phone }),
-    [visibleColumns, columns.widths, phone]
+    () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable }),
+    [visibleColumns, columns.widths, phone, reorderable]
   )
 
   const beginRequest = useRequestGuard()
@@ -375,6 +379,26 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     }
   }, [api, fetchTasks])
 
+  // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
+  // position, shown at once and sent as moves, the list reloading after the last. Failure puts
+  // the old numbers back.
+  const handleReorder = useCallback(async (plan) => {
+    setActionError(null)
+    const next = new Map(plan.updates.map((u) => [u.id, u.position]))
+    let before = new Map()
+    setTasks((prev) => {
+      before = new Map(prev.filter((t) => next.has(t.id)).map((t) => [t.id, t.position]))
+      return prev.map((t) => (next.has(t.id) ? { ...t, position: next.get(t.id) } : t))
+    })
+    try {
+      for (const u of plan.updates) await api.moveTask(u.id, { position: u.position })
+      await fetchTasks()
+    } catch (err) {
+      setTasks((prev) => prev.map((t) => (before.has(t.id) ? { ...t, position: before.get(t.id) } : t)))
+      setActionError(err.message || 'Could not move that task.')
+    }
+  }, [api, fetchTasks])
+
   if (!usable) return <NotConnected />
 
   const dueBounds = getDueBounds()
@@ -411,6 +435,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     onOpenTask: setDetailTaskId,
     onQuickUpdate: handleQuickUpdate,
     api,
+    handleColumn: reorderable,
+    reorderable,
+    onReorder: handleReorder,
   }
 
   let content = null
@@ -463,11 +490,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } else {
       // 'none': a flat, ungrouped list.
       content = (
-        <div>
-          {sortedTasks.map((task) => (
-            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />
-          ))}
-        </div>
+        <ReorderableRows tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
+          {(task, reorder, rowClass) => (
+            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
+          )}
+        </ReorderableRows>
       )
     }
   }
@@ -498,9 +525,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
         {/* A flat column header stuck under the top bar, then the list: one panel holding every
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'sticky', top: 56, zIndex: 10, background: 'var(--bg)' }}>
             <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
+              {reorderable && <div />}
               <div />
               {visibleColumns.map((col) => (
                 <ColumnHeader
@@ -524,7 +552,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           ) : (
             <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
-                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
               {content}
             </div>

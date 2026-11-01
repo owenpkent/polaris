@@ -304,3 +304,34 @@ test('the offline completion day is read in the calendar timezone, and an online
   store.completeTask(online.id);
   assert.equal(openSuccessor(store, 'Online in Auckland')?.dueAt, '2026-10-19', 'the 16th at 09:00 UTC is the 16th in Auckland, plus three');
 });
+
+test('a reorder made offline (a move with only a position) is applied on replay', () => {
+  const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
+  const a = store.createTask({ title: 'a' });
+  const b = store.createTask({ title: 'b' });
+  const c = store.createTask({ title: 'c' });
+  setNow('2026-09-21T12:00:00.000Z');
+  const [r] = applyOutbox(store, [op({ kind: 'move_task', taskId: c.id, base: c.updatedAt, body: { position: (a.position + b.position) / 2 } })]);
+  assert.equal(r.status, 'applied');
+  assert.deepEqual(store.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['a', 'c', 'b']);
+});
+
+test('an offline reorder loses to a newer move of the same task, and wins over an older one', () => {
+  const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
+  const a = store.createTask({ title: 'a' });
+  const b = store.createTask({ title: 'b' });
+  const c = store.createTask({ title: 'c' });
+  // The PC puts c first at 11:00; the phone had put it between a and b at 10:00.
+  setNow('2026-09-21T11:00:00.000Z');
+  store.moveTask(c.id, { position: a.position - 1 });
+  setNow('2026-09-21T12:00:00.000Z');
+  const [lost] = applyOutbox(store, [op({ kind: 'move_task', taskId: c.id, base: c.updatedAt, at: '2026-09-21T10:00:00.000Z', body: { position: (a.position + b.position) / 2 } })]);
+  assert.equal(lost.status, 'conflict');
+  assert.deepEqual(store.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['c', 'a', 'b']);
+
+  // The phone's reorder at 11:30 is newer than the PC's move, so it wins.
+  const [won] = applyOutbox(store, [op({ kind: 'move_task', taskId: c.id, base: c.updatedAt, at: '2026-09-21T11:30:00.000Z', body: { position: (a.position + b.position) / 2 } })]);
+  assert.equal(won.status, 'conflict');
+  assert.deepEqual(won.conflicts.map((x) => x.field), ['position']);
+  assert.deepEqual(store.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['a', 'c', 'b']);
+});

@@ -14,7 +14,8 @@ import { formatDueCell, getDueBounds } from './dueDates'
 // leaving it empty, closes the row with nothing saved. A create that fails keeps the title and what
 // Add task handed over (the date, the repeat, and whether the repeat was made in Custom), so the
 // picker reopens on it for another try.
-export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, defaultDueAt = null, api }) {
+// `handleColumn` adds the empty leading cell the rows have under the manual sort (TaskRow.jsx).
+export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, defaultDueAt = null, api, handleColumn = false }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -110,6 +111,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
 
   return (
     <div className="mytasks-grid inline-add-row" style={{ gridTemplateColumns, alignItems: 'center', minHeight: 44, borderBottom: '1px solid var(--bd)' }}>
+      {handleColumn && <span aria-hidden="true" />}
       {/* The empty circle a row has, so the new row reads as the task it will be. */}
       <span aria-hidden="true" className="inline-add-check">
         <span className="task-check-circle" />
@@ -121,7 +123,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
         className="inline-add"
         tabIndex={-1}
         onFocus={(e) => { if (e.target === e.currentTarget) inputRef.current?.focus() }}
-        style={{ gridColumn: error ? '2' : '2 / -1' }}
+        style={{ gridColumn: error ? String(handleColumn ? 3 : 2) : `${handleColumn ? 3 : 2} / -1` }}
       >
         <input
           ref={inputRef}

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import ReorderHandle from './ReorderHandle'
 import { Check, ChevronDown, ChevronRight, ListTree, Repeat } from 'lucide-react'
 import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
@@ -247,6 +248,12 @@ export default function TaskRow({
   subtaskCount = 0,
   expanded = false,
   onToggleExpand,
+  // Under the manual sort every row has a leading 44px cell (handleColumn); a top-level row's
+  // holds its reorder handle (`reorder`, from ReorderableRows.jsx) and `rowClass` marks it while
+  // a row is dragged (is-dragging, is-drop-before, is-drop-after).
+  handleColumn = false,
+  reorder = null,
+  rowClass = '',
 }) {
   const done = task.status === 'done'
   const columnIds = new Set(visibleColumns.map((c) => c.id))
@@ -327,7 +334,7 @@ export default function TaskRow({
 
   return (
     <div
-      className={completing ? 'mytasks-grid mytasks-row is-completing' : 'mytasks-grid mytasks-row'}
+      className={`mytasks-grid mytasks-row${completing ? ' is-completing' : ''}${rowClass}`}
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
@@ -345,6 +352,7 @@ export default function TaskRow({
         boxShadow: open ? 'inset 3px 0 0 var(--blue)' : undefined,
       }}
     >
+      {handleColumn && (depth === 0 && reorder ? <ReorderHandle task={task} reorder={reorder} /> : <span aria-hidden="true" />)}
       {depth === 0 ? check : <span aria-hidden="true" />}
 
       {/* The name, then what follows it (Waiting, the subtask count), which never shrinks: a long
@@ -408,14 +416,17 @@ export function indexSubtasks(tasks) {
 // A row and, once its subtask count is pressed, its open subtasks as rows under it, as Asana's
 // list shows them. A subtask keeps its own row in its own group as well; the ones shown here are
 // the parent's, in the parent's order. Which rows are open is kept per row and not stored.
-export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, ...rowProps }) {
+export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, reorder = null, rowClass = '', ...rowProps }) {
   const [expanded, setExpanded] = useState(false)
   const children = subtasksByParent?.get(task.id) || []
   const canExpand = children.length > 0 && depth < MAX_SUBTASK_DEPTH
   return (
     <>
+      {/* The handle and the drag marks are the top row's alone; its subtasks move with it. */}
       <TaskRow
         {...rowProps}
+        reorder={reorder}
+        rowClass={rowClass}
         task={task}
         depth={depth}
         projectName={projectNameById.get(task.projectId)}

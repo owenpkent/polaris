@@ -49,7 +49,7 @@ describe('TaskListToolbar', () => {
     const pop = screen.getByRole('dialog', { name: 'Sort tasks' })
     const field = within(pop).getByRole('combobox', { name: 'Sort by' })
     await waitFor(() => expect(document.activeElement).toBe(field))
-    expect(within(pop).getAllByRole('option').map((o) => o.textContent)).toEqual(['Due date', 'Priority', 'Project', 'Name', 'Ascending', 'Descending'])
+    expect(within(pop).getAllByRole('option').map((o) => o.textContent)).toEqual(['Due date', 'Priority', 'Project', 'Name', 'Manual', 'Ascending', 'Descending'])
     expect(within(pop).getByRole('button', { name: 'Reset' }).disabled).toBe(true)
 
     fireEvent.change(field, { target: { value: 'priority' } })
@@ -109,5 +109,19 @@ describe('TaskListToolbar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Filter' }))
+  })
+})
+
+describe('TaskListToolbar manual sort', () => {
+  test('Manual names the button without a direction and disables the direction select', () => {
+    render(<Host />)
+    fireEvent.click(screen.getByRole('button', { name: 'Sort' }))
+    const pop = screen.getByRole('dialog', { name: 'Sort tasks' })
+    fireEvent.change(within(pop).getByRole('combobox', { name: 'Sort by' }), { target: { value: 'manual' } })
+    expect(within(pop).getByRole('combobox', { name: 'Direction' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Sort: Manual' }).textContent).toContain('Sort: Manual')
+    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort.field).toBe('manual')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset sort' }))
+    expect(screen.getByRole('button', { name: 'Sort' })).toBeTruthy()
   })
 })

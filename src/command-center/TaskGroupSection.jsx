@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { TaskTree } from './TaskRow'
 import InlineTaskInput from './InlineTaskInput'
+import ReorderableRows from './ReorderableRows'
 
 // One collapsible group of the My Tasks list (Overdue, Today, Tomorrow, ...): a header row with
 // the title and count, then its rows. The groups sit one after another inside the list's single
@@ -11,6 +12,8 @@ import InlineTaskInput from './InlineTaskInput'
 // inline input ({ position: 'top' | 'bottom' }) -- already filtered to this
 // group by the caller, so any other group's inline input has no effect here.
 // `subtasksByParent` (indexSubtasks in TaskRow.jsx) gives each row its subtask count.
+// `reorderable` (the manual sort) gives each row a handle, and a move calls `onReorder` with the
+// plan from reorder.js; `handleColumn` keeps the inline add row's cells in step with the rows.
 export default function TaskGroupSection({
   title,
   tasks,
@@ -34,6 +37,9 @@ export default function TaskGroupSection({
   onSubmitInlineAdd,
   onCancelInlineAdd,
   api,
+  handleColumn = false,
+  reorderable = false,
+  onReorder,
 }) {
   return (
     <section className="mytasks-section">
@@ -55,28 +61,33 @@ export default function TaskGroupSection({
       {!collapsed && (
         <div>
           {inlineAdd?.position === 'top' && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
-          {tasks.map((task) => (
-            <TaskTree
-              key={task.id}
-              task={task}
-              subtasksByParent={subtasksByParent}
-              projectNameById={projectNameById}
-              projectOptions={projectOptions}
-              visibleColumns={visibleColumns}
-              gridTemplateColumns={gridTemplateColumns}
-              phone={phone}
-              dueBounds={dueBounds}
-              pendingIds={pendingIds}
-              openTaskId={openTaskId}
-              onToggleComplete={onToggleComplete}
-              onOpen={onOpenTask}
-              onQuickUpdate={onQuickUpdate}
-              api={api}
-            />
-          ))}
+          <ReorderableRows tasks={tasks} enabled={reorderable} onReorder={onReorder}>
+            {(task, reorder, rowClass) => (
+              <TaskTree
+                key={task.id}
+                task={task}
+                subtasksByParent={subtasksByParent}
+                projectNameById={projectNameById}
+                projectOptions={projectOptions}
+                visibleColumns={visibleColumns}
+                gridTemplateColumns={gridTemplateColumns}
+                phone={phone}
+                dueBounds={dueBounds}
+                pendingIds={pendingIds}
+                openTaskId={openTaskId}
+                onToggleComplete={onToggleComplete}
+                onOpen={onOpenTask}
+                onQuickUpdate={onQuickUpdate}
+                api={api}
+                handleColumn={handleColumn}
+                reorder={reorder}
+                rowClass={rowClass}
+              />
+            )}
+          </ReorderableRows>
 
           {inlineAdd?.position === 'bottom' && (
             <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />

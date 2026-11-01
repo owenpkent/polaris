@@ -11,6 +11,7 @@ import {
   stateIndex,
   STATE_FILTER_OPTIONS,
   sortTasks,
+  isManualSort,
   groupByProject,
   groupByPriority,
   useViewState,
@@ -30,8 +31,8 @@ describe('NO_PROJECT', () => {
 })
 
 describe('SORT_FIELDS', () => {
-  test('exposes exactly the four sortable fields the toolbar supports', () => {
-    expect(SORT_FIELDS.map((f) => f.id)).toEqual(['due', 'priority', 'project', 'name'])
+  test('exposes exactly the five sortable fields the toolbar supports, the manual order last', () => {
+    expect(SORT_FIELDS.map((f) => f.id)).toEqual(['due', 'priority', 'project', 'name', 'manual'])
   })
 
   test('has unique ids and a non-empty label for every field', () => {
@@ -140,6 +141,27 @@ describe('applyFilters', () => {
   test('returns an empty array when no task satisfies all filters', () => {
     const result = applyFilters(tasks, { projectIds: ['p2'], priorities: ['urgent'], sources: [] })
     expect(result).toEqual([])
+  })
+})
+
+describe('sortTasks under the manual sort', () => {
+  const t = (id, position, createdAt = '2026-09-01T00:00:00.000Z') => ({ id, title: id, position, createdAt, dueAt: null })
+
+  test('orders by position, then creation, whatever the direction', () => {
+    const tasks = [t('c', 3), t('a', 1), t('b', 2), t('b2', 2, '2026-09-02T00:00:00.000Z')]
+    expect(sortTasks(tasks, { field: 'manual', dir: 'asc' }, new Map()).map((x) => x.id)).toEqual(['a', 'b', 'b2', 'c'])
+    expect(sortTasks(tasks, { field: 'manual', dir: 'desc' }, new Map()).map((x) => x.id)).toEqual(['a', 'b', 'b2', 'c'])
+  })
+
+  test('a fractional position from a reorder lands between its neighbours', () => {
+    const tasks = [t('a', 1), t('b', 2), t('c', 1.5)]
+    expect(sortTasks(tasks, { field: 'manual', dir: 'asc' }, new Map()).map((x) => x.id)).toEqual(['a', 'c', 'b'])
+  })
+
+  test('isManualSort names the field', () => {
+    expect(isManualSort({ field: 'manual', dir: 'asc' })).toBe(true)
+    expect(isManualSort({ field: 'due', dir: 'asc' })).toBe(false)
+    expect(isManualSort(undefined)).toBe(false)
   })
 })
 

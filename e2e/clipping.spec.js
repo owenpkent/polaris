@@ -140,6 +140,20 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     }
   })
 
+  // The manual sort adds the handle column before the check at every width, and a handle's menu.
+  test('My tasks under the manual sort, with a reorder menu open', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.getByRole('button', { name: /^Reorder / }).first().click()
+    await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
   // The Filter popover at its tallest, every long group open, and the toolbar with all three
   // settings applied, where each button carries its value and an X and the row has to wrap.
   test('the filter menu with every group open, and the toolbar with settings applied', async ({ page }) => {

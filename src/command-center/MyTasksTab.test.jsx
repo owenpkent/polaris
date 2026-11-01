@@ -400,3 +400,60 @@ describe('MyTasksTab assignee filter', () => {
     expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy()
   })
 })
+
+describe('MyTasksTab manual sort', () => {
+  const VIEW_KEY = 'cc-mytasks-view-v1'
+  const task = (id, title, position) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt: null, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  function saveSort(field) {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({
+      sort: { field, dir: 'asc' },
+      group: 'none',
+      filters: { projectIds: [], priorities: [], sources: [], goalIds: [] },
+    }))
+  }
+
+  afterEach(() => localStorage.clear())
+
+  test('under any other sort the rows have no handle', async () => {
+    stubMatchMedia(1280)
+    saveSort('due')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2)] })
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open One' })
+    expect(screen.queryByRole('button', { name: /^Reorder/ })).toBeNull()
+  })
+
+  test('under the manual sort a move sends the midpoint position, shows the new order at once, and reloads', async () => {
+    stubMatchMedia(1280)
+    saveSort('manual')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2), task('t3', 'Three', 3)] })
+    api.moveTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder One' })
+    const order = () => screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))
+    expect(order()).toEqual(['Open One', 'Open Two', 'Open Three'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Three' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move up' }))
+    expect(order()).toEqual(['Open One', 'Open Three', 'Open Two'])
+    expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Reorder Three' })).toBeTruthy()
+  })
+
+  test('a move the server refuses puts the old order back and says why', async () => {
+    stubMatchMedia(1280)
+    saveSort('manual')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2)] })
+    api.moveTask = vi.fn().mockRejectedValue(new Error('Request failed (503)'))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder One' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Two' }), { key: 'ArrowUp' })
+    await screen.findByText('Request failed (503)')
+    expect(screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))).toEqual(['Open One', 'Open Two'])
+  })
+})

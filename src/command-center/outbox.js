@@ -201,6 +201,8 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     // The board sends a section id (or null for "No section"). A name could not be resolved
     // here, so anything else waits for the server to place it.
     if (body.section === null || /^s_[0-9a-z]+$/.test(String(body.section))) fields = { sectionId: body.section }
+    // A reorder (the list's manual sort) carries the task's new number, which the local copy shows.
+    if (typeof body.position === 'number' && Number.isFinite(body.position)) fields = { ...fields, position: body.position }
   }
   await patchTaskEverywhere(taskId, fields)
   notifyTaskChanges()
