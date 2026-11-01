@@ -380,9 +380,14 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [api, fetchTasks])
 
   // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
-  // position, shown at once and sent as moves, the list reloading after the last. Failure puts
-  // the old numbers back.
-  const handleReorder = useCallback(async (plan) => {
+  // position, shown at once, and its moves are sent one after another. Moves queue behind each
+  // other, so two quick arrow presses reach the server in the order they were made and the
+  // later one cannot be overwritten by the earlier one's write arriving late. The list reloads
+  // once the queue is empty, so the order shown never slips back between two moves. Failure
+  // puts that plan's old numbers back.
+  const reorderQueue = useRef(Promise.resolve())
+  const reorderPending = useRef(0)
+  const handleReorder = useCallback((plan) => {
     setActionError(null)
     const next = new Map(plan.updates.map((u) => [u.id, u.position]))
     let before = new Map()
@@ -390,13 +395,19 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       before = new Map(prev.filter((t) => next.has(t.id)).map((t) => [t.id, t.position]))
       return prev.map((t) => (next.has(t.id) ? { ...t, position: next.get(t.id) } : t))
     })
-    try {
-      for (const u of plan.updates) await api.moveTask(u.id, { position: u.position })
-      await fetchTasks()
-    } catch (err) {
-      setTasks((prev) => prev.map((t) => (before.has(t.id) ? { ...t, position: before.get(t.id) } : t)))
-      setActionError(err.message || 'Could not move that task.')
+    reorderPending.current += 1
+    const run = async () => {
+      try {
+        for (const u of plan.updates) await api.moveTask(u.id, { position: u.position })
+      } catch (err) {
+        setTasks((prev) => prev.map((t) => (before.has(t.id) ? { ...t, position: before.get(t.id) } : t)))
+        setActionError(err.message || 'Could not move that task.')
+      }
+      reorderPending.current -= 1
+      if (reorderPending.current === 0) await fetchTasks()
     }
+    reorderQueue.current = reorderQueue.current.then(run)
+    return reorderQueue.current
   }, [api, fetchTasks])
 
   if (!usable) return <NotConnected />

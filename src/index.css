@@ -840,9 +840,11 @@ kbd { color: var(--t1); }
 }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
 /* Under the manual sort (MyTasksTab, .mytasks-reorderable) a row leads with its reorder handle,
-   so the check and the name are the second and third cells and the rules start one later. */
+   so the check and the name are the second and third cells and the rules start one later. A
+   subtask row under its parent (.is-nested) has no handle: its name cell spans both columns
+   (TaskRow.jsx), so its third cell is the first column and keeps its line. */
 .mytasks-reorderable .mytasks-colhead > :nth-child(3),
-.mytasks-reorderable .mytasks-row > :nth-child(3) { border-left: none; padding-left: 0; }
+.mytasks-reorderable .mytasks-row:not(.is-nested) > :nth-child(3) { border-left: none; padding-left: 0; }
 .reorder-handle { color: var(--t3); cursor: grab; touch-action: none; }
 .reorder-handle:hover:not(:disabled), .reorder-handle:focus-visible { color: var(--t1); }
 body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-select: none; }

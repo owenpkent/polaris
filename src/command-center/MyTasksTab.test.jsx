@@ -440,7 +440,7 @@ describe('MyTasksTab manual sort', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reorder Three' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move up' }))
     expect(order()).toEqual(['Open One', 'Open Three', 'Open Two'])
-    expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 }))
     await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('button', { name: 'Reorder Three' })).toBeTruthy()
   })
@@ -455,5 +455,53 @@ describe('MyTasksTab manual sort', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Two' }), { key: 'ArrowUp' })
     await screen.findByText('Request failed (503)')
     expect(screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))).toEqual(['Open One', 'Open Two'])
+  })
+})
+
+describe('MyTasksTab manual sort queues moves', () => {
+  const VIEW_KEY = 'cc-mytasks-view-v1'
+  const base = (id, title) => ({
+    id, title, projectId: null, status: 'open', priority: 'none', dueAt: null, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+  const order = () => screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))
+
+  afterEach(() => localStorage.clear())
+
+  test('two quick moves of one task reach the server one after the other, and the list reloads once, in the final order', async () => {
+    stubMatchMedia(1280)
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    // A server whose order is whatever the writes it has answered set, read back by the list.
+    const positions = { t1: 1, t2: 2, t3: 3 }
+    const pending = []
+    api.listTasks.mockImplementation(() => Promise.resolve({
+      tasks: [base('t1', 'One'), base('t2', 'Two'), base('t3', 'Three')].map((t) => ({ ...t, position: positions[t.id] })),
+    }))
+    api.moveTask = vi.fn((id, { position }) => new Promise((resolve) => {
+      pending.push(() => { positions[id] = position; resolve({ task: {} }) })
+    }))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Three' })
+
+    const handle = screen.getByRole('button', { name: 'Reorder Three' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    // Both moves show at once; only the first has gone to the server.
+    expect(order()).toEqual(['Open Three', 'Open One', 'Open Two'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 })
+    expect(api.listTasks).toHaveBeenCalledTimes(1)
+
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(2))
+    expect(api.moveTask).toHaveBeenLastCalledWith('t3', { position: 0 })
+    // No reload between the two, so the order shown never slips back.
+    expect(api.listTasks).toHaveBeenCalledTimes(1)
+    expect(order()).toEqual(['Open Three', 'Open One', 'Open Two'])
+
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(positions.t3).toBe(0)
+    await waitFor(() => expect(order()).toEqual(['Open Three', 'Open One', 'Open Two']))
   })
 })

@@ -248,9 +248,11 @@ export default function TaskRow({
   subtaskCount = 0,
   expanded = false,
   onToggleExpand,
-  // Under the manual sort every row has a leading 44px cell (handleColumn); a top-level row's
-  // holds its reorder handle (`reorder`, from ReorderableRows.jsx) and `rowClass` marks it while
-  // a row is dragged (is-dragging, is-drop-before, is-drop-after).
+  // Under the manual sort every top-level row has a leading 44px cell (handleColumn) holding its
+  // reorder handle (`reorder`, from ReorderableRows.jsx), and `rowClass` marks it while a row is
+  // dragged (is-dragging, is-drop-before, is-drop-after). A subtask shown under its parent has
+  // no handle: its name cell takes that column too, so its indented check and title keep the
+  // room they have without the handle (at 320px the name column is 88px wide).
   handleColumn = false,
   reorder = null,
   rowClass = '',
@@ -334,7 +336,7 @@ export default function TaskRow({
 
   return (
     <div
-      className={`mytasks-grid mytasks-row${completing ? ' is-completing' : ''}${rowClass}`}
+      className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${rowClass}`}
       role="button"
       tabIndex={0}
       aria-label={`Open ${task.title}`}
@@ -352,12 +354,12 @@ export default function TaskRow({
         boxShadow: open ? 'inset 3px 0 0 var(--blue)' : undefined,
       }}
     >
-      {handleColumn && (depth === 0 && reorder ? <ReorderHandle task={task} reorder={reorder} /> : <span aria-hidden="true" />)}
+      {handleColumn && depth === 0 && (reorder ? <ReorderHandle task={task} reorder={reorder} /> : <span aria-hidden="true" />)}
       {depth === 0 ? check : <span aria-hidden="true" />}
 
       {/* The name, then what follows it (Waiting, the subtask count), which never shrinks: a long
           name is shortened instead, whole in the row's accessible name and in the panel. */}
-      <span className="mytasks-name" style={{ paddingRight: phone ? 0 : 12 }}>
+      <span className="mytasks-name" style={{ paddingRight: phone ? 0 : 12, gridColumn: handleColumn && depth > 0 ? '2 / span 2' : undefined }}>
         {depth > 0 && (
           <>
             {depth > 1 && <span aria-hidden="true" style={{ flex: '0 0 auto', width: (depth - 1) * 24 }} />}
