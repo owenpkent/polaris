@@ -373,6 +373,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await manualSort(page)
     const handle = page.getByRole('button', { name: `Reorder ${second}` })
+    // Other tests' rows push these down the group, so the handle may start below the fold.
+    await handle.scrollIntoViewIfNeeded()
     const from = await handle.boundingBox()
     const target = await row(page, first).boundingBox()
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
