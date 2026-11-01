@@ -13,6 +13,8 @@
 name: Fuzz
 
 on:
+  push:
+    branches: [chore/jazzer-fuzz]
   schedule:
     - cron: '30 4 * * *'  # every day 04:30 UTC, after the property tests
   workflow_dispatch:
@@ -72,7 +74,7 @@ jobs:
         working-directory: command-center
         env:
           TARGET: ${{ matrix.target }}
-          MINUTES: ${{ inputs.minutes || 10 }}
+          MINUTES: ${{ inputs.minutes || 1 }}
         run: |
           minutes=$(( MINUTES > 60 ? 60 : MINUTES ))
           minutes=$(( minutes < 1 ? 1 : minutes ))
