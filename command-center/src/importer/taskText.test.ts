@@ -91,3 +91,12 @@ test('more than 1000 rows is an error', () => {
   assert.equal(r.rows.length, 1000);
   assert.deepEqual(r.errors, [{ line: 1001, message: 'more than 1000 rows' }]);
 });
+
+// Same inherited-key hole as the recurrence alias table, found while fixing it.
+test('regression: a CSV header named constructor or __proto__ is an ignored column, not a field', () => {
+  const parsed = parseTaskText('title,constructor,__proto__\nBuy milk,x,y\n', 'csv');
+  assert.equal(parsed.format, 'csv');
+  assert.deepEqual(parsed.rows.map((r) => r.title), ['Buy milk']);
+  assert.deepEqual(parsed.ignoredColumns, ['constructor', '__proto__']);
+  assert.equal(parseTaskText('__proto__,constructor\na,b\n').format, 'lines');
+});
