@@ -110,7 +110,7 @@ export async function seedThread(request, testInfo, label, posts = [], opts = {}
 // ones as "dropped"), so they are left out: only an accepted suggestion counts as a task.
 const ACTIVE = new Set(['open', 'in_progress', 'waiting'])
 export async function listTaskTitles(request) {
-  const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+  const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
   expect(res.ok()).toBeTruthy()
   const body = await res.json()
   return (body.tasks || []).filter((t) => ACTIVE.has(t.status)).map((t) => t.title)
