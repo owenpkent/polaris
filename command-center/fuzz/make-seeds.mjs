@@ -5,11 +5,13 @@
 // Not run in CI. The seeds are committed, so this only needs re-running when a format a target
 // reads changes. Seeds are plain ASCII on purpose: fuzz/corpus is not one of the fixture folders
 // that keep emoji as coverage.
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { encryptFile } from '../src/daemon/backupCrypto.ts';
+import { OIDS, signedData, signedMessageBlock, tagObject } from '../src/dev/der.ts';
 import { root } from './bundle.mjs';
 import { BACKUP_PASSPHRASE } from './targets/expected.ts';
 
@@ -84,6 +86,22 @@ try {
   write(backup, 'header-only.enc', readFileSync(enc).subarray(0, 36));
 } finally {
   rmSync(scratch, { recursive: true, force: true });
+}
+
+// x509-tag: whole tag objects. The owner's real tag, then three signed here with a throwaway key
+// (the key does not matter: the fuzzer starts from well-formed structure to mutate).
+const x509 = corpus('x509-tag');
+write(x509, 'etoken-tag.txt', readFileSync(path.join(root, 'src/update/fixtures/x509-tag.txt')));
+{
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const signedTag = (name, options, payload = tagObject(name, `Release ${name}`)) => Buffer.concat([payload, Buffer.from(signedMessageBlock(signedData(payload, privateKey, options)), 'latin1')]);
+  write(x509, 'sha256.txt', signedTag('v1.0.0', {}));
+  write(x509, 'sha512-sha384.txt', Buffer.concat([
+    signedTag('v1.0.1', { hash: 'sha512', signatureAlgorithm: OIDS.sha512WithRsa }),
+    Buffer.from('\n'),
+    signedTag('v1.0.2', { hash: 'sha384', signatureAlgorithm: OIDS.sha384WithRsa }),
+  ]));
+  write(x509, 'two-signers.txt', signedTag('v1.0.3', { signerCount: 2 }));
 }
 
 for (const t of readdirSync(path.join(root, 'fuzz/corpus'))) {
