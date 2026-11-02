@@ -156,7 +156,7 @@ function GoalsField({ taskId, goals, disabled, onChanged, onError }) {
             maxWidth: '100%',
             paddingLeft: 10,
             borderRadius: 8,
-            background: 'var(--bg-hover)',
+            background: 'var(--neutral-soft)',
           }}
         >
           <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{g.title}</span>

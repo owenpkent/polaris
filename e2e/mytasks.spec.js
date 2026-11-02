@@ -641,3 +641,28 @@ test.describe('task history', { tag: ['@flow'] }, () => {
     await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(title)
   })
 })
+
+test.describe('row density', { tag: ['@flow'] }, () => {
+  test('Compact, chosen in Settings, packs the rows, keeps their controls 32px, and lasts a reload', async ({ page }, testInfo) => {
+    await openView(page)
+    const first = row(page, 'Renew domain for the portfolio site')
+    const comfortable = (await first.boundingBox()).height
+    expect(await smallTargets(first, 'button')).toEqual([])
+
+    await openView(page, 'settings')
+    await page.getByRole('radio', { name: /^Compact/ }).check()
+    await openView(page)
+    const compact = (await first.boundingBox()).height
+    expect(compact).toBeLessThan(comfortable)
+    // 32px of controls and the 1px divider under them, as a comfortable row is 44 and 1.
+    if (!isPhone(testInfo)) expect(Math.round(compact)).toBe(33)
+    expect(await smallTargets(first, 'button', 32)).toEqual([])
+
+    await page.reload()
+    expect((await first.boundingBox()).height).toBe(compact)
+    await openView(page, 'settings')
+    await page.getByRole('radio', { name: /^Comfortable/ }).check()
+    await openView(page)
+    expect((await first.boundingBox()).height).toBe(comfortable)
+  })
+})

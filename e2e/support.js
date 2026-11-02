@@ -154,7 +154,8 @@ export async function expectNoHorizontalOverflow(page) {
 
 // Every visible control in `scope` matching `selector` must offer a 44px click target
 // (CLAUDE.md). Returns the offenders as readable strings so a failure names them.
-export async function smallTargets(scope, selector = 'button, [role="button"], select') {
+// `min` is 44 (MIN_TARGET) everywhere except a row under Compact density, where it is 32.
+export async function smallTargets(scope, selector = 'button, [role="button"], select', min = MIN_TARGET) {
   return scope.locator(selector).evaluateAll((els, min) => {
     const out = []
     for (const el of els) {
@@ -168,7 +169,7 @@ export async function smallTargets(scope, selector = 'button, [role="button"], s
       }
     }
     return out
-  }, MIN_TARGET)
+  }, min)
 }
 
 // The focused element must show a visible focus ring: an outline at least 2px wide whose colour

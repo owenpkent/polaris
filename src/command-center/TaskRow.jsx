@@ -48,7 +48,7 @@ const cellStyle = {
 // A cell that opens a dropdown instead of the task detail panel. Stops the
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
-// is the 44px-tall click target.
+// is the row-tall click target (44px, or 32px under Compact density).
 function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu' }) {
   return (
     <button
@@ -66,7 +66,7 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
         display: 'block',
         width: '100%',
         height: '100%',
-        minHeight: 44,
+        minHeight: 'var(--row)',
         textAlign: 'left',
         background: 'transparent',
         border: 'none',
@@ -289,7 +289,7 @@ export default function TaskRow({
         position: 'relative',
         flex: '0 0 auto',
         width: 44,
-        height: 44,
+        height: 'var(--row)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -325,7 +325,7 @@ export default function TaskRow({
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
-        padding: '10px 0',
+        padding: 'var(--row-pad) 0',
       }
     : {
         ...cellStyle,
@@ -347,7 +347,7 @@ export default function TaskRow({
       style={{
         gridTemplateColumns,
         alignItems: 'center',
-        minHeight: 44,
+        minHeight: 'var(--row)',
         borderBottom: '1px solid var(--bd)',
         cursor: 'pointer',
         background: open ? 'var(--bg-selected)' : undefined,

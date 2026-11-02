@@ -20,6 +20,7 @@ import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
 import { useTheme } from './theme'
+import { useDensity } from './density'
 import { parseShareParams, stripShareParams } from './command-center/shareIntake'
 import { subscribeNativeShares, subscribeNotificationTaps } from './command-center/nativeApp'
 import { parseTaskParam, stripTaskParam } from './command-center/reminders'
@@ -118,6 +119,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(chatMockup.enabled && chatMockup.open)
   const chatButtonRef = useRef(null)
   const { theme, resolvedTheme, setTheme } = useTheme()
+  const { density, setDensity } = useDensity()
 
   // Mirror the active tab into the URL so it can be bookmarked or shared, without adding history
   // entries. Only the `view` search param is touched; the hash (used for the one-time connection
@@ -200,7 +202,7 @@ export default function App() {
           {tab === 'rules' && <RulesTab />}
           {tab === 'digest' && <DigestTab />}
           {tab === 'github' && <GithubTab />}
-          {tab === 'settings' && <SettingsTab theme={theme} onThemeChange={setTheme} />}
+          {tab === 'settings' && <SettingsTab theme={theme} onThemeChange={setTheme} density={density} onDensityChange={setDensity} />}
         </main>
         <BottomNav
           items={PRIMARY_ITEMS}

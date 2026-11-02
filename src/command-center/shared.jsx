@@ -70,10 +70,12 @@ export function SourceBadge({ sourceType }) {
   )
 }
 
-// Projects and assignees carry no colour of their own, so one is picked from the accent tokens
-// by the name: the same name is the same colour in every view, on every device, and on every
-// scratch database the UI tests seed (ids differ there, names do not), and nothing is stored.
-const NAME_PALETTE = ['var(--blue)', 'var(--purple)', 'var(--green)', 'var(--orange)', 'var(--yellow)', 'var(--red)']
+// Projects and assignees carry no colour of their own, so one is picked from the ten project
+// tokens (--proj-1 to --proj-10 in index.css) by the name: the same name is the same colour in
+// every view, on every device, and on every scratch database the UI tests seed (ids differ there,
+// names do not), and nothing is stored. The project tokens are kept apart from the accents, which
+// mean something (blue is the action, red is overdue), so a project never borrows a meaning.
+const NAME_PALETTE = Array.from({ length: 10 }, (_, i) => `var(--proj-${i + 1})`)
 
 export function colorFor(name) {
   if (!name) return 'var(--t3)'

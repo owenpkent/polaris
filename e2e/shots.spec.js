@@ -98,6 +98,13 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'list')
   })
 
+  // The same list under Compact density (src/density.js, Settings > Appearance > Task rows).
+  test('mytasks: compact', async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
+    await openView(page)
+    await shot(page, testInfo, 'mytasks', 'compact')
+  })
+
   // The manual sort: the handle column before each row, and one handle's menu of moves open.
   test('mytasks: manual', async ({ page }, testInfo) => {
     await openView(page)
@@ -533,6 +540,14 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await openView(page, 'board')
     await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
     await shot(page, testInfo, 'board', 'cards')
+  })
+
+  test('board: compact', async ({ page }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
+    await boardCardExtras(page)
+    await openView(page, 'board')
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByText('Today')).toBeVisible()
+    await shot(page, testInfo, 'board', 'compact')
   })
 
   // A lane's Add task open, with a name typed in.

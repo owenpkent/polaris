@@ -9,8 +9,8 @@
          (the values are --bg from the two token blocks in src/index.css). -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <meta name="theme-color" content="#17191e" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#f1f3f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16181d" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)" />
     <script>
       // Resolve the theme before first paint, so a reload never flashes the
       // wrong one. Same rule as resolveTheme in src/theme.js (dark is the
@@ -35,6 +35,11 @@
         try {
           document.documentElement.dataset.theme = dark ? 'dark' : 'light'
         } catch (e) { /* nothing to paint */ }
+        // Row density (src/density.js, DENSITY_STORAGE_KEY), so a reload never jumps between
+        // row heights.
+        try {
+          document.documentElement.dataset.density = localStorage.getItem('cc-density-v1') === 'compact' ? 'compact' : 'comfortable'
+        } catch (e) { /* no choice: comfortable, which is also the CSS default */ }
       })()
     </script>
   </head>
