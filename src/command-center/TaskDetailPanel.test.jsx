@@ -1093,6 +1093,34 @@ describe('the subtasks header and Add subtask', () => {
     expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('')
   })
 
+  // Chosen: B stays in an open box (not auto-saved). The blur that left B was ignored while the
+  // create was busy, and saving it unasked on A's answer would surprise; the owner sees B and sends it.
+  test('a click-away save that completes after the draft changed to B keeps B in the open box', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    const create = deferred()
+    api.createTask.mockReturnValue(create.promise)
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'A', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'A' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    await act(async () => { fireEvent.pointerUp(document.body) })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value: 'B' } })
+    act(() => { box.blur() })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+
+    await act(async () => { create.resolve({ task: { id: 't_s3', title: 'A', parentId: 't_1', status: 'open' } }) })
+    expect(await screen.findByRole('checkbox', { name: 'Complete A' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('B')
+  })
+
   test('the box closed with Esc and reopened while the create is out keeps what is typed in it', async () => {
     api.getTask.mockResolvedValueOnce(detail(TASK, []))
     const create = deferred()

@@ -446,6 +446,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [subtaskDraft, setSubtaskDraft] = useState('')
   const [subtaskBusy, setSubtaskBusy] = useState(false)
   const subtaskInputRef = useRef(null)
+  // The draft as last rendered, so a create that answers late can tell whether it was edited since.
+  const subtaskDraftRef = useRef('')
+  subtaskDraftRef.current = subtaskDraft
   // A click elsewhere adds what is in the Add subtask box on the release, so the new row does not
   // move what was pressed before the click lands (pointerPress.js).
   const subtaskPress = usePointerPress(addingSubtask)
@@ -812,7 +815,9 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         onChanged?.()
         return
       }
-      if (leave && document.activeElement !== subtaskInputRef.current) closeSubtaskBox()
+      // A click-away save closes the box only if the text is still what was sent. A newer draft
+      // (edited meanwhile, or typed in a box reopened since) stays, box open, for the next save.
+      if (leave && document.activeElement !== subtaskInputRef.current && subtaskDraftRef.current === sent) closeSubtaskBox()
       else setSubtaskDraft((current) => (current === sent ? '' : current))
       await load({ quiet: true })
       onChanged?.()
