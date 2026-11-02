@@ -1512,6 +1512,8 @@ test('11. a release tag verifies only by one signature from a pinned key: SSH th
   // An X.509 pin is an ssh-rsa line of the one signers file: no second file, no other key type.
   const signers = stripComments(readFileSync(join(UPDATE, 'signers.ts'), 'utf8'));
   assert.match(signers, /if \(s\.keyType !== 'ssh-rsa'\) continue;/);
+  // And it keeps the restrictions of its line: switching envelope never widens a pinned key.
+  assert.match(signers, /if \(!x509PinAllowed\(s\)\) continue;/);
   // The release script takes no PIN, passphrase, or secret as an argument or from the environment.
   const script = readFileSync(join(SRC, '..', '..', 'scripts', 'sign-release.ps1'), 'utf8');
   const params = /param\(([\s\S]*?)\)\s*\r?\n/.exec(script)?.[1] ?? '';

@@ -7,7 +7,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { sshRsaKey } from '../dev/der.ts';
 import { publicKeyFingerprint } from './cms.ts';
 import type { Exec } from './exec.ts';
-import { committedSignersPath, describeSigners, keyFingerprint, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, signerIdentity, x509PinnedKeys } from './signers.ts';
+import { committedSignersPath, describeSigners, keyFingerprint, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, signerIdentity, x509PinAllowed, x509PinnedKeys } from './signers.ts';
 
 const KEY_A = 'AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const KEY_B = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -128,4 +128,30 @@ test('x509PinnedKeys turns every ssh-rsa line into a pinned key and skips the re
     `good namespaces="git" ssh-rsa ${rsaKey}`,
   ].join('\n'));
   assert.deepEqual(x509PinnedKeys(bad).map((k) => k.name), ['good'], 'a bad ssh-rsa line is skipped, not thrown');
+});
+
+test('an X.509 pin keeps the restrictions of its line: what ssh-keygen would refuse for a tag, or what cannot be checked, is no pin', () => {
+  const rsaKey = sshRsaKey(generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey).split(' ')[1];
+  const pin = (options: string) => x509PinnedKeys(parseAllowedSigners(`owner ${options} ssh-rsa ${rsaKey}`.replace(/ +/g, ' '))).length === 1;
+  for (const allowed of ['', 'namespaces="git"', 'NAMESPACES="git"', 'namespaces="file,git"', 'namespaces="git",namespaces="git,file"']) {
+    assert.equal(pin(allowed), true, `${allowed || '(no options)'} lets the key sign a tag`);
+  }
+  for (const refused of [
+    'namespaces="file"',
+    'namespaces="git",valid-before="20000101"',
+    'valid-after="20260101",namespaces="git"',
+    'cert-authority,namespaces="git"',
+    'cert-authority',
+    'namespaces="*"',
+    'namespaces="gi?"',
+    'namespaces="!file,git"',
+    'namespaces=git',
+    'namespaces="git',
+    'namespaces="g\\"it"',
+    'no-touch-required,namespaces="git"',
+    'namespaces="git" cert-authority',
+  ]) {
+    assert.equal(pin(refused), false, `${refused} is not an X.509 pin`);
+  }
+  assert.equal(x509PinAllowed(parseAllowedSigners(`owner namespaces="file" ssh-ed25519 ${KEY_A}`)[0]), false, 'the check reads options, whatever the key type');
 });

@@ -271,6 +271,17 @@ test('verifyTag verifies an X.509 signature with the pinned RSA key and never as
   assert.match((bad as { reason: string }).reason, /changed after it was signed/);
 });
 
+test('a pinned key the SSH path would refuse for a tag does not verify the same release as X.509', async () => {
+  const raw = readFileSync(join(fixtureDir, 'x509-tag.txt')).toString('latin1');
+  const key = sshRsaKey(createPublicKey(readFileSync(join(fixtureDir, 'x509-signer.pem'))));
+  for (const options of ['namespaces="file"', 'namespaces="git",valid-before="20000101"', 'cert-authority,namespaces="git"']) {
+    const keys = x509PinnedKeys(parseAllowedSigners(`ok-studio-ev ${options} ${key}\n`));
+    const result = await git(catFileExec(raw).exec, '/repo').verifyTag('v0.0.1-dryrun', '/nowhere', keys);
+    assert.equal(result.ok, false, `${options} signs no release`);
+    assert.match((result as { reason: string }).reason, /no pinned key signed it/);
+  }
+});
+
 test('verifyTag verifies an SSH signature with git verify-tag and names the principal git reports', async () => {
   const raw = `object ${'a'.repeat(40)}\ntype commit\ntag v2.1.0\ntagger t <t@example.com> 1760000000 +0000\n\nRelease 2.1.0\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n`;
   const f = catFileExec(raw, 'Good "git" signature for polaris-release with ED25519 key SHA256:x');

@@ -104,13 +104,42 @@ export function pinSigners(committedFile: string, pinnedFile: string): Signer[] 
   return signers;
 }
 
-/** The pinned keys an X.509 signature may verify against: every `ssh-rsa` line as a public key
- *  object, named by its principal. The same RSA key signs either way. A line whose key does not
- *  decode is skipped here; ssh-keygen refuses it on the SSH path. */
+/** Whether a line's options let its key sign a git tag directly, as ssh-keygen would judge them,
+ *  failing closed on anything this check cannot enforce. A pin must never gain authority by
+ *  changing envelope: a key the SSH path refuses for a tag is refused here too. No options passes,
+ *  as ssh-keygen allows every namespace then, and so does a `namespaces` list that names `git`
+ *  literally. `cert-authority` (the key signs certificates, not tags), a `namespaces` list without
+ *  `git` or with a pattern in it, `valid-after` and `valid-before` (a window the CMS path has no
+ *  trusted clock to judge), and any option not named here do not. */
+export function x509PinAllowed(s: Signer): boolean {
+  if (s.options.length === 0) return true;
+  if (s.options.length > 1 || /\\/.test(s.options[0])) return false;
+  const options: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (const ch of s.options[0]) {
+    if (ch === '"') quoted = !quoted;
+    if (ch === ',' && !quoted) { options.push(current); current = ''; } else current += ch;
+  }
+  if (quoted) return false;
+  options.push(current);
+  return options.every((option) => {
+    const m = /^namespaces="([^"]*)"$/i.exec(option);
+    if (!m) return false;
+    const names = m[1].split(',');
+    return !names.some((n) => /[*?!]/.test(n)) && names.includes('git');
+  });
+}
+
+/** The pinned keys an X.509 signature may verify against: every `ssh-rsa` line whose options let
+ *  it sign a tag (x509PinAllowed) as a public key object, named by its principal. The same RSA key
+ *  signs either way. A line whose key does not decode is skipped here; ssh-keygen refuses it on the
+ *  SSH path. */
 export function x509PinnedKeys(signers: Signer[]): PinnedPublicKey[] {
   const keys: PinnedPublicKey[] = [];
   for (const s of signers) {
     if (s.keyType !== 'ssh-rsa') continue;
+    if (!x509PinAllowed(s)) continue;
     const key = sshRsaPublicKey(s.key);
     if (key) keys.push({ name: s.principal, key });
   }
