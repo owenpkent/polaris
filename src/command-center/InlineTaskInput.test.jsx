@@ -116,10 +116,64 @@ describe('InlineTaskInput', () => {
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
   })
 
-  test('leaving the row with a name in it keeps it open', () => {
-    const { input, onCancel } = setup()
+  // Tab, or a script moving focus, is not a click elsewhere: the draft stays for the owner.
+  test('leaving the row by keyboard with a name in it keeps the draft', () => {
+    const { input, onSubmit, onCancel } = setup()
     fireEvent.change(input, { target: { value: 'Buy milk' } })
     fireEvent.blur(input)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(input.value).toBe('Buy milk')
+  })
+
+  // As in Asana's list: a click away adds what was typed. A mouse takes focus on the press, so the
+  // task is added on the release, and the row closes once it is saved.
+  test("a click elsewhere adds the named task on the group's date after the release, then closes the row", async () => {
+    const today = getDueBounds().today
+    const { input, onSubmit, onCancel } = setup({ defaultDueAt: today })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.pointerDown(document.body)
+    input.blur()
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.pointerUp(document.body)
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: today, recurrence: null })
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+  })
+
+  // A touch moves focus on the tap after the release, before the click.
+  test('a tap elsewhere adds the named task at once', async () => {
+    const { input, onSubmit, onCancel } = setup()
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.pointerDown(document.body)
+    fireEvent.pointerUp(document.body)
+    input.blur()
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: null, recurrence: null })
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+  })
+
+  test('a click elsewhere whose create fails keeps the row, the name, and the error', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('Nope'))
+    const { input, onCancel } = setup({ onSubmit })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.pointerDown(document.body)
+    input.blur()
+    fireEvent.pointerUp(document.body)
+    expect(await screen.findByText('Nope')).toBeTruthy()
+    expect(input.value).toBe('Buy milk')
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  test('a press released back in the row adds nothing', () => {
+    const { input, onSubmit, onCancel } = setup()
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.pointerDown(document.body)
+    input.blur()
+    fireEvent.pointerUp(input)
+    expect(onSubmit).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
   })
 

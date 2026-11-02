@@ -182,6 +182,21 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect((await listTaskTitles(request)).length).toBe(before)
   })
 
+  // As in Asana's list: a click elsewhere adds what was typed and closes the row, and the click
+  // still does what it was for (here, expanding Later).
+  test('a click elsewhere adds the typed task and closes the row', async ({ page, request }, testInfo) => {
+    const title = `UI test clicked away ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await page.getByRole('button', { name: 'Expand Later' }).click()
+    await expect(row(page, 'Plan next marketing post')).toBeVisible()
+    await expect(input).toHaveCount(0)
+    await expect(row(page, title)).toBeVisible()
+    expect(await listTaskTitles(request)).toContain(title)
+  })
+
   test('Esc cancels Add task without creating anything', async ({ page, request }) => {
     await openView(page)
     const before = (await listTaskTitles(request)).length

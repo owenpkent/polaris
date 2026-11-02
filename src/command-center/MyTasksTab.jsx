@@ -298,7 +298,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
   // The inline row (InlineTaskInput.jsx) hands over the group's date, or the date and repeat
   // picked in its "When is it due?" step. The row stays open for the next task, as Asana's does;
-  // Esc or leaving it empty closes it.
+  // Esc or leaving it empty closes it, and a click elsewhere adds what was typed and closes it.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
     if (dueAt) payload.dueAt = dueAt

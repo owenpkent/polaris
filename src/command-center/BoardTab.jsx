@@ -10,6 +10,7 @@ import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurs
 import { oneLine, useFitToText } from './useFitToText'
 import { Popover } from './Menu'
 import { useRequestGuard } from './useRequestGuard'
+import { afterRelease, usePointerPress } from './pointerPress'
 
 const NO_SECTION = '__no_section__'
 const BOARD_PROJECT_KEY = 'cc-board-project-v1'
@@ -230,8 +231,10 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, destinations, o
 
 // "Add task" in a lane, as Asana's board has it: a quiet row that opens a blank card in place.
 // Enter or the Add task button saves it into this lane's section and leaves a fresh card open for
-// the next one; Esc or Cancel, or leaving the card empty, closes it. A create is queued offline
-// like any task edit (outbox.js), so this stays on with the server away, as the list's Add task does.
+// the next one; Esc or Cancel, or leaving the card empty, closes it. A click elsewhere with a name
+// in the card saves it and closes the card; leaving by keyboard keeps the draft. A create is
+// queued offline like any task edit (outbox.js), so this stays on with the server away, as the
+// list's Add task does.
 function LaneAddTask({ section, onCreate }) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -257,25 +260,11 @@ function LaneAddTask({ section, onCreate }) {
     }
   }, [open])
 
-  // Whether a pointer is pressed while the card is open, so a click elsewhere that takes focus
-  // from an empty card waits for the release before the card closes: closing on the press would
-  // swap the tall card for the short Add task row and move what is under it (the lane's Show done)
-  // up before the release, which would then land on whatever moved under the pointer instead.
-  const pointerDown = useRef(false)
-  useEffect(() => {
-    if (!open) return undefined
-    const down = () => { pointerDown.current = true }
-    const up = () => { pointerDown.current = false }
-    window.addEventListener('pointerdown', down, true)
-    window.addEventListener('pointerup', up, true)
-    window.addEventListener('pointercancel', up, true)
-    return () => {
-      pointerDown.current = false
-      window.removeEventListener('pointerdown', down, true)
-      window.removeEventListener('pointerup', up, true)
-      window.removeEventListener('pointercancel', up, true)
-    }
-  }, [open])
+  // A click elsewhere that takes focus from the card waits for the release before the card closes
+  // or saves: closing on the press would swap the tall card for the short Add task row and move
+  // what is under it (the lane's Show done) up before the release, which would then land on
+  // whatever moved under the pointer instead (pointerPress.js).
+  const press = usePointerPress(open)
 
   function close({ focusOpener = false } = {}) {
     reopenFocus.current = focusOpener
@@ -290,18 +279,34 @@ function LaneAddTask({ section, onCreate }) {
     close()
   }
 
+  // Saved on the release, before the click it makes lands, unless that click is in the card (its
+  // Cancel, say) or focus came back to it.
+  function submitOnLeave(release) {
+    const form = formRef.current
+    if (!mounted.current || !form || form.contains(release?.target) || form.contains(document.activeElement)) return
+    submit({ leave: true })
+  }
+
   function handleBlur(e) {
-    // Leaving an empty card closes it, unless focus went to one of its own buttons.
-    if (title.trim() || busy || formRef.current?.contains(e.relatedTarget)) return
-    if (!pointerDown.current) {
+    // Leaving an empty card closes it, and a click elsewhere saves a named one, unless focus went
+    // to one of its own buttons.
+    if (busy || formRef.current?.contains(e.relatedTarget)) return
+    if (title.trim()) {
+      if (!press.current.clicking) return
+      if (press.current.held) afterRelease(submitOnLeave)
+      else submitOnLeave()
+      return
+    }
+    if (!press.current.held) {
       close()
       return
     }
     // After the release and the click it makes, which run in the same task as pointerup.
-    window.addEventListener('pointerup', () => setTimeout(closeIfLeftEmpty, 0), { once: true, capture: true })
+    afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
   }
 
-  async function submit() {
+  // `leave` is a click elsewhere: once saved the card closes, unless focus has come back to it.
+  async function submit({ leave = false } = {}) {
     const trimmed = title.trim()
     if (!trimmed || busy) return
     setBusy(true)
@@ -309,13 +314,18 @@ function LaneAddTask({ section, onCreate }) {
     try {
       await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
       if (!mounted.current) return
+      if (leave && !formRef.current?.contains(document.activeElement)) {
+        setBusy(false)
+        close()
+        return
+      }
       setTitle('')
     } catch (err) {
       if (!mounted.current) return
       setError(err.message || 'Could not add task.')
     }
     setBusy(false)
-    inputRef.current?.focus()
+    if (!leave) inputRef.current?.focus()
   }
 
   if (!open) {
@@ -351,7 +361,7 @@ function LaneAddTask({ section, onCreate }) {
       />
       {error && <div role="alert" className="board-add-error">{error}</div>}
       <div className="board-add-actions">
-        <button type="button" className="btn btn-primary" disabled={busy || !title.trim()} onClick={submit}>Add task</button>
+        <button type="button" className="btn btn-primary" disabled={busy || !title.trim()} onClick={() => submit()}>Add task</button>
         <button type="button" className="btn-ghost" onClick={() => close({ focusOpener: true })}>Cancel</button>
       </div>
     </div>

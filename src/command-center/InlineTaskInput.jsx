@@ -3,6 +3,7 @@ import { Calendar } from 'lucide-react'
 import { Popover } from './Menu'
 import AddDuePanel from './AddDuePanel'
 import { formatDueCell, getDueBounds } from './dueDates'
+import { afterRelease, usePointerPress } from './pointerPress'
 
 // A single-row inline "new task" input used by the toolbar's "Add task" button and each group's
 // "Add task" row, which opens it at the top of the group, as Asana's list does. Enter with a title
@@ -11,9 +12,11 @@ import { formatDueCell, getDueBounds } from './dueDates'
 // due?" (AddDuePanel.jsx) under the row, on the group's date, with Repeats under the month: Add
 // task there calls onSubmit(title, { dueAt, recurrence }), and the next row starts on the group's
 // date again. Esc there goes back to the title, dropping what was picked; Esc in the title, or
-// leaving it empty, closes the row with nothing saved. A create that fails keeps the title and what
-// Add task handed over (the date, the repeat, and whether the repeat was made in Custom), so the
-// picker reopens on it for another try.
+// leaving it empty, closes the row with nothing saved. A click elsewhere with a title in it adds
+// the task on the row's date, as Enter does, and closes the row once it is saved; leaving it by
+// keyboard keeps the draft. A create that fails keeps the title and what Add task handed over
+// (the date, the repeat, and whether the repeat was made in Custom), so the picker reopens on it
+// for another try.
 export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, defaultDueAt = null, api }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
@@ -33,22 +36,12 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     return () => { mounted.current = false }
   }, [])
 
-  // Whether a pointer is pressed, so a click elsewhere that empties focus from the row waits for
-  // the release before the row closes: closing on the press would move the rows under it up by a
-  // row, and the release would land on whatever moved under the pointer instead of what was hit.
-  const pointerDown = useRef(false)
-  useEffect(() => {
-    const down = () => { pointerDown.current = true }
-    const up = () => { pointerDown.current = false }
-    window.addEventListener('pointerdown', down, true)
-    window.addEventListener('pointerup', up, true)
-    window.addEventListener('pointercancel', up, true)
-    return () => {
-      window.removeEventListener('pointerdown', down, true)
-      window.removeEventListener('pointerup', up, true)
-      window.removeEventListener('pointercancel', up, true)
-    }
-  }, [])
+  // A click elsewhere that takes focus from the row waits for the release before the row closes
+  // or adds: closing on the press would move the rows under it up by a row, and the release would
+  // land on whatever moved under the pointer instead of what was hit (pointerPress.js).
+  const press = usePointerPress()
+  // Set by Esc, so the blur of a row being taken away adds nothing.
+  const cancelled = useRef(false)
 
   function closeIfLeftEmpty() {
     const input = inputRef.current
@@ -56,17 +49,33 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     onCancel()
   }
 
+  // Added on the release, before the click it makes lands, unless that click is in the row or
+  // focus came back to it. A create cannot answer before the click, so nothing moves under it.
+  function addOnLeave(release) {
+    const row = rowRef.current
+    if (!mounted.current || cancelled.current || row?.contains(release?.target) || row?.contains(document.activeElement)) return
+    commit(dueAt, { recurrence, customRepeat }, { leave: true })
+  }
+
   function handleBlur(e) {
-    if (title.trim() || busy || rowRef.current?.contains(e.relatedTarget)) return
-    if (!pointerDown.current) {
+    if (busy || cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (title.trim()) {
+      if (!press.current.clicking) return
+      if (press.current.held) afterRelease(addOnLeave)
+      else addOnLeave()
+      return
+    }
+    if (!press.current.held) {
       onCancel()
       return
     }
     // After the release and the click it makes, which run in the same task as pointerup.
-    window.addEventListener('pointerup', () => setTimeout(closeIfLeftEmpty, 0), { once: true, capture: true })
+    afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
   }
 
-  async function commit(picked, draft) {
+  // `leave` is a click elsewhere: once saved the row closes, unless focus has come back to it,
+  // and focus is not pulled back to the row either way.
+  async function commit(picked, draft, { leave = false } = {}) {
     const trimmed = title.trim()
     if (!trimmed || busy) return
     setPicking(false)
@@ -78,6 +87,10 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     try {
       await onSubmit(trimmed, { dueAt: picked, recurrence: draft.recurrence || null })
       if (!mounted.current) return
+      if (leave && !rowRef.current?.contains(document.activeElement)) {
+        onCancel()
+        return
+      }
       // Saved: the next row starts clean, on the group's date.
       setTitle('')
       setDueAt(defaultDueAt)
@@ -88,7 +101,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       setError(err.message || 'Could not add task.')
     }
     setBusy(false)
-    inputRef.current?.focus()
+    if (!leave) inputRef.current?.focus()
   }
 
   // Whether an IME composition is open, so the Enter that confirms a candidate in a Chinese,
@@ -104,6 +117,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       commit(dueAt, { recurrence, customRepeat })
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      cancelled.current = true
       onCancel()
     }
   }
@@ -131,7 +145,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
           onKeyDown={handleKeyDown}
           onCompositionStart={() => { composing.current = true }}
           onCompositionEnd={() => { composing.current = false }}
-          // Leaving an empty row closes it, unless focus went to its own due date button.
+          // Leaving an empty row closes it, and a click elsewhere adds a named one, unless focus
+          // went to its own due date button.
           onBlur={handleBlur}
           // Read-only rather than disabled while it saves, so focus stays in the row for the next.
           readOnly={busy}

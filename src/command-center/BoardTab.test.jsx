@@ -173,6 +173,38 @@ describe('BoardTab', () => {
     expect(within(lane).getByRole('button', { name: 'Add task to No section' })).toBeTruthy()
   })
 
+  test("a click elsewhere saves a named card into the lane's section and closes it", async () => {
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'Clicked away' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    expect(api.createTask).not.toHaveBeenCalled()
+    fireEvent.pointerUp(document.body)
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Clicked away', projectId: 'p1', sectionId: 's2' }))
+    await waitFor(() => expect(within(doing).queryByRole('textbox')).toBeNull())
+    expect(within(doing).getByRole('button', { name: 'Add task to Doing' })).toBeTruthy()
+  })
+
+  test("a click on the card's Cancel saves nothing", async () => {
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'Never mind' } })
+    const cancel = within(doing).getByRole('button', { name: 'Cancel' })
+    fireEvent.pointerDown(cancel)
+    act(() => { box.blur() })
+    fireEvent.pointerUp(cancel)
+    fireEvent.click(cancel)
+    expect(within(doing).queryByRole('textbox')).toBeNull()
+    expect(api.createTask).not.toHaveBeenCalled()
+  })
+
   // A second project, so a request can be left pending while the board is switched away from the
   // first. The answer for each project is keyed by the id the board asks for.
   function twoProjects() {

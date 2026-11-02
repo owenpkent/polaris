@@ -1008,6 +1008,37 @@ describe('the subtasks header and Add subtask', () => {
     expect(api.createTask).not.toHaveBeenCalled()
   })
 
+  test('a click elsewhere adds the named subtask and closes the box', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    api.createTask.mockResolvedValue({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } })
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    expect(api.createTask).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.pointerUp(document.body) })
+
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' })
+    expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Subtask name' })).toBeNull()
+  })
+
+  test('leaving the box by keyboard with a name in it keeps the draft', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Half typed' } })
+    fireEvent.blur(box)
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('Half typed')
+    expect(api.createTask).not.toHaveBeenCalled()
+  })
+
   // Like the list's Add task: api.createTask is queued by the outbox (create_task) when the server
   // is away, so adding a subtask stays on offline.
   test('offline, both ways to add a subtask stay on, and Enter still creates it', async () => {
