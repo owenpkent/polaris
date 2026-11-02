@@ -27,6 +27,8 @@ npm run apk                         # android/app/build/outputs/apk/debug/app-de
 
 `npm run open` opens the project in Android Studio for a device run or a signed build.
 
+The app's version is the one in mobile/package.json, bumped with the root package.json at each release (docs/releases.md): `build.gradle` reads it for `versionName` and derives `versionCode` from it (MAJOR * 10000 + MINOR * 100 + PATCH), so nothing in the Android project is edited by hand for a release.
+
 ## Install on a phone
 
 Either copy `app-debug.apk` to the phone and open it (allow installs from that source when asked), or with USB debugging on:

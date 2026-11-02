@@ -322,6 +322,72 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(labels).toEqual(['Open Review dashboard focus ring contrast', 'Open Reply to accessibility audit feedback'])
   })
 
+  // The manual sort: each row leads with a handle that drags, and whose menu and arrow keys make
+  // the same moves. Both tasks are due today, so they share a group and the second (created
+  // last, numbered last) starts under the first.
+  async function manualSort(page) {
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+  }
+  const reorderOrder = (page, label) => page
+    .getByRole('button', { name: new RegExp(`^Open UI test ${label} `) })
+    .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+
+  test('under the manual sort a handle menu moves a row, and the order survives a reload', async ({ page, request }, testInfo) => {
+    const first = await createTask(request, testInfo, 'reorder-menu')
+    const second = await createTask(request, testInfo, 'reorder-menu')
+    await openView(page)
+    await expect(page.getByRole('button', { name: /^Reorder/ })).toHaveCount(0)
+    await manualSort(page)
+    expect(await reorderOrder(page, 'reorder-menu')).toEqual([`Open ${first}`, `Open ${second}`])
+
+    await page.getByRole('button', { name: `Reorder ${second}` }).click()
+    const menu = page.getByRole('menu', { name: `Reorder ${second}` })
+    await expect(menu.getByRole('menuitem', { name: 'Move down' })).toBeDisabled()
+    await menu.getByRole('menuitem', { name: 'Move up' }).click()
+    await expect.poll(() => reorderOrder(page, 'reorder-menu')).toEqual([`Open ${second}`, `Open ${first}`])
+    await expect(page.getByRole('status').filter({ hasText: `${second} moved to` })).toHaveCount(1)
+
+    await openView(page)
+    expect(await reorderOrder(page, 'reorder-menu')).toEqual([`Open ${second}`, `Open ${first}`])
+  })
+
+  test('under the manual sort the arrow keys move the focused handle one row', async ({ page, request }, testInfo) => {
+    const first = await createTask(request, testInfo, 'reorder-keys')
+    const second = await createTask(request, testInfo, 'reorder-keys')
+    await openView(page)
+    await manualSort(page)
+    await page.getByRole('button', { name: `Reorder ${first}` }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(() => reorderOrder(page, 'reorder-keys')).toEqual([`Open ${second}`, `Open ${first}`])
+    await expect(page.getByRole('button', { name: `Reorder ${first}` })).toBeFocused()
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(() => reorderOrder(page, 'reorder-keys')).toEqual([`Open ${first}`, `Open ${second}`])
+  })
+
+  test('under the manual sort dragging a handle drops the row where the line shows', async ({ page, request }, testInfo) => {
+    const first = await createTask(request, testInfo, 'reorder-drag')
+    const second = await createTask(request, testInfo, 'reorder-drag')
+    await openView(page)
+    await manualSort(page)
+    const handle = page.getByRole('button', { name: `Reorder ${second}` })
+    // Other tests' rows push these down the group, so the handle may start below the fold.
+    await handle.scrollIntoViewIfNeeded()
+    const from = await handle.boundingBox()
+    const target = await row(page, first).boundingBox()
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(from.x + from.width / 2, from.y - 10, { steps: 4 })
+    await page.mouse.move(from.x + from.width / 2, target.y + 6, { steps: 6 })
+    await expect(row(page, second)).toHaveClass(/is-dragging/)
+    await expect(row(page, first)).toHaveClass(/is-drop-before/)
+    await page.mouse.up()
+    await expect.poll(() => reorderOrder(page, 'reorder-drag')).toEqual([`Open ${second}`, `Open ${first}`])
+    await expect(page.getByRole('menu')).toHaveCount(0)
+  })
+
   test('filtering by Urgent leaves only urgent tasks and Clear filters restores the rest', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter' }).click()

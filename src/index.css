@@ -883,6 +883,31 @@ kbd { color: var(--t1); }
 /* Dates, counts, and anything else with digits in the list line up in columns. */
 .mytasks-grid, .mytasks-section-count, .board-card-foot, .board-lane-count { font-variant-numeric: tabular-nums; }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
+/* Under the manual sort (MyTasksTab, .mytasks-reorderable) a row leads with its reorder handle,
+   so the check and the name are the second and third cells and the rules start one later. A
+   subtask row under its parent (.is-nested) has no handle: its name cell spans both columns
+   (TaskRow.jsx), so its third cell is the first column and keeps its line. */
+.mytasks-reorderable .mytasks-colhead > :nth-child(3),
+.mytasks-reorderable .mytasks-row:not(.is-nested) > :nth-child(3) { border-left: none; padding-left: 0; }
+.reorder-handle { color: var(--t3); cursor: grab; touch-action: none; height: var(--row); }
+.reorder-handle:hover:not(:disabled), .reorder-handle:focus-visible { color: var(--t1); }
+body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-select: none; }
+/* The held row fades, and a 2px line marks the slot it would drop into (useReorderDrag.js). */
+.mytasks-row { position: relative; }
+.mytasks-row.is-dragging { opacity: 0.5; }
+.mytasks-row.is-drop-before::before,
+.mytasks-row.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--blue);
+  pointer-events: none;
+  z-index: 2;
+}
+.mytasks-row.is-drop-before::before { top: -1px; }
+.mytasks-row.is-drop-after::after { bottom: -1px; }
 /* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
 .mytasks-row > :last-child { padding-right: 4px; }
 .mytasks-section + .mytasks-section { padding-top: var(--section-gap); }
@@ -2133,25 +2158,31 @@ kbd { color: var(--t1); }
 .due-pop-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .due-pop-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
 .due-pop-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
-/* Repeats, under the month (RepeatPicker in RepeatBuilder.jsx). */
+/* Repeat under Add time, or the rule it opens with its text wrapping beside the icons. Repeats
+   (RepeatPicker in RepeatBuilder.jsx) is the picker's second view, in place of the month, at the
+   same width, with Back above it. */
 .due-pop .due-pop-repeat { margin-bottom: 0; }
-/* Above the breakpoint the quick dates and the time go in a column beside the month, so the
-   picker is little taller than the month and fits under a row in the middle of the list; Repeats
-   runs under both, where Custom's builder has the whole width. */
+.due-pop-repeat-open { width: 100%; justify-content: flex-start; padding-inline: 0.75rem; }
+.due-pop-repeat-open > svg { flex: 0 0 auto; }
+.due-pop-repeat-text { flex: 1 1 0; min-width: 0; text-align: start; overflow-wrap: anywhere; }
+.due-pop-back { align-self: flex-start; }
+/* Above the breakpoint the quick dates, the time, and Repeat go in a column beside the month, so
+   the picker is no taller than the month and fits under a row in the middle of the list. */
 @media (min-width: 641px) {
   .due-pop {
     display: grid;
     grid-template-columns: 160px 308px;
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas: 'chips cal' 'time cal' 'repeat repeat';
+    grid-template-rows: auto 1fr auto auto;
+    grid-template-areas: 'chips cal' '. cal' 'time cal' 'repeat cal';
     column-gap: 16px;
     row-gap: 12px;
     width: auto;
   }
+  .due-pop.due-pop-repeat-view { display: flex; width: calc(160px + 16px + 308px + 2 * var(--due-pad)); }
   .due-pop > .sheet-chips { grid-area: chips; flex-direction: column; align-items: stretch; }
   .due-pop > .cal { grid-area: cal; }
-  .due-pop > .due-pop-repeat { grid-area: repeat; min-width: 0; }
-  .due-pop > .due-pop-time { grid-area: time; align-self: end; flex-direction: column; align-items: stretch; }
+  .due-pop > .due-pop-repeat { grid-area: repeat; min-width: 0; display: flex; flex-direction: column; }
+  .due-pop > .due-pop-time { grid-area: time; flex-direction: column; align-items: stretch; }
   .due-pop-time > * { flex: 0 0 auto; }
   .due-pop-time-field { flex-direction: column; align-items: stretch; gap: 4px; }
 }

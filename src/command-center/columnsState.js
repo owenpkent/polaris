@@ -173,8 +173,13 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 // filler track; each column is minmax(min, width): at its stored width when
 // the row has room, shrinking toward its minimum (instead of overflowing the
 // page) when the window or an open detail panel is narrow.
-export function buildGridTemplate(visibleColumns, widths, { phone } = {}) {
-  if (phone) return '44px minmax(0, 1fr) 120px'
+// `handle` adds a 44px column before the checkbox for the row's reorder handle (the manual
+// sort, ReorderHandle.jsx), on every tier, so the handle is a full target on a phone too. The
+// phone's due column gives up 8px to it, so the Name header (its label and 44px menu) still
+// fits at 320px, where the list is 288px wide.
+export function buildGridTemplate(visibleColumns, widths, { phone, handle = false } = {}) {
+  const lead = handle ? '44px 44px' : '44px'
+  if (phone) return `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}`
   const tracks = visibleColumns.map((col) => `minmax(${col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
-  return ['44px', ...tracks, 'minmax(0, 1fr)'].join(' ')
+  return [lead, ...tracks, 'minmax(0, 1fr)'].join(' ')
 }

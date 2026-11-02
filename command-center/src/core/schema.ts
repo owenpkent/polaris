@@ -328,6 +328,17 @@ export const MIGRATIONS: Migration[] = [
   // rollback restores the snapshot taken before it. Exactly midnight UTC becomes its date, as a
   // write stores it. Nothing else about a row changes.
   localizeZonedDues,
+  // 14: one order for every task. position was numbered per project and section, so the My
+  // tasks list, which spans them all, had no order to show: a task at 3 in one project tied with
+  // the task at 3 in every other. Tasks are renumbered 1..n in the order they already had
+  // (position, then creation), which keeps each project's and section's order as it was, and
+  // from here on a new task takes the number after the last one anywhere (Store.nextPosition).
+  `
+  UPDATE tasks SET position = (
+    SELECT rn FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY position, created_at, id) AS rn FROM tasks) ranked
+    WHERE ranked.id = tasks.id
+  );
+  `,
 ];
 
 /** Migration 13's work, exported so the updater's tests can run it the way a newer daemon would. */

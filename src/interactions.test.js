@@ -24,6 +24,12 @@ const ALLOW_LIST = [
     reason:
       'SUSPECTED BUG, found 2026-09-26: setPointerCapture drives the column-width drag handle, which also has an ArrowLeft/ArrowRight keyboard nudge and a widen/narrow/reset menu, so this may be a false positive the owner should confirm.',
   },
+  {
+    file: 'src/command-center/useReorderDrag.js',
+    rule: 'drag-only',
+    reason:
+      'setPointerCapture follows the pointer while a row is dragged to a new place under the manual sort. The same moves are on the row handle without a drag: ArrowUp and ArrowDown move it one step, and its menu has Move up, Move down, Move to top, and Move to bottom (ReorderHandle.jsx, e2e/mytasks.spec.js).',
+  },
 ]
 
 function isAllowed(file, rule) {

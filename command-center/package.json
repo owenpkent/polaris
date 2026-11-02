@@ -15,7 +15,11 @@
     "cc": "node src/cli.ts",
     "test": "node --test --test-reporter=spec \"src/**/*.test.ts\"",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"src/**/*.test.ts\" --test-coverage-lines=93 --test-coverage-branches=85 --test-coverage-functions=90 --test-reporter=spec \"src/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "fuzz": "node fuzz/run.mjs",
+    "fuzz:merge": "node fuzz/run.mjs merge",
+    "fuzz:repro": "node fuzz/run.mjs repro",
+    "fuzz:seeds": "node fuzz/make-seeds.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -23,6 +27,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@jazzer.js/core": "^4.0.0",
     "@types/node": "^26.6.6",
     "fast-check": "^4.10.2",
     "typescript": "^7.0.2"

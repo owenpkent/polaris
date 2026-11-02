@@ -11,6 +11,7 @@ import {
   DEFAULT_GROUP,
   activeFilterCount,
   isDefaultSort,
+  isManualSort,
 } from './viewState'
 import { COLUMN_DEFS } from './columnsState'
 
@@ -224,7 +225,9 @@ export default function TaskListToolbar({
   const filterCount = activeFilterCount(view.filters)
   const sortApplied = !isDefaultSort(view.sort)
   const sortField = SORT_FIELDS.find((f) => f.id === view.sort.field) || SORT_FIELDS[0]
-  const SortIcon = !sortApplied ? ArrowUpDown : view.sort.dir === 'desc' ? ArrowDown : ArrowUp
+  // The manual order (the owner's own, changed by dragging rows) has no direction.
+  const manualSort = isManualSort(view.sort)
+  const SortIcon = !sortApplied || manualSort ? ArrowUpDown : view.sort.dir === 'desc' ? ArrowDown : ArrowUp
   const groupApplied = view.group !== DEFAULT_GROUP
   const groupMode = GROUP_MODES.find((g) => g.id === view.group) || GROUP_MODES[0]
 
@@ -302,7 +305,7 @@ export default function TaskListToolbar({
             aria-haspopup="dialog"
             aria-expanded={openMenu === 'sort'}
             // The arrow shows the direction; the name says it in words.
-            aria-label={sortApplied ? `Sort: ${sortField.label}, ${view.sort.dir === 'desc' ? 'descending' : 'ascending'}` : undefined}
+            aria-label={sortApplied ? (manualSort ? 'Sort: Manual' : `Sort: ${sortField.label}, ${view.sort.dir === 'desc' ? 'descending' : 'ascending'}`) : undefined}
             onClick={() => toggle('sort')}
           >
             <SortIcon size={16} aria-hidden="true" /> {sortApplied ? `Sort: ${sortField.label}` : 'Sort'}
@@ -315,7 +318,7 @@ export default function TaskListToolbar({
               <select aria-label="Sort by" data-pop-first="" value={view.sort.field} onChange={(e) => onSetSort(e.target.value, view.sort.dir)}>
                 {SORT_FIELDS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
               </select>
-              <select aria-label="Direction" value={view.sort.dir} onChange={(e) => onSetSort(view.sort.field, e.target.value)}>
+              <select aria-label="Direction" value={manualSort ? 'asc' : view.sort.dir} disabled={manualSort} onChange={(e) => onSetSort(view.sort.field, e.target.value)}>
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
               </select>

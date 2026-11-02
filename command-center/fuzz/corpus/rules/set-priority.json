@@ -1,0 +1,22 @@
+{
+  "trigger": {
+    "type": "event",
+    "kinds": [
+      "task.created"
+    ]
+  },
+  "conditions": [
+    {
+      "field": "title",
+      "op": "matches",
+      "value": "^urgent"
+    }
+  ],
+  "actions": [
+    {
+      "type": "set_field",
+      "field": "priority",
+      "value": "high"
+    }
+  ]
+}

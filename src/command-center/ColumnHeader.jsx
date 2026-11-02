@@ -82,7 +82,8 @@ export default function ColumnHeader({ column, phone, sort, onSetWidth, onResetW
     <div
       ref={cellRef}
       className="mytasks-th"
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0, height: '100%', paddingRight: HANDLE_WIDTH / 2 }}
+      // The right pad keeps the label clear of the resize handle, which the phone tier has not got.
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 0, height: '100%', paddingRight: phone ? 0 : HANDLE_WIDTH / 2 }}
     >
       <span
         style={{

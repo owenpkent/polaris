@@ -105,6 +105,18 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'compact')
   })
 
+  // The manual sort: the handle column before each row, and one handle's menu of moves open.
+  test('mytasks: manual', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    await page.getByRole('button', { name: /^Reorder / }).first().click()
+    await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'manual')
+  })
+
   test('mytasks: panel', async ({ page }, testInfo) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')
@@ -330,8 +342,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'due-menu-time')
   })
 
-  // The due date picker on a weekly repeat, from the panel's Due date field: Repeats under the
-  // month with the weekday buttons, and the next dates tinted. Due a year out, in the Later group
+  // The due date picker on a weekly repeat, from the panel's Due date field: the date view with the
+  // repeat button naming the rule and the next dates tinted (the repeat view follows below). Due a year out, in the Later group
   // that starts collapsed, so the list shots that follow never show it.
   test('mytasks: due menu with a repeat', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'due menu repeat', { dueAt: '2027-10-14', recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
@@ -341,9 +353,22 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / }).click()
     const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
     await expect(menu.getByRole('button', { name: 'Monday, October 18, 2027, repeats', exact: true })).toBeVisible()
-    // On a phone the picker scrolls; the weekday buttons are what this state is for.
-    await menu.getByRole('button', { name: 'Thursday', exact: true }).scrollIntoViewIfNeeded()
     await shot(page, testInfo, 'mytasks', 'due-menu-repeat')
+  })
+
+  // The same picker's repeat view, opened from the repeat button: Back, Repeats on Weekly with the
+  // weekday buttons, and the next dates.
+  test('mytasks: due menu repeat view', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'due menu repeat view', { dueAt: '2027-10-14', recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
+    await openView(page)
+    await page.getByRole('button', { name: 'Expand Later' }).click()
+    await openTask(page, title)
+    await page.getByRole('dialog', { name: 'Task details' }).getByRole('button', { name: /^Due date, / }).click()
+    const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
+    await menu.getByRole('button', { name: /^Repeats weekly on / }).click()
+    await expect(menu.getByRole('button', { name: 'Thursday', exact: true })).toBeVisible()
+    await expect(menu.getByRole('status')).toHaveText(/^Next: /)
+    await shot(page, testInfo, 'mytasks', 'due-menu-repeat-view')
   })
 
   // "When is it due?" with Add time opened under the month.

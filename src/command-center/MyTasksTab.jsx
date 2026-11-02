@@ -17,7 +17,8 @@ import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
 import { getDueBounds, groupTasks, bucketForTask } from './dueDates'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
-import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, STATE_FILTER_OPTIONS } from './viewState'
+import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
+import ReorderableRows from './ReorderableRows'
 import { useRequestGuard } from './useRequestGuard'
 
 const GROUPS_STORAGE_KEY = 'cc-mytasks-groups-v1'
@@ -136,24 +137,36 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, narrowPanel, panelOpen: Boolean(detailTaskId) }),
     [columns.hidden, narrow900, narrow600, phone, narrowPanel, detailTaskId]
   )
+  // Under the manual sort every row leads with its reorder handle (ReorderHandle.jsx), so the
+  // grid, the column header, and the inline add row all take the extra 44px column.
+  const reorderable = isManualSort(view.sort)
   const gridTemplateColumns = useMemo(
-    () => buildGridTemplate(visibleColumns, columns.widths, { phone }),
-    [visibleColumns, columns.widths, phone]
+    () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable }),
+    [visibleColumns, columns.widths, phone, reorderable]
   )
 
   const beginRequest = useRequestGuard()
+  // The positions of moves whose writes are still on their way (handleReorder), laid over every
+  // list the server answers until the queue is empty. A poll (useEventRefresh) set off by the
+  // first move's event, or a load that was already in flight, would otherwise put the server's
+  // in-between order back over a later move, and the next move would start from the wrong place.
+  const pendingPositions = useRef(new Map())
+  const withPendingPositions = useCallback((list) => {
+    const pending = pendingPositions.current
+    return pending.size ? list.map((t) => (pending.has(t.id) ? { ...t, position: pending.get(t.id) } : t)) : list
+  }, [])
   const fetchTasks = useCallback(async () => {
     const isCurrent = beginRequest()
     setError(null)
     try {
       const res = await api.listTasks(MY_TASKS_QUERY)
-      if (isCurrent()) setTasks(res.tasks || [])
+      if (isCurrent()) setTasks(withPendingPositions(res.tasks || []))
     } catch (err) {
       if (isCurrent()) setError(err.message || 'Could not load tasks.')
     } finally {
       if (isCurrent()) setLoading(false)
     }
-  }, [api, beginRequest])
+  }, [api, beginRequest, withPendingPositions])
 
   useEffect(() => {
     if (!usable) return
@@ -375,6 +388,43 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     }
   }, [api, fetchTasks])
 
+  // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
+  // position, shown at once, and its moves are sent one after another. Moves queue behind each
+  // other, so two quick arrow presses reach the server in the order they were made and the
+  // later one cannot be overwritten by the earlier one's write arriving late. The list reloads
+  // once the queue is empty, and until then a list from anywhere else keeps the pending numbers
+  // (withPendingPositions), so the order shown never slips back between two moves. Failure puts
+  // that plan's old numbers back.
+  const reorderQueue = useRef(Promise.resolve())
+  const reorderPending = useRef(0)
+  const handleReorder = useCallback((plan) => {
+    setActionError(null)
+    const next = new Map(plan.updates.map((u) => [u.id, u.position]))
+    for (const [id, position] of next) pendingPositions.current.set(id, position)
+    let before = new Map()
+    setTasks((prev) => {
+      before = new Map(prev.filter((t) => next.has(t.id)).map((t) => [t.id, t.position]))
+      return prev.map((t) => (next.has(t.id) ? { ...t, position: next.get(t.id) } : t))
+    })
+    reorderPending.current += 1
+    const run = async () => {
+      try {
+        for (const u of plan.updates) await api.moveTask(u.id, { position: u.position })
+      } catch (err) {
+        for (const [id, position] of next) if (pendingPositions.current.get(id) === position) pendingPositions.current.delete(id)
+        setTasks((prev) => prev.map((t) => (before.has(t.id) ? { ...t, position: before.get(t.id) } : t)))
+        setActionError(err.message || 'Could not move that task.')
+      }
+      reorderPending.current -= 1
+      if (reorderPending.current === 0) {
+        pendingPositions.current.clear()
+        await fetchTasks()
+      }
+    }
+    reorderQueue.current = reorderQueue.current.then(run)
+    return reorderQueue.current
+  }, [api, fetchTasks])
+
   if (!usable) return <NotConnected />
 
   const dueBounds = getDueBounds()
@@ -411,6 +461,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     onOpenTask: setDetailTaskId,
     onQuickUpdate: handleQuickUpdate,
     api,
+    handleColumn: reorderable,
+    reorderable,
+    onReorder: handleReorder,
   }
 
   let content = null
@@ -463,11 +516,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } else {
       // 'none': a flat, ungrouped list.
       content = (
-        <div>
-          {sortedTasks.map((task) => (
-            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />
-          ))}
-        </div>
+        <ReorderableRows tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
+          {(task, reorder, rowClass) => (
+            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
+          )}
+        </ReorderableRows>
       )
     }
   }
@@ -498,9 +551,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
         {/* A flat column header stuck under the top bar, then the list: one panel holding every
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'sticky', top: 56, zIndex: 10, background: 'var(--bg)' }}>
             <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
+              {reorderable && <div />}
               <div />
               {visibleColumns.map((col) => (
                 <ColumnHeader
@@ -524,7 +578,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           ) : (
             <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
-                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
               {content}
             </div>

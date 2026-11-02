@@ -24,12 +24,18 @@ const monthKey = (iso) => iso.slice(0, 7)
 // the current date, and the month shown starts at `value`, or `today` when there is none. `marks`
 // are the next dates of the repeat being set (AddDuePanel.jsx), shown tinted and named as repeats.
 // Days touch so seven fit at 320px with each still 44px; their focus rings are drawn inside.
-export default function MonthCalendar({ value, today, onPick, label = 'Due date', marks = [] }) {
-  const [focusIso, setFocusIso] = useState(value || today)
+// The focused day (and so the month on show) is the calendar's own unless the caller holds it
+// through focus and onFocusChange, which keeps a browsed month when the calendar is unmounted
+// and mounted again, as the due picker does around its Repeats view.
+export default function MonthCalendar({ value, today, onPick, label = 'Due date', marks = [], focus, onFocusChange }) {
+  const [ownFocus, setOwnFocus] = useState(value || today)
+  const controlled = focus !== undefined
+  const focusIso = controlled ? focus : ownFocus
+  const setFocusIso = (iso) => (controlled ? onFocusChange?.(iso) : setOwnFocus(iso))
   const gridRef = useRef(null)
   const moveFocusRef = useRef(false)
 
-  useEffect(() => { setFocusIso(value || today) }, [value, today])
+  useEffect(() => { if (!controlled) setOwnFocus(value || today) }, [controlled, value, today])
 
   // After a key moves the focused day, focus the button now rendered for it.
   useEffect(() => {
