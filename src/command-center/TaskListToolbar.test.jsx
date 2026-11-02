@@ -113,15 +113,24 @@ describe('TaskListToolbar', () => {
 })
 
 describe('TaskListToolbar manual sort', () => {
-  test('Manual names the button without a direction and disables the direction select', () => {
+  test('Manual is the default: the button names no sort, and the direction select is disabled', () => {
+    render(<Host />)
+    expect(screen.queryByRole('button', { name: 'Reset sort' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Sort' }))
+    const pop = screen.getByRole('dialog', { name: 'Sort tasks' })
+    expect(within(pop).getByRole('combobox', { name: 'Sort by' }).value).toBe('manual')
+    expect(within(pop).getByRole('combobox', { name: 'Direction' }).disabled).toBe(true)
+  })
+
+  test('Due date names the button, and Reset sort goes back to Manual', () => {
     render(<Host />)
     fireEvent.click(screen.getByRole('button', { name: 'Sort' }))
     const pop = screen.getByRole('dialog', { name: 'Sort tasks' })
-    fireEvent.change(within(pop).getByRole('combobox', { name: 'Sort by' }), { target: { value: 'manual' } })
-    expect(within(pop).getByRole('combobox', { name: 'Direction' }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: 'Sort: Manual' }).textContent).toContain('Sort: Manual')
-    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort.field).toBe('manual')
+    fireEvent.change(within(pop).getByRole('combobox', { name: 'Sort by' }), { target: { value: 'due' } })
+    expect(within(pop).getByRole('combobox', { name: 'Direction' }).disabled).toBe(false)
+    expect(screen.getByRole('button', { name: 'Sort: Due date, ascending' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Reset sort' }))
     expect(screen.getByRole('button', { name: 'Sort' })).toBeTruthy()
+    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort.field).toBe('manual')
   })
 })

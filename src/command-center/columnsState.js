@@ -180,6 +180,7 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 export function buildGridTemplate(visibleColumns, widths, { phone, handle = false } = {}) {
   const lead = handle ? '44px 44px' : '44px'
   if (phone) return `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}`
-  const tracks = visibleColumns.map((col) => `minmax(${col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
+  // The handle column comes out of Name's minimum, so adding it never makes the narrowest list wider.
+  const tracks = visibleColumns.map((col) => `minmax(${col.id === 'name' && handle ? col.minWidth - 44 : col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
   return [lead, ...tracks, 'minmax(0, 1fr)'].join(' ')
 }

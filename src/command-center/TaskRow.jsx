@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import ReorderHandle from './ReorderHandle'
-import { Check, ChevronDown, ChevronRight, ListTree, Repeat } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, ListTree, PanelRightOpen, Repeat } from 'lucide-react'
 import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
+import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
@@ -223,8 +224,108 @@ function SubtaskToggle({ task, count, expanded, onToggle }) {
   )
 }
 
-// One task row in the My Tasks grid. The row opens the task detail panel
-// (click or Enter while focused); the check circle and the Due
+// Where a click landed in the text of `container`, as a character offset, or null when the
+// browser cannot say (no caret API, or the point is not on text).
+function caretOffsetAt(container, x, y) {
+  let node = null
+  let offset = 0
+  if (document.caretPositionFromPoint) {
+    const pos = document.caretPositionFromPoint(x, y)
+    node = pos?.offsetNode ?? null
+    offset = pos?.offset ?? 0
+  } else if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(x, y)
+    node = range?.startContainer ?? null
+    offset = range?.startOffset ?? 0
+  }
+  return node && node.nodeType === 3 && container.contains(node) ? offset : null
+}
+
+// A task's name in its row. Clicking the text, or Enter or Space on it, edits the name in place
+// (Asana's list does the same): Enter or a click away saves through `onRename`, Esc puts the old
+// name back, and an empty or unchanged name saves nothing. The rest of the name cell is the row,
+// which opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes
+// where the click was only when that text is the stored title; otherwise it goes to the end.
+function TitleCell({ task, nameText, disabled, onRename }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const buttonRef = useRef(null)
+  const inputRef = useRef(null)
+  const caret = useRef(null)
+  const finished = useRef(true)
+  const refocus = useRef(false)
+  const ime = useComposition()
+
+  useLayoutEffect(() => {
+    if (editing) {
+      const input = inputRef.current
+      input.focus()
+      const at = Math.min(caret.current ?? input.value.length, input.value.length)
+      input.setSelectionRange(at, at)
+    } else if (refocus.current) {
+      refocus.current = false
+      buttonRef.current?.focus()
+    }
+  }, [editing])
+
+  function start(e) {
+    e.stopPropagation()
+    // A click has a position; Enter or Space on the button has none (detail 0).
+    caret.current = e.detail > 0 && plainTitle(task.title) === task.title
+      ? caretOffsetAt(e.currentTarget, e.clientX, e.clientY)
+      : null
+    finished.current = false
+    setDraft(task.title)
+    setEditing(true)
+  }
+
+  // The first of Enter, Esc, and blur ends the edit; the blur that follows the others is ignored.
+  function finish(save, returnFocus) {
+    if (finished.current) return
+    finished.current = true
+    refocus.current = returnFocus
+    const next = draft.trim()
+    setEditing(false)
+    if (save && next && next !== task.title) onRename(next)
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        className="mytasks-title-input"
+        aria-label="Task name"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={() => finish(true, false)}
+        {...ime.props}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (ime.isComposing(e)) return
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            finish(true, true)
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            finish(false, true)
+          }
+        }}
+      />
+    )
+  }
+  return (
+    <button type="button" ref={buttonRef} className="mytasks-title" aria-label={`Rename ${task.title}`} disabled={disabled} onClick={start}>
+      <span style={nameText}>{plainTitle(task.title)}</span>
+    </button>
+  )
+}
+
+// One task row in the My Tasks grid. The panel button ending the name cell ("Open <title>") is
+// the keyboard and assistive-technology way to the task detail panel; a click on the rest of the
+// row opens it too, for the pointer. The name edits in
+// place (TitleCell); the check circle and the Due
 // date/Project/Priority cells are their own controls so completing a task,
 // or changing one of those three fields, never requires opening the panel.
 // `depth` above 0 is a subtask shown under its parent (TaskTree below): the check moves into the
@@ -264,13 +365,6 @@ export default function TaskRow({
   // ends it at once.
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
-
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && e.target === e.currentTarget) {
-      e.preventDefault()
-      onOpen(task.id)
-    }
-  }
 
   const check = (
     <button
@@ -337,13 +431,9 @@ export default function TaskRow({
   return (
     <div
       className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${rowClass}`}
-      role="button"
-      tabIndex={0}
-      aria-label={`Open ${task.title}`}
       data-task-id={depth === 0 ? task.id : undefined}
       data-subtask-id={depth > 0 ? task.id : undefined}
       onClick={() => onOpen(task.id)}
-      onKeyDown={handleKeyDown}
       style={{
         gridTemplateColumns,
         alignItems: 'center',
@@ -369,13 +459,24 @@ export default function TaskRow({
         {/* On a phone a name too long for its line takes the line, and what follows it wraps
             under it, rather than squeezing the name to a word or two. */}
         <span className="mytasks-name-body">
-          <span style={nameText}>{plainTitle(task.title)}</span>
+          <TitleCell task={task} nameText={nameText} disabled={pending} onRename={(title) => onQuickUpdate(task, { title })} />
           {task.status === 'waiting' && (
             <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
           )}
           {subtaskCount > 0 && (
             <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
           )}
+          {/* Always shown, at the right end of the name (on a phone it wraps under a name that fills
+              the line), so a long name still leaves a target that opens the panel. */}
+          <button
+            type="button"
+            className="icon-btn mytasks-open"
+            aria-label={`Open ${task.title}`}
+            title="Open details"
+            onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
+          >
+            <PanelRightOpen size={16} aria-hidden="true" />
+          </button>
         </span>
       </span>
 

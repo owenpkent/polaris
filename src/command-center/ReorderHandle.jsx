@@ -1,16 +1,18 @@
 import { useRef, useState } from 'react'
-import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, GripVertical } from 'lucide-react'
+import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, CalendarCheck, CalendarDays, CalendarX, GripVertical } from 'lucide-react'
 import { Menu } from './Menu'
 
 // The grip at the left of a row under the manual sort. Dragging it moves the row
 // (useReorderDrag.js); a click, Enter, or Space opens a menu with the same moves (up, down, to the
 // top, to the bottom), and the arrow keys make the one-step moves without the menu, so nothing
 // needs a drag (CONTRIBUTING.md, Accessibility). `reorder` comes from ReorderableRows.jsx:
-// { index, count, onPointerDown, onMove, wasDrag }.
+// { index, count, groupId, onPointerDown, onMove, wasDrag, quick }. Under the due-date grouping the
+// arrow keys also cross a group's edge (the row takes the other group's date), and the menu adds
+// moves to Today, Tomorrow, and No due date, leaving out the group the row is already in.
 export default function ReorderHandle({ task, reorder }) {
   const ref = useRef(null)
   const [open, setOpen] = useState(false)
-  const { index, count, onPointerDown, onMove, wasDrag } = reorder
+  const { index, count, groupId, onPointerDown, onMove, wasDrag, quick } = reorder
   const first = index === 0
   const last = index >= count - 1
 
@@ -19,7 +21,7 @@ export default function ReorderHandle({ task, reorder }) {
     if (!action) return
     e.preventDefault()
     e.stopPropagation()
-    if ((action === 'up' && first) || (action === 'down' && last)) return
+    if (!quick && ((action === 'up' && first) || (action === 'down' && last))) return
     onMove(task, action)
   }
 
@@ -29,6 +31,17 @@ export default function ReorderHandle({ task, reorder }) {
     { key: 'top', label: 'Move to top', icon: <ArrowUpToLine size={16} aria-hidden="true" />, disabled: first, onSelect: () => onMove(task, 'top') },
     { key: 'bottom', label: 'Move to bottom', icon: <ArrowDownToLine size={16} aria-hidden="true" />, disabled: last, onSelect: () => onMove(task, 'bottom') },
   ]
+  const QUICK_ITEMS = [
+    { id: 'today', label: 'Move to Today', icon: <CalendarCheck size={16} aria-hidden="true" /> },
+    { id: 'tomorrow', label: 'Move to Tomorrow', icon: <CalendarDays size={16} aria-hidden="true" /> },
+    { id: 'noDue', label: 'Move to No due date', icon: <CalendarX size={16} aria-hidden="true" /> },
+  ]
+  if (quick) {
+    for (const q of QUICK_ITEMS) {
+      if (q.id === groupId || !quick.groups.includes(q.id)) continue
+      items.push({ key: q.id, label: q.label, icon: q.icon, onSelect: () => quick.onMoveTo(task, q.id) })
+    }
+  }
 
   return (
     <>

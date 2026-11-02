@@ -143,15 +143,58 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // The manual sort adds the handle column before the check at every width, and a handle's menu.
   test('My tasks under the manual sort, with a reorder menu open', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // Manual is the default sort.
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
     await expectNothingCutOff(page)
     await page.getByRole('button', { name: /^Reorder / }).first().click()
     await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
     await expectNothingCutOff(page)
     await page.keyboard.press('Escape')
+  })
+
+  // A row dropped into Next 7 days opens the date picker on it, at every width.
+  test('My tasks with the date picker open on a row dropped into a range', async ({ page, request }, testInfo) => {
+    const day = new Date()
+    day.setDate(day.getDate() + 1)
+    const tomorrow = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
+    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow })
+    await openView(page)
+    // The row is last in Tomorrow, so ArrowDown drops it into Next 7 days, which asks for a day.
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    await handle.scrollIntoViewIfNeeded()
+    await handle.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('dialog', { name: `Due date for ${title}` })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
+  // A name being edited takes the room of the title, and the panel button after it stays a whole
+  // target, on a name that fills the cell.
+  test('My tasks with a long name in edit mode and its panel button', async ({ page, request }, testInfo) => {
+    // Two full scans of My tasks, which ran past the 30s limit on CI's Windows runner.
+    test.slow()
+    const title = await createTask(request, testInfo, `rename ${LONG_SUFFIX.trim()}`)
+    await openView(page)
+    const open = page.getByRole('button', { name: `Open ${title}`, exact: true })
+    await open.scrollIntoViewIfNeeded()
+    await expect(open).toBeVisible()
+    expect(await smallTargets(page.locator('body'), '.mytasks-open')).toEqual([])
+    await expectNothingCutOff(page)
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
+    await expect(open).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
+  // With the sidebar hidden (desktop only) the content takes the whole width and the toggle stays.
+  test('My tasks with the sidebar hidden', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 640, 'the phone has no sidebar')
+    await page.addInitScript(() => localStorage.setItem('cc-sidebar-v1', 'hidden'))
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible()
+    await expectNothingCutOff(page)
   })
 
   // A subtask row shown under its parent has no handle, so under the manual sort its name cell
@@ -178,16 +221,14 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       await expect(toggleOf(title)).toHaveAttribute('aria-expanded', 'true')
     }
     // The leaf, shown under its parent (its own row elsewhere in the list has no nesting).
-    const leaf = page.getByRole('button', { name: `Open ${titles[2]}`, exact: true }).first()
+    const leaf = page.locator('[data-subtask-id]').filter({ has: page.getByRole('button', { name: `Rename ${titles[2]}`, exact: true }) }).first()
     const title = leaf.getByText(titles[2])
     await expect(title).toBeVisible()
     const before = (await title.boundingBox()).width
     expect(before).toBeGreaterThan(0)
 
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // Manual is the default sort.
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
     // The deepest toggle still takes a click in the manual layout: closed, then open again.
     await toggleOf(titles[1]).scrollIntoViewIfNeeded()
     await toggleOf(titles[1]).click()
@@ -419,6 +460,9 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // Compact density (src/density.js) packs the rows and cards; nothing in them may be cut off.
   // One test per view: two full scans in one ran past the timeout on slower CI runners.
   test('My tasks on the long titles under Compact density', async ({ page }) => {
+    // Even alone, the My tasks scan with a panel button on every row ran past 30s on CI's Windows
+    // runner, as the scan with every group open did (test.slow there too).
+    test.slow()
     await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
     await openView(page)
     await page.getByRole('button', { name: 'Expand No due date' }).click()
@@ -475,7 +519,7 @@ const PANELS = [
     name: 'from My tasks',
     open: async (page) => {
       await openView(page)
-      await page.getByRole('button', { name: startsWith('Open Reply to accessibility audit feedback') }).getByText(startsWith('Reply to accessibility')).click()
+      await page.getByRole('button', { name: startsWith('Open Reply to accessibility audit feedback') }).first().click()
     },
   },
   {
@@ -483,7 +527,7 @@ const PANELS = [
     name: 'for an assigned task',
     open: async (page) => {
       await openView(page)
-      await page.getByRole('button', { name: startsWith('Open Draft ADR-003 hosting options') }).getByText(startsWith('Draft ADR-003')).click()
+      await page.getByRole('button', { name: startsWith('Open Draft ADR-003 hosting options') }).first().click()
     },
   },
   {
@@ -508,7 +552,7 @@ const PANELS = [
     open: async (page, request, testInfo) => {
       const title = await createTask(request, testInfo, 'clip subtasks')
       await openView(page)
-      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).getByText(startsWith(title)).click()
+      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).first().click()
       const dialog = page.getByRole('dialog', { name: 'Task details' })
       await dialog.getByRole('button', { name: 'Add subtask' }).first().click()
       const box = dialog.getByRole('textbox', { name: 'Subtask name' })

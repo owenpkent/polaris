@@ -64,3 +64,36 @@ export function planReorder(tasks, taskId, toSlot) {
   const start = Math.floor(Math.min(...tasks.map((t) => t.position ?? 0)))
   return { updates: order.map((t, i) => ({ id: t.id, position: start + i })), order: order.map((t) => t.id), index: at }
 }
+
+/**
+ * Where a held row would land, for a list of groups laid out top to bottom. `layout` is each
+ * group's `{ id, bottom, headerBottom, rows }` (the section's bottom edge, the header's, and the
+ * rects of its top-level rows), `y` the pointer, and `onlyGroup` an id that confines the drop to
+ * one group (the groupings that do not change a date). The result is `{ groupId, slot, header }`:
+ * the group under the pointer, the gap within it (dropIndexAt), and whether the pointer is on its
+ * header, which drops at the top. A collapsed or empty group has no rows, so its slot is 0.
+ */
+export function dropTargetAt(layout, y, onlyGroup = null) {
+  const groups = onlyGroup === null ? layout : layout.filter((g) => g.id === onlyGroup)
+  if (groups.length === 0) return null
+  const group = groups.find((g) => y < g.bottom) ?? groups[groups.length - 1]
+  const header = y < group.headerBottom
+  return { groupId: group.id, slot: header ? 0 : dropIndexAt(group.rows, y), header }
+}
+
+/**
+ * What to send so `taskId` lands in slot `slot` of another group whose rows are `tasks` (the task
+ * is not among them). One position for the task, or every row of the group and the task when the
+ * midpoint cannot be told apart from its neighbours, as planReorder does. `index` is the slot.
+ */
+export function planInsert(tasks, taskId, slot) {
+  const at = Math.max(0, Math.min(tasks.length, slot))
+  const prev = tasks[at - 1] === undefined ? undefined : (tasks[at - 1].position ?? 0)
+  const next = tasks[at] === undefined ? undefined : (tasks[at].position ?? 0)
+  const position = positionBetween(prev, next)
+  const fits = (prev === undefined || prev < position) && (next === undefined || position < next)
+  const order = [...tasks.slice(0, at).map((t) => t.id), taskId, ...tasks.slice(at).map((t) => t.id)]
+  if (fits) return { updates: [{ id: taskId, position }], order, index: at }
+  const start = Math.floor(Math.min(...tasks.map((t) => t.position ?? 0)))
+  return { updates: order.map((id, i) => ({ id, position: start + i })), order, index: at }
+}

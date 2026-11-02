@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { TaskTree } from './TaskRow'
 import InlineTaskInput from './InlineTaskInput'
-import ReorderableRows from './ReorderableRows'
+import ReorderableRows, { useReorderScope } from './ReorderableRows'
 
 // One collapsible group of the My Tasks list (Overdue, Today, Tomorrow, ...): a header row with
 // the title and count, then its rows. The groups sit one after another inside the list's single
@@ -15,6 +15,7 @@ import ReorderableRows from './ReorderableRows'
 // `reorderable` (the manual sort) gives each row a handle, and a move calls `onReorder` with the
 // plan from reorder.js; `handleColumn` keeps the inline add row's cells in step with the rows.
 export default function TaskGroupSection({
+  groupId,
   title,
   tasks,
   collapsed,
@@ -41,9 +42,14 @@ export default function TaskGroupSection({
   reorderable = false,
   onReorder,
 }) {
+  // While a row is dragged, a collapsed or empty group has no rows to mark, so its header shows
+  // the drop (a drop on it goes to the top of the group).
+  const scope = useReorderScope()
+  const dropHere = scope?.drag?.target === groupId && (collapsed || tasks.length === 0)
+  const headerClass = ['mytasks-section-header', collapsed && 'is-collapsed', dropHere && 'is-drop-target'].filter(Boolean).join(' ')
   return (
-    <section className="mytasks-section">
-      <div className={collapsed ? 'mytasks-section-header is-collapsed' : 'mytasks-section-header'}>
+    <section className="mytasks-section" data-reorder-group={groupId}>
+      <div className={headerClass} data-reorder-header>
         <button
           type="button"
           onClick={onToggleCollapse}
@@ -64,7 +70,7 @@ export default function TaskGroupSection({
             <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
-          <ReorderableRows tasks={tasks} enabled={reorderable} onReorder={onReorder}>
+          <ReorderableRows groupId={groupId} tasks={tasks} enabled={reorderable} onReorder={onReorder}>
             {(task, reorder, rowClass) => (
               <TaskTree
                 key={task.id}

@@ -67,7 +67,7 @@ cd command-center && npm test && npm run typecheck
 - **Browsers.** The UI tests run on installed Microsoft Edge. Set `CC_UI_BROWSER=chromium` to use Playwright's Chromium where Edge is missing (Linux), and `CC_UI_PORT` to move the block of worker ports off 8791 so two clones can run at once.
 - **CI** (`.github/workflows/test.yml`) runs the fast layers on every push and pull request, and the UI tests (every project, in twelve parallel parts) and the vulnerability scan on pull requests into `main`; `android.yml` runs the Android app's instrumented tests on pull requests that touch `mobile/`, `src/`, or `public/`. `weekly.yml` runs every UI project and the screenshot gallery against last week's baseline on Mondays.
 
-- **Running them locally.** Before a pull request, run the specs your change touches (`npx playwright test e2e/board.spec.js --project desktop --project phone`) and `npm run shots` for the views it changes; CI runs the whole UI suite in twelve parts, so the full local run (`npm run test:ui`, which takes many minutes) is optional. Run one suite at a time: Playwright, `npm run shots`, Vitest, and the pre-push hook all load every core, and two at once turn into timeouts that look like failures. After stopping a run, check that no Playwright browsers are left before trusting the next one.
+- **Running them locally.** Before a pull request, run the specs your change touches (`npx playwright test e2e/board.spec.js --project desktop --project phone`) and `npm run shots` for the views it changes; CI runs the whole UI suite in twelve parts, so the full local run (`npm run test:ui`, which takes many minutes) is optional: push and open the pull request instead, and read the matrix there. That matrix runs only on pull requests into `main`, so a branch built on another open branch gets no UI run from a pull request into that branch; open it into `main` as a draft (saying which pull request it builds on) to get one. Run one suite at a time: Playwright, `npm run shots`, Vitest, and the pre-push hook all load every core, and two at once turn into timeouts that look like failures. After stopping a run, check that no Playwright browsers are left before trusting the next one.
 
 Never push with `--no-verify` to get around a failing test.
 
@@ -186,7 +186,7 @@ Every change to how the dashboard looks or lays out ends with this run, and the 
 ## Pull requests
 
 1. Branch from `main` and keep the change focused: one feature or fix per pull request.
-2. Run `npm run test:fast` always, and `npm run test:ui` when the dashboard changed.
+2. Run `npm run test:fast` always. When the dashboard changed, run the UI specs it touches and `npm run shots`, and let the pull request's CI run the whole UI suite (see "Running them locally" above).
 3. New behavior has a test. A dashboard control has a UI test that finds it by its accessible name.
 4. Use conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`. No co-author or generated-by trailers.
 5. Fill in the template (`.github/pull_request_template.md`): what changed, which shots were checked, which tests ran.

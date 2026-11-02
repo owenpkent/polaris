@@ -42,7 +42,7 @@ function popGutter() {
 // whether it was made in Custom: moving one occurrence leaves the schedule alone. A rule the
 // builder cannot show (a raw RRULE with BYMONTH, say) is named and left to the task panel's
 // Recurrence box.
-export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label, recurrence = null, onRecurrenceChange, api }) {
+export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label, recurrence = null, onRecurrenceChange, api, startDay = null }) {
   return (
     <Popover anchorRef={anchorRef} open={open} onClose={onClose} minWidth={200} maxWidth={540} gutter={popGutter()} focusSelector="[data-cal-focus]" preferFit>
       <DuePicker
@@ -55,17 +55,18 @@ export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds
         recurrence={recurrence}
         onRecurrenceChange={onRecurrenceChange}
         api={api}
+        startDay={startDay}
       />
     </Popover>
   )
 }
 
 // Mounted each time the popover opens, so a time typed and not saved is gone the next time.
-function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recurrence, onRecurrenceChange, api }) {
+function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recurrence, onRecurrenceChange, api, startDay }) {
   const uid = useId()
   // The day and the rule are kept here as well as on the task: a repeat chosen on a task with no
   // date gives it today at once, and the picker shows that before the task is loaded again.
-  const [day, setDay] = useState(() => dueDateOnly(value))
+  const [day, setDay] = useState(() => startDay || dueDateOnly(value))
   const [rule, setRule] = useState(recurrence || '')
   // Whether the rule is a plain choice made in Repeats since the picker opened, the only kind that
   // follows a new day. A rule loaded with the task may have been made in Custom, here or in the
@@ -88,7 +89,9 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     if (showRepeat) repeatRef.current?.querySelector('select')?.focus()
     else addRepeatRef.current?.focus()
   }, [showRepeat])
-  const savedDue = useRef(value || null)
+  // With `startDay` (a row dropped into a range, MyTasksTab) the month opens on that day and any pick
+  // is a change, even the day it opened on, since nothing has been saved yet.
+  const savedDue = useRef(startDay ? false : (value || null))
   const marks = useRecurrencePreview(onRecurrenceChange && rule ? api : null, rule || null, day || undefined)
   const repeatFrom = day || dueBounds.today
   const unreadable = Boolean(rule) && !parseRule(rule, repeatFrom)

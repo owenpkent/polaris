@@ -77,14 +77,107 @@ describe('TaskRow', () => {
     expect(onToggleComplete).toHaveBeenCalledWith(task)
     expect(onOpen).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByText('Write the report'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Write the report' }))
     expect(onOpen).toHaveBeenCalledWith('t1')
   })
 
-  test('Enter on the focused row opens the task', () => {
+  test('the panel button ending the name cell opens the task once, and the name does not', () => {
     const { onOpen } = renderRow()
-    const row = screen.getByRole('button', { name: 'Open Write the report' })
-    fireEvent.keyDown(row, { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Open Write the report' }))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen).toHaveBeenCalledWith('t1')
+    onOpen.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Write the report' }))
+    expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  describe('renaming in place', () => {
+    const edit = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Rename Write the report' }))
+      return screen.getByRole('textbox', { name: 'Task name' })
+    }
+
+    test('clicking the name edits it, and Enter saves the new name through the quick update', () => {
+      const { onQuickUpdate, onOpen, task } = renderRow()
+      const input = edit()
+      expect(input.value).toBe('Write the report')
+      expect(document.activeElement).toBe(input)
+      fireEvent.change(input, { target: { value: '  Write the final report ' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onQuickUpdate).toHaveBeenCalledWith(task, { title: 'Write the final report' })
+      expect(screen.queryByRole('textbox')).toBeNull()
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Rename Write the report' }))
+      expect(onOpen).not.toHaveBeenCalled()
+    })
+
+    test('clicking away saves, and does not then save twice', () => {
+      const { onQuickUpdate } = renderRow()
+      const input = edit()
+      fireEvent.change(input, { target: { value: 'Write it' } })
+      fireEvent.blur(input)
+      expect(onQuickUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    test('Escape puts the old name back and saves nothing', () => {
+      const { onQuickUpdate } = renderRow()
+      const input = edit()
+      fireEvent.change(input, { target: { value: 'Something else' } })
+      fireEvent.keyDown(input, { key: 'Escape' })
+      fireEvent.blur(input)
+      expect(onQuickUpdate).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Rename Write the report' })).toBeTruthy()
+    })
+
+    test('an empty or unchanged name saves nothing', () => {
+      const { onQuickUpdate } = renderRow()
+      let input = edit()
+      fireEvent.change(input, { target: { value: '   ' } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      input = edit()
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onQuickUpdate).not.toHaveBeenCalled()
+    })
+
+    test('typing in the box does not open the panel, and Enter on the name button starts editing', () => {
+      const { onOpen } = renderRow()
+      const button = screen.getByRole('button', { name: 'Rename Write the report' })
+      fireEvent.click(button, { detail: 0 })
+      const input = screen.getByRole('textbox', { name: 'Task name' })
+      // No click position: the caret goes to the end.
+      expect(input.selectionStart).toBe('Write the report'.length)
+      fireEvent.click(input)
+      fireEvent.keyDown(input, { key: 'a' })
+      expect(onOpen).not.toHaveBeenCalled()
+    })
+
+    test('Enter that confirms an IME candidate does not save; the Enter after the composition does', () => {
+      const { onQuickUpdate, task } = renderRow()
+      const input = edit()
+      fireEvent.compositionStart(input)
+      fireEvent.change(input, { target: { value: 'ni' } })
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 })
+      expect(screen.getByRole('textbox', { name: 'Task name' })).toBeTruthy()
+      expect(onQuickUpdate).not.toHaveBeenCalled()
+      fireEvent.keyDown(input, { key: 'Escape', isComposing: true, keyCode: 229 })
+      expect(screen.getByRole('textbox', { name: 'Task name' })).toBeTruthy()
+      fireEvent.change(input, { target: { value: 'Done title' } })
+      fireEvent.compositionEnd(input)
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onQuickUpdate).toHaveBeenCalledWith(task, { title: 'Done title' })
+    })
+
+    test('a task being saved cannot be renamed, and a task from a third party can', () => {
+      renderRow({ props: { pending: true } })
+      expect(screen.getByRole('button', { name: 'Rename Write the report' }).disabled).toBe(true)
+      cleanup()
+      renderRow({ task: { untrusted_text: true } })
+      expect(screen.getByRole('button', { name: 'Rename Write the report' }).disabled).toBe(false)
+    })
+  })
+
+  test('a click on the empty part of the row opens the task too', () => {
+    const { container, onOpen } = renderRow()
+    fireEvent.click(container.querySelector('.mytasks-row'))
     expect(onOpen).toHaveBeenCalledWith('t1')
   })
 

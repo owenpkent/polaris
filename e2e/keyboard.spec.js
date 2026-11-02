@@ -211,11 +211,13 @@ test.describe('the toolbar popovers by keyboard', { tag: ['@a11y'] }, () => {
     await page.keyboard.press('Enter')
     const pop = page.getByRole('dialog', { name: 'Sort tasks' })
     await expect(pop.getByRole('combobox', { name: 'Sort by' })).toBeFocused()
+    // Manual, the default, has no direction (its select is disabled and skipped), so pick a sort that has one.
+    await pop.getByRole('combobox', { name: 'Sort by' }).selectOption('due')
     await page.keyboard.press('Tab')
     await expect(pop.getByRole('combobox', { name: 'Direction' })).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(pop).toHaveCount(0)
-    await expect(sort).toBeFocused()
+    await expect(page.getByRole('button', { name: /^Sort/ })).toBeFocused()
   })
 
   test('Filter opens on its first chip, Space toggles it, and the X beside the button is reachable', async ({ page }) => {
