@@ -244,8 +244,9 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
-  // Repeats under the month: a weekly rule shows its weekday buttons, and Custom the whole builder
-  // with Ends, which make the picker grow after it has been placed. The next dates of the rule
+  // Repeats, the picker's second view in place of the month: a weekly rule shows its weekday
+  // buttons, and Custom the whole builder with Ends, which make the picker grow after it has been
+  // placed. The date view has the repeat button naming the rule, in the left column on desktop. The next dates of the rule
   // come from the server a moment after the picker opens (useRecurrencePreview in
   // RepeatBuilder.jsx); their line holds its place from the start, and the sweep waits for them
   // all the same, so it measures the picker as the owner sees it once it has settled.
@@ -254,6 +255,11 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await openView(page)
     await page.getByRole('button', { name: `Change due date for ${title}` }).click()
     const menu = page.getByRole('dialog', { name: `Due date for ${title}` })
+    const open = menu.getByRole('button', { name: /^Repeats weekly on / })
+    await expect(open).toBeVisible()
+    expect(await smallTargets(menu, 'button, select')).toEqual([])
+    await expectNothingCutOff(page)
+    await open.click()
     await expect(menu.getByRole('button', { name: 'Thursday', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(menu.getByRole('status')).toHaveText(/^Next: /)
     expect(await smallTargets(menu, 'button, select')).toEqual([])

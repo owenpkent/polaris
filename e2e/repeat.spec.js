@@ -68,16 +68,20 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     const cell = page.getByRole('button', { name: `Change due date for ${title}` })
     await cell.click()
     const picker = page.getByRole('dialog', { name: `Due date for ${title}` })
-    // Off by default: only the Repeat button. Turning it on shows Repeats and saves nothing.
+    // Off by default: only the Repeat button. It opens Repeats in place of the month and saves nothing.
     await expect(picker.getByLabel('Repeats', { exact: true })).toHaveCount(0)
     await picker.getByRole('button', { name: 'Repeat', exact: true }).click()
     const repeats = picker.getByLabel('Repeats', { exact: true })
     await expect(repeats).toBeFocused()
     await expect(repeats).toHaveValue('none')
+    await expect(picker.getByRole('grid')).toHaveCount(0)
     expect((await taskByTitle(request, title)).recurrence).toBeNull()
     await repeats.selectOption('weekly')
     await expect.poll(async () => (await taskByTitle(request, title)).recurrence).toBe('FREQ=WEEKLY;BYDAY=WE')
     await expect(picker).toBeVisible()
+    // Back returns to the month, the button names the rule, and the next dates are tinted.
+    await picker.getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(picker.getByRole('button', { name: 'Repeats weekly on Wed', exact: true })).toBeFocused()
     await expect(picker.getByRole('button', { name: `${dayName(shiftDay(due, 7))}, repeats`, exact: true })).toBeVisible()
     const friday = shiftDay(due, 2)
     await picker.getByRole('button', { name: dayName(friday), exact: true }).click()
@@ -87,8 +91,11 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
       return [task.dueAt, task.recurrence]
     }).toEqual([friday, 'FREQ=WEEKLY;BYDAY=FR'])
 
-    // A task that repeats opens with it on; Remove repeat saves no repeat and turns it off.
+    // A task that repeats opens on the month with the button naming the rule; Remove repeat in the
+    // repeat view saves no repeat and returns to the month.
     await cell.click()
+    await expect(picker.getByLabel('Repeats', { exact: true })).toHaveCount(0)
+    await picker.getByRole('button', { name: /^Repeats weekly on / }).click()
     await picker.getByRole('button', { name: 'Remove repeat' }).click()
     await expect(picker.getByRole('button', { name: 'Repeat', exact: true })).toBeFocused()
     await expect.poll(async () => (await taskByTitle(request, title)).recurrence).toBeNull()
@@ -104,6 +111,7 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     const picker = page.getByRole('dialog', { name: 'Due date', exact: true })
     await picker.getByRole('button', { name: 'Repeat', exact: true }).click()
     await picker.getByLabel('Repeats', { exact: true }).selectOption('daily')
+    await picker.getByRole('button', { name: 'Back', exact: true }).click()
     await expect(panel.getByRole('button', { name: /^Due date, / })).toHaveAccessibleName('Due date, Today')
     await expect(panel.getByRole('button', { name: /^Repeat, / })).toHaveAccessibleName('Repeat, daily')
     const task = await taskByTitle(request, title)
