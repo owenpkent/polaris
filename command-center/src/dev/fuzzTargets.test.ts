@@ -59,6 +59,17 @@ test('the regex oracle answers true, false, syntax, or timeout, and never throws
   await stopOracle();
 });
 
+// A loaded CI runner took longer than the 250 ms budget to start the worker, and the first call,
+// on a trivial pattern, came back 'timeout'. Starting a worker is now outside the budget.
+test('the regex budget does not count starting a worker', async () => {
+  const { regexWithin, stopOracle } = await import('../../fuzz/targets/regexOracle.ts');
+  for (let i = 0; i < 3; i++) {
+    await stopOracle();
+    assert.equal(regexWithin('^a+$', 'aaa', 5), true, `cold start ${i + 1}`);
+  }
+  await stopOracle();
+});
+
 test('every committed rules seed is a rule the validator accepts', async () => {
   const { validateRuleDefinition } = await import('../automation/rules.ts');
   const dir = join(packageRoot, 'fuzz', 'corpus', 'rules');
