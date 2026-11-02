@@ -172,6 +172,8 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // A name being edited takes the room of the title, and the panel button after it stays a whole
   // target, on a name that fills the cell.
   test('My tasks with a long name in edit mode and its panel button', async ({ page, request }, testInfo) => {
+    // Two full scans of My tasks, which ran past the 30s limit on CI's Windows runner.
+    test.slow()
     const title = await createTask(request, testInfo, `rename ${LONG_SUFFIX.trim()}`)
     await openView(page)
     const open = page.getByRole('button', { name: `Open ${title}`, exact: true })
@@ -458,6 +460,9 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // Compact density (src/density.js) packs the rows and cards; nothing in them may be cut off.
   // One test per view: two full scans in one ran past the timeout on slower CI runners.
   test('My tasks on the long titles under Compact density', async ({ page }) => {
+    // Even alone, the My tasks scan with a panel button on every row ran past 30s on CI's Windows
+    // runner, as the scan with every group open did (test.slow there too).
+    test.slow()
     await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
     await openView(page)
     await page.getByRole('button', { name: 'Expand No due date' }).click()
