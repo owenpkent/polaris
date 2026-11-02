@@ -1010,6 +1010,37 @@ describe('the subtasks header and Add subtask', () => {
     expect(api.createTask).not.toHaveBeenCalled()
   })
 
+  test('a click elsewhere adds the named subtask and closes the box', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    api.createTask.mockResolvedValue({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } })
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    expect(api.createTask).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.pointerUp(document.body) })
+
+    expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' })
+    expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: 'Subtask name' })).toBeNull()
+  })
+
+  test('leaving the box by keyboard with a name in it keeps the draft', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Half typed' } })
+    fireEvent.blur(box)
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('Half typed')
+    expect(api.createTask).not.toHaveBeenCalled()
+  })
+
   // Like the list's Add task: api.createTask is queued by the outbox (create_task) when the server
   // is away, so adding a subtask stays on offline.
   test('offline, both ways to add a subtask stay on, and Enter still creates it', async () => {
@@ -1062,6 +1093,34 @@ describe('the subtasks header and Add subtask', () => {
     await act(async () => { fireEvent.keyDown(after, { key: 'Enter' }) })
     expect(api.createTask).toHaveBeenLastCalledWith({ title: 'Next subtask being typed', parentId: 't_1' })
     expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('')
+  })
+
+  // Chosen: B stays in an open box (not auto-saved). The blur that left B was ignored while the
+  // create was busy, and saving it unasked on A's answer would surprise; the owner sees B and sends it.
+  test('a click-away save that completes after the draft changed to B keeps B in the open box', async () => {
+    api.getTask.mockResolvedValueOnce(detail(TASK, []))
+    const create = deferred()
+    api.createTask.mockReturnValue(create.promise)
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'A', status: 'open' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'A' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    await act(async () => { fireEvent.pointerUp(document.body) })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value: 'B' } })
+    act(() => { box.blur() })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+
+    await act(async () => { create.resolve({ task: { id: 't_s3', title: 'A', parentId: 't_1', status: 'open' } }) })
+    expect(await screen.findByRole('checkbox', { name: 'Complete A' })).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('B')
   })
 
   test('the box closed with Esc and reopened while the create is out keeps what is typed in it', async () => {

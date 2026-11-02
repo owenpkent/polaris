@@ -16,6 +16,7 @@ import { parseRule, buildRule, defaultShape, quickPicks, matchQuickPick, countsF
 import { useDefaultAgentName, rememberDefaultAgentName } from './defaultAgentName'
 import ThreadSection from './ThreadSection'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
+import { afterRelease, usePointerPress } from './pointerPress'
 
 // History entries are CcEvent rows: { id, at, kind, taskId, actor, actorName, payload },
 // plus `restore` from the server: what Put back would set, or null.
@@ -445,6 +446,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [subtaskDraft, setSubtaskDraft] = useState('')
   const [subtaskBusy, setSubtaskBusy] = useState(false)
   const subtaskInputRef = useRef(null)
+  // The draft as last rendered, so a create that answers late can tell whether it was edited since.
+  const subtaskDraftRef = useRef('')
+  subtaskDraftRef.current = subtaskDraft
+  // A click elsewhere adds what is in the Add subtask box on the release, so the new row does not
+  // move what was pressed before the click lands (pointerPress.js).
+  const subtaskPress = usePointerPress(addingSubtask)
   const addSubtaskRowRef = useRef(null)
   useEffect(() => { setAddingSubtask(false); setSubtaskDraft(''); setSubtaskBusy(false) }, [taskId])
   // Which opening of the panel this render belongs to: the count goes up each time the panel
@@ -791,7 +798,8 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // connection: only the exact text that was sent is cleared, and anything typed since stays.
   // It works offline like the list's Add task: api.createTask is queued by the outbox as
   // create_task, and the queued subtask is added to this task's copy (outbox.js, addCreatedTask).
-  async function handleAddSubtask() {
+  // `leave` is a click elsewhere: once saved the box closes, unless focus has come back to it.
+  async function handleAddSubtask({ leave = false } = {}) {
     const sent = subtaskDraft
     const title = sent.trim()
     if (!title || subtaskBusy) return
@@ -807,7 +815,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
         onChanged?.()
         return
       }
-      setSubtaskDraft((current) => (current === sent ? '' : current))
+      // A click-away save closes the box only if the text is still what was sent. A newer draft
+      // (edited meanwhile, or typed in a box reopened since) stays, box open, for the next save.
+      if (leave && document.activeElement !== subtaskInputRef.current && subtaskDraftRef.current === sent) closeSubtaskBox()
+      else setSubtaskDraft((current) => (current === sent ? '' : current))
       await load({ quiet: true })
       onChanged?.()
     } catch (err) {
@@ -825,6 +836,24 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   function closeSubtaskBox() {
     setAddingSubtask(false)
     setSubtaskDraft('')
+  }
+
+  // Leaving an empty box closes it. A click elsewhere adds a named one and then closes it, on the
+  // release and unless the click is back in the box; leaving by keyboard keeps the draft.
+  function handleSubtaskBlur() {
+    if (subtaskBusy) return
+    if (!subtaskDraft.trim()) {
+      closeSubtaskBox()
+      return
+    }
+    if (!subtaskPress.current.clicking) return
+    const addOnLeave = (release) => {
+      const box = subtaskInputRef.current
+      if (!box || release?.target === box || document.activeElement === box) return
+      handleAddSubtask({ leave: true })
+    }
+    if (subtaskPress.current.held) afterRelease(addOnLeave)
+    else addOnLeave()
   }
 
   // Puts back what one history entry changed (core/restore.ts). The server
@@ -1358,7 +1387,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                       requestAnimationFrame(() => addSubtaskRowRef.current?.focus())
                     }
                   }}
-                  onBlur={() => { if (!subtaskDraft.trim() && !subtaskBusy) closeSubtaskBox() }}
+                  onBlur={handleSubtaskBlur}
                   aria-label="Subtask name"
                   aria-busy={subtaskBusy}
                   placeholder="Write a subtask name"

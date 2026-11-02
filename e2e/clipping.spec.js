@@ -316,7 +316,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   })
 
   // A group's Add task row is there on a phone too, and its date step is a popover that has to
-  // fit seven 44px days at 320px (the Popover's gutter of 0 in InlineTaskInput.jsx).
+  // fit seven 44px days at 320px (the Popover's gutter of 0 on a phone in InlineTaskInput.jsx).
   test('the due date step from an Add task row', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
@@ -417,12 +417,17 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   })
 
   // Compact density (src/density.js) packs the rows and cards; nothing in them may be cut off.
-  test('My tasks and the Board on the long titles under Compact density', async ({ page }) => {
+  // One test per view: two full scans in one ran past the timeout on slower CI runners.
+  test('My tasks on the long titles under Compact density', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
     await openView(page)
     await page.getByRole('button', { name: 'Expand No due date' }).click()
     await expect(page.getByRole('button', { name: `Open ${URL_TITLE}`, exact: true })).toBeVisible()
     await expectNothingCutOff(page)
+  })
+
+  test('the Board on the long titles under Compact density', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('cc-density-v1', 'compact'))
     await openView(page, 'board')
     await page.getByRole('combobox', { name: 'Project' }).selectOption({ label: 'UI Test Text' })
     await expect(page.getByRole('region', { name: 'No section', exact: true })).toBeVisible()

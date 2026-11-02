@@ -61,7 +61,7 @@ export default function TaskGroupSection({
       {!collapsed && (
         <div>
           {inlineAdd?.position === 'top' && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           <ReorderableRows tasks={tasks} enabled={reorderable} onReorder={onReorder}>
@@ -90,7 +90,7 @@ export default function TaskGroupSection({
           </ReorderableRows>
 
           {inlineAdd?.position === 'bottom' && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {addRow && !inlineAdd && (

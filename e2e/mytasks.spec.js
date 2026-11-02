@@ -91,7 +91,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('a subtask count after a name shows the subtasks under the row', async ({ page, request }, testInfo) => {
     const headers = { Authorization: `Bearer ${TOKEN}` }
     const parentTitle = await createTask(request, testInfo, 'subtask parent')
-    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    const parent = (await (await request.get('/api/tasks?limit=1000', { headers })).json()).tasks.find((t) => t.title === parentTitle)
     const subs = [`${parentTitle} first step`, `${parentTitle} second step`]
     for (const sub of subs) {
       const res = await request.post('/api/tasks', { headers, data: { title: sub, parentId: parent.id } })
@@ -132,7 +132,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await due.getByRole('button', { name: 'Add task' }).click()
     await expect(due).toHaveCount(0)
     await expect(page.getByRole('button', { name: `Change due date for ${title}, repeats daily` })).toHaveText('Tomorrow')
-    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
     expect(created.recurrence).toBe('daily')
   })
@@ -155,8 +155,10 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(due.getByRole('grid').getByRole('button', { name: /\b22, \d{4}, repeats$/ })).toBeVisible()
     await due.getByRole('button', { name: 'Add task' }).click()
     await expect(due).toHaveCount(0)
+    // The task is saved after the picker closes, and a month ahead it sits in the collapsed Later group.
+    await expect.poll(() => listTaskTitles(request)).toContain(title)
     const created = await (async () => {
-      const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+      const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
       return (await res.json()).tasks.find((t) => t.title === title)
     })()
     expect(created.dueAt).toMatch(/-15$/)
@@ -180,6 +182,21 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(input).toHaveValue('UI test not yet')
     await input.press('Escape')
     expect((await listTaskTitles(request)).length).toBe(before)
+  })
+
+  // As in Asana's list: a click elsewhere adds what was typed and closes the row, and the click
+  // still does what it was for (here, expanding Later).
+  test('a click elsewhere adds the typed task and closes the row', async ({ page, request }, testInfo) => {
+    const title = `UI test clicked away ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await page.getByRole('button', { name: 'Expand Later' }).click()
+    await expect(row(page, 'Plan next marketing post')).toBeVisible()
+    await expect(input).toHaveCount(0)
+    await expect(row(page, title)).toBeVisible()
+    expect(await listTaskTitles(request)).toContain(title)
   })
 
   test('Esc cancels Add task without creating anything', async ({ page, request }) => {
@@ -208,7 +225,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(sheet).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'New task' })).toBeFocused()
     await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toHaveText('Tomorrow')
-    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
     expect(created.projectId).toBeTruthy()
   })
@@ -226,7 +243,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await sheet.getByRole('button', { name: 'Create' }).click()
     await expect(sheet).toHaveCount(0)
     await expect(page.getByText(title).first()).toBeVisible()
-    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
     expect(created.sourceUrl).toBe('https://example.com/shared/page')
     expect(created.untrustedText).toBe(false)
@@ -235,7 +252,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   // A reminder tap in the Android app, and ?task=<id> in the URL, open that task's panel.
   test('a task link in the URL opens that task and strips the parameter', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'task link')
-    const res = await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const id = (await res.json()).tasks.find((t) => t.title === title).id
     await openView(page, 'mytasks', `task=${id}`)
     const panel = page.getByRole('dialog', { name: 'Task details' })
@@ -373,8 +390,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await manualSort(page)
     const handle = page.getByRole('button', { name: `Reorder ${second}` })
-    // Other tests' rows push these down the group, so the handle may start below the fold.
-    await handle.scrollIntoViewIfNeeded()
+    // Other tests' rows push these down the group, so centre the pair before measuring either.
+    await row(page, first).evaluate((el) => el.scrollIntoView({ block: 'center' }))
     const from = await handle.boundingBox()
     const target = await row(page, first).boundingBox()
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -628,7 +645,7 @@ test.describe('task history', { tag: ['@flow'] }, () => {
   test('Put back restores the title an edit replaced', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'put back')
     const headers = { Authorization: `Bearer ${TOKEN}` }
-    const list = await (await request.get('/api/tasks', { headers })).json()
+    const list = await (await request.get('/api/tasks?limit=1000', { headers })).json()
     const task = list.tasks.find((t) => t.title === title)
     const renamed = `${title} renamed`
     expect((await request.patch(`/api/tasks/${task.id}`, { headers, data: { title: renamed } })).ok()).toBeTruthy()
