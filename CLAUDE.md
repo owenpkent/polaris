@@ -43,7 +43,7 @@ npm install; npm --prefix command-center install
 npm run cc -- <command>  # CLI; run with no command for the list
 npm run test:fast        # server tests, typecheck, dashboard unit tests (what the pre-push hook and CI run)
 npm --prefix command-center run test:coverage  # server suite with the coverage floor (CI job; not in the hook)
-npm run test:ui          # builds, then Playwright UI tests at 1280px, 390px, and 320px, plus light, high-contrast, and landscape projects; CC_UI_BROWSER=chromium where Edge is missing
+npm run test:ui          # builds, then Playwright UI tests at 1280px, 390px, and 320px, plus light, high-contrast, and landscape projects; CC_UI_BROWSER=chromium where Edge is missing. Slow locally: run the touched specs, then let a pull request into main run the full suite in CI
 npm run test:all         # test:fast, then build and UI tests
 npm run shots            # builds, then screenshots every view and state at both widths in both themes; -- --accept makes them the baseline
 npm test                 # dashboard unit tests only (Vitest + jsdom)
