@@ -60,9 +60,11 @@ for (const [i, [p, t]] of [['^(a|b)+c?$', 'ababc'], ['\\bfix(es|ed)?\\b', 'this 
 
 // rules: rule definitions as the dashboard sends them.
 const rules = corpus('rules');
-write(rules, 'set-priority.json', JSON.stringify({ trigger: { type: 'task.created' }, conditions: [{ field: 'title', op: 'matches', value: '^urgent' }], actions: [{ type: 'set_field', field: 'priority', value: 'high' }] }, null, 2));
-write(rules, 'followup.json', JSON.stringify({ trigger: { type: 'task.completed' }, conditions: [{ field: 'projectId', op: 'in', value: ['p1', 'p2'] }, { field: 'dueAt', op: 'before', value: '2026-01-15' }], actions: [{ type: 'create_followup', title: 'Review {title}', dueInDays: 7 }, { type: 'notify', message: 'done' }] }, null, 2));
-write(rules, 'move.json', JSON.stringify({ trigger: { type: 'schedule', cron: 'daily' }, actions: [{ type: 'move', project: 'inbox', section: 'later' }, { type: 'add_comment', body: 'moved' }] }));
+write(rules, 'set-priority.json', JSON.stringify({ trigger: { type: 'event', kinds: ['task.created'] }, conditions: [{ field: 'title', op: 'matches', value: '^urgent' }], actions: [{ type: 'set_field', field: 'priority', value: 'high' }] }, null, 2));
+write(rules, 'followup.json', JSON.stringify({ trigger: { type: 'event', kinds: ['task.completed'] }, conditions: [{ field: 'projectId', op: 'in', value: ['p1', 'p2'] }, { field: 'dueAt', op: 'before', value: '2026-01-15' }], actions: [{ type: 'create_followup', title: 'Review {title}', dueInDays: 7 }, { type: 'notify', message: 'done' }] }, null, 2));
+write(rules, 'move.json', JSON.stringify({ trigger: { type: 'schedule', condition: 'overdue' }, actions: [{ type: 'move', project: 'inbox', section: 'later' }, { type: 'add_comment', body: 'moved' }] }));
+write(rules, 'due-soon.json', JSON.stringify({ trigger: { type: 'schedule', condition: 'due_within_days', days: 3 }, conditions: [{ field: 'status', op: 'eq', value: 'open' }], actions: [{ type: 'notify', message: 'due soon' }] }));
+write(rules, 'stale.json', JSON.stringify({ trigger: { type: 'schedule', condition: 'stale_days', days: 14 }, conditions: [{ field: 'customField:area', op: 'exists' }], actions: [{ type: 'set_field', field: 'customField', key: 'area', value: 'review' }] }));
 
 // post-fence: bodies with backtick runs and newlines.
 const fence = corpus('post-fence');

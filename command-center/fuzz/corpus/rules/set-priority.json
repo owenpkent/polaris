@@ -1,6 +1,9 @@
 {
   "trigger": {
-    "type": "task.created"
+    "type": "event",
+    "kinds": [
+      "task.created"
+    ]
   },
   "conditions": [
     {

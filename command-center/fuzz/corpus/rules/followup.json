@@ -1,6 +1,9 @@
 {
   "trigger": {
-    "type": "task.completed"
+    "type": "event",
+    "kinds": [
+      "task.completed"
+    ]
   },
   "conditions": [
     {
