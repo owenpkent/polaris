@@ -5,13 +5,19 @@
 // (review of #112). The regex runs in a worker thread; this thread waits on a shared cell for at
 // most `budgetMs`, and on a timeout kills the worker (V8 interrupts a running regex when the
 // isolate is terminated) and starts a fresh one for the next call. The result is then
-// 'timeout', which the target treats as no comparison.
+// 'timeout', which the target treats as no comparison. Starting a worker is not part of the budget:
+// a new one signals once it listens, and only then does the clock start, so a slow machine does not
+// turn a trivial pattern into a timeout.
 import { Worker } from 'node:worker_threads';
 
 export type OracleResult = boolean | 'syntax' | 'timeout';
 
+/** How long a new worker may take to start before the call goes ahead on the regex budget alone. */
+const STARTUP_MS = 10_000;
+
 const WORKER_SOURCE = `
-const { parentPort } = require('node:worker_threads');
+const { parentPort, workerData } = require('node:worker_threads');
+const ready = new Int32Array(workerData.ready);
 parentPort.on('message', ({ cell, pattern, text }) => {
   const a = new Int32Array(cell);
   let result;
@@ -24,6 +30,8 @@ parentPort.on('message', ({ cell, pattern, text }) => {
   Atomics.store(a, 0, 1);
   Atomics.notify(a, 0);
 });
+Atomics.store(ready, 0, 1);
+Atomics.notify(ready, 0);
 `;
 
 let worker: Worker | null = null;
@@ -31,9 +39,11 @@ let timeouts = 0;
 
 function current(): Worker {
   if (!worker) {
-    worker = new Worker(WORKER_SOURCE, { eval: true });
+    const ready = new SharedArrayBuffer(4);
+    worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { ready } });
     // The worker must not keep a test process alive once the test is done.
     worker.unref();
+    Atomics.wait(new Int32Array(ready), 0, 0, STARTUP_MS);
   }
   return worker;
 }
