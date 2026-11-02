@@ -948,14 +948,14 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 
 /* A row's name cell (TaskRow.jsx): the name, which is shortened when it must be, then Waiting
    and the subtask count, which never are. A subtask shown under its parent has its check here. */
-.mytasks-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mytasks-name { display: flex; align-items: center; gap: 6px; min-width: 0; container-type: inline-size; }
 /* The name is its own button (edits in place); the space after it, and the panel button at the
    end of the cell, open the panel. Both keep the row's height as their target (44px, 32px compact). */
 .mytasks-title {
   display: flex;
   align-items: center;
   flex: 0 1 auto;
-  min-width: 44px;
+  min-width: min(44px, 100%);
   max-width: 100%;
   min-height: var(--row);
   margin: 0 -4px;
@@ -982,13 +982,18 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   font-size: 0.875rem;
 }
 .mytasks-title-input:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.mytasks-open { width: var(--row); min-width: var(--row); height: var(--row); color: var(--t3); }
+.mytasks-open { margin-left: auto; width: var(--row); min-width: var(--row); height: var(--row); color: var(--t3); }
 .mytasks-open:hover { color: var(--t1); }
 @media (max-width: 640px) {
   .mytasks-title-input { font-size: 0.9375rem; }
 }
 .mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
 @media (max-width: 640px) {
+  .mytasks-name-body { flex-wrap: wrap; }
+}
+/* A name column too narrow for the name, Waiting, the count, and the panel button side by side
+   (a narrow window, or an open panel): what follows the name wraps under it, as on a phone. */
+@container (max-width: 260px) {
   .mytasks-name-body { flex-wrap: wrap; }
 }
 /* The subtask count after a name, as Asana shows it: a quiet chip inside a 44px button that

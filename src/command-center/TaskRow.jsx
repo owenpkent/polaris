@@ -462,18 +462,18 @@ export default function TaskRow({
           {subtaskCount > 0 && (
             <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
           )}
+          {/* Always shown, at the right end of the name (on a phone it wraps under a name that fills
+              the line), so a long name still leaves a target that opens the panel. */}
+          <button
+            type="button"
+            className="icon-btn mytasks-open"
+            aria-label={`Open ${task.title}`}
+            title="Open details"
+            onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
+          >
+            <PanelRightOpen size={16} aria-hidden="true" />
+          </button>
         </span>
-        {/* Always shown, at the right end of the name cell, so a long name that fills the cell
-            still leaves a target that opens the panel (the rest of the row does too). */}
-        <button
-          type="button"
-          className="icon-btn mytasks-open"
-          aria-label={`Open ${task.title}`}
-          title="Open details"
-          onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
-        >
-          <PanelRightOpen size={16} aria-hidden="true" />
-        </button>
       </span>
 
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
