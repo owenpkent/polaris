@@ -485,6 +485,64 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(dueButton(page, title)).toContainText('Tomorrow')
   })
 
+  // The name is its own button: a click on the text edits it in place; the panel button ending
+  // the name cell, and the space after the text, open the panel.
+  test('clicking the title edits the name in place, Enter saves it, and it survives a reload', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'rename')
+    await openView(page)
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    const input = page.getByRole('textbox', { name: 'Task name' })
+    await expect(input).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0)
+    await input.fill(`${title} renamed`)
+    await input.press('Enter')
+    await expect(page.getByRole('button', { name: `Rename ${title} renamed` })).toBeFocused()
+    await openView(page)
+    await expect(row(page, `${title} renamed`)).toBeVisible()
+  })
+
+  test('Escape leaves the name as it was, and clicking away saves the new one', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'rename-esc')
+    await openView(page)
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    await page.getByRole('textbox', { name: 'Task name' }).fill('Never saved')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: `Rename ${title}` })).toBeFocused()
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    await page.getByRole('textbox', { name: 'Task name' }).fill(`${title} by blur`)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await openView(page)
+    await expect(row(page, `${title} by blur`)).toBeVisible()
+  })
+
+  test('the panel button at the end of the name cell opens the task, and Rename is reached by keyboard', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'open-target')
+    await openView(page)
+    const open = row(page, title).getByRole('button', { name: `Details for ${title}`, exact: true })
+    await open.scrollIntoViewIfNeeded()
+    await open.click()
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+
+    const rename = page.getByRole('button', { name: `Rename ${title}` })
+    await rename.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(rename).toBeFocused()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    // Tab goes on to the panel button, and Enter on it opens the task.
+    await page.keyboard.press('Tab')
+    await expect(open).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(panel).toBeVisible()
+  })
+
   test('filtering by Urgent leaves only urgent tasks and Clear filters restores the rest', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Filter' }).click()

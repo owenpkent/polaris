@@ -644,3 +644,29 @@ describe('MyTasksTab moves between due-date groups', () => {
     expect(api.updateTask).not.toHaveBeenCalled()
   })
 })
+
+describe('MyTasksTab renaming in a row', () => {
+  afterEach(() => localStorage.clear())
+
+  test('clicking a title edits it, Enter saves it through updateTask, and a failed save puts the old name back', async () => {
+    stubMatchMedia(1280)
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const base = { id: 't1', title: 'Old name', position: 1, projectId: null, status: 'open', priority: 'none', dueAt: null, startAt: null, notes: '', sourceType: null, createdAt: '2026-09-01T00:00:00.000Z' }
+    api.listTasks.mockResolvedValue({ tasks: [base] })
+    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<MyTasksTab />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Rename Old name' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task name' }), { target: { value: 'New name' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Task name' }), { key: 'Enter' })
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t1', { title: 'New name' }))
+    // The mocked list still answers with the old name once it reloads.
+    await screen.findByRole('button', { name: 'Rename Old name' })
+
+    api.updateTask.mockRejectedValue(new Error('Request failed (503)'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Old name' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Task name' }), { target: { value: 'Third name' } })
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Task name' }), { key: 'Enter' })
+    await screen.findByText('Request failed (503)')
+    expect(screen.getByRole('button', { name: 'Rename Old name' })).toBeTruthy()
+  })
+})

@@ -134,11 +134,12 @@ export async function applyViewSettings(page) {
   await page.getByRole('button', { name: 'Group: Project' }).waitFor()
 }
 
-// Opens a task's detail panel by clicking its title. Clicking the middle of a desktop row would
-// land on an inline cell (due date, project, priority) and open that cell's menu instead.
+// Opens a task's detail panel with the panel button that ends its name cell. Clicking the middle
+// of a desktop row would land on an inline cell (due date, project, priority) and open that cell's
+// menu instead, and clicking the title edits the name.
 export async function openTask(page, title) {
   const row = page.getByRole('button', { name: `Open ${title}`, exact: true })
-  await row.getByText(title, { exact: true }).click()
+  await row.getByRole('button', { name: `Details for ${title}`, exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
   return row
 }

@@ -945,6 +945,44 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 /* A row's name cell (TaskRow.jsx): the name, which is shortened when it must be, then Waiting
    and the subtask count, which never are. A subtask shown under its parent has its check here. */
 .mytasks-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* The name is its own button (edits in place); the space after it, and the panel button at the
+   end of the cell, open the panel. Both keep the row's height as their target (44px, 32px compact). */
+.mytasks-title {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 44px;
+  max-width: 100%;
+  min-height: var(--row);
+  margin: 0 -4px;
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+.mytasks-title:hover:not(:disabled) { background: var(--bg-hover); }
+.mytasks-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(var(--row) - 8px);
+  padding: 0 8px;
+  background: var(--bg);
+  color: var(--t1);
+  border: 1px solid var(--blue);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.875rem;
+}
+.mytasks-title-input:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.mytasks-open { width: var(--row); min-width: var(--row); height: var(--row); color: var(--t3); }
+.mytasks-open:hover { color: var(--t1); }
+@media (max-width: 640px) {
+  .mytasks-title-input { font-size: 0.9375rem; }
+}
 .mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
 @media (max-width: 640px) {
   .mytasks-name-body { flex-wrap: wrap; }

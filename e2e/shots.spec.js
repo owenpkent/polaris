@@ -132,6 +132,16 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // A row with its name being edited in place.
+  test('mytasks: rename', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'rename shot')
+    await openView(page)
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
+    await shot(page, testInfo, 'mytasks', 'rename')
+    await page.keyboard.press('Escape')
+  })
+
   test('mytasks: panel', async ({ page }, testInfo) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')

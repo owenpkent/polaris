@@ -169,6 +169,23 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // A name being edited takes the room of the title, and the panel button after it stays a whole
+  // target, on a name that fills the cell.
+  test('My tasks with a long name in edit mode and its panel button', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `rename ${LONG_SUFFIX.trim()}`)
+    await openView(page)
+    const open = page.getByRole('button', { name: `Details for ${title}`, exact: true })
+    await open.scrollIntoViewIfNeeded()
+    await expect(open).toBeVisible()
+    expect(await smallTargets(page.locator('body'), '.mytasks-open')).toEqual([])
+    await expectNothingCutOff(page)
+    await page.getByRole('button', { name: `Rename ${title}` }).click()
+    await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
+    await expect(open).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
   // A subtask row shown under its parent has no handle, so under the manual sort its name cell
   // takes the handle column too: at 320px three levels down the title still has room and the
   // deeper toggle is clickable, not covered by the due date.
