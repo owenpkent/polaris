@@ -415,6 +415,6 @@ describe('InlineTaskInput under the manual sort', () => {
     const row = input.closest('.inline-add-row')
     expect(row.children[0].getAttribute('aria-hidden')).toBe('true')
     expect(row.children[1].className).toBe('inline-add-check')
-    expect(input.closest('.inline-add').style.gridColumn).toBe('3 / -1')
+    expect(input.closest('.inline-add').style.gridColumn).toBe('3')
   })
 })
