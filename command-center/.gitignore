@@ -1,2 +1,7 @@
 data/
 node_modules/
+# Jazzer.js fuzzing (fuzz/README in CONTRIBUTING.md): bundles, evolved corpus, crashing inputs. Seeds in fuzz/corpus are tracked.
+fuzz/.out/
+fuzz/.corpus/
+fuzz/.corpus-min/
+fuzz/crashes/
