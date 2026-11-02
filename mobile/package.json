@@ -19,8 +19,8 @@
     "@capacitor/cli": "^8.6.0"
   },
   "overrides": {
-    "xcode": {
-      "uuid": "^11.1.1"
+    "rimraf": {
+      "glob": "^14.0.3"
     }
   }
 }
