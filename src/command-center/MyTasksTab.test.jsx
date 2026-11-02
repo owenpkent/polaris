@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import MyTasksTab from './MyTasksTab'
 import { BREAKPOINT_QUERIES } from './columnsState'
+import { getDueBounds } from './dueDates'
 
 const api = {}
 let connected = true
@@ -545,5 +546,101 @@ describe('MyTasksTab manual sort queues moves', () => {
     expect(api.moveTask.mock.calls.map((c) => c[1].position)).toEqual([2.5, 1.5, 0])
     expect(positions.t4).toBe(0)
     await waitFor(() => expect(order()).toEqual(['Open Four', 'Open One', 'Open Two', 'Open Three']))
+  })
+})
+
+describe('MyTasksTab moves between due-date groups', () => {
+  const VIEW_KEY = 'cc-mytasks-view-v1'
+  const bounds = getDueBounds()
+  const mk = (id, title, position, dueAt) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+  const inGroup = (container, group) => Array.from(container.querySelectorAll(`[data-reorder-group="${group}"] [data-task-id]`)).map((el) => el.getAttribute('data-task-id'))
+
+  beforeEach(() => {
+    stubMatchMedia(1280)
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'due', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    api.listTasks.mockResolvedValue({
+      tasks: [mk('a', 'Alpha', 1, `${bounds.today}T09:00`), mk('b', 'Beta', 2, bounds.tomorrow), mk('c', 'Gamma', 3, bounds.tomorrow)],
+    })
+    api.moveTask = vi.fn().mockResolvedValue({ task: {} })
+    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
+  })
+  afterEach(() => localStorage.clear())
+
+  test('ArrowDown on the last row of Today moves it to the top of Tomorrow with that date, keeping its time', async () => {
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowDown' })
+    expect(inGroup(container, 'tomorrow')).toEqual(['a', 'b', 'c'])
+    // The row is a new element in its new group; its handle keeps the focus.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder Alpha' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('a', { dueAt: `${bounds.tomorrow}T09:00` }))
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('a', { position: 1 }))
+  })
+
+  test('ArrowUp on the first row of Tomorrow goes to the bottom of Today', async () => {
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Beta' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Beta' }), { key: 'ArrowUp' })
+    expect(inGroup(container, 'today')).toEqual(['a', 'b'])
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
+  })
+
+  test('the handle menu moves a row to No due date, and leaves out the group it is in', async () => {
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Beta' })
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Beta' }))
+    expect(screen.queryByRole('menuitem', { name: 'Move to Tomorrow' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Move to Today' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to No due date' }))
+    expect(inGroup(container, 'noDue')).toEqual(['b'])
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: null }))
+  })
+
+  test('a move into Next 7 days opens the date picker on the moved row; Escape takes the move back', async () => {
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Gamma' }), { key: 'ArrowDown' })
+    await screen.findByRole('dialog', { name: 'Due date for Gamma' })
+    expect(inGroup(container, 'next7')).toEqual(['c'])
+    expect(api.updateTask).not.toHaveBeenCalled()
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Due date for Gamma' })).toBeNull())
+    expect(inGroup(container, 'tomorrow')).toEqual(['b', 'c'])
+    expect(api.updateTask).not.toHaveBeenCalled()
+    expect(api.moveTask).not.toHaveBeenCalled()
+  })
+
+  test('picking a day in the picker saves the date and the position together', async () => {
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Gamma' }), { key: 'ArrowDown' })
+    const pop = await screen.findByRole('dialog', { name: 'Due date for Gamma' })
+    // The picker starts on the first day of the range: the day after tomorrow.
+    fireEvent.click(within(pop).getByRole('button', { name: 'No date' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('c', { dueAt: null }))
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('c', { position: 0 }))
+  })
+
+  test('a failed write puts the date and the position back and says why', async () => {
+    const { container } = render(<MyTasksTab />)
+    api.updateTask.mockRejectedValue(new Error('Request failed (503)'))
+    await screen.findByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowDown' })
+    await screen.findByText('Request failed (503)')
+    await waitFor(() => expect(inGroup(container, 'today')).toEqual(['a']))
+    expect(api.moveTask).not.toHaveBeenCalled()
+  })
+
+  test('under another grouping the arrow keys stay inside the group', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'priority', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Gamma' }), { key: 'ArrowDown' })
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Alpha' }))
+    expect(screen.queryByRole('menuitem', { name: 'Move to Today' })).toBeNull()
+    expect(api.updateTask).not.toHaveBeenCalled()
   })
 })

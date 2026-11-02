@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { dropIndexAt, planReorder, positionBetween, stepSlot } from './reorder'
+import { dropIndexAt, dropTargetAt, planInsert, planReorder, positionBetween, stepSlot } from './reorder'
 import { dropMarkClass } from './useReorderDrag'
 
 const task = (id, position) => ({ id, position, title: id })
@@ -83,13 +83,65 @@ describe('planReorder', () => {
 
 describe('dropMarkClass', () => {
   test('marks the held row and the slot under the pointer, but not the slots around the held row', () => {
-    expect(dropMarkClass(null, 0, 4)).toBe('')
-    const drag = { id: 'b', index: 1, slot: 3 }
-    expect(dropMarkClass(drag, 1, 4)).toBe(' is-dragging')
-    expect(dropMarkClass(drag, 3, 4)).toBe(' is-drop-before')
-    expect(dropMarkClass(drag, 0, 4)).toBe('')
-    expect(dropMarkClass({ id: 'b', index: 1, slot: 4 }, 3, 4)).toBe(' is-drop-after')
-    expect(dropMarkClass({ id: 'b', index: 1, slot: 1 }, 0, 4)).toBe('')
-    expect(dropMarkClass({ id: 'b', index: 1, slot: 2 }, 2, 4)).toBe('')
+    expect(dropMarkClass(null, 'g', 0, 4)).toBe('')
+    const drag = { id: 'b', index: 1, group: 'g', target: 'g', slot: 3 }
+    expect(dropMarkClass(drag, 'g', 1, 4)).toBe(' is-dragging')
+    expect(dropMarkClass(drag, 'g', 3, 4)).toBe(' is-drop-before')
+    expect(dropMarkClass(drag, 'g', 0, 4)).toBe('')
+    expect(dropMarkClass({ ...drag, slot: 4 }, 'g', 3, 4)).toBe(' is-drop-after')
+    expect(dropMarkClass({ ...drag, slot: 1 }, 'g', 0, 4)).toBe('')
+    expect(dropMarkClass({ ...drag, slot: 2 }, 'g', 2, 4)).toBe('')
+  })
+
+  test('marks the slot in the group the pointer is over, and nothing in the others', () => {
+    const drag = { id: 'b', index: 1, group: 'g', target: 'h', slot: 0 }
+    expect(dropMarkClass(drag, 'g', 1, 4)).toBe(' is-dragging')
+    expect(dropMarkClass(drag, 'g', 0, 4)).toBe('')
+    expect(dropMarkClass(drag, 'h', 0, 2)).toBe(' is-drop-before')
+    expect(dropMarkClass({ ...drag, slot: 2 }, 'h', 1, 2)).toBe(' is-drop-after')
+    // The slots beside the held row's own index mean nothing in another group.
+    expect(dropMarkClass({ ...drag, slot: 1 }, 'h', 1, 3)).toBe(' is-drop-before')
+  })
+})
+
+describe('dropTargetAt', () => {
+  const row = (top) => ({ top, height: 40 })
+  const layout = [
+    { id: 'today', bottom: 140, headerBottom: 40, rows: [row(40), row(80)] },
+    { id: 'tomorrow', bottom: 220, headerBottom: 180, rows: [row(180)] },
+    { id: 'later', bottom: 260, headerBottom: 240, rows: [] },
+  ]
+  test('finds the group under the pointer and the slot in it', () => {
+    expect(dropTargetAt(layout, 50)).toEqual({ groupId: 'today', slot: 0, header: false })
+    expect(dropTargetAt(layout, 115)).toEqual({ groupId: 'today', slot: 2, header: false })
+    expect(dropTargetAt(layout, 200)).toEqual({ groupId: 'tomorrow', slot: 1, header: false })
+  })
+  test('a header drops at the top of its group, and a group with no rows takes slot 0', () => {
+    expect(dropTargetAt(layout, 150)).toEqual({ groupId: 'tomorrow', slot: 0, header: true })
+    expect(dropTargetAt(layout, 250)).toEqual({ groupId: 'later', slot: 0, header: false })
+  })
+  test('above the first group and below the last land in them', () => {
+    expect(dropTargetAt(layout, -10).groupId).toBe('today')
+    expect(dropTargetAt(layout, 900).groupId).toBe('later')
+  })
+  test('confined to one group, other groups are never the target', () => {
+    expect(dropTargetAt(layout, 200, 'today')).toEqual({ groupId: 'today', slot: 2, header: false })
+    expect(dropTargetAt(layout, 200, 'missing')).toBeNull()
+  })
+})
+
+describe('planInsert', () => {
+  test('a task dropped between two rows of another group takes the midpoint', () => {
+    expect(planInsert([task('x', 10), task('y', 20)], 'a', 1)).toEqual({ updates: [{ id: 'a', position: 15 }], order: ['x', 'a', 'y'], index: 1 })
+  })
+  test('the top, the bottom, and an empty group', () => {
+    expect(planInsert([task('x', 10)], 'a', 0).updates).toEqual([{ id: 'a', position: 9 }])
+    expect(planInsert([task('x', 10)], 'a', 5).updates).toEqual([{ id: 'a', position: 11 }])
+    expect(planInsert([], 'a', 0).updates).toEqual([{ id: 'a', position: 0 }])
+  })
+  test('numbers the group again when the gap is used up', () => {
+    const plan = planInsert([task('x', 1), task('y', 1)], 'a', 1)
+    expect(plan.order).toEqual(['x', 'a', 'y'])
+    expect(plan.updates).toEqual([{ id: 'x', position: 1 }, { id: 'a', position: 2 }, { id: 'y', position: 3 }])
   })
 })

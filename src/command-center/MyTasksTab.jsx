@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useEventRefresh } from './useEvents'
@@ -15,10 +15,12 @@ import InlineTaskInput from './InlineTaskInput'
 import NewTaskSheet from './NewTaskSheet'
 import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
-import { getDueBounds, groupTasks, bucketForTask } from './dueDates'
+import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
+import DueDateMenu from './DueDateMenu'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
 import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
-import ReorderableRows from './ReorderableRows'
+import ReorderableRows, { ReorderScope } from './ReorderableRows'
+import { planInsert } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
 
 const GROUPS_STORAGE_KEY = 'cc-mytasks-groups-v1'
@@ -151,9 +153,18 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // first move's event, or a load that was already in flight, would otherwise put the server's
   // in-between order back over a later move, and the next move would start from the wrong place.
   const pendingPositions = useRef(new Map())
+  // The same for a due date moved with a row (moveAcross): task id -> the fields it was given.
+  const pendingPatches = useRef(new Map())
   const withPendingPositions = useCallback((list) => {
     const pending = pendingPositions.current
-    return pending.size ? list.map((t) => (pending.has(t.id) ? { ...t, position: pending.get(t.id) } : t)) : list
+    const patches = pendingPatches.current
+    if (!pending.size && !patches.size) return list
+    return list.map((t) => {
+      let next = t
+      if (pending.has(t.id)) next = { ...next, position: pending.get(t.id) }
+      if (patches.has(t.id)) next = { ...next, ...patches.get(t.id) }
+      return next
+    })
   }, [])
   const fetchTasks = useCallback(async () => {
     const isCurrent = beginRequest()
@@ -397,33 +408,111 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // that plan's old numbers back.
   const reorderQueue = useRef(Promise.resolve())
   const reorderPending = useRef(0)
-  const handleReorder = useCallback((plan) => {
+  // `patch` is a due date (and rule) that moves with the row (moveAcross): it is written first, and
+  // a failure puts back the old fields along with the old positions.
+  const handleReorder = useCallback((plan, patch = null, task = null) => {
     setActionError(null)
     const next = new Map(plan.updates.map((u) => [u.id, u.position]))
     for (const [id, position] of next) pendingPositions.current.set(id, position)
+    if (patch) pendingPatches.current.set(task.id, { ...pendingPatches.current.get(task.id), ...patch })
     let before = new Map()
     setTasks((prev) => {
-      before = new Map(prev.filter((t) => next.has(t.id)).map((t) => [t.id, t.position]))
-      return prev.map((t) => (next.has(t.id) ? { ...t, position: next.get(t.id) } : t))
+      before = new Map(prev.filter((t) => next.has(t.id) || (patch && t.id === task.id)).map((t) => [t.id, t]))
+      return prev.map((t) => {
+        let out = t
+        if (next.has(t.id)) out = { ...out, position: next.get(t.id) }
+        if (patch && t.id === task.id) out = { ...out, ...patch }
+        return out
+      })
     })
     reorderPending.current += 1
     const run = async () => {
       try {
+        if (patch) await api.updateTask(task.id, patch)
         for (const u of plan.updates) await api.moveTask(u.id, { position: u.position })
       } catch (err) {
         for (const [id, position] of next) if (pendingPositions.current.get(id) === position) pendingPositions.current.delete(id)
-        setTasks((prev) => prev.map((t) => (before.has(t.id) ? { ...t, position: before.get(t.id) } : t)))
+        if (patch) pendingPatches.current.delete(task.id)
+        setTasks((prev) => prev.map((t) => {
+          const old = before.get(t.id)
+          if (!old) return t
+          let out = { ...t, position: old.position }
+          if (patch && t.id === task.id) for (const key of Object.keys(patch)) out[key] = old[key]
+          return out
+        }))
         setActionError(err.message || 'Could not move that task.')
       }
       reorderPending.current -= 1
       if (reorderPending.current === 0) {
         pendingPositions.current.clear()
+        pendingPatches.current.clear()
         await fetchTasks()
       }
     }
     reorderQueue.current = reorderQueue.current.then(run)
     return reorderQueue.current
   }, [api, fetchTasks])
+
+  // A row moved into another due-date group, by drag, arrow key, or the handle's menu (the due-date
+  // grouping under the manual sort). The group sets the date (dueForDrop): Today and Tomorrow set
+  // that day, No due date clears it, and a range (Overdue, Next 7 days, Later) opens the due date
+  // picker on the row, starting on the day of the row it was dropped next to. Until a day is picked
+  // the row shows at the drop with that day; Esc or closing the picker takes the move back whole.
+  // The position is the drop slot's, and both writes go through handleReorder's queue.
+  const [pendingMove, setPendingMove] = useState(null) // { task, plan, startDay, dueAt } | null
+  const pendingMoveRef = useRef(null)
+  const closedMoveRef = useRef(null)
+  const [refocusId, setRefocusId] = useState(null)
+  const [dragging, setDragging] = useState(false)
+  const [moveAnchorEl, setMoveAnchorEl] = useState(null)
+  const moveAnchorRef = useMemo(() => ({ current: moveAnchorEl }), [moveAnchorEl])
+  const moveId = pendingMove?.task.id ?? null
+  useLayoutEffect(() => {
+    setMoveAnchorEl(moveId ? document.querySelector(`[data-task-id="${moveId}"] .reorder-handle`) : null)
+  }, [moveId])
+  const groupRowsRef = useRef({})
+  const moveAcross = useCallback(({ task, toId, slot }) => {
+    const bounds = getDueBounds()
+    const rows = (groupRowsRef.current[toId] || []).filter((t) => t.id !== task.id)
+    const plan = planInsert(rows, task.id, slot)
+    const rule = dueForDrop(toId, task.dueAt, bounds)
+    ensureExpanded('due', toId)
+    setRefocusId(task.id)
+    if (rule.mode === 'set') {
+      handleReorder(plan, { dueAt: rule.dueAt }, task)
+      return
+    }
+    const near = rows[plan.index - 1] ?? rows[plan.index]
+    const startDay = dropStartDay(toId, bounds, near?.dueAt)
+    const move = { task, plan, startDay, dueAt: withDueDate(task.dueAt, startDay) }
+    pendingMoveRef.current = move
+    closedMoveRef.current = null
+    setPendingMove(move)
+  }, [ensureExpanded, handleReorder])
+
+  const cancelMove = useCallback(() => {
+    closedMoveRef.current = pendingMoveRef.current
+    pendingMoveRef.current = null
+    setPendingMove(null)
+  }, [])
+  // The picker closes itself before it reports a pick, so the move is read from the one it closed.
+  const confirmMove = useCallback((dueAt) => {
+    const move = pendingMoveRef.current ?? closedMoveRef.current
+    pendingMoveRef.current = null
+    closedMoveRef.current = null
+    setPendingMove(null)
+    if (move) handleReorder(move.plan, { dueAt }, move.task)
+  }, [handleReorder])
+
+  // The moved row is a new element in its new group, so its handle takes focus again.
+  useEffect(() => {
+    if (!refocusId) return
+    const handle = document.querySelector(`[data-task-id="${refocusId}"] .reorder-handle`)
+    if (handle) {
+      handle.focus()
+      setRefocusId(null)
+    }
+  }, [refocusId, tasks, pendingMove])
 
   if (!usable) return <NotConnected />
 
@@ -444,7 +533,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     ? `The ${stateFilterLabel} filter is on, but its tasks could not be loaded. ${statesError}`
     : null
   const listLoading = loading || goalsPending || statesPending
-  const filteredTasks = applyFilters(tasks, view.filters, goalWork, states)
+  // A row waiting on the picker shows at its drop, with the day the picker opens on.
+  const shownTasks = pendingMove
+    ? tasks.map((t) => (t.id === pendingMove.task.id ? { ...t, dueAt: pendingMove.dueAt, position: pendingMove.plan.updates.find((u) => u.id === t.id)?.position ?? t.position } : t))
+    : tasks
+  const filteredTasks = applyFilters(shownTasks, view.filters, goalWork, states)
   const sortedTasks = sortTasks(filteredTasks, view.sort, projectNameById)
 
   const commonRowProps = {
@@ -467,12 +560,19 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }
 
   let content = null
+  let scopeGroups = []
+  let crossGroup = false
   if (!listLoading) {
     if (view.group === 'due') {
       const groups = groupTasks(sortedTasks, dueBounds)
-      content = GROUP_ORDER.map((g) => {
+      // Under the manual sort a row can be dropped into any day group, so the ones hidden for being
+      // empty show while a row is held, as drop targets.
+      crossGroup = reorderable
+      const shown = GROUP_ORDER.filter((g) => g.alwaysShow || groups[g.id].length > 0 || (crossGroup && dragging))
+      scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id] }))
+      groupRowsRef.current = groups
+      content = shown.map((g) => {
         const groupTasksList = groups[g.id]
-        if (!g.alwaysShow && groupTasksList.length === 0) return null
         const addRow = g.addRow ? g.addRow(dueBounds) : null
         return (
           <TaskGroupSection
@@ -492,9 +592,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         )
       })
     } else if (view.group === 'project') {
-      content = groupByProject(sortedTasks, projectNameById).map((g) => (
+      const groups = groupByProject(sortedTasks, projectNameById)
+      scopeGroups = groups
+      content = groups.map((g) => (
         <TaskGroupSection
           key={g.id}
+          groupId={g.id}
           title={g.label}
           tasks={g.tasks}
           collapsed={isCollapsed('project', g.id)}
@@ -503,9 +606,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         />
       ))
     } else if (view.group === 'priority') {
-      content = groupByPriority(sortedTasks).map((g) => (
+      const groups = groupByPriority(sortedTasks)
+      scopeGroups = groups
+      content = groups.map((g) => (
         <TaskGroupSection
           key={g.id}
+          groupId={g.id}
           title={g.label}
           tasks={g.tasks}
           collapsed={isCollapsed('priority', g.id)}
@@ -515,12 +621,15 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       ))
     } else {
       // 'none': a flat, ungrouped list.
+      scopeGroups = [{ id: '_all', label: 'the list', tasks: sortedTasks }]
       content = (
-        <ReorderableRows tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
-          {(task, reorder, rowClass) => (
-            <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
-          )}
-        </ReorderableRows>
+        <div data-reorder-group="_all">
+          <ReorderableRows groupId="_all" tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
+            {(task, reorder, rowClass) => (
+              <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
+            )}
+          </ReorderableRows>
+        </div>
       )
     }
   }
@@ -580,7 +689,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               {inlineAdd?.groupId === null && (
                 <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
-              {content}
+              <ReorderScope enabled={reorderable} crossGroup={crossGroup} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging}>
+                {content}
+              </ReorderScope>
             </div>
           )}
         </div>
@@ -592,6 +703,20 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           onClose={() => setDetailTaskId(null)}
           onChanged={refresh}
           onOpenTask={setDetailTaskId}
+        />
+      )}
+
+      {pendingMove && moveAnchorEl && (
+        <DueDateMenu
+          anchorRef={moveAnchorRef}
+          open
+          onClose={cancelMove}
+          value={pendingMove.task.dueAt}
+          startDay={pendingMove.startDay}
+          dueBounds={dueBounds}
+          onChange={confirmMove}
+          label={`Due date for ${pendingMove.task.title}`}
+          api={api}
         />
       )}
 

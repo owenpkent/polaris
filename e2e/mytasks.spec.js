@@ -342,11 +342,10 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   // The manual sort: each row leads with a handle that drags, and whose menu and arrow keys make
   // the same moves. Both tasks are due today, so they share a group and the second (created
   // last, numbered last) starts under the first.
+  // Manual is the default sort, so a fresh browser already shows the handles.
   async function manualSort(page) {
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sort', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
   }
   const reorderOrder = (page, label) => page
     .getByRole('button', { name: new RegExp(`^Open UI test ${label} `) })
@@ -356,7 +355,13 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const first = await createTask(request, testInfo, 'reorder-menu')
     const second = await createTask(request, testInfo, 'reorder-menu')
     await openView(page)
+    // Under the Due date sort there are no handles.
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('due')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Due date, ascending' })).toBeVisible()
     await expect(page.getByRole('button', { name: /^Reorder/ })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Reset sort' }).click()
     await manualSort(page)
     expect(await reorderOrder(page, 'reorder-menu')).toEqual([`Open ${first}`, `Open ${second}`])
 
@@ -403,6 +408,81 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.mouse.up()
     await expect.poll(() => reorderOrder(page, 'reorder-drag')).toEqual([`Open ${second}`, `Open ${first}`])
     await expect(page.getByRole('menu')).toHaveCount(0)
+  })
+
+  // Under the manual sort with the default grouping, a row can leave its day: the group it lands
+  // in sets the date (Today and Tomorrow directly, a range through the date picker).
+  const dueButton = (page, title) => page.getByRole('button', { name: new RegExp(`^Change due date for ${title}`) })
+  const firstInGroup = (page, group) => page.locator(`[data-reorder-group="${group}"] [data-task-id]`).first()
+
+  // Holds a task's handle and moves it to the header of the named group, which a range group
+  // only shows once a row is held. Returns with the button still down.
+  async function dragToHeader(page, title, header) {
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    await row(page, title).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    const from = await handle.boundingBox()
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(from.x + from.width / 2, from.y + 20, { steps: 4 })
+    const target = page.getByRole('button', { name: `Collapse ${header}` })
+    await expect(target).toBeVisible()
+    const box = await target.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 })
+  }
+
+  test('under the manual sort dragging a row onto Tomorrow sets its date and puts it at the top', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'day-drag')
+    await openView(page)
+    await manualSort(page)
+    await dragToHeader(page, title, 'Tomorrow')
+    await expect(row(page, title)).toHaveClass(/is-dragging/)
+    await page.mouse.up()
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+    await expect(firstInGroup(page, 'tomorrow')).toContainText(title)
+    await openView(page)
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+    await expect(firstInGroup(page, 'tomorrow')).toContainText(title)
+  })
+
+  test('dragging a row into Next 7 days opens the date picker on it; Escape puts the row back, a pick saves', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'range-drag')
+    await openView(page)
+    await manualSort(page)
+    await dragToHeader(page, title, 'Next 7 days')
+    await page.mouse.up()
+    const picker = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await expect(picker).toBeVisible()
+    await expect(dueButton(page, title)).not.toContainText('Today')
+    await page.keyboard.press('Escape')
+    await expect(picker).toHaveCount(0)
+    await expect(dueButton(page, title)).toContainText('Today')
+    await openView(page)
+    await expect(dueButton(page, title)).toContainText('Today')
+
+    await dragToHeader(page, title, 'Next 7 days')
+    await page.mouse.up()
+    await expect(picker).toBeVisible()
+    await picker.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await expect(picker).toHaveCount(0)
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+    await openView(page)
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+  })
+
+  test('under the manual sort ArrowDown on the last row of Today moves it to Tomorrow and the handle keeps focus', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'day-keys')
+    await openView(page)
+    await manualSort(page)
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    // A new task is numbered last, so it ends its day group.
+    await handle.scrollIntoViewIfNeeded()
+    await handle.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+    await expect(firstInGroup(page, 'tomorrow')).toContainText(title)
+    await expect(page.getByRole('button', { name: `Reorder ${title}` })).toBeFocused()
+    await openView(page)
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
   })
 
   test('filtering by Urgent leaves only urgent tasks and Clear filters restores the rest', async ({ page }) => {

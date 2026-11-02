@@ -920,6 +920,8 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   border-bottom: 1px solid var(--bd);
 }
 .mytasks-section-header.is-collapsed { border-bottom-color: transparent; }
+/* A row dragged over an empty or collapsed group drops at its top: the header takes the mark. */
+.mytasks-section-header.is-drop-target { background: var(--blue-soft); box-shadow: inset 0 -2px 0 var(--blue); }
 .mytasks-section-header .icon-btn { height: var(--row-head); }
 .mytasks-section-title { font-size: 15px; font-weight: 650; color: var(--t1); letter-spacing: -0.005em; }
 .mytasks-section-count { margin-left: 8px; font-size: 13px; color: var(--t3); }

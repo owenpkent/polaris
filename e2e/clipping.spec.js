@@ -143,13 +143,28 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // The manual sort adds the handle column before the check at every width, and a handle's menu.
   test('My tasks under the manual sort, with a reorder menu open', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // Manual is the default sort.
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
     await expectNothingCutOff(page)
     await page.getByRole('button', { name: /^Reorder / }).first().click()
     await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
+  // A row dropped into Next 7 days opens the date picker on it, at every width.
+  test('My tasks with the date picker open on a row dropped into a range', async ({ page, request }, testInfo) => {
+    const day = new Date()
+    day.setDate(day.getDate() + 1)
+    const tomorrow = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
+    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow })
+    await openView(page)
+    // The row is last in Tomorrow, so ArrowDown drops it into Next 7 days, which asks for a day.
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    await handle.scrollIntoViewIfNeeded()
+    await handle.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('dialog', { name: `Due date for ${title}` })).toBeVisible()
     await expectNothingCutOff(page)
     await page.keyboard.press('Escape')
   })
@@ -184,10 +199,8 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     const before = (await title.boundingBox()).width
     expect(before).toBeGreaterThan(0)
 
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // Manual is the default sort.
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
     // The deepest toggle still takes a click in the manual layout: closed, then open again.
     await toggleOf(titles[1]).scrollIntoViewIfNeeded()
     await toggleOf(titles[1]).click()

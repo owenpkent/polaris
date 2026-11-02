@@ -376,7 +376,7 @@ describe('useViewState', () => {
   test('starts with the default view when localStorage is empty', () => {
     const { result } = renderHook(() => useViewState())
     expect(result.current.view).toEqual({
-      sort: { field: 'due', dir: 'asc' },
+      sort: { field: 'manual', dir: 'asc' },
       group: 'due',
       filters: { projectIds: [], priorities: [], sources: [], goalIds: [], states: [], assignees: [] },
     })
@@ -412,7 +412,7 @@ describe('useViewState', () => {
       filters: {},
     }))
     const { result } = renderHook(() => useViewState())
-    expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
+    expect(result.current.view.sort).toEqual({ field: 'manual', dir: 'asc' })
     expect(result.current.view.group).toBe('due')
     expect(result.current.view.filters).toEqual({ projectIds: [], priorities: [], sources: [], goalIds: [], states: [], assignees: [] })
   })
@@ -429,7 +429,7 @@ describe('useViewState', () => {
     })
     const { result } = renderHook(() => useViewState())
     expect(result.current.view).toEqual({
-      sort: { field: 'due', dir: 'asc' },
+      sort: { field: 'manual', dir: 'asc' },
       group: 'due',
       filters: { projectIds: [], priorities: [], sources: [], goalIds: [], states: [], assignees: [] },
     })
@@ -459,7 +459,11 @@ describe('useViewState', () => {
   test('setSort toggles direction when the same field is picked again', () => {
     const { result } = renderHook(() => useViewState())
     act(() => {
-      result.current.setSort('due') // already 'due' asc by default -> flips to desc
+      result.current.setSort('due') // a new field starts ascending
+    })
+    expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
+    act(() => {
+      result.current.setSort('due') // the same field again flips to desc
     })
     expect(result.current.view.sort).toEqual({ field: 'due', dir: 'desc' })
     act(() => {
@@ -468,7 +472,13 @@ describe('useViewState', () => {
     expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
   })
 
-  test('resetSort goes back to due date ascending and leaves the rest alone', () => {
+  test('a device with a saved Due date sort keeps it', () => {
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ sort: { field: 'due', dir: 'asc' }, group: 'due', filters: {} }))
+    const { result } = renderHook(() => useViewState())
+    expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
+  })
+
+  test('resetSort goes back to the manual order and leaves the rest alone', () => {
     const { result } = renderHook(() => useViewState())
     act(() => {
       result.current.setSort('priority', 'desc')
@@ -477,9 +487,9 @@ describe('useViewState', () => {
     act(() => {
       result.current.resetSort()
     })
-    expect(result.current.view.sort).toEqual({ field: 'due', dir: 'asc' })
+    expect(result.current.view.sort).toEqual({ field: 'manual', dir: 'asc' })
     expect(result.current.view.group).toBe('project')
-    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort).toEqual({ field: 'due', dir: 'asc' })
+    expect(JSON.parse(localStorage.getItem('cc-mytasks-view-v1')).sort).toEqual({ field: 'manual', dir: 'asc' })
   })
 
   test('setSort respects an explicit direction argument', () => {

@@ -108,13 +108,28 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   // The manual sort: the handle column before each row, and one handle's menu of moves open.
   test('mytasks: manual', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // Manual is the default sort.
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
     await page.getByRole('button', { name: /^Reorder / }).first().click()
     await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'manual')
+  })
+
+  // A row dropped into a range of days (Next 7 days) asks for a day: the date picker opens on it.
+  test('mytasks: drop into a range', async ({ page, request }, testInfo) => {
+    const day = new Date()
+    day.setDate(day.getDate() + 1)
+    const tomorrow = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
+    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow })
+    await openView(page)
+    // The row is last in Tomorrow, so ArrowDown drops it into Next 7 days, which asks for a day.
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    await handle.scrollIntoViewIfNeeded()
+    await handle.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('dialog', { name: `Due date for ${title}` })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'drop-range')
+    await page.keyboard.press('Escape')
   })
 
   test('mytasks: panel', async ({ page }, testInfo) => {

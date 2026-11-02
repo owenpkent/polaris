@@ -48,11 +48,12 @@ export const STATE_FILTER_OPTIONS = [
 
 // The sort and grouping a new list starts with. The toolbar names a sort or grouping on its button
 // only when it differs from these, and its Reset buttons come back to them.
-export const DEFAULT_SORT = { field: 'due', dir: 'asc' }
+export const DEFAULT_SORT = { field: MANUAL_SORT, dir: 'asc' }
 export const DEFAULT_GROUP = 'due'
 
 export function isDefaultSort(sort) {
-  return sort.field === DEFAULT_SORT.field && sort.dir === DEFAULT_SORT.dir
+  // The manual order has no direction, so it is the default whichever one a saved view holds.
+  return sort.field === DEFAULT_SORT.field && (isManualSort(DEFAULT_SORT) || sort.dir === DEFAULT_SORT.dir)
 }
 
 const DEFAULT_VIEW = {
