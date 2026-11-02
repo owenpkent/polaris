@@ -18,7 +18,8 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // keyboard keeps the draft. A create that fails keeps the title and what Add task handed over
 // (the date, the repeat, and whether the repeat was made in Custom), so the picker reopens on it
 // for another try.
-export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, dueColumn = true, phone = false, defaultDueAt = null, api }) {
+// `handleColumn` adds the empty leading cell the rows have under the manual sort (TaskRow.jsx).
+export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, dueColumn = true, phone = false, defaultDueAt = null, api, handleColumn = false }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -167,12 +168,13 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       className="mytasks-grid inline-add-row"
       style={{ gridTemplateColumns, alignItems: 'center', minHeight: 'var(--row)', borderBottom: '1px solid var(--bd)' }}
     >
+      {handleColumn && <span aria-hidden="true" />}
       {/* The empty circle a row has, so the new row reads as the task it will be. */}
       <span aria-hidden="true" className="inline-add-check">
         <span className="task-check-circle" />
       </span>
       {/* The name box takes the Name column alone, as a task's name does in the rows below. */}
-      <div className="inline-add">
+      <div className="inline-add" style={{ gridColumn: handleColumn ? 3 : 2 }}>
         <input
           ref={inputRef}
           className="inline-add-title"
@@ -192,8 +194,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
         />
         {!dueColumn && dueButton}
       </div>
-      {dueColumn && <div className="inline-add-due-cell">{dueButton}</div>}
-      {error && <span className="inline-add-error">{error}</span>}
+      {dueColumn && <div className="inline-add-due-cell" style={{ gridColumn: handleColumn ? 4 : 3 }}>{dueButton}</div>}
+      {error && <span className="inline-add-error" style={{ gridColumn: handleColumn ? '3 / -1' : '2 / -1' }}>{error}</span>}
       <Popover anchorRef={dueAnchorRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={768} gutter={phone ? 0 : 8} focusSelector="[data-cal-focus]">
         <div role="dialog" aria-label={`Due date for ${title.trim()}`} className="add-due-pop">
           <AddDuePanel dueAt={dueAt} onPick={commit} recurrence={recurrence} customRepeat={customRepeat} api={api} />

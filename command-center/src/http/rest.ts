@@ -292,7 +292,7 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
         sourceId: body.sourceId,
         sourceUrl: body.sourceUrl,
         confidence: body.confidence,
-      }, 'human', body.id !== undefined ? { id: body.id } : {});
+      }, 'human', { ...(body.id !== undefined ? { id: body.id } : {}), ...(body.position !== undefined ? { position: body.position } : {}) });
       for (const blockerId of body.blockedBy ?? []) store.addDependency(blockerId, created.id, 'human');
       return { task: created, value: created };
     }), (taskId) => store.requireTask(taskId));

@@ -505,17 +505,26 @@ export class Store {
     if (input.parentId && !this.getTask(input.parentId)) throw new NotFoundError(`parent task ${input.parentId} not found`);
   }
 
-  private nextPosition(projectId: string | null, sectionId: string | null): number {
-    const r = this.db.get<{ p: number | null }>(
-      'SELECT MAX(position) AS p FROM tasks WHERE project_id IS ? AND section_id IS ?', [projectId, sectionId]);
+  /**
+   * The number after the last task anywhere. position is one order across every project and
+   * section (migration 14): the dashboard's manual sort shows it, a reorder sets a task's number
+   * between its new neighbours' (REAL, so a midpoint always fits), and a new task goes last.
+   */
+  private nextPosition(): number {
+    const r = this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM tasks');
     return (r?.p ?? 0) + 1;
   }
 
-  /** `opts.id` is for a task a dashboard created offline, which already carries the id it minted. */
-  createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string } = {}): Task {
+  /**
+   * `opts` is for a task a dashboard created offline (core/outbox.ts): it already carries the id
+   * it minted, and the position its copy showed it at, so a move the owner made beside it while
+   * offline still holds once both are replayed. Without a position the task goes last.
+   */
+  createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string; position?: number } = {}): Task {
     this.validate(input);
     if (input.dueAt != null) input = { ...input, dueAt: this.localDue(input.dueAt) };
     if (opts.id !== undefined && !TASK_ID_PATTERN.test(opts.id)) throw new ValidationError(`not a task id: ${opts.id}`);
+    if (opts.position !== undefined && !Number.isFinite(opts.position)) throw new ValidationError('position must be a finite number');
     const now = this.now();
     const status = input.status ?? 'open';
     // Propose, do not act: third-party text may only ever enter as an inbox suggestion, whichever
@@ -540,7 +549,7 @@ export class Store {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, projectId, sectionId, input.parentId ?? null, input.title.trim(), input.notes ?? '', status, input.priority ?? 'none',
           input.dueAt ?? null, input.startAt ?? null, input.estimateMinutes ?? null, input.recurrence ?? null, normalizeAssignee(input.assignee),
-          input.isMilestone ? 1 : 0, this.nextPosition(projectId, sectionId), input.sourceType ?? null, input.sourceId ?? null,
+          input.isMilestone ? 1 : 0, opts.position ?? this.nextPosition(), input.sourceType ?? null, input.sourceId ?? null,
           input.sourceUrl ?? null, input.confidence ?? null, untrustedText ? 1 : 0, JSON.stringify(input.customFields ?? {}), now, now,
           status === 'done' ? now : null]);
       this.emit('task.created', id, actor, {
@@ -623,17 +632,8 @@ export class Store {
         params.push(patch.status === 'done' ? this.now() : null);
       }
       if (!sets.length) return before;
-      // position is allocated per project+section, so carrying the old number into a new bucket
-      // collides with whatever is already sitting there and interleaves the task at the top of
-      // the list. moveTask recomputes it; this path has to as well.
-      const bucketChanged = (patch.projectId !== undefined && patch.projectId !== before.projectId)
-        || (patch.sectionId !== undefined && patch.sectionId !== before.sectionId);
-      if (bucketChanged) {
-        const nextProjectId = patch.projectId !== undefined ? patch.projectId ?? null : before.projectId;
-        const nextSectionId = patch.sectionId !== undefined ? patch.sectionId ?? null : before.sectionId;
-        sets.push('position = ?');
-        params.push(this.nextPosition(nextProjectId, nextSectionId));
-      }
+      // position is one order across every project and section, so a task re-filed elsewhere
+      // keeps its number and its place in the list.
       sets.push('updated_at = ?');
       params.push(this.now(), id);
       this.db.run(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`, params);
@@ -765,11 +765,17 @@ export class Store {
       const parentId = to.parentId !== undefined ? to.parentId : before.parentId;
       if (parentId && (parentId === id || this.isAncestor(id, parentId))) throw new ValidationError('a task cannot be nested under itself');
       if (parentId && !this.getTask(parentId)) throw new NotFoundError(`parent task ${parentId} not found`);
-      const position = to.position ?? (projectId === before.projectId && sectionId === before.sectionId ? before.position : this.nextPosition(projectId, sectionId));
+      // A move without a position keeps the task's place: position is one order across every
+      // project and section, so no other bucket's number can collide with it.
+      const position = to.position ?? before.position;
+      if (!Number.isFinite(position)) throw new ValidationError('position must be a number');
       if (projectId === before.projectId && sectionId === before.sectionId && parentId === before.parentId && position === before.position) return before;
       this.db.run('UPDATE tasks SET project_id = ?, section_id = ?, parent_id = ?, position = ?, updated_at = ? WHERE id = ?',
         [projectId, sectionId, parentId, position, this.now(), id]);
-      this.emit('task.moved', id, actor, { from: { projectId: before.projectId, sectionId: before.sectionId, parentId: before.parentId }, to: { projectId, sectionId, parentId, position } });
+      this.emit('task.moved', id, actor, {
+        from: { projectId: before.projectId, sectionId: before.sectionId, parentId: before.parentId, position: before.position },
+        to: { projectId, sectionId, parentId, position },
+      });
       return this.requireTask(id);
     });
   }
@@ -807,7 +813,9 @@ export class Store {
       priority: `${PRIORITY_RANK}, CASE WHEN t.due_at IS NULL THEN 1 ELSE 0 END, t.due_at`,
       updated: 't.updated_at DESC',
       created: 't.created_at DESC',
-      position: 't.position',
+      // Then creation, as subtasks are read and as the dashboard's manual sort breaks a tie: two
+      // tasks share a number when a device numbered one offline beside one it had not seen.
+      position: 't.position, t.created_at',
     }[filter.orderBy ?? 'due'];
     const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
     return this.db.all<Row>(`SELECT t.* FROM tasks t ${where} ORDER BY ${order}, t.id LIMIT ? OFFSET ?`,

@@ -7,6 +7,7 @@ import { openApp, type App } from '../../app.ts';
 import { fakeGithubFetch, type FixtureRoute } from './fixtures.ts';
 import { setRepoSettings } from './repoSettings.ts';
 import { createWebhookHandler, verifySignature } from './webhook.ts';
+import { listenForFetch } from '../../http/test-support.ts';
 
 const SECRET = 'test-secret';
 
@@ -19,9 +20,7 @@ async function withServer(
 ): Promise<void> {
   const handler = createWebhookHandler(app, { secret: SECRET, fetchImpl, token: 'gh-token', ...extra });
   const server: Server = createServer(handler);
-  await new Promise<void>((resolvePromise) => server.listen(0, resolvePromise));
-  const address = server.address();
-  const port = typeof address === 'object' && address ? address.port : 0;
+  const port = await listenForFetch(server);
   try {
     await fn(`http://127.0.0.1:${port}`);
   } finally {

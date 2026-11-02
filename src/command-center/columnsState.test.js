@@ -402,3 +402,12 @@ describe('the sidebar and an open task panel', () => {
     expect(ids(visible)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 })
+
+describe('buildGridTemplate with the reorder handle', () => {
+  test('adds a second 44px track before the columns, on the desktop and on the phone', () => {
+    const nameCol = COLUMN_DEFS.find((c) => c.id === 'name')
+    expect(buildGridTemplate([nameCol], { name: 300 }, { handle: true })).toBe('44px 44px minmax(160px, 300px) minmax(0, 1fr)')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true })).toBe('44px 44px minmax(0, 1fr) 112px')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: false })).toBe('44px minmax(0, 1fr) 120px')
+  })
+})

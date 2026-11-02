@@ -10,3 +10,6 @@
 *.png binary
 *.ico binary
 *.db binary
+
+# Fuzz seeds are read as bytes; a CRLF in one is the point of it.
+command-center/fuzz/corpus/** binary

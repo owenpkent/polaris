@@ -333,3 +333,32 @@ test('newId produces prefix_ plus 10 lowercase alphanumerics and does not repeat
   }
   assert.equal(seen.size, 500);
 });
+
+test('position is one order across every project and section: a new task goes last, and a re-filed task keeps its place', () => {
+  const s = fresh();
+  const a = s.upsertProject({ slug: 'a', name: 'A' });
+  const b = s.upsertProject({ slug: 'b', name: 'B' });
+  const first = s.createTask({ title: 'first', projectId: a.id });
+  const second = s.createTask({ title: 'second', projectId: b.id });
+  const third = s.createTask({ title: 'third', projectId: a.id, sectionId: s.ensureSection(a.id, 'Doing').id });
+  assert.ok(first.position < second.position && second.position < third.position, 'numbered in creation order, whatever the project');
+
+  // A midpoint puts second after third, and the list follows position before anything else.
+  s.moveTask(second.id, { position: third.position + 1 });
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['first', 'third', 'second']);
+
+  // Changing the project or section, by either path, does not move the task in the list.
+  const before = s.requireTask(second.id).position;
+  s.updateTask(second.id, { projectId: a.id });
+  assert.equal(s.requireTask(second.id).position, before);
+  s.moveTask(second.id, { projectId: b.id, sectionId: null });
+  assert.equal(s.requireTask(second.id).position, before);
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['first', 'third', 'second']);
+
+  // A move records both positions, so an offline reorder can be weighed against it.
+  const moved = s.taskHistory(second.id).filter((e) => e.kind === 'task.moved');
+  assert.deepEqual((moved[0].payload as { from: { position: number } }).from.position, first.position + 1);
+  assert.deepEqual((moved[0].payload as { to: { position: number } }).to.position, third.position + 1);
+
+  assert.throws(() => s.moveTask(second.id, { position: Number.NaN }), ValidationError);
+});

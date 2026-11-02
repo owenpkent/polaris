@@ -38,7 +38,7 @@ Releases are batched: one is cut when there is something worth installing, not f
 
 1. CI is green on the commit on `main` that becomes the release.
 2. `npm run test:ui` has run on it. CI runs the UI tests on every pull request into `main`, but the release is the commit on `main`, and that run is yours to check.
-3. The version is bumped in both `package.json` and `command-center/package.json`, to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). Nothing after the patch: a prerelease or build suffix is not a version and never installs.
+3. The version is bumped in `package.json`, `command-center/package.json`, and `mobile/package.json` (with its lockfile), to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). The Android app takes its versionName and versionCode from mobile/package.json, so it carries the release version without a separate edit. Nothing after the patch: a prerelease or build suffix is not a version and never installs.
 4. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
 5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most):
 

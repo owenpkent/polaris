@@ -38,10 +38,14 @@ export default defineConfig({
   // time, and any test may run in any worker: the suite never shared state between tests. The
   // CI runner has four cores and no headroom for more than one Edge and one server: four workers
   // made the median test take ten seconds instead of four and the slowest time out, and two
-  // workers took longer a part than one, so CI runs one worker in each of twelve parts (test.yml). The PC
-  // has the cores for four. Pass --workers to choose.
+  // workers took longer a part than one, so CI runs one worker in each of twelve parts (test.yml).
+  // Locally, eight. A worker's database keeps the tasks its tests create, so fewer workers means
+  // longer lists, and the clipping checks (which focus and photograph every control) slow down
+  // with them: on a 16-core machine e2e/clipping.spec.js on desktop took 8-10 minutes at four
+  // workers with 16-22 timeouts, 1.4 minutes at eight with none, and 1.6 minutes at twelve with
+  // three (out of CPU). Pass --workers to choose; never run two suites at once.
   fullyParallel: true,
-  workers: process.env.CI ? 1 : 4,
+  workers: process.env.CI ? 1 : 8,
   retries: 0,
   timeout: 30000,
   reporter: [['list']],

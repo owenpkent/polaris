@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import type { ServerResponse } from 'node:http';
 import { NotFoundError, ValidationError } from '../core/index.ts';
 import { errorToPayload, HttpError, sendError, sendJson, sendNoContent } from './errors.ts';
+import { listenForFetch } from './test-support.ts';
 
 test('HttpError carries the status, code, and message it was built with', () => {
   const e = new HttpError(409, 'Conflict', 'already running');
@@ -54,9 +55,7 @@ test('errorToPayload never leaks a stack trace', (t) => {
 // it cannot be constructed standalone, so each test spins up a throwaway server for one request).
 async function withResponse(fn: (res: ServerResponse) => void): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
   const server = createServer((_req, res) => fn(res));
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  const port = typeof address === 'object' && address ? address.port : 0;
+  const port = await listenForFetch(server);
   try {
     const res = await fetch(`http://127.0.0.1:${port}/`);
     const body = await res.text();

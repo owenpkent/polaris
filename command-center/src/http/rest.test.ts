@@ -213,6 +213,11 @@ test('POST /api/tasks/:id/move moves a task between projects and sections', asyn
     assert.equal(json.task.projectId, projectB.id);
     const section = app.store.listSections(projectB.id).find((s) => s.name === 'Doing');
     assert.equal(json.task.sectionId, section!.id);
+    // A reorder is a move with only a position, which may be the midpoint of two neighbours.
+    const reorder = await api(base, 'POST', `/api/tasks/${task.id}/move`, { position: 0.5 });
+    assert.equal(reorder.status, 200);
+    assert.equal(reorder.json.task.position, 0.5);
+    assert.equal(reorder.json.task.projectId, projectB.id);
   });
 });
 

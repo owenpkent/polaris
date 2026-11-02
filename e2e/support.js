@@ -40,8 +40,13 @@ export async function openNavigation(page, testInfo) {
   return drawer
 }
 
+// Today as YYYY-MM-DD on the browser's frozen clock (CC_UI_SEED_TIME, set by the scratchServer
+// fixture and installed by frozenClock in e2e/fixtures.js), never on the real clock: a run that
+// crosses midnight would otherwise create a task the page shows as due tomorrow.
 function localToday() {
-  const d = new Date()
+  const seeded = process.env.CC_UI_SEED_TIME
+  if (!seeded) throw new Error('CC_UI_SEED_TIME is not set: the scratchServer fixture did not run')
+  const d = new Date(seeded)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 

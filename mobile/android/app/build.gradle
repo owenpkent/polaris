@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+// The app's version is mobile/package.json's, which the release checklist (docs/releases.md) keeps
+// equal to the root package.json; command-center/src/version.test.ts fails when they differ.
+// versionCode only ever goes up, so it is derived: MAJOR * 10000 + MINOR * 100 + PATCH.
+def appVersion = new groovy.json.JsonSlurper().parse(file("../../package.json")).version
+def (appMajor, appMinor, appPatch) = appVersion.tokenize(".").collect { it.toInteger() }
+
 android {
     namespace = "com.okstudio.polaris"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +13,8 @@ android {
         applicationId "com.okstudio.polaris"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode appMajor * 10000 + appMinor * 100 + appPatch
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

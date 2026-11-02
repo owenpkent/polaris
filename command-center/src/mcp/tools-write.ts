@@ -161,7 +161,7 @@ export function registerWriteTools(server: McpServer, app: App, actor: ActorInpu
       project: z.string().nullable().optional().describe('Project id, slug, or name; null clears it (and its section).'),
       section: z.string().nullable().optional().describe('Section id or name within the resulting project; created if the name does not exist yet; null clears it.'),
       parent_id: z.string().nullable().optional(),
-      position: z.number().int().optional(),
+      position: z.number().finite().optional(),
     },
   }, (args) => guard(() => {
     const existing = app.store.requireTask(args.task_id);

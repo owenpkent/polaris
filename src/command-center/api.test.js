@@ -271,7 +271,8 @@ describe('createApiClient: every endpoint method', () => {
     ['updateProject', (c) => c.updateProject('garden', { status: 'Active' }), '/api/projects/garden', 'PATCH', { status: 'Active' }],
     ['listTasks (no query)', (c) => c.listTasks(), '/api/tasks', 'GET', undefined],
     ['getTask', (c) => c.getTask('t1'), '/api/tasks/t1', 'GET', undefined],
-    ['createTask', (c) => c.createTask({ title: 'New' }), '/api/tasks', 'POST', { title: 'New' }],
+    // A create carries the number after the last task in the copy (1 when the copy is empty).
+    ['createTask', (c) => c.createTask({ title: 'New' }), '/api/tasks', 'POST', { title: 'New', position: 1 }],
     ['updateTask', (c) => c.updateTask('t1', { title: 'Upd' }), '/api/tasks/t1', 'PATCH', { title: 'Upd' }],
     ['completeTask', (c) => c.completeTask('t1'), '/api/tasks/t1/complete', 'POST', undefined],
     ['reopenTask', (c) => c.reopenTask('t1'), '/api/tasks/t1/reopen', 'POST', undefined],

@@ -58,6 +58,12 @@ function headerKey(raw: string): string {
   return raw.replace(/^﻿/, '').toLowerCase().replace(/[\s_-]+/g, '');
 }
 
+/** The field a header names, from the alias table's own keys only (a column called constructor or __proto__ is an ignored column). */
+function fieldFor(header: string): Field | undefined {
+  const key = headerKey(header);
+  return Object.hasOwn(ALIASES, key) ? ALIASES[key] : undefined;
+}
+
 const DELIMITERS = [',', ';', '\t'] as const;
 
 /** Count a delimiter outside double quotes on one line. */
@@ -179,7 +185,7 @@ function resolveHeaders(cells: string[]): { fields: (Field | null)[]; ignored: s
   const seen = new Set<Field>();
   for (const raw of cells) {
     const label = raw.replace(/^﻿/, '').trim();
-    const f = ALIASES[headerKey(raw)];
+    const f = fieldFor(raw);
     if (f && !seen.has(f)) { seen.add(f); fields.push(f); } else { fields.push(null); if (label) ignored.push(label); }
   }
   return { fields, ignored };
@@ -274,6 +280,6 @@ export function parseTaskText(text: string, format: ImportFormat = 'auto'): Pars
   if (format === 'lines') return parseLines(body);
   if (format === 'csv') return parseCsv(body, delimiter);
   const cells = splitRecords(firstLine, delimiter).records[0]?.cells ?? [];
-  const looksCsv = cells.length >= 2 && cells.some((c) => ALIASES[headerKey(c)] === 'title');
+  const looksCsv = cells.length >= 2 && cells.some((c) => fieldFor(c) === 'title');
   return looksCsv ? parseCsv(body, delimiter) : parseLines(body);
 }

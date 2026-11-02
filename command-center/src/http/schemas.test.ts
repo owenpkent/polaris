@@ -194,9 +194,11 @@ test('moveTaskBodySchema accepts null project/section/parentId to clear them', (
   assert.equal(moveTaskBodySchema.safeParse({ project: null, section: null, parentId: null }).success, true);
 });
 
-test('moveTaskBodySchema requires position to be an integer', () => {
+test('moveTaskBodySchema takes a fractional position (a reorder sets the midpoint of its neighbours) but not an infinite one', () => {
   assert.equal(moveTaskBodySchema.safeParse({ position: 1 }).success, true);
-  assert.equal(moveTaskBodySchema.safeParse({ position: 1.5 }).success, false);
+  assert.equal(moveTaskBodySchema.safeParse({ position: 1.5 }).success, true);
+  assert.equal(moveTaskBodySchema.safeParse({ position: Infinity }).success, false);
+  assert.equal(moveTaskBodySchema.safeParse({ position: 'first' }).success, false);
 });
 
 test('moveTaskBodySchema allows a negative position', () => {

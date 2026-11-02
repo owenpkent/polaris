@@ -123,6 +123,10 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()
     await expect(page.getByRole('dialog', { name: 'Due date for Draft ADR-003 hosting options' }).getByRole('grid')).toBeVisible()
     await audit(page, testInfo, 'due date picker open')
+    const picker = page.getByRole('dialog', { name: 'Due date for Draft ADR-003 hosting options' })
+    await picker.getByRole('button', { name: /^Repeats?( |$)/ }).click()
+    await expect(picker.getByLabel('Repeats', { exact: true })).toBeVisible()
+    await audit(page, testInfo, 'due date picker repeat view')
   })
 
   test('the sort menu', async ({ page }, testInfo) => {

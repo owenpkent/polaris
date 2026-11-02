@@ -2,34 +2,15 @@
 // in outbox.test.ts. Each property states a rule the header of outbox.ts promises, and fast-check
 // looks for an input that breaks it.
 //
-// Normal suite: a fixed seed and a modest run count, so the same inputs run every time and
-// test:fast stays fast. Deep run (.github/workflows/nightly-properties.yml): CC_PROPERTY_SEED and
-// CC_PROPERTY_RUNS come from the environment, so a nightly run explores new inputs.
-//
-// THE RULE when a property fails: fix the bug, then add the shrunk input as a named regression
-// test in outbox.test.ts (a plain example, so it runs on every push). Do not loosen the property,
-// and do not rerun until it passes. Replay a failure with the seed and path it prints:
+// The harness (seed, run count, failure message, the rule for a failing property) is in
+// dev/property.ts. Replay a failure with the seed and path it prints:
 //   CC_PROPERTY_SEED=<seed> CC_PROPERTY_PATH=<path> node --test src/core/outbox.property.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fc from 'fast-check';
 import { PRIORITIES, applyOutbox, openStore, OUTBOX_OP_KINDS, type OutboxOp, type Store } from './index.ts';
 import { outboxBodySchema } from '../http/schemas.ts';
-
-const SEED = Number(process.env.CC_PROPERTY_SEED ?? 20260921);
-const RUNS = Number(process.env.CC_PROPERTY_RUNS ?? 60);
-const PATH = process.env.CC_PROPERTY_PATH;
-
-/** Runs a property, and on failure throws a message that names the seed and path to replay it. */
-function check<T>(arb: fc.Arbitrary<T>, predicate: (value: T) => void): void {
-  const details = fc.check(
-    fc.property(arb, (value) => { predicate(value); }),
-    { seed: SEED, numRuns: RUNS, path: PATH, endOnFailure: false },
-  );
-  if (details.failed) {
-    throw new Error(`property failed: seed=${details.seed} path=${details.counterexamplePath}\n${fc.defaultReportMessage(details)}`);
-  }
-}
+import { check } from '../dev/property.ts';
 
 const T0 = Date.parse('2026-09-21T08:00:00.000Z');
 const at = (minutes: number): string => new Date(T0 + minutes * 60_000).toISOString();

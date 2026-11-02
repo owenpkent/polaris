@@ -1,0 +1,1 @@
+{"trigger":{"type":"schedule","condition":"due_within_days","days":3},"conditions":[{"field":"status","op":"eq","value":"open"}],"actions":[{"type":"notify","message":"due soon"}]}

@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from './index.ts';
-import { MIGRATIONS } from './schema.ts';
+import { MIGRATIONS, localizeZonedDues } from './schema.ts';
 import { runView } from '../automation/views.ts';
 
 test('a database from before the migration: its zoned dues become local time on upgrade, and the views agree', (t) => {
@@ -19,7 +19,8 @@ test('a database from before the migration: its zoned dues become local time on 
   // The rows as an older store left them: the moment, with its zone.
   first.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', ['2026-10-20T04:30:00.000Z', evening.id]);
   first.db.run('UPDATE tasks SET due_at = ? WHERE id = ?', ['2026-10-21T00:00:00.000Z', midnight.id]);
-  first.db.run('UPDATE schema_version SET version = ?', [MIGRATIONS.length - 1]);
+  // The version just before migration 13, so it and whatever came after it run on open.
+  first.db.run('UPDATE schema_version SET version = ?', [MIGRATIONS.indexOf(localizeZonedDues)]);
   first.db.close();
 
   const store = openStore(path, { timezone: 'America/Chicago' });

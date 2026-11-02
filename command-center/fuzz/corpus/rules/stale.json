@@ -1,0 +1,1 @@
+{"trigger":{"type":"schedule","condition":"stale_days","days":14},"conditions":[{"field":"customField:area","op":"exists"}],"actions":[{"type":"set_field","field":"customField","key":"area","value":"review"}]}

@@ -4,7 +4,7 @@
 
 import { cacheGet, cachePut } from './offlineCache'
 import { getOfflineState, markOffline, markOnline } from './offlineStatus'
-import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, queueOfflineWrite } from './outbox'
+import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite } from './outbox'
 import { isNativeApp } from './nativeApp'
 import { notifyTaskChanges } from './taskChanges'
 
@@ -52,6 +52,13 @@ export class ApiError extends Error {
     this.code = code || 'unknown_error'
     this.status = status || 0
   }
+}
+
+// The 400 a daemon from before manual ordering gives a create that carries a number: its body
+// schema is strict, and the message names the field it did not know (`Unrecognized key:
+// "position"` from the current zod, `Unrecognized key(s) in object: 'position'` from the old).
+function refusesPosition(err) {
+  return err instanceof ApiError && err.status === 400 && /unrecognized key.*\bposition\b/i.test(err.message)
 }
 
 function buildUrl(baseUrl, path, query) {
@@ -184,10 +191,23 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     // The task writes carry an `offline` description, so they are queued when the server is away.
     // A create or a comment is not safe to apply twice, so it names itself on the first attempt
     // too: if the server saved it and only the answer was lost, the replay is a duplicate.
-    createTask: (payload) => {
+    // The number after the last task in the copy goes with the first attempt too, not only with
+    // the queued copy: if the server saved the task and only the answer was lost, the replay is
+    // a duplicate and keeps what the server has, which must be the number the owner saw it at,
+    // or a move made beside it would come out reversed. No number goes when the copy cannot be
+    // read (the server appends), or to a daemon from before manual ordering, which refuses the
+    // field: that create is sent again without it, under the same op id and task id.
+    createTask: async (payload) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }
       const taskId = newTaskId()
-      return call('/api/tasks', { method: 'POST', body: { ...payload, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body: payload } })
+      const position = await nextCachedPosition()
+      const send = (body) => call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
+      try {
+        return await send(position === undefined ? payload : { ...payload, position })
+      } catch (err) {
+        if (position !== undefined && refusesPosition(err)) return send(payload)
+        throw err
+      }
     },
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),

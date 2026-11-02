@@ -425,3 +425,34 @@ test('checklists.items and notes default to empty, so a bare row reads as a chec
     db.close();
   }
 });
+
+test('migration 14 renumbers every task into one order that keeps each project\'s and section\'s order as it was', () => {
+  const db = openNodeDriver(':memory:');
+  try {
+    db.run('UPDATE schema_version SET version = ?', [13]);
+    for (const id of ['pa', 'pb']) {
+      db.run('INSERT INTO projects (id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)', [id, id, id, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z']);
+    }
+    // Two projects numbered on their own, as the store did before: ties across them everywhere.
+    const rows: [string, string | null, number, string][] = [
+      ['a1', 'pa', 1, '2026-09-01T00:00:01.000Z'],
+      ['a2', 'pa', 2, '2026-09-01T00:00:02.000Z'],
+      ['b1', 'pb', 1, '2026-09-01T00:00:03.000Z'],
+      ['b2', 'pb', 2, '2026-09-01T00:00:04.000Z'],
+      ['a0', 'pa', 0.5, '2026-09-01T00:00:05.000Z'],
+    ];
+    for (const [id, project, position, at] of rows) {
+      db.run('INSERT INTO tasks (id, project_id, title, status, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [id, project, id, 'open', position, at, at]);
+    }
+
+    migrate(db);
+
+    assert.equal(db.get<{ version: number }>('SELECT version FROM schema_version')?.version, MIGRATIONS.length);
+    const after = db.all<{ id: string; position: number }>('SELECT id, position FROM tasks ORDER BY position');
+    assert.deepEqual(after.map((r) => r.id), ['a0', 'a1', 'b1', 'a2', 'b2'], 'by old position, then creation');
+    assert.deepEqual(after.map((r) => r.position), [1, 2, 3, 4, 5], 'whole numbers with no ties left');
+  } finally {
+    db.close();
+  }
+});

@@ -18,7 +18,16 @@ export const SORT_FIELDS = [
   { id: 'priority', label: 'Priority' },
   { id: 'project', label: 'Project' },
   { id: 'name', label: 'Name' },
+  // The owner's own order (each task's position), which the list's drag handles change.
+  { id: 'manual', label: 'Manual' },
 ]
+
+export const MANUAL_SORT = 'manual'
+
+/** True when the list shows the owner's own order, where rows can be dragged. */
+export function isManualSort(sort) {
+  return sort?.field === MANUAL_SORT
+}
 
 export const GROUP_MODES = [
   { id: 'due', label: 'Due date' },
@@ -202,6 +211,12 @@ function compareTasks(a, b, field, projectNameById) {
   if (field === 'name') {
     return plainTitle(a.title).toLowerCase().localeCompare(plainTitle(b.title).toLowerCase())
   }
+  if (field === MANUAL_SORT) {
+    // The position the server numbers, then creation, as the store reads subtasks.
+    return (a.position ?? 0) - (b.position ?? 0)
+      || String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+      || String(a.id).localeCompare(String(b.id))
+  }
   // 'due': tasks with no due date sort last regardless of direction.
   // localDue reads a zoned value as its local time, so it sorts among the floating ones.
   const da = localDue(a.dueAt) || '9999-99-99'
@@ -214,7 +229,8 @@ export function sortTasks(tasks, sort, projectNameById) {
   // appended afterwards so reversing for 'desc' cannot move them to the front.
   const pool = sort.field === 'due' ? tasks.filter((t) => t.dueAt) : [...tasks]
   const sorted = pool.sort((a, b) => compareTasks(a, b, sort.field, projectNameById))
-  if (sort.dir === 'desc') sorted.reverse()
+  // The manual order has no direction: reversed, a drag would land the row the wrong way round.
+  if (sort.dir === 'desc' && sort.field !== MANUAL_SORT) sorted.reverse()
   if (sort.field === 'due') sorted.push(...tasks.filter((t) => !t.dueAt))
   return sorted
 }
