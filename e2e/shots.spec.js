@@ -241,6 +241,17 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'new')
   })
 
+  // A group's Add task row, at both widths: the name in the Name column and the due date button
+  // in the Due date column, under the dates of the rows below.
+  test('mytasks: group add', async ({ page }, testInfo) => {
+    await openView(page)
+    const tomorrow = page.locator('section').filter({ has: page.getByRole('button', { name: 'Collapse Tomorrow' }) })
+    await tomorrow.getByRole('button', { name: 'Add task' }).click()
+    await tomorrow.getByRole('textbox', { name: 'New task name' }).fill('Book the van service')
+    await expect(tomorrow.getByRole('button', { name: 'Due date: Tomorrow' })).toBeEnabled()
+    await shot(page, testInfo, 'mytasks', 'group-add')
+  })
+
   // The sheet opened by a share (shareIntake.js): title and notes prefilled from the shared text,
   // and the link line under them. Opens at both widths, since a share always opens the sheet.
   test('mytasks: new from share', async ({ page }, testInfo) => {

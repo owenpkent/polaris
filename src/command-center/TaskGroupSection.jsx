@@ -55,7 +55,7 @@ export default function TaskGroupSection({
       {!collapsed && (
         <div>
           {inlineAdd?.position === 'top' && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {tasks.map((task) => (
@@ -79,7 +79,7 @@ export default function TaskGroupSection({
           ))}
 
           {inlineAdd?.position === 'bottom' && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {addRow && !inlineAdd && (

@@ -250,7 +250,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   })
 
   // A group's Add task row is there on a phone too, and its date step is a popover that has to
-  // fit seven 44px days at 320px (the Popover's gutter of 0 in InlineTaskInput.jsx).
+  // fit seven 44px days at 320px (the Popover's gutter of 0 on a phone in InlineTaskInput.jsx).
   test('the due date step from an Add task row', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()

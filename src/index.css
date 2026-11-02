@@ -2193,8 +2193,16 @@ kbd { color: var(--t1); }
 .repeat-picker-head .icon-btn { flex: 0 0 auto; }
 .repeat-unit { font-size: 0.9rem; color: var(--t1); }
 
-/* The inline add row (InlineTaskInput.jsx): the name box and its due date button. */
-.inline-add { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The inline add row (InlineTaskInput.jsx): the name box in the Name column and its due date
+   button in the Due date column, as a task row lays them out. The row itself takes focus only
+   to hand it to the name box, so it draws no ring. */
+.inline-add-row:focus { outline: none; }
+.inline-add { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 12px; }
+.inline-add-due-cell { grid-column: 3; display: flex; align-items: center; min-width: 0; padding-right: 8px; }
+.inline-add-due-anchor { display: flex; min-width: 0; max-width: 100%; }
+.inline-add-due-anchor:focus { outline: none; }
+/* Under the row's cells, from the Name column on: our own words wrap, never cut short. */
+.inline-add-error { grid-column: 2 / -1; padding: 0 12px 8px 0; font-size: 0.8rem; color: var(--red); overflow-wrap: anywhere; }
 .inline-add-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -2207,7 +2215,8 @@ kbd { color: var(--t1); }
   font: inherit;
   font-size: 0.9375rem;
 }
-.inline-add-due { flex: 0 0 auto; gap: 6px; }
+/* A long date and time wraps inside the Due date column rather than overflowing it. */
+.inline-add-due { flex: 0 1 auto; gap: 6px; min-width: 0; max-width: 100%; padding-left: 0.75rem; padding-right: 0.75rem; text-align: left; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }

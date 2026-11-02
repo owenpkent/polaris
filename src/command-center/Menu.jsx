@@ -37,7 +37,8 @@ export function useRovingFocus(containerRef) {
 // repositions itself if the page scrolls or resizes while it's open. `maxWidth` caps its width,
 // past which a menu's labels wrap; a popover holding a form (the add-task date step, the repeat
 // builder) passes more. `gutter` is the least room kept between it and the window's sides; the
-// add-task date step (InlineTaskInput.jsx) passes 0, so seven 44px days fit on a 320px screen.
+// add-task date step (InlineTaskInput.jsx) passes 0 on a phone, so seven 44px days fit on a 320px
+// screen.
 // It opens below the trigger unless there is less than 160px there and more above. `preferFit`
 // also opens it above when its whole content fits only there, or fits neither way and there is
 // more room above: the due date picker (DueDateMenu.jsx) is a whole month, too tall to scroll

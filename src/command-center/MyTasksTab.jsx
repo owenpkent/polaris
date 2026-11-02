@@ -524,7 +524,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
           ) : (
             <div className="mytasks-list">
               {inlineAdd?.groupId === null && (
-                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
               )}
               {content}
             </div>
