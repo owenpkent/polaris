@@ -1505,7 +1505,7 @@ test('11. a release tag verifies only by one signature from a pinned key: SSH th
   const cms = stripComments(readFileSync(join(UPDATE, 'cms.ts'), 'utf8'));
   assert.deepEqual([...cms.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['node:crypto'], 'cms.ts imports node:crypto and nothing else');
   for (const banned of ['X509Certificate', 'checkIssued', 'verify(', 'fetch(', 'spawn', 'exec(']) {
-    const uses = (cms.match(new RegExp(banned.replace(/[()]/g, '\\$&'), 'g')) ?? []).length;
+    const uses = cms.split(banned).length - 1;
     if (banned === 'verify(') assert.equal(uses, 1, 'crypto.verify is called once, with the pinned key');
     else assert.equal(uses, 0, `cms.ts uses ${banned}`);
   }
