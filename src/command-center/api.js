@@ -4,7 +4,7 @@
 
 import { cacheGet, cachePut } from './offlineCache'
 import { getOfflineState, markOffline, markOnline } from './offlineStatus'
-import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, queueOfflineWrite } from './outbox'
+import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite } from './outbox'
 import { isNativeApp } from './nativeApp'
 import { notifyTaskChanges } from './taskChanges'
 
@@ -184,10 +184,15 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     // The task writes carry an `offline` description, so they are queued when the server is away.
     // A create or a comment is not safe to apply twice, so it names itself on the first attempt
     // too: if the server saved it and only the answer was lost, the replay is a duplicate.
-    createTask: (payload) => {
+    // The number after the last task in the copy goes with the first attempt too, not only with
+    // the queued copy: if the server saved the task and only the answer was lost, the replay is
+    // a duplicate and keeps what the server has, which must be the number the owner saw it at,
+    // or a move made beside it would come out reversed.
+    createTask: async (payload) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }
       const taskId = newTaskId()
-      return call('/api/tasks', { method: 'POST', body: { ...payload, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body: payload } })
+      const body = { ...payload, position: await nextCachedPosition() }
+      return call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
     },
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),

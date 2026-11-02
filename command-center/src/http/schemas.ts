@@ -19,6 +19,12 @@ export const newTaskBodySchema = z.object({
   ...onlineOpFields,
   /** The id the dashboard minted, which the replayed create_task op carries too. */
   id: z.string().max(64).optional(),
+  /**
+   * The number the dashboard's copy showed the task at, sent with the first attempt as well as
+   * with the queued copy (outbox.js), so a create whose answer was lost sits where the device
+   * put it, and a move made beside it holds.
+   */
+  position: z.number().finite().optional(),
   title: z.string().min(1, 'title is required'),
   notes: z.string().optional(),
   projectId: z.string().nullable().optional(),

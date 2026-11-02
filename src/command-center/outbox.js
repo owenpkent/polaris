@@ -139,10 +139,12 @@ function patchTaskEverywhere(id, fields) {
 
 /**
  * The number after the last task in the copy, as Store.nextPosition answers for a new task on the
- * server. An offline create carries it, so the task shows last under the manual sort at once and
- * stays where the owner saw it once the create is replayed.
+ * server. A create carries it (api.js), on the first attempt and in the queued copy alike, so the
+ * task shows last under the manual sort at once and stays where the owner saw it whether the
+ * create is saved now, replayed later, or saved now with its answer lost. A copy with no numbered
+ * task gives 1, as the server would for an empty list.
  */
-async function nextCachedPosition() {
+export async function nextCachedPosition() {
   let max = 0
   await cachePatchAll((data) => {
     if (!data || typeof data !== 'object') return undefined
@@ -180,7 +182,9 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
   if (kind === 'create_task') {
     opBody = {}
     for (const field of CREATE_FIELDS) if (body[field] !== undefined) opBody[field] = body[field]
-    opBody.position = await nextCachedPosition()
+    // The number the first attempt carried, so the two agree; a caller that chose none gets the
+    // copy's next.
+    opBody.position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition()
   }
   await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })
   await refreshPendingCount(origin)

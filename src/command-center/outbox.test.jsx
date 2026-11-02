@@ -524,6 +524,33 @@ describe('a write whose answer was lost', () => {
     ])
     expect(getOfflineState().lastSync).toMatchObject({ failed: false, synced: 2 })
   })
+
+  test('a create carries the number the copy showed it at, on the first attempt and in the queued copy alike', async () => {
+    // If the server saved the first attempt and only the answer was lost, the replay is a duplicate
+    // and the server keeps what it has: that has to be the number the device showed, or a move
+    // the owner made beside the task would come out reversed.
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, {
+      tasks: [{ ...TASK, position: 1 }, { ...TASK, id: 't_bbbbbbbbbb', title: 'Second', position: 2.5 }], total: 2,
+    }))
+    await client.listTasks(MY_TASKS_QUERY)
+    const first = []
+    global.fetch.mockImplementation(async (url, init) => {
+      first.push(JSON.parse(init.body))
+      throw new TypeError('Failed to fetch')
+    })
+    const { task } = await client.createTask({ title: 'Submitted once' })
+    expect(first[0].position).toBe(3.5)
+    expect(task.position).toBe(3.5)
+
+    let replayed = null
+    global.fetch.mockImplementation(async (url, init) => {
+      replayed = JSON.parse(init.body)
+      return jsonResponse(200, { results: replayed.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'duplicate' })) })
+    })
+    await flushOutbox('http://x', 'tok')
+    expect(replayed.ops.map((o) => [o.kind, o.opId, o.body.position])).toEqual([['create_task', first[0].opId, 3.5]])
+  })
 })
 
 describe('sending a long queue', () => {

@@ -813,7 +813,9 @@ export class Store {
       priority: `${PRIORITY_RANK}, CASE WHEN t.due_at IS NULL THEN 1 ELSE 0 END, t.due_at`,
       updated: 't.updated_at DESC',
       created: 't.created_at DESC',
-      position: 't.position',
+      // Then creation, as subtasks are read and as the dashboard's manual sort breaks a tie: two
+      // tasks share a number when a device numbered one offline beside one it had not seen.
+      position: 't.position, t.created_at',
     }[filter.orderBy ?? 'due'];
     const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
     return this.db.all<Row>(`SELECT t.* FROM tasks t ${where} ORDER BY ${order}, t.id LIMIT ? OFFSET ?`,

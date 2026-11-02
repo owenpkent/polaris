@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyOutbox, openStore, type OutboxOp, type Store } from './index.ts';
+import { applyOnlineOnce, applyOutbox, openStore, type OutboxOp, type Store } from './index.ts';
 import { nextOccurrence, todayIn } from '../automation/index.ts';
 
 // A clock the test moves by hand, so "who edited last" is stated rather than implied.
@@ -34,15 +34,16 @@ test('a task created offline keeps the id the device gave it, and a replay adds 
 });
 
 test('a task created offline keeps the number its device showed it at, so a move made beside it holds after replay', () => {
-  const { store } = storeAt('2026-09-21T12:00:00.000Z');
+  const { store, setNow } = storeAt('2026-09-21T12:00:00.000Z');
   const a = store.createTask({ title: 'A' });
   const b = store.createTask({ title: 'B' });
   assert.deepEqual([a.position, b.position], [1, 2]);
   // The device's copy showed A(1), B(2). Offline, it made C after the last (3) and moved A below C (4).
   // Meanwhile the PC made E, which took 3 on the server: numbered afresh at replay, C would land on 4
-  // beside A and the tie would put A back above it.
+  // beside A and the tie would put A back above it. C shares 3 with E instead and, made later, sorts after it.
   const e = store.createTask({ title: 'E' });
   assert.equal(e.position, 3);
+  setNow('2026-09-21T12:30:00.000Z');
   const results = applyOutbox(store, [
     op({ kind: 'create_task', taskId: 't_offline0c1', body: { title: 'C', position: 3 } }),
     op({ kind: 'move_task', taskId: a.id, base: a.updatedAt, body: { position: 4 } }),
@@ -57,6 +58,50 @@ test('a task created offline keeps the number its device showed it at, so a move
   const [r] = applyOutbox(store, [op({ kind: 'create_task', taskId: 't_offline0d1', body: { title: 'D' } })]);
   assert.equal(r.status, 'applied');
   assert.equal(store.requireTask('t_offline0d1').position, 5);
+});
+
+test('a create whose answer was lost keeps the number the device sent with it, so a move made beside it holds', () => {
+  const { store, setNow } = storeAt('2026-09-21T12:00:00.000Z');
+  const a = store.createTask({ title: 'A' });
+  store.createTask({ title: 'B' });
+  // The device's copy showed A(1), B(2); the PC made E(3) unseen. The device's create of C carried
+  // 3 (api.js sends the copy's next number with the first attempt) and was saved, but the answer
+  // was lost. It then moved A below C (4), and replays both: the create is a duplicate, and must
+  // leave C where the device showed it, or A would come out above C again.
+  store.createTask({ title: 'E' });
+  setNow('2026-09-21T12:30:00.000Z');
+  const ident = { opId: 'op_lost_c0000001', deviceId: 'device-phone' };
+  applyOnlineOnce(store, ident, () => {
+    const task = store.createTask({ title: 'C' }, 'human', { id: 't_lostc00001', position: 3 });
+    return { task, value: task };
+  }, (id) => store.requireTask(id));
+  const results = applyOutbox(store, [
+    op({ ...ident, kind: 'create_task', taskId: 't_lostc00001', body: { title: 'C', position: 3 } }),
+    op({ kind: 'move_task', taskId: a.id, base: a.updatedAt, body: { position: 4 } }),
+  ]);
+  assert.deepEqual(results.map((r) => r.status), ['duplicate', 'applied']);
+  assert.equal(store.requireTask('t_lostc00001').position, 3);
+  assert.deepEqual(store.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['B', 'E', 'C', 'A']);
+});
+
+test('a Board move and a reorder of the same task, made on two devices, both hold in either replay order', () => {
+  for (const order of ['reorder first', 'board first']) {
+    const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
+    const project = store.createProject({ name: 'P' });
+    const oldSection = store.ensureSection(project.id, 'Old');
+    const newSection = store.ensureSection(project.id, 'New');
+    const task = store.createTask({ title: 'T', projectId: project.id, sectionId: oldSection.id });
+    store.createTask({ title: 'Other', projectId: project.id, sectionId: oldSection.id });
+    setNow('2026-09-21T12:00:00.000Z');
+    // From the same copy, the PC moved it to New at 10:00 and the phone gave it number 2 at 11:00.
+    // Neither touched the other's field, so neither is a conflict, whichever reaches the server first.
+    const board = op({ kind: 'move_task', taskId: task.id, deviceId: 'device-pc', base: task.updatedAt, at: '2026-09-21T10:00:00.000Z', body: { sectionId: newSection.id } });
+    const reorder = op({ kind: 'move_task', taskId: task.id, deviceId: 'device-phone', base: task.updatedAt, at: '2026-09-21T11:00:00.000Z', body: { position: 2 } });
+    const results = applyOutbox(store, order === 'reorder first' ? [reorder, board] : [board, reorder]);
+    assert.deepEqual(results.map((r) => [r.status, r.conflicts]), [['applied', []], ['applied', []]], order);
+    const after = store.requireTask(task.id);
+    assert.deepEqual([after.sectionId, after.position], [newSection.id, 2], order);
+  }
 });
 
 test('when both sides changed a field, the newer edit wins and the older value goes to history', () => {

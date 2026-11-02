@@ -92,11 +92,14 @@ function competingChanges(store: Store, taskId: string, base: string | null, dev
     if (event.kind === 'task.updated') fields = Object.keys((event.payload.changes ?? {}) as Record<string, Json>);
     else if (event.kind === 'task.completed' || event.kind === 'task.reopened') fields = ['status'];
     else if (event.kind === 'task.moved') {
-      fields = ['projectId', 'sectionId', 'parentId'];
-      // A reorder is a move too. An event from before moves recorded their old position counts
-      // as one, rather than letting an offline reorder win over a move it never saw.
-      const moved = event.payload as { from?: { position?: number }; to?: { position?: number } };
-      if (moved.from?.position === undefined || moved.from.position !== moved.to?.position) fields.push('position');
+      // Only what the move changed competes: a reorder leaves the section alone, and a Board move
+      // leaves the number alone, so neither robs the other of a field it never touched. An event
+      // from before moves recorded where the task came from counts as a change to every field,
+      // rather than letting an offline edit win over a move it never saw.
+      const moved = event.payload as { from?: Record<string, Json>; to?: Record<string, Json> };
+      for (const f of ['projectId', 'sectionId', 'parentId', 'position'] as const) {
+        if (!moved.from || moved.from[f] === undefined || moved.from[f] !== moved.to?.[f]) fields.push(f);
+      }
     }
     for (const f of fields) hold(out, f, stamp);
   }
