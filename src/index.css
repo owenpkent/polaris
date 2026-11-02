@@ -672,7 +672,11 @@ kbd { color: var(--t1); }
 }
 @media (max-width: 640px) {
   .app-sidebar { display: none; }
+  /* The hide/show toggle is the desktop's; the phone has the menu button and the tab bar. */
+  .topbar-sidebar-btn { display: none; }
 }
+/* Hidden by the owner's choice (src/sidebarState.js): the column is gone, not a rail. */
+.app-sidebar[hidden] { display: none; }
 
 .app-main-full {
   padding: 24px 32px 48px;

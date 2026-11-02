@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Menu as MenuIcon, MessageSquare, Monitor, Moon, Sun } from 'lucide-react'
+import { Menu as MenuIcon, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react'
 import { Menu } from './command-center/Menu'
 import UpdateButton from './UpdateButton'
 
@@ -15,6 +15,10 @@ export default function TopBar({
   title,
   onMenuClick,
   menuOpen,
+  sidebarHidden = false,
+  sidebarId = 'app-sidebar',
+  onSidebarToggle,
+  sidebarToggleRef,
   menuButtonRef,
   onChatClick,
   chatOpen,
@@ -66,6 +70,22 @@ export default function TopBar({
       >
         <MenuIcon size={22} aria-hidden="true" />
       </button>
+      {onSidebarToggle && (
+        // Desktop only (.topbar-sidebar-btn): the phone has the menu button and the tab bar.
+        <button
+          ref={sidebarToggleRef}
+          type="button"
+          aria-label={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
+          aria-expanded={!sidebarHidden}
+          aria-controls={sidebarId}
+          title={`${sidebarHidden ? 'Show' : 'Hide'} sidebar (Ctrl+\\)`}
+          onClick={onSidebarToggle}
+          className="icon-btn topbar-sidebar-btn"
+          style={{ color: 'var(--t1)' }}
+        >
+          {sidebarHidden ? <PanelLeftOpen size={22} aria-hidden="true" /> : <PanelLeftClose size={22} aria-hidden="true" />}
+        </button>
+      )}
       <h1
         style={{
           fontSize: '1.25rem',

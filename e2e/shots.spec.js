@@ -142,6 +142,15 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // The desktop sidebar hidden: the list takes the whole width and the top bar shows the toggle.
+  test('mytasks: sidebar hidden', async ({ page }, testInfo) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 640, 'the phone has no sidebar')
+    await page.addInitScript(() => localStorage.setItem('cc-sidebar-v1', 'hidden'))
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'sidebar-hidden')
+  })
+
   test('mytasks: panel', async ({ page }, testInfo) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')

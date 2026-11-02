@@ -11,8 +11,11 @@ const PROJECT_LIMIT = 8
 // The desktop navigation: every view in one always-visible column on the left, so nothing sits
 // behind a menu button, then the open projects, each of which opens the Board on that project.
 // Shown above 640px only (.app-sidebar in index.css); under it the phone's tab bar
-// (src/BottomNav.jsx) and the drawer (src/NavDrawer.jsx) take over.
-export default function Sidebar({ primaryItems, moreItems, connectionItem, activeTab, onSelect, boardProjectId = null, onSelectProject }) {
+// (src/BottomNav.jsx) and the drawer (src/NavDrawer.jsx) take over. `hidden` is the owner's choice
+// (src/sidebarState.js, the top bar's toggle): the column is gone and the content takes its width.
+export const SIDEBAR_ID = 'app-sidebar'
+
+export default function Sidebar({ id = SIDEBAR_ID, hidden = false, primaryItems, moreItems, connectionItem, activeTab, onSelect, boardProjectId = null, onSelectProject }) {
   const { connected, api } = useConnection()
   const [inboxCount, setInboxCount] = useState(null)
   const [projects, setProjects] = useState([])
@@ -58,7 +61,7 @@ export default function Sidebar({ primaryItems, moreItems, connectionItem, activ
   )
 
   return (
-    <aside className="app-sidebar">
+    <aside id={id} className="app-sidebar" hidden={hidden}>
       <div className="nav-brand">
         <span className="nav-brand-mark" aria-hidden="true">
           <Star size={15} strokeWidth={2.5} />

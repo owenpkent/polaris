@@ -159,3 +159,22 @@ describe('TopBar refs', () => {
     expect(chatButtonRef.current.getAttribute('aria-label')).toBe('Ask Polaris')
   })
 })
+
+describe('TopBar sidebar toggle', () => {
+  test('names what it does, and says whether the sidebar is shown and which element it controls', () => {
+    const onSidebarToggle = vi.fn()
+    const { rerender } = render(<TopBar title="X" sidebarHidden={false} sidebarId="side" onSidebarToggle={onSidebarToggle} />)
+    const hide = screen.getByRole('button', { name: 'Hide sidebar' })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    expect(hide.getAttribute('aria-controls')).toBe('side')
+    fireEvent.click(hide)
+    expect(onSidebarToggle).toHaveBeenCalledTimes(1)
+    rerender(<TopBar title="X" sidebarHidden sidebarId="side" onSidebarToggle={onSidebarToggle} />)
+    expect(screen.getByRole('button', { name: 'Show sidebar' }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('there is no toggle without a handler', () => {
+    render(<TopBar title="X" />)
+    expect(screen.queryByRole('button', { name: /sidebar/ })).toBeNull()
+  })
+})

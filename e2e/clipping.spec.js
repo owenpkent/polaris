@@ -186,6 +186,15 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // With the sidebar hidden (desktop only) the content takes the whole width and the toggle stays.
+  test('My tasks with the sidebar hidden', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 640, 'the phone has no sidebar')
+    await page.addInitScript(() => localStorage.setItem('cc-sidebar-v1', 'hidden'))
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
   // A subtask row shown under its parent has no handle, so under the manual sort its name cell
   // takes the handle column too: at 320px three levels down the title still has room and the
   // deeper toggle is clickable, not covered by the due date.

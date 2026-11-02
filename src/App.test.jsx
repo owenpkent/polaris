@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import App from './App'
 
 vi.mock('./command-center/ConnectionContext', () => ({
@@ -20,7 +20,7 @@ vi.mock('./JobWarningsBanner', () => ({ default: () => null }))
 vi.mock('./UpdateButton', () => ({ default: () => null }))
 vi.mock('./NavDrawer', () => ({ default: () => <div data-testid="nav-drawer" /> }))
 vi.mock('./BottomNav', () => ({ default: () => <div data-testid="bottom-nav" /> }))
-vi.mock('./Sidebar', () => ({ default: () => <div data-testid="sidebar" /> }))
+vi.mock('./Sidebar', () => ({ SIDEBAR_ID: 'app-sidebar', default: ({ id, hidden }) => <aside id={id} hidden={hidden} data-testid="sidebar" /> }))
 
 const ALL_TAB_TESTIDS = [
   'tab-goals',
@@ -188,5 +188,36 @@ describe('App chat panel toggling', () => {
 
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.querySelector('main').classList.contains('chat-docked')).toBe(false)
+  })
+})
+
+describe('App sidebar toggle', () => {
+  afterEach(() => localStorage.clear())
+
+  test('the toggle hides and shows the sidebar and the choice is stored', () => {
+    render(<App />)
+    expect(screen.getByTestId('sidebar').hidden).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide sidebar' }))
+    expect(screen.getByTestId('sidebar').hidden).toBe(true)
+    expect(localStorage.getItem('cc-sidebar-v1')).toBe('hidden')
+    fireEvent.click(screen.getByRole('button', { name: 'Show sidebar' }))
+    expect(screen.getByTestId('sidebar').hidden).toBe(false)
+  })
+
+  test('a hidden sidebar stays hidden on the next page load', () => {
+    localStorage.setItem('cc-sidebar-v1', 'hidden')
+    render(<App />)
+    expect(screen.getByTestId('sidebar').hidden).toBe(true)
+    expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeTruthy()
+  })
+
+  test('Ctrl+Backslash toggles it too, and a hide with focus inside the sidebar moves focus to the toggle', () => {
+    render(<App />)
+    const inside = document.createElement('button')
+    screen.getByTestId('sidebar').appendChild(inside)
+    inside.focus()
+    fireEvent.keyDown(window, { key: '\\', ctrlKey: true })
+    expect(screen.getByTestId('sidebar').hidden).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show sidebar' }))
   })
 })

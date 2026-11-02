@@ -129,6 +129,14 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await audit(page, testInfo, 'due date picker repeat view')
   })
 
+  test('the sidebar hidden', async ({ page }, testInfo) => {
+    test.skip((page.viewportSize()?.width ?? 0) <= 640, 'the phone has no sidebar')
+    await page.addInitScript(() => localStorage.setItem('cc-sidebar-v1', 'hidden'))
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible()
+    await audit(page, testInfo, 'sidebar hidden')
+  })
+
   test('the sort menu', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Sort' }).click()

@@ -14,7 +14,8 @@ import ChecklistsTab from './command-center/ChecklistsTab'
 import ThreadsTab from './command-center/ThreadsTab'
 import TopBar from './TopBar'
 import NavDrawer from './NavDrawer'
-import Sidebar from './Sidebar'
+import Sidebar, { SIDEBAR_ID } from './Sidebar'
+import { useSidebarHidden } from './sidebarState'
 import BottomNav from './BottomNav'
 import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
@@ -120,6 +121,26 @@ export default function App() {
   const chatButtonRef = useRef(null)
   const { theme, resolvedTheme, setTheme } = useTheme()
   const { density, setDensity } = useDensity()
+  const { hidden: sidebarHidden, setHidden: setSidebarHidden } = useSidebarHidden()
+  const sidebarToggleRef = useRef(null)
+  // Hiding the sidebar while focus is inside it would drop focus to the page, so the toggle takes it.
+  const toggleSidebar = useCallback(() => {
+    if (!sidebarHidden && document.getElementById(SIDEBAR_ID)?.contains(document.activeElement)) {
+      sidebarToggleRef.current?.focus()
+    }
+    setSidebarHidden(!sidebarHidden)
+  }, [sidebarHidden, setSidebarHidden])
+  // Ctrl+\ (Cmd+\ on a Mac) hides or shows it from anywhere on a desktop-width page.
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== '\\' || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+      if (window.matchMedia?.('(max-width: 640px)').matches) return
+      e.preventDefault()
+      toggleSidebar()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [toggleSidebar])
 
   // Mirror the active tab into the URL so it can be bookmarked or shared, without adding history
   // entries. Only the `view` search param is touched; the hash (used for the one-time connection
@@ -145,8 +166,10 @@ export default function App() {
 
   return (
     <ConnectionProvider>
-      <div className="app-shell">
+      <div className="app-shell" data-sidebar={sidebarHidden ? 'hidden' : 'shown'}>
         <Sidebar
+          id={SIDEBAR_ID}
+          hidden={sidebarHidden}
           primaryItems={PRIMARY_ITEMS}
           moreItems={MORE_ITEMS}
           connectionItem={SETTINGS_ITEM}
@@ -159,6 +182,10 @@ export default function App() {
         <TopBar
           title={currentTitle}
           onMenuClick={(e) => openDrawer(e?.currentTarget)}
+          sidebarHidden={sidebarHidden}
+          sidebarId={SIDEBAR_ID}
+          onSidebarToggle={toggleSidebar}
+          sidebarToggleRef={sidebarToggleRef}
           menuOpen={drawerOpen}
           menuButtonRef={menuButtonRef}
           onChatClick={chatMockup.enabled ? () => setChatOpen((v) => !v) : undefined}
