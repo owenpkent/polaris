@@ -77,9 +77,15 @@ if ($LASTEXITCODE -ne 0) { throw "git update-ref refs/tags/$tag failed" }
 
 # The same check an install makes, against the committed release-signers. A tag that fails it is
 # removed again: an install would skip it, and a pushed tag cannot be unpushed from every clone.
-node (Join-Path $repoRoot 'scripts\verify-release-tag.mjs') $tag
-if ($LASTEXITCODE -ne 0) {
-  git update-ref -d "refs/tags/$tag"
-  throw "$tag was removed: it would not verify on an install"
+# The removal is in a finally so it runs however the check fails: a nonzero exit, node missing, or
+# a profile with $PSNativeCommandUseErrorActionPreference on, which turns that exit into a throw.
+$verified = $false
+try {
+  $PSNativeCommandUseErrorActionPreference = $false
+  node (Join-Path $repoRoot 'scripts\verify-release-tag.mjs') $tag
+  $verified = $LASTEXITCODE -eq 0
+} finally {
+  if (-not $verified) { git update-ref -d "refs/tags/$tag" }
 }
+if (-not $verified) { throw "$tag was removed: it would not verify on an install" }
 Write-Host "Made $tag ($tagSha). Push it with: git push origin $tag"
