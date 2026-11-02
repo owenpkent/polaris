@@ -1491,6 +1491,35 @@ test('11. the update path writes under command-center/data only through the back
   assert.equal(RELEASE_SIGNERS_FILE, 'release-signers');
 });
 
+test('11. a release tag verifies only by one signature from a pinned key: SSH through git against the pinned file alone, X.509 through cms.ts with no chain, trust store, program, or network', () => {
+  const gitSrc = stripComments(readFileSync(join(UPDATE, 'git.ts'), 'utf8'));
+  // The SSH path names the pinned file and points the other formats' programs at nothing.
+  assert.match(gitSrc, /'gpg\.format=ssh', '-c', `gpg\.ssh\.allowedSignersFile=\$\{allowedSignersFile\}`, \.\.\.NO_OTHER_SIGNATURE_PROGRAMS, 'verify-tag'/);
+  assert.match(gitSrc, /gpg\.openpgp\.program=cc-update-refuses-openpgp/);
+  assert.match(gitSrc, /gpg\.x509\.program=cc-update-refuses-x509/);
+  // The format gate and the name binding run before either verifier, and X.509 goes to cms.ts.
+  const verifyTag = gitSrc.slice(gitSrc.indexOf('verifyTag: async'));
+  for (const call of ['releaseSignatureFormat(', 'tagObjectName(', 'verifySignedMessage(']) assert.ok(verifyTag.includes(call), `verifyTag calls ${call}`);
+  assert.ok(verifyTag.indexOf('releaseSignatureFormat(') < verifyTag.indexOf('verifySignedMessage('));
+  // cms.ts stands on node:crypto alone: no certificate chain, trust store, program, or network.
+  const cms = stripComments(readFileSync(join(UPDATE, 'cms.ts'), 'utf8'));
+  assert.deepEqual([...cms.matchAll(/from '([^']+)'/g)].map((m) => m[1]), ['node:crypto'], 'cms.ts imports node:crypto and nothing else');
+  for (const banned of ['X509Certificate', 'checkIssued', 'verify(', 'fetch(', 'spawn', 'exec(']) {
+    const uses = (cms.match(new RegExp(banned.replace(/[()]/g, '\\$&'), 'g')) ?? []).length;
+    if (banned === 'verify(') assert.equal(uses, 1, 'crypto.verify is called once, with the pinned key');
+    else assert.equal(uses, 0, `cms.ts uses ${banned}`);
+  }
+  // An X.509 pin is an ssh-rsa line of the one signers file: no second file, no other key type.
+  const signers = stripComments(readFileSync(join(UPDATE, 'signers.ts'), 'utf8'));
+  assert.match(signers, /if \(s\.keyType !== 'ssh-rsa'\) continue;/);
+  // The release script takes no PIN, passphrase, or secret as an argument or from the environment.
+  const script = readFileSync(join(SRC, '..', '..', 'scripts', 'sign-release.ps1'), 'utf8');
+  const params = /param\(([\s\S]*?)\)\s*\r?\n/.exec(script)?.[1] ?? '';
+  assert.ok(params.includes('$Thumbprint'), 'the param block was found');
+  assert.doesNotMatch(params, /\$(Pin|Password|Passphrase|Secret|Token)\b/i);
+  assert.doesNotMatch(script, /Read-Host|\$env:/);
+});
+
 // =====================================================================================
 // 12. A checklist is a template the owner reuses, never a way around the rules above: starting
 //     one makes the owner's own open tasks, third-party text cannot become one, rules cannot hear

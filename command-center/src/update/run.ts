@@ -26,11 +26,11 @@ import { resolveTokens } from '../http/token.ts';
 import { defaultSecretStore, type SecretStore } from '../ingest/secrets.ts';
 import { removeBarrier, writeBarrier } from './barrier.ts';
 import { npmProgram, realExec, type Exec } from './exec.ts';
-import { git, LOCKFILES, SCHEMA_FILE, type Git } from './git.ts';
+import { git, LOCKFILES, SCHEMA_FILE, type Git, type TagVerification } from './git.ts';
 import { waitForHealthy } from './health.ts';
 import { releaseTag, releaseTags, sanitizeNotes, type ReleaseTag } from './releases.ts';
 import { canRestart, describeRestart, detectRestart, parseRestartSpec, realPortListening, resolveRestartTask, restartDaemon, restartProblem, type RestartMethod } from './restart.ts';
-import { RELEASE_SIGNERS_FILE, committedSignersPath, describeSigners, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, type Signer } from './signers.ts';
+import { RELEASE_SIGNERS_FILE, committedSignersPath, describeSigners, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, x509PinnedKeys, type Signer } from './signers.ts';
 import { readUpdateStatus, writeUpdateStatus } from './status.ts';
 import { compareVersions, isNewerVersion, isVersion, packageVersion, parseVersion } from './version.ts';
 
@@ -482,28 +482,31 @@ async function considerRelease(repo: Git, opts: UpdateOptions, deps: UpdateDeps,
     log(`The checkout has no ${RELEASE_SIGNERS_FILE} file; verifying against the pinned copy at ${pinnedFile}.`, 'stderr');
   }
   if (!pinned.signers.length) return { plan: null, reason: `no release can verify: the pinned signers file ${pinnedFile} has no keys. Add the release key to ${RELEASE_SIGNERS_FILE} (docs/releases.md) and run cc update --trust-signers.` };
-  log(`Verifying tags against ${pinned.signers.length} pinned key${pinned.signers.length === 1 ? '' : 's'}.`);
+  const x509Keys = x509PinnedKeys(pinned.signers);
+  log(`Verifying tags against ${pinned.signers.length} pinned key${pinned.signers.length === 1 ? '' : 's'}${x509Keys.length ? ` (${x509Keys.length} RSA, for SSH or X.509 signatures)` : ''}.`);
   if (startTag !== null) {
-    const v = await repo.verifyTag(startTag, pinnedFile);
+    const v = await repo.verifyTag(startTag, pinnedFile, x509Keys);
     if (!v.ok) return { plan: null, reason: `the checkout is on ${startTag}, which does not verify against the pinned signers (${v.reason}). Check out main, or review the signers.` };
   }
 
   const tags = releaseTags(await repo.tags());
   log(`${tags.length} release tag${tags.length === 1 ? '' : 's'} from ${remote}${tags.length ? `; newest ${tags[0].tag}` : ''}.`);
   let chosen: ReleaseTag | null = null;
+  let signedBy = '';
   if (target.kind === 'to') {
     const want = tags.find((t) => t.version === target.version) ?? null;
     if (!want) return { plan: null, reason: `there is no release tag ${releaseTag(target.version)}${tags.length ? ` (the newest is ${tags[0].tag})` : ' (there are no release tags)'}.` };
     if (!isNewerVersion(want.version, running)) return { plan: null, reason: `${want.tag} is not newer than the running ${running}. Moving back is a deliberate git checkout by you, outside cc update.` };
-    const v = await repo.verifyTag(want.tag, pinnedFile);
+    const v = await repo.verifyTag(want.tag, pinnedFile, x509Keys);
     if (!v.ok) return { plan: null, reason: `${want.tag} does not verify against the pinned signers: ${v.reason}. Nothing installed.` };
     chosen = want;
+    signedBy = describeVerification(v);
   } else {
     const newer = tags.filter((t) => isNewerVersion(t.version, running));
     let skipped = 0;
     for (const t of newer) {
-      const v = await repo.verifyTag(t.tag, pinnedFile);
-      if (v.ok) { chosen = t; break; }
+      const v = await repo.verifyTag(t.tag, pinnedFile, x509Keys);
+      if (v.ok) { chosen = t; signedBy = describeVerification(v); break; }
       skipped++;
       log(`Skipped ${t.tag}: ${v.reason}`, 'stderr');
     }
@@ -515,11 +518,16 @@ async function considerRelease(repo: Git, opts: UpdateOptions, deps: UpdateDeps,
 
   const sha = await repo.revParse(chosen.tag);
   const notes = sanitizeNotes(await repo.tagNotes(chosen.tag));
-  log(`${chosen.tag} (${chosen.version}) at ${sha.slice(0, 7)} verifies. Running ${running}.`);
+  log(`${chosen.tag} (${chosen.version}) at ${sha.slice(0, 7)} verifies${signedBy}. Running ${running}.`);
   for (const line of await repo.logLines('HEAD', chosen.tag)) log(`  ${line}`);
   if (notes) { log('Release notes:'); for (const line of notes.split('\n')) log(`  ${line}`); }
   const { touchesSchema, lockfiles } = await describeChanges(repo, chosen.tag, log);
   return { plan: { ref: chosen.tag, sha, version: chosen.version, tag: chosen.tag, notes, touchesSchema, lockfiles } };
+}
+
+/** " (SSH, polaris-release)" or " (X.509, ok-studio-ev)" for the log line that names the chosen tag. */
+function describeVerification(v: TagVerification & { ok: true }): string {
+  return ` (${v.format}${v.signer ? `, ${v.signer}` : ''})`;
 }
 
 async function describeChanges(repo: Git, ref: string, log: Log): Promise<{ touchesSchema: boolean; lockfiles: string[] }> {

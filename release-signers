@@ -8,10 +8,12 @@
 #
 #   polaris-release namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI...
 #
-# `cc update --release`, `--to`, and `--check` verify a release tag with `git verify-tag` against
-# a pinned copy of this file (command-center/data/release-signers), taken from this file the first
-# time one of them runs. A change to this file widens nothing on an install until its owner has
-# reviewed it with `cc update --trust-signers`. With no key here, no release can verify.
+# `cc update --release`, `--to`, and `--check` verify a release tag against a pinned copy of this
+# file (command-center/data/release-signers), taken from this file the first time one of them
+# runs: an SSH signature with `git verify-tag`, an X.509 signature (the certificate on the eToken,
+# scripts/sign-release.ps1) against the ssh-rsa keys here, which are the same RSA keys written the
+# way ssh-keygen reads them. A change to this file widens nothing on an install until its owner
+# has reviewed it with `cc update --trust-signers`. With no key here, no release can verify.
 #
 # One-time setup, done once by the owner of the repository (not by an installer):
 #
@@ -23,3 +25,7 @@
 # type and key (the second and third fields of that file), and commit it. A fork keeps its own key
 # and its own copy of this file. Lines starting with # are comments.
 polaris-release namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILqqDqiDvDnDm6Cf2PgA9bw/YNR7UNACBhbPc0A9My4t
+# The RSA key of the OK Studio Inc. EV code-signing certificate (Sectigo, thumbprint
+# FC22B5221318F3F3F6B3EB2D969D7F99091557BF), whose private key is on the SafeNet eToken. It signs
+# tags as X.509 (scripts/sign-release.ps1); the line is `ssh-keygen -i -m PKCS8` of its public key.
+ok-studio-ev namespaces="git" ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDQzCzIzsvuRRF8HILGdXRahx/LH35JW/dUFJlxCvDdzvTdjwldrM93YPB/nCs0A+4sTsP1YDCtBOGiN6qBixFw6dbKQR+RgD9icj4rr5xyX/zRq8HLH2o4f76MwjHrEC0pPeiB6c9QDB7FjABZ3t3gl60HTuJGc35jC9FEKPyWVtBqSG3cnhux61D9hSkPTy7VjaZx8qDLvm4m63IuNgUAf//Ung2Aice0qu9gC/XSEdbv9pJ85Ymxbj2mo0bSts98F3/bZcc05daR0w5Z/boxpV8DAXeoVymw5OLvBh4N84I0aNgJ2H1GrsDX3mJMsIWfiepPR2Rn4cr7WN35eba52lXYWm9MhXjTeU1oENYGeCiPqPY6sBAig44k8ohdyT9LJ9aM+oraXsX9VoWxjDYdmzNi0dxHKyRoW1rhMM+Yqf6CxnLCg3dlmelWbFp6jIaZwVRQ7GOjrFTDIDSx2rW4w0g2BSppAcqR28BFAmOteH2KZMA/7TnzuqtF7vKV5AdG2jJc4qbHQLu5VvDFpKn1Ti0keTiWJBDgsXy532AkAeA0x8ox5JSiEyszhmtQjtJ3bMIhqWo+1gzs/l/IFKnDmDP2hX/dzsX96ZGYH9iPC22dkr6wP7Ibi7w7wI69sGpE42SsDfFCqyHM5IEX9ZTAtg0jtlwSvpozSkXH5RDgNQ==

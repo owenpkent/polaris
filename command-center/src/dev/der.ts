@@ -110,6 +110,18 @@ export function signedData(payload: Buffer, privateKey: KeyObject, options: Sign
   return Buffer.concat([sequence(oid(OIDS.signedData), explicit(0, body)), options.trailing ?? Buffer.alloc(0)]);
 }
 
+/** The `ssh-rsa <base64>` form of an RSA public key, as an allowed_signers line carries it (the
+ *  inverse of cms.ts `sshRsaPublicKey`): three length-prefixed fields, the type and the two mpints. */
+export function sshRsaKey(key: KeyObject): string {
+  const jwk = key.export({ format: 'jwk' }) as { n: string; e: string };
+  const mpint = (b64url: string) => {
+    const bytes = Buffer.from(b64url, 'base64url');
+    return bytes[0] & 0x80 ? Buffer.concat([Buffer.from([0]), bytes]) : bytes;
+  };
+  const field = (b: Buffer) => { const len = Buffer.alloc(4); len.writeUInt32BE(b.length); return Buffer.concat([len, b]); };
+  return `ssh-rsa ${Buffer.concat([field(Buffer.from('ssh-rsa')), field(mpint(jwk.e)), field(mpint(jwk.n))]).toString('base64')}`;
+}
+
 /** The PEM block git writes around the DER, 64 columns of base64 and a final newline. */
 export function signedMessageBlock(der: Buffer): string {
   const b64 = der.toString('base64');

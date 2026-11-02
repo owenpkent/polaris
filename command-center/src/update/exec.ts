@@ -19,6 +19,9 @@ export interface ExecOptions {
   env?: NodeJS.ProcessEnv;
   /** Lines of the program's output, as they arrive, for the log and the console. */
   onOutput?: (line: string) => void;
+  /** Hand stdout over byte for byte (one latin1 character per byte, line endings kept), for
+   *  output that is signed and must not be re-encoded. `Buffer.from(stdout, 'latin1')` is the bytes. */
+  raw?: boolean;
 }
 
 export type Exec = (cmd: string, args: string[], opts?: ExecOptions) => Promise<ExecResult>;
@@ -43,10 +46,12 @@ export function realExec(platform: NodeJS.Platform = process.platform): Exec {
     });
     const out = lineCollector(opts.onOutput);
     const err = lineCollector(opts.onOutput);
-    child.stdout.on('data', out.push);
+    const rawOut: Buffer[] = [];
+    child.stdout.on('data', opts.raw ? (chunk: Buffer) => { rawOut.push(chunk); } : out.push);
     child.stderr.on('data', err.push);
-    child.on('error', (e) => resolve({ code: -1, stdout: out.text(), stderr: [err.text(), e.message].filter(Boolean).join('\n') }));
-    child.on('close', (code) => resolve({ code: code ?? -1, stdout: out.text(), stderr: err.text() }));
+    const stdout = () => (opts.raw ? Buffer.concat(rawOut).toString('latin1') : out.text());
+    child.on('error', (e) => resolve({ code: -1, stdout: stdout(), stderr: [err.text(), e.message].filter(Boolean).join('\n') }));
+    child.on('close', (code) => resolve({ code: code ?? -1, stdout: stdout(), stderr: err.text() }));
   });
 }
 

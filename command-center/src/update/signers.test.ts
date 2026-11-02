@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync } from 'node:crypto';
+import { sshRsaKey } from '../dev/der.ts';
+import { publicKeyFingerprint } from './cms.ts';
 import type { Exec } from './exec.ts';
-import { committedSignersPath, describeSigners, keyFingerprint, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, signerIdentity } from './signers.ts';
+import { committedSignersPath, describeSigners, keyFingerprint, parseAllowedSigners, pinSigners, pinnedSignersPath, readSignersFile, sameSigners, SignersError, signerIdentity, x509PinnedKeys } from './signers.ts';
 
 const KEY_A = 'AAAAC3NzaC1lZDI1NTE5AAAAIAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const KEY_B = 'AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -108,4 +111,21 @@ test('keyFingerprint runs ssh-keygen -lf on a temp copy of the key and reports w
   const lines = await describeSigners(exec, [signer]);
   assert.deepEqual(lines, ['  polaris-release  ssh-ed25519  SHA256:7XkuoKngBtHFlb11TNVHq4BN7kSlZDld0g0xBo6AAos']);
   assert.deepEqual(await describeSigners(exec, []), ['  (no keys)']);
+});
+
+test('x509PinnedKeys turns every ssh-rsa line into a pinned key and skips the rest', () => {
+  const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey;
+  const rsaKey = sshRsaKey(rsa).split(' ')[1];
+  const keys = x509PinnedKeys(parseAllowedSigners(`ok-studio-ev namespaces="git" ssh-rsa ${rsaKey}\n${LINE_A}\n${LINE_B}\n`));
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].name, 'ok-studio-ev');
+  assert.equal(publicKeyFingerprint(keys[0].key), publicKeyFingerprint(rsa));
+  assert.deepEqual(x509PinnedKeys(parseAllowedSigners(`${LINE_A}\n${LINE_B}\n`)), [], 'ed25519 lines give nothing');
+  const wire = Buffer.from(rsaKey, 'base64');
+  const bad = parseAllowedSigners([
+    'garbage namespaces="git" ssh-rsa !!!!not-base64!!!!',
+    `truncated namespaces="git" ssh-rsa ${wire.subarray(0, 40).toString('base64')}`,
+    `good namespaces="git" ssh-rsa ${rsaKey}`,
+  ].join('\n'));
+  assert.deepEqual(x509PinnedKeys(bad).map((k) => k.name), ['good'], 'a bad ssh-rsa line is skipped, not thrown');
 });

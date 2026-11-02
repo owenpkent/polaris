@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { sshRsaKey, signedData, signedMessageBlock } from '../dev/der.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import { realExec, type Exec } from './exec.ts';
 import { SCHEMA_FILE } from './git.ts';
@@ -144,6 +146,81 @@ test('cc update --check accepts a tag signed by a pinned key and rejects every o
   assert.equal(sh(clone, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main');
 });
 
+test('cc update --check accepts a tag signed with X.509 by a pinned RSA key, with no program but git', { skip: skipReason() }, async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'cc-update-x509-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const otherRsa = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const signerLine = (key: KeyObject) => `ok-studio-ev namespaces="git" ${sshRsaKey(key)}`;
+
+  const origin = join(base, 'origin.git');
+  const seed = join(base, 'seed');
+  mkdirSync(seed);
+  sh(seed, ['init', '-q', '-b', 'main']);
+  const commit = (message: string, files: Record<string, string>) => {
+    for (const [name, text] of Object.entries(files)) {
+      mkdirSync(join(seed, name, '..'), { recursive: true });
+      writeFileSync(join(seed, name), text);
+    }
+    sh(seed, ['add', '-A']);
+    sh(seed, ['commit', '-q', '-m', message]);
+    return sh(seed, ['rev-parse', 'HEAD']);
+  };
+  commit('v2.0.0', { 'package.json': JSON.stringify({ version: '2.0.0' }), [SCHEMA_FILE]: 'export const MIGRATIONS = [];\n', 'release-signers': `${signerLine(rsa.publicKey)}\n` });
+  sh(base, ['init', '-q', '--bare', '-b', 'main', origin]);
+  sh(seed, ['remote', 'add', 'origin', origin]);
+  sh(seed, ['push', '-q', 'origin', 'main']);
+  const clone = join(base, 'clone');
+  sh(base, ['clone', '-q', origin, clone]);
+
+  // A tag object made by hand: the payload, then the CMS block over exactly those bytes.
+  const tagFile = join(base, 'tag-object');
+  const x509Tag = (tag: string, named: string, sha: string, key: KeyObject) => {
+    const payload = Buffer.from(`object ${sha}\ntype commit\ntag ${named}\ntagger test <test@example.com> 1760000000 +0000\n\nRelease ${named.slice(1)}\n`);
+    writeFileSync(tagFile, Buffer.concat([payload, Buffer.from(signedMessageBlock(signedData(payload, key)))]));
+    sh(seed, ['update-ref', `refs/tags/${tag}`, sh(seed, ['hash-object', '-t', 'tag', '-w', tagFile])]);
+  };
+  x509Tag('v2.1.0', 'v2.1.0', commit('feat: 2.1.0', { 'package.json': JSON.stringify({ version: '2.1.0' }) }), rsa.privateKey);
+  sh(seed, ['push', '-q', 'origin', 'refs/tags/v2.1.0']);
+
+  const programs: string[] = [];
+  const real = realExec();
+  const exec: Exec = (cmd, args, opts) => { programs.push(cmd); return real(cmd, args, opts); };
+  const dbPath = join(base, 'data', 'polaris.db');
+  const pinned = pinnedSignersPath(dbPath);
+  const check = async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runUpdate({ repoRoot: clone, dbPath, dashboardDir: join(clone, 'dist'), port: 8790, checkOnly: true, yes: true, restartSpec: 'manual', stdout: (l) => out.push(l), stderr: (l) => err.push(l) }, {
+      exec, fetch, now: () => new Date(), sleep: async () => {}, portListening: async () => true, platform: 'linux', env: {}, secrets: memorySecretStore(), confirm: async () => true,
+    });
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  };
+
+  let r = await check();
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /v2\.1\.0 \(2\.1\.0\) at [0-9a-f]{7} verifies \(X\.509, ok-studio-ev\)/);
+  assert.equal(readUpdateStatus(dbPath).available?.version, '2.1.0');
+
+  // A different RSA key pinned: the same tag is skipped.
+  writeFileSync(pinned, `${signerLine(otherRsa.publicKey)}\n`, { mode: 0o600 });
+  r = await check();
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /Skipped v2\.1\.0: .*no pinned key signed it/);
+  assert.equal(readUpdateStatus(dbPath).available, null);
+
+  // v2.2.0 is signed as v2.1.0 and then given the name v2.2.0: the signature covers the name inside.
+  writeFileSync(pinned, `${signerLine(rsa.publicKey)}\n`, { mode: 0o600 });
+  x509Tag('v2.2.0', 'v2.1.0', commit('feat: 2.2.0', { 'package.json': JSON.stringify({ version: '2.2.0' }) }), rsa.privateKey);
+  sh(seed, ['push', '-q', 'origin', 'refs/tags/v2.2.0']);
+  r = await check();
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.err, /Skipped v2\.2\.0: .*named v2\.1\.0, not v2\.2\.0/);
+  assert.equal(readUpdateStatus(dbPath).available?.version, '2.1.0');
+
+  assert.deepEqual([...new Set(programs)], ['git'], 'git was the only program run');
+});
+
 /** Why the OpenPGP case cannot run here, or false: it needs everything above and gpg. On Windows
  *  the gpg at hand is the MSYS one Git for Windows ships, which reads GNUPGHOME as a POSIX path,
  *  so cygpath is needed to spell the temp folder in its terms. */
@@ -235,7 +312,7 @@ test('a tag signed with OpenPGP by a key in the local keyring does not verify, a
     exec, fetch, now: () => new Date(), sleep: async () => {}, portListening: async () => true, platform: 'linux', env: {}, secrets: memorySecretStore(), confirm: async () => true,
   });
   assert.equal(code, 0, err.join('\n'));
-  assert.match(err.join('\n'), /Skipped v2\.2\.0: the tag is signed with OpenPGP, not SSH; releases verify by SSH signature against the pinned signers only/);
+  assert.match(err.join('\n'), /Skipped v2\.2\.0: the tag is signed with OpenPGP; a release is signed with SSH or X\.509 by a pinned key/);
   assert.match(out.join('\n'), /v2\.1\.0 \(2\.1\.0\) at [0-9a-f]{7} verifies/);
   assert.equal(readUpdateStatus(dbPath).available?.version, '2.1.0', 'the SSH-signed release is the one on offer');
   assert.deepEqual([...new Set(programs)], ['git']);

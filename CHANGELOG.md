@@ -3,6 +3,16 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No schema migration.
+
+- A release tag can be signed with the OK Studio EV certificate on the eToken (an X.509
+  signature, `scripts/sign-release.ps1`) as well as with the SSH release key. An install verifies
+  an X.509 signature itself, against the RSA keys in its pinned `release-signers`, with no
+  certificate chain or expiry; the certificate's key is in the committed file. This release itself
+  is SSH-signed, because installs on 2.2.0 verify SSH only; after it, either kind verifies.
+
 ## 2.2.0 (2026-10-31)
 
 No schema migration.

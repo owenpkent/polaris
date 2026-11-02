@@ -15,7 +15,7 @@
 // the signed attributes re-tagged as SET OF; and the signing key among the pinned ones.
 // Attributes it does not know (signingTime, S/MIME capabilities) are covered by the signature and
 // otherwise ignored: the time a signer claims is not evidence.
-import { constants, createHash, timingSafeEqual, verify, type KeyObject } from 'node:crypto';
+import { constants, createHash, createPublicKey, timingSafeEqual, verify, type KeyObject } from 'node:crypto';
 
 export const SIGNED_MESSAGE_BEGIN = '-----BEGIN SIGNED MESSAGE-----';
 export const SIGNED_MESSAGE_END = '-----END SIGNED MESSAGE-----';
@@ -73,6 +73,34 @@ export function splitSignedTag(rawTag: Buffer): { payload: Buffer; signatureBloc
 export function publicKeyFingerprint(key: KeyObject): string {
   const spki = key.export({ type: 'spki', format: 'der' });
   return `SHA256:${createHash('sha256').update(spki).digest('base64').replace(/=+$/, '')}`;
+}
+
+/** The RSA public key of an OpenSSH `ssh-rsa` line (its base64 field), or null when the field is
+ *  not one. The signers file pins the certificate's key in that form, so one file serves both
+ *  signature formats and ssh-keygen reads it unchanged: an RSA key is the same key whichever
+ *  envelope the signature comes in. */
+export function sshRsaPublicKey(base64: string): KeyObject | null {
+  if (base64.length === 0 || base64.length % 4 !== 0 || !BASE64_RE.test(base64)) return null;
+  const wire = Buffer.from(base64, 'base64');
+  const fields: Buffer[] = [];
+  let at = 0;
+  while (at < wire.length && fields.length < 3) {
+    if (at + 4 > wire.length) return null;
+    const n = wire.readUInt32BE(at);
+    if (at + 4 + n > wire.length) return null;
+    fields.push(wire.subarray(at + 4, at + 4 + n));
+    at += 4 + n;
+  }
+  if (fields.length !== 3 || at !== wire.length || fields[0].toString('latin1') !== 'ssh-rsa') return null;
+  // The exponent and modulus are mpints: big-endian, with a leading zero byte when the top bit is set.
+  const unsigned = (b: Buffer) => (b.length > 1 && b[0] === 0 ? b.subarray(1) : b);
+  const [, e, n] = fields;
+  if (e.length === 0 || n.length === 0) return null;
+  try {
+    return createPublicKey({ key: { kty: 'RSA', n: unsigned(n).toString('base64url'), e: unsigned(e).toString('base64url') }, format: 'jwk' });
+  } catch {
+    return null;
+  }
 }
 
 class CmsFormatError extends Error {}

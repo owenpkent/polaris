@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, wr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { Exec } from './exec.ts';
+import { sshRsaPublicKey, type PinnedPublicKey } from './cms.ts';
 
 export const RELEASE_SIGNERS_FILE = 'release-signers';
 
@@ -101,6 +102,19 @@ export function pinSigners(committedFile: string, pinnedFile: string): Signer[] 
     throw e;
   }
   return signers;
+}
+
+/** The pinned keys an X.509 signature may verify against: every `ssh-rsa` line as a public key
+ *  object, named by its principal. The same RSA key signs either way. A line whose key does not
+ *  decode is skipped here; ssh-keygen refuses it on the SSH path. */
+export function x509PinnedKeys(signers: Signer[]): PinnedPublicKey[] {
+  const keys: PinnedPublicKey[] = [];
+  for (const s of signers) {
+    if (s.keyType !== 'ssh-rsa') continue;
+    const key = sshRsaPublicKey(s.key);
+    if (key) keys.push({ name: s.principal, key });
+  }
+  return keys;
 }
 
 /** The key's SHA256 fingerprint from `ssh-keygen -lf`, or a note saying why there is none. The
