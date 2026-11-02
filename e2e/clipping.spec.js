@@ -140,6 +140,66 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     }
   })
 
+  // The manual sort adds the handle column before the check at every width, and a handle's menu.
+  test('My tasks under the manual sort, with a reorder menu open', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.getByRole('button', { name: /^Reorder / }).first().click()
+    await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
+  // A subtask row shown under its parent has no handle, so under the manual sort its name cell
+  // takes the handle column too: at 320px three levels down the title still has room and the
+  // deeper toggle is clickable, not covered by the due date.
+  test('My tasks under the manual sort with three levels of subtasks shown', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const suffix = testInfo.project.name
+    const parentTitle = await createTask(request, testInfo, 'nested parent')
+    const idOf = async (title) => (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title).id
+    let parentId = await idOf(parentTitle)
+    const titles = ['Level one', 'Level two', 'Leaf of the nested rows'].map((t) => `${t} ${suffix} ${parentTitle.slice(-2)}`)
+    for (const title of titles) {
+      const res = await request.post('/api/tasks', { headers, data: { title, parentId } })
+      expect(res.ok()).toBeTruthy()
+      parentId = await idOf(title)
+    }
+    await openView(page)
+    // Each toggle is pressed by pointer, so a control covering it would fail the click.
+    const toggleOf = (title) => page.getByRole('button', { name: `1 open subtask of ${title}`, exact: true }).first()
+    for (const title of [parentTitle, titles[0], titles[1]]) {
+      await toggleOf(title).scrollIntoViewIfNeeded()
+      await toggleOf(title).click()
+      await expect(toggleOf(title)).toHaveAttribute('aria-expanded', 'true')
+    }
+    // The leaf, shown under its parent (its own row elsewhere in the list has no nesting).
+    const leaf = page.getByRole('button', { name: `Open ${titles[2]}`, exact: true }).first()
+    const title = leaf.getByText(titles[2])
+    await expect(title).toBeVisible()
+    const before = (await title.boundingBox()).width
+    expect(before).toBeGreaterThan(0)
+
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    // The deepest toggle still takes a click in the manual layout: closed, then open again.
+    await toggleOf(titles[1]).scrollIntoViewIfNeeded()
+    await toggleOf(titles[1]).click()
+    await expect(toggleOf(titles[1])).toHaveAttribute('aria-expanded', 'false')
+    await toggleOf(titles[1]).click()
+    await expect(toggleOf(titles[1])).toHaveAttribute('aria-expanded', 'true')
+    await expect(title).toBeVisible()
+    // The handle column takes no room from a nested title: its name cell spans that column too.
+    expect((await title.boundingBox()).width).toBeGreaterThanOrEqual(before)
+    await expectNothingCutOff(page)
+  })
+
   // The Filter popover at its tallest, every long group open, and the toolbar with all three
   // settings applied, where each button carries its value and an X and the row has to wrap.
   test('the filter menu with every group open, and the toolbar with settings applied', async ({ page }) => {

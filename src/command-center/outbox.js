@@ -16,7 +16,7 @@
 // Only task edits and comments are queued. Inbox decisions, rules, goals, projects, and GitHub
 // switches are never written offline, and the server has no op for them either.
 
-import { cacheGet, cachePatchAll, cachePut, indexedDbBackend, memoryBackend } from './offlineCache'
+import { cacheGet, cachePatchAll, cachePut, cacheScan, indexedDbBackend, memoryBackend } from './offlineCache'
 import { setPending, setLastSync } from './offlineStatus'
 import { notifyTaskChanges } from './taskChanges'
 
@@ -137,6 +137,28 @@ function patchTaskEverywhere(id, fields) {
   })
 }
 
+/**
+ * The number after the last task in the copy, as Store.nextPosition answers for a new task on the
+ * server. A create carries it (api.js), on the first attempt and in the queued copy alike, so the
+ * task shows last under the manual sort at once and stays where the owner saw it whether the
+ * create is saved now, replayed later, or saved now with its answer lost. A copy with no numbered
+ * task gives 1, as the server would for an empty list.
+ *
+ * Undefined when the copy cannot be read (storage denied or failing, which offlineCache.js
+ * swallows so that the dashboard keeps working online). The tasks the owner sees were loaded all
+ * the same, so a number made up from a copy that could not be read would put the new task before
+ * them. With no number the server appends, which is what the number stands for.
+ */
+export async function nextCachedPosition() {
+  let max = 0
+  const readable = await cacheScan((data) => {
+    if (!data || typeof data !== 'object') return
+    const seen = [data.task, ...(Array.isArray(data.tasks) ? data.tasks : []), ...(Array.isArray(data.subtasks) ? data.subtasks : [])]
+    for (const t of seen) if (typeof t?.position === 'number' && Number.isFinite(t.position) && t.position > max) max = t.position
+  })
+  return readable ? max + 1 : undefined
+}
+
 async function addCreatedTask(baseUrl, myTasksUrl, task) {
   const projectUrl = task.projectId ? `${baseUrl}/api/projects/${encodeURIComponent(task.projectId)}` : null
   const parentUrl = task.parentId ? `${baseUrl}/api/tasks/${encodeURIComponent(task.parentId)}` : null
@@ -164,6 +186,10 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
   if (kind === 'create_task') {
     opBody = {}
     for (const field of CREATE_FIELDS) if (body[field] !== undefined) opBody[field] = body[field]
+    // The number the first attempt carried, so the two agree; a caller that chose none gets the
+    // copy's next, and none at all when the copy cannot be read (the server then appends).
+    const position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition()
+    if (position !== undefined) opBody.position = position
   }
   await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })
   await refreshPendingCount(origin)
@@ -201,6 +227,8 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     // The board sends a section id (or null for "No section"). A name could not be resolved
     // here, so anything else waits for the server to place it.
     if (body.section === null || /^s_[0-9a-z]+$/.test(String(body.section))) fields = { sectionId: body.section }
+    // A reorder (the list's manual sort) carries the task's new number, which the local copy shows.
+    if (typeof body.position === 'number' && Number.isFinite(body.position)) fields = { ...fields, position: body.position }
   }
   await patchTaskEverywhere(taskId, fields)
   notifyTaskChanges()

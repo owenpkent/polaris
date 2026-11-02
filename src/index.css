@@ -839,6 +839,31 @@ kbd { color: var(--t1); }
   padding-left: 8px;
 }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
+/* Under the manual sort (MyTasksTab, .mytasks-reorderable) a row leads with its reorder handle,
+   so the check and the name are the second and third cells and the rules start one later. A
+   subtask row under its parent (.is-nested) has no handle: its name cell spans both columns
+   (TaskRow.jsx), so its third cell is the first column and keeps its line. */
+.mytasks-reorderable .mytasks-colhead > :nth-child(3),
+.mytasks-reorderable .mytasks-row:not(.is-nested) > :nth-child(3) { border-left: none; padding-left: 0; }
+.reorder-handle { color: var(--t3); cursor: grab; touch-action: none; }
+.reorder-handle:hover:not(:disabled), .reorder-handle:focus-visible { color: var(--t1); }
+body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-select: none; }
+/* The held row fades, and a 2px line marks the slot it would drop into (useReorderDrag.js). */
+.mytasks-row { position: relative; }
+.mytasks-row.is-dragging { opacity: 0.5; }
+.mytasks-row.is-drop-before::before,
+.mytasks-row.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--blue);
+  pointer-events: none;
+  z-index: 2;
+}
+.mytasks-row.is-drop-before::before { top: -1px; }
+.mytasks-row.is-drop-after::after { bottom: -1px; }
 /* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
 .mytasks-row > :last-child { padding-right: 4px; }
 .mytasks-section + .mytasks-section { padding-top: 16px; }

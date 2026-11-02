@@ -254,3 +254,50 @@ describe('TaskTree subtasks', () => {
     expect(waiting.parentElement.className).toBe('mytasks-name-body')
   })
 })
+
+describe('TaskRow under the manual sort', () => {
+  test('a top-level row leads with its handle, or an empty cell when it has none', () => {
+    const { container, rerender } = renderRow({ props: { handleColumn: true, gridTemplateColumns: '44px 44px 1fr 100px 100px 100px 80px' } })
+    const row = container.firstChild
+    expect(row.children[0].getAttribute('aria-hidden')).toBe('true')
+    expect(row.children[1].getAttribute('role')).toBe('checkbox')
+    expect(row.children[2].className).toBe('mytasks-name')
+    expect(row.children[2].style.gridColumn).toBe('')
+    expect(row.className).not.toContain('is-nested')
+    rerender(
+      <TaskRow
+        task={baseTask()}
+        projectName="Alpha"
+        projectOptions={PROJECT_OPTIONS}
+        dueBounds={DUE_BOUNDS}
+        visibleColumns={VISIBLE_COLUMNS}
+        gridTemplateColumns="44px 44px 1fr 100px 100px 100px 80px"
+        onToggleComplete={() => {}}
+        onOpen={() => {}}
+        onQuickUpdate={() => {}}
+        handleColumn
+        reorder={{ index: 0, count: 2, onPointerDown: () => {}, onMove: () => {}, wasDrag: () => false }}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Reorder Write the report' })).toBe(container.firstChild.children[0])
+  })
+
+  test('a subtask row under its parent has no handle cell: its name takes that column as well', () => {
+    const { container } = renderRow({ props: { handleColumn: true, depth: 1, gridTemplateColumns: '44px 44px 1fr 100px 100px 100px 80px' } })
+    const row = container.firstChild
+    expect(row.className).toContain('is-nested')
+    expect(row.children[0].getAttribute('aria-hidden')).toBe('true')
+    expect(row.children[1].className).toBe('mytasks-name')
+    expect(row.children[1].style.gridColumn).toBe('2 / span 2')
+    // The check is inside the name cell, as on any subtask row.
+    expect(row.children[1].contains(screen.getByRole('checkbox', { name: 'Complete Write the report' }))).toBe(true)
+  })
+
+  test('without the manual sort a subtask row is as it was', () => {
+    const { container } = renderRow({ props: { depth: 1 } })
+    const row = container.firstChild
+    expect(row.children[0].getAttribute('aria-hidden')).toBe('true')
+    expect(row.children[1].className).toBe('mytasks-name')
+    expect(row.children[1].style.gridColumn).toBe('')
+  })
+})

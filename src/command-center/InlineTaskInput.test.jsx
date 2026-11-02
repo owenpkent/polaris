@@ -354,3 +354,13 @@ describe('InlineTaskInput', () => {
     expect(await screen.findByRole('dialog', { name: 'Due date for Buy milk' })).toBeTruthy()
   })
 })
+
+describe('InlineTaskInput under the manual sort', () => {
+  test('takes an empty leading cell so its title starts under the names, past the handle column', () => {
+    const { input } = setup({ handleColumn: true, gridTemplateColumns: '44px 44px 1fr' })
+    const row = input.closest('.inline-add-row')
+    expect(row.children[0].getAttribute('aria-hidden')).toBe('true')
+    expect(row.children[1].className).toBe('inline-add-check')
+    expect(input.closest('.inline-add').style.gridColumn).toBe('3 / -1')
+  })
+})

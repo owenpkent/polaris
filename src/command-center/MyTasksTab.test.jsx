@@ -7,7 +7,9 @@ const api = {}
 let connected = true
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected, api }) }))
-vi.mock('./useEvents', () => ({ useEventRefresh: () => {} }))
+// The poll's callback is kept so a test can fire a refresh at a chosen moment.
+let refreshFromEvents = () => {}
+vi.mock('./useEvents', () => ({ useEventRefresh: (cb) => { refreshFromEvents = cb } }))
 
 const PHONE_QUERIES = Object.values(BREAKPOINT_QUERIES)
 
@@ -398,5 +400,150 @@ describe('MyTasksTab assignee filter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(screen.getByRole('button', { name: 'Filter' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open Water the plants' })).toBeTruthy()
+  })
+})
+
+describe('MyTasksTab manual sort', () => {
+  const VIEW_KEY = 'cc-mytasks-view-v1'
+  const task = (id, title, position) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt: null, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  function saveSort(field) {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({
+      sort: { field, dir: 'asc' },
+      group: 'none',
+      filters: { projectIds: [], priorities: [], sources: [], goalIds: [] },
+    }))
+  }
+
+  afterEach(() => localStorage.clear())
+
+  test('under any other sort the rows have no handle', async () => {
+    stubMatchMedia(1280)
+    saveSort('due')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2)] })
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open One' })
+    expect(screen.queryByRole('button', { name: /^Reorder/ })).toBeNull()
+  })
+
+  test('under the manual sort a move sends the midpoint position, shows the new order at once, and reloads', async () => {
+    stubMatchMedia(1280)
+    saveSort('manual')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2), task('t3', 'Three', 3)] })
+    api.moveTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder One' })
+    const order = () => screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))
+    expect(order()).toEqual(['Open One', 'Open Two', 'Open Three'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Three' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move up' }))
+    expect(order()).toEqual(['Open One', 'Open Three', 'Open Two'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 }))
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Reorder Three' })).toBeTruthy()
+  })
+
+  test('a move the server refuses puts the old order back and says why', async () => {
+    stubMatchMedia(1280)
+    saveSort('manual')
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2)] })
+    api.moveTask = vi.fn().mockRejectedValue(new Error('Request failed (503)'))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder One' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Two' }), { key: 'ArrowUp' })
+    await screen.findByText('Request failed (503)')
+    expect(screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))).toEqual(['Open One', 'Open Two'])
+  })
+})
+
+describe('MyTasksTab manual sort queues moves', () => {
+  const VIEW_KEY = 'cc-mytasks-view-v1'
+  const base = (id, title) => ({
+    id, title, projectId: null, status: 'open', priority: 'none', dueAt: null, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+  const order = () => screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))
+
+  afterEach(() => localStorage.clear())
+
+  test('two quick moves of one task reach the server one after the other, and the list reloads once, in the final order', async () => {
+    stubMatchMedia(1280)
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    // A server whose order is whatever the writes it has answered set, read back by the list.
+    const positions = { t1: 1, t2: 2, t3: 3 }
+    const pending = []
+    api.listTasks.mockImplementation(() => Promise.resolve({
+      tasks: [base('t1', 'One'), base('t2', 'Two'), base('t3', 'Three')].map((t) => ({ ...t, position: positions[t.id] })),
+    }))
+    api.moveTask = vi.fn((id, { position }) => new Promise((resolve) => {
+      pending.push(() => { positions[id] = position; resolve({ task: {} }) })
+    }))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Three' })
+
+    const handle = screen.getByRole('button', { name: 'Reorder Three' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    // Both moves show at once; only the first has gone to the server.
+    expect(order()).toEqual(['Open Three', 'Open One', 'Open Two'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+    expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 1.5 })
+    expect(api.listTasks).toHaveBeenCalledTimes(1)
+
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(2))
+    expect(api.moveTask).toHaveBeenLastCalledWith('t3', { position: 0 })
+    // No reload between the two, so the order shown never slips back.
+    expect(api.listTasks).toHaveBeenCalledTimes(1)
+    expect(order()).toEqual(['Open Three', 'Open One', 'Open Two'])
+
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(positions.t3).toBe(0)
+    await waitFor(() => expect(order()).toEqual(['Open Three', 'Open One', 'Open Two']))
+  })
+
+  test('a poll between two queued moves keeps the later move on screen, so a third move goes on from it', async () => {
+    stubMatchMedia(1280)
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const positions = { t1: 1, t2: 2, t3: 3, t4: 4 }
+    const pending = []
+    api.listTasks.mockImplementation(() => Promise.resolve({
+      tasks: [base('t1', 'One'), base('t2', 'Two'), base('t3', 'Three'), base('t4', 'Four')].map((t) => ({ ...t, position: positions[t.id] })),
+    }))
+    api.moveTask = vi.fn((id, { position }) => new Promise((resolve) => {
+      pending.push(() => { positions[id] = position; resolve({ task: {} }) })
+    }))
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Four' })
+
+    const handle = screen.getByRole('button', { name: 'Reorder Four' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    fireEvent.keyDown(handle, { key: 'ArrowUp' })
+    expect(order()).toEqual(['Open One', 'Open Four', 'Open Two', 'Open Three'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(1))
+
+    // The first write lands (Four at 2.5), and the event it raises makes the list poll while the
+    // second write (1.5) is still on its way. The server's in-between order must not show.
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(2))
+    await act(async () => { refreshFromEvents() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(order()).toEqual(['Open One', 'Open Four', 'Open Two', 'Open Three'])
+
+    // A third step up goes on from where the row is shown, to the top.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Four' }), { key: 'ArrowUp' })
+    expect(order()).toEqual(['Open Four', 'Open One', 'Open Two', 'Open Three'])
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(3))
+    await act(async () => { pending.shift()() })
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(3))
+    expect(api.moveTask.mock.calls.map((c) => c[1].position)).toEqual([2.5, 1.5, 0])
+    expect(positions.t4).toBe(0)
+    await waitFor(() => expect(order()).toEqual(['Open Four', 'Open One', 'Open Two', 'Open Three']))
   })
 })

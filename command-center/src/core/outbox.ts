@@ -91,7 +91,16 @@ function competingChanges(store: Store, taskId: string, base: string | null, dev
     let fields: string[] = [];
     if (event.kind === 'task.updated') fields = Object.keys((event.payload.changes ?? {}) as Record<string, Json>);
     else if (event.kind === 'task.completed' || event.kind === 'task.reopened') fields = ['status'];
-    else if (event.kind === 'task.moved') fields = ['projectId', 'sectionId', 'parentId'];
+    else if (event.kind === 'task.moved') {
+      // Only what the move changed competes: a reorder leaves the section alone, and a Board move
+      // leaves the number alone, so neither robs the other of a field it never touched. An event
+      // from before moves recorded where the task came from counts as a change to every field,
+      // rather than letting an offline edit win over a move it never saw.
+      const moved = event.payload as { from?: Record<string, Json>; to?: Record<string, Json> };
+      for (const f of ['projectId', 'sectionId', 'parentId', 'position'] as const) {
+        if (!moved.from || moved.from[f] === undefined || moved.from[f] !== moved.to?.[f]) fields.push(f);
+      }
+    }
     for (const f of fields) hold(out, f, stamp);
   }
   // An op that asked for the value a field already had changed nothing, so it left no event, but
@@ -172,7 +181,12 @@ function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutbo
       // A link saved with a share (quick add from the share sheet). Only the URL: no sourceType,
       // so an offline create can never look like it came from an external source.
       sourceUrl: typeof b.sourceUrl === 'string' && b.sourceUrl ? b.sourceUrl : null,
-    }, 'human', { id: op.taskId });
+    }, 'human', {
+      id: op.taskId,
+      // The number the device's copy showed the task at (outbox.js), so the manual order the
+      // owner saw, and any move made against it, is the order after replay.
+      position: typeof b.position === 'number' && Number.isFinite(b.position) ? b.position : undefined,
+    });
     return { task, conflicts: [], held: [] };
   }
 
@@ -188,13 +202,13 @@ function applyOne(store: Store, op: OutboxOp, editedAt: string, opts: ApplyOutbo
   if (op.kind === 'move_task') {
     const to = opts.resolveMove ? opts.resolveMove(task, op.body) : (op.body as MoveTarget);
     const wanted: Record<string, Json> = {};
-    for (const f of ['projectId', 'sectionId', 'parentId'] as const) if (to[f] !== undefined) wanted[f] = to[f] ?? null;
+    for (const f of ['projectId', 'sectionId', 'parentId', 'position'] as const) if (to[f] !== undefined) wanted[f] = to[f] ?? null;
     const { apply, conflicts, held } = mergeFields(store, task, op, editedAt, wanted);
     // A move is one decision: if any part of it lost to a newer move, none of it applies.
     const lost = conflicts.some((c) => !(c.field in apply));
     if (lost) return { task, conflicts, held: [] };
     if (!Object.keys(apply).length) return { task, conflicts, held };
-    return { task: store.moveTask(task.id, { ...apply, position: to.position }, 'human'), conflicts, held };
+    return { task: store.moveTask(task.id, apply as MoveTarget, 'human'), conflicts, held };
   }
 
   let wanted: Record<string, Json>;

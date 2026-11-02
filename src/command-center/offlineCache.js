@@ -132,6 +132,20 @@ export async function cacheClear() {
 }
 
 /**
+ * Reads every stored answer through `visit(data, key)`. Resolves to false when the copy could not
+ * be read, for a caller that must tell an empty copy from an unreadable one: the copy is then
+ * missing, not empty, and nothing should be concluded from what it did not show.
+ */
+export async function cacheScan(visit) {
+  try {
+    for (const [key, entry] of await getBackend().entries()) visit(entry.data, key)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Rewrites every stored answer through `patch(data, key)`, which returns the new data or
  * undefined to leave that answer alone. This is how an edit made offline shows up in every view:
  * the copy is stored responses, so the task is changed wherever it appears in them.

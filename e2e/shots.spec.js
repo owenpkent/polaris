@@ -98,6 +98,18 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'list')
   })
 
+  // The manual sort: the handle column before each row, and one handle's menu of moves open.
+  test('mytasks: manual', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('manual')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Manual' })).toBeVisible()
+    await page.getByRole('button', { name: /^Reorder / }).first().click()
+    await expect(page.getByRole('menu', { name: /^Reorder / })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'manual')
+  })
+
   test('mytasks: panel', async ({ page }, testInfo) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')
