@@ -1,8 +1,8 @@
 # Coverage-guided fuzzing (Jazzer.js) of the parsers that read text the owner did not write or
 # typed without a form: repo checklists, imported task text, due dates, recurrence rules, the
-# rule pattern engine, rule definitions, the thread post fence, and the encrypted backup
-# container. The REST body schemas are zod, a dependency the fuzzer does not instrument, so they
-# stay with the property tests. See CONTRIBUTING.md, "Coverage-guided fuzzing". The fast-check
+# rule pattern engine, rule definitions, the thread post fence, the encrypted backup container,
+# and the X.509 signature on a release tag. The REST body schemas are zod, a dependency the
+# fuzzer does not instrument, so they stay with the property tests. See CONTRIBUTING.md, "Coverage-guided fuzzing". The fast-check
 # property tests stay in nightly-properties.yml. Nothing here is a pull request check: fuzzing is
 # open-ended by nature, so it runs nightly and reports through issues instead of failing PRs.
 #
@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [backup, checklist, due, pattern, post-fence, recurrence, rules, task-text]
+        target: [backup, checklist, due, pattern, post-fence, recurrence, rules, task-text, x509-tag]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
