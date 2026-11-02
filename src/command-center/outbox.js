@@ -16,7 +16,7 @@
 // Only task edits and comments are queued. Inbox decisions, rules, goals, projects, and GitHub
 // switches are never written offline, and the server has no op for them either.
 
-import { cacheGet, cachePatchAll, cachePut, indexedDbBackend, memoryBackend } from './offlineCache'
+import { cacheGet, cachePatchAll, cachePut, cacheScan, indexedDbBackend, memoryBackend } from './offlineCache'
 import { setPending, setLastSync } from './offlineStatus'
 import { notifyTaskChanges } from './taskChanges'
 
@@ -143,16 +143,20 @@ function patchTaskEverywhere(id, fields) {
  * task shows last under the manual sort at once and stays where the owner saw it whether the
  * create is saved now, replayed later, or saved now with its answer lost. A copy with no numbered
  * task gives 1, as the server would for an empty list.
+ *
+ * Undefined when the copy cannot be read (storage denied or failing, which offlineCache.js
+ * swallows so that the dashboard keeps working online). The tasks the owner sees were loaded all
+ * the same, so a number made up from a copy that could not be read would put the new task before
+ * them. With no number the server appends, which is what the number stands for.
  */
 export async function nextCachedPosition() {
   let max = 0
-  await cachePatchAll((data) => {
-    if (!data || typeof data !== 'object') return undefined
+  const readable = await cacheScan((data) => {
+    if (!data || typeof data !== 'object') return
     const seen = [data.task, ...(Array.isArray(data.tasks) ? data.tasks : []), ...(Array.isArray(data.subtasks) ? data.subtasks : [])]
     for (const t of seen) if (typeof t?.position === 'number' && Number.isFinite(t.position) && t.position > max) max = t.position
-    return undefined
   })
-  return max + 1
+  return readable ? max + 1 : undefined
 }
 
 async function addCreatedTask(baseUrl, myTasksUrl, task) {
@@ -183,8 +187,9 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     opBody = {}
     for (const field of CREATE_FIELDS) if (body[field] !== undefined) opBody[field] = body[field]
     // The number the first attempt carried, so the two agree; a caller that chose none gets the
-    // copy's next.
-    opBody.position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition()
+    // copy's next, and none at all when the copy cannot be read (the server then appends).
+    const position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition()
+    if (position !== undefined) opBody.position = position
   }
   await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })
   await refreshPendingCount(origin)

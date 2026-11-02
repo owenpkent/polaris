@@ -54,6 +54,13 @@ export class ApiError extends Error {
   }
 }
 
+// The 400 a daemon from before manual ordering gives a create that carries a number: its body
+// schema is strict, and the message names the field it did not know (`Unrecognized key:
+// "position"` from the current zod, `Unrecognized key(s) in object: 'position'` from the old).
+function refusesPosition(err) {
+  return err instanceof ApiError && err.status === 400 && /unrecognized key.*\bposition\b/i.test(err.message)
+}
+
 function buildUrl(baseUrl, path, query) {
   const trimmed = (baseUrl || '').replace(/\/+$/, '')
   let url = `${trimmed}${path}`
@@ -187,12 +194,20 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     // The number after the last task in the copy goes with the first attempt too, not only with
     // the queued copy: if the server saved the task and only the answer was lost, the replay is
     // a duplicate and keeps what the server has, which must be the number the owner saw it at,
-    // or a move made beside it would come out reversed.
+    // or a move made beside it would come out reversed. No number goes when the copy cannot be
+    // read (the server appends), or to a daemon from before manual ordering, which refuses the
+    // field: that create is sent again without it, under the same op id and task id.
     createTask: async (payload) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }
       const taskId = newTaskId()
-      const body = { ...payload, position: await nextCachedPosition() }
-      return call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
+      const position = await nextCachedPosition()
+      const send = (body) => call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
+      try {
+        return await send(position === undefined ? payload : { ...payload, position })
+      } catch (err) {
+        if (position !== undefined && refusesPosition(err)) return send(payload)
+        throw err
+      }
     },
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),

@@ -3,7 +3,7 @@ import { cleanup, render, screen, act } from '@testing-library/react'
 import { DEFAULT_BASE_URL, createApiClient, MY_TASKS_QUERY } from './api'
 import { cacheGet, memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus, setLastSync } from './offlineStatus'
-import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
+import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected: true, baseUrl: 'http://x', token: 'tok' }) }))
 vi.mock('./useMirrorWarm', () => ({ useMirrorWarm: () => {} }))
@@ -550,6 +550,92 @@ describe('a write whose answer was lost', () => {
     })
     await flushOutbox('http://x', 'tok')
     expect(replayed.ops.map((o) => [o.kind, o.opId, o.body.position])).toEqual([['create_task', first[0].opId, 3.5]])
+  })
+})
+
+describe('a create with no number to send', () => {
+  // Storage that is present but denied or failing, as a private window or a full disk gives.
+  function failingBackend() {
+    const denied = async () => { throw new Error('storage denied') }
+    return { ...memoryBackend(), get: denied, put: denied, entries: denied, update: denied }
+  }
+
+  test('the copy gives 1 when it is empty and no number when it cannot be read', async () => {
+    expect(await nextCachedPosition()).toBe(1)
+    setCacheBackend(failingBackend())
+    expect(await nextCachedPosition()).toBeUndefined()
+  })
+
+  test('with storage failing, an online create carries no number, and the server appends it', async () => {
+    // offlineCache.js swallows storage errors so the dashboard keeps working online. The tasks
+    // the owner sees were loaded all the same, so a number made up from the copy that could not
+    // be read (1, for "nothing stored") would put the new task before them.
+    setCacheBackend(failingBackend())
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, {
+      tasks: [{ ...TASK, position: 1 }, { ...TASK, id: 't_bbbbbbbbbb', title: 'Second', position: 2 }], total: 2,
+    }))
+    expect((await client.listTasks(MY_TASKS_QUERY)).tasks).toHaveLength(2)
+
+    const sent = []
+    global.fetch.mockImplementation(async (url, init) => {
+      const body = JSON.parse(init.body)
+      sent.push(body)
+      return jsonResponse(201, { task: { ...TASK, id: body.id, title: body.title, position: 3 } })
+    })
+    const { task } = await client.createTask({ title: 'Third' })
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).not.toHaveProperty('position')
+    expect(sent[0]).toMatchObject({ title: 'Third', id: task.id, opId: expect.any(String), deviceId: expect.stringMatching(/^dev_/) })
+    expect(task.position).toBe(3)
+  })
+
+  test('with storage failing, a create made offline is queued without a number too', async () => {
+    setCacheBackend(failingBackend())
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockImplementation(down)
+    const { task } = await client.createTask({ title: 'Made offline' })
+    expect(task).not.toHaveProperty('position')
+
+    let sent = null
+    global.fetch.mockImplementation(async (url, init) => {
+      sent = JSON.parse(init.body)
+      return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+    })
+    await flushOutbox('http://x', 'tok')
+    expect(sent.ops.map((o) => [o.kind, o.body])).toEqual([['create_task', { title: 'Made offline' }]])
+  })
+
+  // What parseBody (http/schemas.ts) answers for a strict schema without the field, from the
+  // zod this repo runs and from the one before it.
+  test.each([
+    'body: Unrecognized key: "position"',
+    "body: Unrecognized key(s) in object: 'position'",
+  ])('a daemon from before manual ordering refuses the number (%s), and the create is sent again without it', async (message) => {
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, { tasks: [{ ...TASK, position: 1 }], total: 1 }))
+    await client.listTasks(MY_TASKS_QUERY)
+
+    const sent = []
+    global.fetch.mockImplementation(async (url, init) => {
+      const body = JSON.parse(init.body)
+      sent.push(body)
+      if ('position' in body) return jsonResponse(400, { error: { code: 'ValidationError', message } })
+      return jsonResponse(201, { task: { ...TASK, id: body.id, title: body.title, position: 7 } })
+    })
+    const { task } = await client.createTask({ title: 'Plain' })
+    expect(sent.map((b) => b.position)).toEqual([2, undefined])
+    // The same create, so the server that saved the first attempt would call the second a duplicate.
+    expect(sent[1]).toMatchObject({ title: 'Plain', id: sent[0].id, opId: sent[0].opId, deviceId: sent[0].deviceId })
+    expect(task).toMatchObject({ id: sent[0].id, position: 7 })
+    expect(getOfflineState()).toMatchObject({ offline: false, pending: 0 })
+  })
+
+  test('any other 400 is the caller\'s, and nothing is sent twice', async () => {
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValue(jsonResponse(400, { error: { code: 'ValidationError', message: 'title: title is required' } }))
+    await expect(client.createTask({ title: '' })).rejects.toMatchObject({ status: 400, code: 'ValidationError' })
+    expect(global.fetch).toHaveBeenCalledTimes(1)
   })
 })
 
