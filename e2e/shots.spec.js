@@ -550,7 +550,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   test('longnames: panel', async ({ page }, testInfo) => {
     await longNames(page)
     await openView(page)
-    await page.getByRole('button', { name: /^Open Draft ADR-003 hosting options/ }).getByText(/^Draft ADR-003/).click()
+    await page.getByRole('button', { name: /^Open Draft ADR-003 hosting options/ }).first().click()
     await expect(page.getByRole('dialog', { name: 'Task details' })).toBeVisible()
     await shot(page, testInfo, 'longnames', 'panel')
   })
