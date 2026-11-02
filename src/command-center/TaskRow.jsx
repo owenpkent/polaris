@@ -318,8 +318,9 @@ function TitleCell({ task, nameText, disabled, onRename }) {
   )
 }
 
-// One task row in the My Tasks grid. The row opens the task detail panel
-// (click or Enter while focused, or the panel button ending the name cell); the name edits in
+// One task row in the My Tasks grid. The panel button ending the name cell ("Open <title>") is
+// the keyboard and assistive-technology way to the task detail panel; a click on the rest of the
+// row opens it too, for the pointer. The name edits in
 // place (TitleCell); the check circle and the Due
 // date/Project/Priority cells are their own controls so completing a task,
 // or changing one of those three fields, never requires opening the panel.
@@ -360,13 +361,6 @@ export default function TaskRow({
   // ends it at once.
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
-
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && e.target === e.currentTarget) {
-      e.preventDefault()
-      onOpen(task.id)
-    }
-  }
 
   const check = (
     <button
@@ -433,13 +427,9 @@ export default function TaskRow({
   return (
     <div
       className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${rowClass}`}
-      role="button"
-      tabIndex={0}
-      aria-label={`Open ${task.title}`}
       data-task-id={depth === 0 ? task.id : undefined}
       data-subtask-id={depth > 0 ? task.id : undefined}
       onClick={() => onOpen(task.id)}
-      onKeyDown={handleKeyDown}
       style={{
         gridTemplateColumns,
         alignItems: 'center',
@@ -478,7 +468,7 @@ export default function TaskRow({
         <button
           type="button"
           className="icon-btn mytasks-open"
-          aria-label={`Details for ${task.title}`}
+          aria-label={`Open ${task.title}`}
           title="Open details"
           onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
         >

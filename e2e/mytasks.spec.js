@@ -3,6 +3,8 @@ import { openView, isPhone, createTask, createGoal, listTaskTitles, openTask, sm
 import { TOKEN } from './global-setup.js'
 
 const row = (page, title) => page.getByRole('button', { name: `Open ${title}`, exact: true })
+// The row's own element, which wears the drag classes (the Open button is only its panel target).
+const rowEl = (page, title) => page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
 
 test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('groups the seeded tasks by due date', async ({ page }) => {
@@ -100,7 +102,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     const toggle = page.getByRole('button', { name: `2 open subtasks of ${parentTitle}`, exact: true })
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(await smallTargets(row(page, parentTitle), 'button')).toEqual([])
+    expect(await smallTargets(rowEl(page, parentTitle), 'button')).toEqual([])
     await toggle.focus()
     await page.keyboard.press('Enter')
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
@@ -109,7 +111,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const shown = page.getByRole('button', { name: `Open ${subs[0]}`, exact: true })
     await expect(shown).toBeVisible()
     await expect(page.getByRole('button', { name: `Open ${subs[1]}`, exact: true })).toBeVisible()
-    await shown.getByText(subs[0], { exact: true }).click()
+    await shown.click()
     await expect(page.getByRole('dialog', { name: 'Task details' }).getByRole('textbox', { name: 'Task title' })).toHaveValue(subs[0])
     await page.keyboard.press('Escape')
     await toggle.click()
@@ -396,15 +398,15 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await manualSort(page)
     const handle = page.getByRole('button', { name: `Reorder ${second}` })
     // Other tests' rows push these down the group, so centre the pair before measuring either.
-    await row(page, first).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await rowEl(page, first).evaluate((el) => el.scrollIntoView({ block: 'center' }))
     const from = await handle.boundingBox()
-    const target = await row(page, first).boundingBox()
+    const target = await rowEl(page, first).boundingBox()
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await page.mouse.down()
     await page.mouse.move(from.x + from.width / 2, from.y - 10, { steps: 4 })
     await page.mouse.move(from.x + from.width / 2, target.y + 6, { steps: 6 })
-    await expect(row(page, second)).toHaveClass(/is-dragging/)
-    await expect(row(page, first)).toHaveClass(/is-drop-before/)
+    await expect(rowEl(page, second)).toHaveClass(/is-dragging/)
+    await expect(rowEl(page, first)).toHaveClass(/is-drop-before/)
     await page.mouse.up()
     await expect.poll(() => reorderOrder(page, 'reorder-drag')).toEqual([`Open ${second}`, `Open ${first}`])
     await expect(page.getByRole('menu')).toHaveCount(0)
@@ -419,7 +421,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   // only shows once a row is held. Returns with the button still down.
   async function dragToHeader(page, title, header) {
     const handle = page.getByRole('button', { name: `Reorder ${title}` })
-    await row(page, title).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await rowEl(page, title).evaluate((el) => el.scrollIntoView({ block: 'center' }))
     const from = await handle.boundingBox()
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await page.mouse.down()
@@ -435,7 +437,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await manualSort(page)
     await dragToHeader(page, title, 'Tomorrow')
-    await expect(row(page, title)).toHaveClass(/is-dragging/)
+    await expect(rowEl(page, title)).toHaveClass(/is-dragging/)
     await page.mouse.up()
     await expect(dueButton(page, title)).toContainText('Tomorrow')
     await expect(firstInGroup(page, 'tomorrow')).toContainText(title)
@@ -519,7 +521,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   test('the panel button at the end of the name cell opens the task, and Rename is reached by keyboard', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'open-target')
     await openView(page)
-    const open = row(page, title).getByRole('button', { name: `Details for ${title}`, exact: true })
+    const open = row(page, title)
     await open.scrollIntoViewIfNeeded()
     await open.click()
     const panel = page.getByRole('dialog', { name: 'Task details' })
@@ -800,7 +802,7 @@ test.describe('task history', { tag: ['@flow'] }, () => {
 test.describe('row density', { tag: ['@flow'] }, () => {
   test('Compact, chosen in Settings, packs the rows, keeps their controls 32px, and lasts a reload', async ({ page }, testInfo) => {
     await openView(page)
-    const first = row(page, 'Renew domain for the portfolio site')
+    const first = rowEl(page, 'Renew domain for the portfolio site')
     const comfortable = (await first.boundingBox()).height
     expect(await smallTargets(first, 'button')).toEqual([])
 

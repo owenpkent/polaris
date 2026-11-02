@@ -83,7 +83,7 @@ describe('TaskRow', () => {
 
   test('the panel button ending the name cell opens the task once, and the name does not', () => {
     const { onOpen } = renderRow()
-    fireEvent.click(screen.getByRole('button', { name: 'Details for Write the report' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Write the report' }))
     expect(onOpen).toHaveBeenCalledTimes(1)
     expect(onOpen).toHaveBeenCalledWith('t1')
     onOpen.mockClear()
@@ -159,10 +159,9 @@ describe('TaskRow', () => {
     })
   })
 
-  test('Enter on the focused row opens the task', () => {
-    const { onOpen } = renderRow()
-    const row = screen.getByRole('button', { name: 'Open Write the report' })
-    fireEvent.keyDown(row, { key: 'Enter' })
+  test('a click on the empty part of the row opens the task too', () => {
+    const { container, onOpen } = renderRow()
+    fireEvent.click(container.querySelector('.mytasks-row'))
     expect(onOpen).toHaveBeenCalledWith('t1')
   })
 

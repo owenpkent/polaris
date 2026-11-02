@@ -174,7 +174,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   test('My tasks with a long name in edit mode and its panel button', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `rename ${LONG_SUFFIX.trim()}`)
     await openView(page)
-    const open = page.getByRole('button', { name: `Details for ${title}`, exact: true })
+    const open = page.getByRole('button', { name: `Open ${title}`, exact: true })
     await open.scrollIntoViewIfNeeded()
     await expect(open).toBeVisible()
     expect(await smallTargets(page.locator('body'), '.mytasks-open')).toEqual([])
@@ -219,7 +219,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       await expect(toggleOf(title)).toHaveAttribute('aria-expanded', 'true')
     }
     // The leaf, shown under its parent (its own row elsewhere in the list has no nesting).
-    const leaf = page.getByRole('button', { name: `Open ${titles[2]}`, exact: true }).first()
+    const leaf = page.locator('[data-subtask-id]').filter({ has: page.getByRole('button', { name: `Rename ${titles[2]}`, exact: true }) }).first()
     const title = leaf.getByText(titles[2])
     await expect(title).toBeVisible()
     const before = (await title.boundingBox()).width
@@ -514,7 +514,7 @@ const PANELS = [
     name: 'from My tasks',
     open: async (page) => {
       await openView(page)
-      await page.getByRole('button', { name: startsWith('Open Reply to accessibility audit feedback') }).getByText(startsWith('Reply to accessibility')).click()
+      await page.getByRole('button', { name: startsWith('Open Reply to accessibility audit feedback') }).first().click()
     },
   },
   {
@@ -522,7 +522,7 @@ const PANELS = [
     name: 'for an assigned task',
     open: async (page) => {
       await openView(page)
-      await page.getByRole('button', { name: startsWith('Open Draft ADR-003 hosting options') }).getByText(startsWith('Draft ADR-003')).click()
+      await page.getByRole('button', { name: startsWith('Open Draft ADR-003 hosting options') }).first().click()
     },
   },
   {
@@ -547,7 +547,7 @@ const PANELS = [
     open: async (page, request, testInfo) => {
       const title = await createTask(request, testInfo, 'clip subtasks')
       await openView(page)
-      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).getByText(startsWith(title)).click()
+      await page.getByRole('button', { name: startsWith(`Open ${title}`) }).first().click()
       const dialog = page.getByRole('dialog', { name: 'Task details' })
       await dialog.getByRole('button', { name: 'Add subtask' }).first().click()
       const box = dialog.getByRole('textbox', { name: 'Subtask name' })
