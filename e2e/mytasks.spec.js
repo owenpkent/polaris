@@ -588,7 +588,8 @@ test.describe('row density', { tag: ['@flow'] }, () => {
     await openView(page)
     const compact = (await first.boundingBox()).height
     expect(compact).toBeLessThan(comfortable)
-    if (!isPhone(testInfo)) expect(Math.round(compact)).toBe(32)
+    // 32px of controls and the 1px divider under them, as a comfortable row is 44 and 1.
+    if (!isPhone(testInfo)) expect(Math.round(compact)).toBe(33)
     expect(await smallTargets(first, 'button', 32)).toEqual([])
 
     await page.reload()

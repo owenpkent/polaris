@@ -121,11 +121,13 @@
      device, packs them so more tasks fit on screen. */
   --row: var(--target);
   --row-head: var(--target);
+  --row-pad: 10px; /* above and below a phone row's name, which wraps and so sets the row's height */
   --section-gap: 20px;
 }
 :root[data-density='compact'] {
   --row: 32px;
   --row-head: 36px;
+  --row-pad: 4px;
   --section-gap: 12px;
 }
 

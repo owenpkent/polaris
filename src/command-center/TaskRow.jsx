@@ -316,7 +316,7 @@ export default function TaskRow({
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
-        padding: '10px 0',
+        padding: 'var(--row-pad) 0',
       }
     : {
         ...cellStyle,
