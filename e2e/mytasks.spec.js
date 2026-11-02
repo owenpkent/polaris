@@ -458,6 +458,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Escape')
     await expect(picker).toHaveCount(0)
     await expect(dueButton(page, title)).toContainText('Today')
+    await expect(page.getByRole('button', { name: `Reorder ${title}` })).toBeFocused()
     await openView(page)
     await expect(dueButton(page, title)).toContainText('Today')
 

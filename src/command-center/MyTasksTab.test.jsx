@@ -611,6 +611,24 @@ describe('MyTasksTab moves between due-date groups', () => {
     expect(inGroup(container, 'tomorrow')).toEqual(['b', 'c'])
     expect(api.updateTask).not.toHaveBeenCalled()
     expect(api.moveTask).not.toHaveBeenCalled()
+    // The row is back in Tomorrow and its handle has the focus.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder Gamma' })))
+  })
+
+  test('a day picked outside the preview group leaves focus on the moved row handle', async () => {
+    // A server that keeps what it was sent, so the reload after the write shows the new day.
+    const list = (await api.listTasks()).tasks
+    api.updateTask.mockImplementation(async (id, patch) => { Object.assign(list.find((t) => t.id === id), patch); return { task: {} } })
+    api.listTasks.mockImplementation(async () => ({ tasks: list.map((t) => ({ ...t })) }))
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Gamma' }), { key: 'ArrowDown' })
+    const pop = await screen.findByRole('dialog', { name: 'Due date for Gamma' })
+    fireEvent.click(within(pop).getByRole('button', { name: 'Today', exact: true }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('c', { dueAt: bounds.today }))
+    await waitFor(() => expect(inGroup(container, 'today')).toContain('c'))
+    await waitFor(() => expect(api.listTasks.mock.calls.length).toBeGreaterThan(2))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder Gamma' }))
   })
 
   test('picking a day in the picker saves the date and the position together', async () => {
@@ -622,6 +640,7 @@ describe('MyTasksTab moves between due-date groups', () => {
     fireEvent.click(within(pop).getByRole('button', { name: 'No date' }))
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('c', { dueAt: null }))
     await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('c', { position: 0 }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder Gamma' }))
   })
 
   test('a failed write puts the date and the position back and says why', async () => {

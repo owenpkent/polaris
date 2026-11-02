@@ -150,6 +150,22 @@ describe('TaskRow', () => {
       expect(onOpen).not.toHaveBeenCalled()
     })
 
+    test('Enter that confirms an IME candidate does not save; the Enter after the composition does', () => {
+      const { onQuickUpdate, task } = renderRow()
+      const input = edit()
+      fireEvent.compositionStart(input)
+      fireEvent.change(input, { target: { value: 'ni' } })
+      fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 })
+      expect(screen.getByRole('textbox', { name: 'Task name' })).toBeTruthy()
+      expect(onQuickUpdate).not.toHaveBeenCalled()
+      fireEvent.keyDown(input, { key: 'Escape', isComposing: true, keyCode: 229 })
+      expect(screen.getByRole('textbox', { name: 'Task name' })).toBeTruthy()
+      fireEvent.change(input, { target: { value: 'Done title' } })
+      fireEvent.compositionEnd(input)
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onQuickUpdate).toHaveBeenCalledWith(task, { title: 'Done title' })
+    })
+
     test('a task being saved cannot be renamed, and a task from a third party can', () => {
       renderRow({ props: { pending: true } })
       expect(screen.getByRole('button', { name: 'Rename Write the report' }).disabled).toBe(true)

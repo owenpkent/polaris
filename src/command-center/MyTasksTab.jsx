@@ -494,6 +494,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     closedMoveRef.current = pendingMoveRef.current
     pendingMoveRef.current = null
     setPendingMove(null)
+    // The preview's handle goes away with it, so the row's handle takes focus where it returns.
+    if (closedMoveRef.current) setRefocusId(closedMoveRef.current.task.id)
   }, [])
   // The picker closes itself before it reports a pick, so the move is read from the one it closed.
   const confirmMove = useCallback((dueAt) => {
@@ -501,7 +503,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     pendingMoveRef.current = null
     closedMoveRef.current = null
     setPendingMove(null)
-    if (move) handleReorder(move.plan, { dueAt }, move.task)
+    if (move) {
+      setRefocusId(move.task.id)
+      handleReorder(move.plan, { dueAt }, move.task)
+    }
   }, [handleReorder])
 
   // The moved row is a new element in its new group, so its handle takes focus again.

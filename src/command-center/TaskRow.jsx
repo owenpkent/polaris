@@ -5,6 +5,7 @@ import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
+import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
@@ -253,6 +254,7 @@ function TitleCell({ task, nameText, disabled, onRename }) {
   const caret = useRef(null)
   const finished = useRef(true)
   const refocus = useRef(false)
+  const ime = useComposition()
 
   useLayoutEffect(() => {
     if (editing) {
@@ -298,8 +300,10 @@ function TitleCell({ task, nameText, disabled, onRename }) {
         onChange={(e) => setDraft(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         onBlur={() => finish(true, false)}
+        {...ime.props}
         onKeyDown={(e) => {
           e.stopPropagation()
+          if (ime.isComposing(e)) return
           if (e.key === 'Enter') {
             e.preventDefault()
             finish(true, true)
