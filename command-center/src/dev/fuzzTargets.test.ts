@@ -59,6 +59,20 @@ test('the regex oracle answers true, false, syntax, or timeout, and never throws
   await stopOracle();
 });
 
+test('every committed rules seed is a rule the validator accepts', async () => {
+  const { validateRuleDefinition } = await import('../automation/rules.ts');
+  const dir = join(packageRoot, 'fuzz', 'corpus', 'rules');
+  const triggers = new Set<string>();
+  for (const name of readdirSync(dir)) {
+    const def = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+    const result = validateRuleDefinition(def);
+    assert.ok(result.ok, `${name} is rejected: ${result.errors.join('; ')}`);
+    triggers.add(def.trigger.type);
+  }
+  assert.ok(triggers.has('event'), 'no rules seed has an event trigger');
+  assert.ok(triggers.has('schedule'), 'no rules seed has a schedule trigger');
+});
+
 for (const t of targets) {
   test(`fuzz target ${t} runs on the empty input, its seeds, and random bytes`, async () => {
     const mod = await import(`../../fuzz/targets/${t}.fuzz.ts`) as { fuzz: (data: Buffer) => void | Promise<void> };

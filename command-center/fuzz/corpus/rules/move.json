@@ -1,1 +1,1 @@
-{"trigger":{"type":"schedule","cron":"daily"},"actions":[{"type":"move","project":"inbox","section":"later"},{"type":"add_comment","body":"moved"}]}
+{"trigger":{"type":"schedule","condition":"overdue"},"actions":[{"type":"move","project":"inbox","section":"later"},{"type":"add_comment","body":"moved"}]}
