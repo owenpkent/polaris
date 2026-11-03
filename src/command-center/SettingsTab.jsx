@@ -3,6 +3,7 @@ import SettingsForm from './SettingsForm'
 import AgentSettings from './AgentSettings'
 import BackupSettings from './BackupSettings'
 import ReminderSettings from './ReminderSettings'
+import AppUpdateSettings from './AppUpdateSettings'
 import ImportTasks from './ImportTasks'
 import AppearanceSettings from './AppearanceSettings'
 import AboutSettings from './AboutSettings'
@@ -17,8 +18,12 @@ export default function SettingsTab({ theme, onThemeChange, density, onDensityCh
     { id: 'connection', label: 'Connection', node: <SettingsForm /> },
     { id: 'appearance', label: 'Appearance', node: <AppearanceSettings theme={theme} onThemeChange={onThemeChange} density={density} onDensityChange={onDensityChange} /> },
     { id: 'agents', label: 'Agents', node: <AgentSettings /> },
-    // Reminders are scheduled on the phone, so the card exists only in the Android app.
-    ...(isNativeApp() ? [{ id: 'reminders', label: 'Reminders', node: <ReminderSettings /> }] : []),
+    // Reminders are scheduled on the phone, and the update check is for the installed APK, so these
+    // cards exist only in the Android app.
+    ...(isNativeApp() ? [
+      { id: 'reminders', label: 'Reminders', node: <ReminderSettings /> },
+      { id: 'app-update', label: 'App update', node: <AppUpdateSettings /> },
+    ] : []),
     { id: 'backups', label: 'Backups', node: <BackupSettings /> },
     { id: 'import', label: 'Import tasks', node: <ImportTasks /> },
     { id: 'about', label: 'About', node: <AboutSettings /> },
