@@ -11,10 +11,12 @@ const SCROLL_STEP_PX = 16
 // the list, each marked data-reorder-group with a data-reorder-header and its rows. `drag` is null
 // at rest and { id, index, group, slot, target, header } while a row is held: where it came from
 // (its group and index) and what the pointer is over (dropTargetAt): the target group, the gap in
-// it, and whether the header. With `crossGroup` off the target stays in the row's own group. Esc
+// it, and whether the header. With `crossGroup` off the target stays in the row's own group, and
+// with it on a group `isClosed(id)` names is left out of the layout unless the row came from it,
+// so the pointer over it lands at the top of the open group below (or the end of the one above). Esc
 // drops the row where it was. A press that never moves past the threshold is a click, which
 // the handle turns into its menu; `wasDrag()` tells it which one just ended.
-export function useReorderDrag({ enabled, crossGroup = false, onRelease }) {
+export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, onRelease }) {
   const containerRef = useRef(null)
   const [drag, setDrag] = useState(null)
   const live = useRef(null)
@@ -36,6 +38,7 @@ export function useReorderDrag({ enabled, crossGroup = false, onRelease }) {
     lastWasDrag.current = false
     const readLayout = () => {
       const sections = Array.from(containerRef.current?.querySelectorAll('[data-reorder-group]') ?? [])
+        .filter((el) => { const id = el.getAttribute('data-reorder-group'); return id === group || !isClosed?.(id) })
       return sections.map((el) => ({
         id: el.getAttribute('data-reorder-group'),
         bottom: el.getBoundingClientRect().bottom,
@@ -89,7 +92,7 @@ export function useReorderDrag({ enabled, crossGroup = false, onRelease }) {
     handle.addEventListener('pointercancel', onCancel)
     handle.addEventListener('lostpointercapture', onCancel)
     window.addEventListener('keydown', onKey, true)
-  }, [enabled, crossGroup, onRelease])
+  }, [enabled, crossGroup, isClosed, onRelease])
 
   const wasDrag = useCallback(() => {
     const was = lastWasDrag.current
