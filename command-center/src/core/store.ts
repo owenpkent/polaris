@@ -286,6 +286,8 @@ export class Store {
   /** IANA timezone a zoned due is read in (dueAt.ts). Public so the rules engine reads a rule's operands in it. */
   readonly timezone: string;
   private readonly dayOf: (iso: string) => string;
+  /** The top-level tasks made inside createInOrder, in the order they were made; null outside it. */
+  private orderedBatch: string[] | null = null;
 
   constructor(db: SqlDriver, opts: StoreOptions = {}) {
     this.db = db;
@@ -506,19 +508,53 @@ export class Store {
   }
 
   /**
-   * The number after the last task anywhere. position is one order across every project and
-   * section (migration 14): the dashboard's manual sort shows it, a reorder sets a task's number
-   * between its new neighbours' (REAL, so a midpoint always fits), and a new task goes last.
+   * Where a new task goes. position is one order across every project and section (migration 14):
+   * the dashboard's manual sort shows it, and a reorder sets a task's number between its new
+   * neighbours' (REAL, so a midpoint always fits). A new task goes first, the number before the
+   * first task anywhere, so it shows at the top of every list it is in. A subtask goes last, the
+   * number after the last task, so a parent's steps read in the order they were added.
    */
-  private nextPosition(): number {
-    const r = this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM tasks');
-    return (r?.p ?? 0) + 1;
+  private nextPosition(parentId: string | null): number {
+    if (parentId) {
+      const r = this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM tasks');
+      return (r?.p ?? 0) + 1;
+    }
+    const r = this.db.get<{ p: number | null }>('SELECT MIN(position) AS p FROM tasks');
+    return r?.p == null ? 1 : r.p - 1;
+  }
+
+  /**
+   * Run `fn`, in one transaction, so that the top-level tasks it creates go to the top as a block
+   * in the order they were made, not each above the last (which would reverse them): an import of
+   * a file or a repo checklist keeps the file's order. Each is placed first as it is made, then the
+   * block is renumbered at the end. A call inside another joins the outer block.
+   */
+  createInOrder<T>(fn: () => T): T {
+    if (this.orderedBatch) return fn();
+    return this.db.transaction(() => {
+      const made: string[] = [];
+      this.orderedBatch = made;
+      try {
+        const out = fn();
+        const placed = made
+          .map((id) => this.db.get<{ position: number }>('SELECT position FROM tasks WHERE id = ?', [id])?.position)
+          .filter((p): p is number => typeof p === 'number')
+          .sort((a, b) => a - b);
+        if (placed.length === made.length) {
+          made.forEach((id, i) => this.db.run('UPDATE tasks SET position = ? WHERE id = ?', [placed[i], id]));
+        }
+        return out;
+      } finally {
+        this.orderedBatch = null;
+      }
+    });
   }
 
   /**
    * `opts` is for a task a dashboard created offline (core/outbox.ts): it already carries the id
    * it minted, and the position its copy showed it at, so a move the owner made beside it while
-   * offline still holds once both are replayed. Without a position the task goes last.
+   * offline still holds once both are replayed. Without a position the task goes first, or last
+   * for a subtask (nextPosition).
    */
   createTask(input: NewTask, actor: ActorInput = 'human', opts: { id?: string; position?: number } = {}): Task {
     this.validate(input);
@@ -549,12 +585,13 @@ export class Store {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [id, projectId, sectionId, input.parentId ?? null, input.title.trim(), input.notes ?? '', status, input.priority ?? 'none',
           input.dueAt ?? null, input.startAt ?? null, input.estimateMinutes ?? null, input.recurrence ?? null, normalizeAssignee(input.assignee),
-          input.isMilestone ? 1 : 0, opts.position ?? this.nextPosition(), input.sourceType ?? null, input.sourceId ?? null,
+          input.isMilestone ? 1 : 0, opts.position ?? this.nextPosition(input.parentId ?? null), input.sourceType ?? null, input.sourceId ?? null,
           input.sourceUrl ?? null, input.confidence ?? null, untrustedText ? 1 : 0, JSON.stringify(input.customFields ?? {}), now, now,
           status === 'done' ? now : null]);
       this.emit('task.created', id, actor, {
         title: input.title, status, projectId, source: input.sourceType ? `${input.sourceType}:${input.sourceId}` : null,
       });
+      if (this.orderedBatch && !input.parentId && opts.position === undefined) this.orderedBatch.push(id);
       return this.requireTask(id);
     });
   }

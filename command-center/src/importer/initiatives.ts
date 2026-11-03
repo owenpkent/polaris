@@ -70,7 +70,8 @@ export function importInitiativeFiles(store: Store, repoRoot: string): Initiativ
     const prefix = `${project.slug}:${file}:`;
     const prevActive = store.activeSourceIds('initiative_md', prefix);
 
-    for (const heading of ['Tasks', 'Success Criteria']) {
+    // New items go to the top in the file's order, not each above the last (Store.createInOrder).
+    store.createInOrder(() => { for (const heading of ['Tasks', 'Success Criteria']) {
       const body = extractSection(content, heading);
       if (!body) continue;
       const section = store.ensureSection(project.id, heading);
@@ -100,7 +101,7 @@ export function importInitiativeFiles(store: Store, repoRoot: string): Initiativ
           else if (!item.checked && result.task.status === 'done') store.reopenTask(result.task.id, 'system');
         }
       }
-    }
+    } });
 
     for (const goneId of goneSourceIds(prevActive, currentIds)) {
       store.markSourceGone('initiative_md', goneId, 'drop_open', 'system');

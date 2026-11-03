@@ -35,13 +35,14 @@ test('a task created offline keeps the id the device gave it, and a replay adds 
 
 test('a task created offline keeps the number its device showed it at, so a move made beside it holds after replay', () => {
   const { store, setNow } = storeAt('2026-09-21T12:00:00.000Z');
-  const a = store.createTask({ title: 'A' });
-  const b = store.createTask({ title: 'B' });
+  // Numbered as the device's copy showed them (a new task now goes first, so the numbers are set).
+  const a = store.createTask({ title: 'A' }, 'human', { position: 1 });
+  const b = store.createTask({ title: 'B' }, 'human', { position: 2 });
   assert.deepEqual([a.position, b.position], [1, 2]);
   // The device's copy showed A(1), B(2). Offline, it made C after the last (3) and moved A below C (4).
   // Meanwhile the PC made E, which took 3 on the server: numbered afresh at replay, C would land on 4
   // beside A and the tie would put A back above it. C shares 3 with E instead and, made later, sorts after it.
-  const e = store.createTask({ title: 'E' });
+  const e = store.createTask({ title: 'E' }, 'human', { position: 3 });
   assert.equal(e.position, 3);
   setNow('2026-09-21T12:30:00.000Z');
   const results = applyOutbox(store, [
@@ -54,21 +55,21 @@ test('a task created offline keeps the number its device showed it at, so a move
   const titles = store.searchTasks({ orderBy: 'position' }).map((t) => t.title);
   assert.ok(titles.indexOf('C') < titles.indexOf('A'), `A stays below C: ${titles.join(', ')}`);
   assert.deepEqual(titles.slice(0, 2), ['B', 'E']);
-  // Without a number the created task goes last, as it does online.
+  // Without a number the created task goes first, as it does online.
   const [r] = applyOutbox(store, [op({ kind: 'create_task', taskId: 't_offline0d1', body: { title: 'D' } })]);
   assert.equal(r.status, 'applied');
-  assert.equal(store.requireTask('t_offline0d1').position, 5);
+  assert.equal(store.requireTask('t_offline0d1').position, 1, 'one before B, the first task now');
 });
 
 test('a create whose answer was lost keeps the number the device sent with it, so a move made beside it holds', () => {
   const { store, setNow } = storeAt('2026-09-21T12:00:00.000Z');
-  const a = store.createTask({ title: 'A' });
-  store.createTask({ title: 'B' });
+  const a = store.createTask({ title: 'A' }, 'human', { position: 1 });
+  store.createTask({ title: 'B' }, 'human', { position: 2 });
   // The device's copy showed A(1), B(2); the PC made E(3) unseen. The device's create of C carried
   // 3 (api.js sends the copy's next number with the first attempt) and was saved, but the answer
   // was lost. It then moved A below C (4), and replays both: the create is a duplicate, and must
   // leave C where the device showed it, or A would come out above C again.
-  store.createTask({ title: 'E' });
+  store.createTask({ title: 'E' }, 'human', { position: 3 });
   setNow('2026-09-21T12:30:00.000Z');
   const ident = { opId: 'op_lost_c0000001', deviceId: 'device-phone' };
   applyOnlineOnce(store, ident, () => {
@@ -378,9 +379,10 @@ test('the offline completion day is read in the calendar timezone, and an online
 
 test('a reorder made offline (a move with only a position) is applied on replay', () => {
   const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
-  const a = store.createTask({ title: 'a' });
-  const b = store.createTask({ title: 'b' });
-  const c = store.createTask({ title: 'c' });
+  // Numbered a, b, c from the top (a new task goes first, so the numbers are set).
+  const a = store.createTask({ title: 'a' }, 'human', { position: 1 });
+  const b = store.createTask({ title: 'b' }, 'human', { position: 2 });
+  const c = store.createTask({ title: 'c' }, 'human', { position: 3 });
   setNow('2026-09-21T12:00:00.000Z');
   const [r] = applyOutbox(store, [op({ kind: 'move_task', taskId: c.id, base: c.updatedAt, body: { position: (a.position + b.position) / 2 } })]);
   assert.equal(r.status, 'applied');
@@ -389,9 +391,9 @@ test('a reorder made offline (a move with only a position) is applied on replay'
 
 test('an offline reorder loses to a newer move of the same task, and wins over an older one', () => {
   const { store, setNow } = storeAt('2026-09-21T08:00:00.000Z');
-  const a = store.createTask({ title: 'a' });
-  const b = store.createTask({ title: 'b' });
-  const c = store.createTask({ title: 'c' });
+  const a = store.createTask({ title: 'a' }, 'human', { position: 1 });
+  const b = store.createTask({ title: 'b' }, 'human', { position: 2 });
+  const c = store.createTask({ title: 'c' }, 'human', { position: 3 });
   // The PC puts c first at 11:00; the phone had put it between a and b at 10:00.
   setNow('2026-09-21T11:00:00.000Z');
   store.moveTask(c.id, { position: a.position - 1 });

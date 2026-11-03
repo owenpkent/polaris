@@ -138,25 +138,34 @@ function patchTaskEverywhere(id, fields) {
 }
 
 /**
- * The number after the last task in the copy, as Store.nextPosition answers for a new task on the
- * server. A create carries it (api.js), on the first attempt and in the queued copy alike, so the
- * task shows last under the manual sort at once and stays where the owner saw it whether the
- * create is saved now, replayed later, or saved now with its answer lost. A copy with no numbered
- * task gives 1, as the server would for an empty list.
+ * Where a new task goes, from the copy, as Store.nextPosition answers on the server: the number
+ * before the first task in the copy, so it shows at the top, or for a subtask (`subtask` true) the
+ * number after the last, so a parent's steps keep the order they were added in. A create carries
+ * it (api.js), on the first attempt and in the queued copy alike, so the task shows in its place
+ * under the manual sort at once and stays where the owner saw it whether the create is saved now,
+ * replayed later, or saved now with its answer lost. A copy with no numbered task gives 1, as the
+ * server would for an empty list.
  *
  * Undefined when the copy cannot be read (storage denied or failing, which offlineCache.js
  * swallows so that the dashboard keeps working online). The tasks the owner sees were loaded all
- * the same, so a number made up from a copy that could not be read would put the new task before
- * them. With no number the server appends, which is what the number stands for.
+ * the same, so a number made up from a copy that could not be read could put the new task among
+ * them. With no number the server places it, which is what the number stands for.
  */
-export async function nextCachedPosition() {
-  let max = 0
+export async function nextCachedPosition({ subtask = false } = {}) {
+  let min = Infinity
+  let max = -Infinity
   const readable = await cacheScan((data) => {
     if (!data || typeof data !== 'object') return
     const seen = [data.task, ...(Array.isArray(data.tasks) ? data.tasks : []), ...(Array.isArray(data.subtasks) ? data.subtasks : [])]
-    for (const t of seen) if (typeof t?.position === 'number' && Number.isFinite(t.position) && t.position > max) max = t.position
+    for (const t of seen) {
+      if (typeof t?.position !== 'number' || !Number.isFinite(t.position)) continue
+      if (t.position < min) min = t.position
+      if (t.position > max) max = t.position
+    }
   })
-  return readable ? max + 1 : undefined
+  if (!readable) return undefined
+  if (min === Infinity) return 1
+  return subtask ? max + 1 : min - 1
 }
 
 async function addCreatedTask(baseUrl, myTasksUrl, task) {
@@ -187,8 +196,8 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     opBody = {}
     for (const field of CREATE_FIELDS) if (body[field] !== undefined) opBody[field] = body[field]
     // The number the first attempt carried, so the two agree; a caller that chose none gets the
-    // copy's next, and none at all when the copy cannot be read (the server then appends).
-    const position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition()
+    // copy's next, and none at all when the copy cannot be read (the server then places it).
+    const position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition({ subtask: Boolean(body.parentId) })
     if (position !== undefined) opBody.position = position
   }
   await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })

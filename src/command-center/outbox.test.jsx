@@ -174,7 +174,7 @@ describe('offline task edits', () => {
     expect(getOfflineState().lastSync).toMatchObject({ failed: false, synced: 2, conflicts: [] })
   })
 
-  test('a task made offline is numbered after the last in the copy, shows there, and carries the number to the server', async () => {
+  test('a task made offline is numbered before the first in the copy, shows there, and carries the number to the server', async () => {
     const client = createApiClient('http://x', 'tok')
     global.fetch.mockResolvedValueOnce(jsonResponse(200, {
       tasks: [{ ...TASK, position: 1 }, { ...TASK, id: 't_bbbbbbbbbb', title: 'Second', position: 2.5 }], total: 2,
@@ -183,8 +183,8 @@ describe('offline task edits', () => {
     global.fetch.mockImplementation(down)
 
     const { task } = await client.createTask({ title: 'Made offline' })
-    expect(task.position).toBe(3.5)
-    expect((await client.listTasks(MY_TASKS_QUERY)).tasks.find((t) => t.id === task.id).position).toBe(3.5)
+    expect(task.position).toBe(0)
+    expect((await client.listTasks(MY_TASKS_QUERY)).tasks.find((t) => t.id === task.id).position).toBe(0)
 
     let sent = null
     global.fetch.mockImplementation(async (url, init) => {
@@ -195,7 +195,18 @@ describe('offline task edits', () => {
       return jsonResponse(200, { events: [], headId: 9 })
     })
     await client.getEvents()
-    expect(sent.ops.map((o) => [o.kind, o.body])).toEqual([['create_task', { title: 'Made offline', position: 3.5 }]])
+    expect(sent.ops.map((o) => [o.kind, o.body])).toEqual([['create_task', { title: 'Made offline', position: 0 }]])
+  })
+
+  test('a subtask made offline is numbered after the last in the copy, so the steps keep their order', async () => {
+    const client = createApiClient('http://x', 'tok')
+    global.fetch.mockResolvedValueOnce(jsonResponse(200, {
+      tasks: [{ ...TASK, position: 1 }, { ...TASK, id: 't_bbbbbbbbbb', title: 'Second', position: 2.5 }], total: 2,
+    }))
+    await client.listTasks(MY_TASKS_QUERY)
+    global.fetch.mockImplementation(down)
+    const { task } = await client.createTask({ title: 'A step', parentId: TASK.id })
+    expect(task.position).toBe(3.5)
   })
 
   test('a due time set offline shows in the copy and is replayed as written', async () => {
@@ -540,8 +551,8 @@ describe('a write whose answer was lost', () => {
       throw new TypeError('Failed to fetch')
     })
     const { task } = await client.createTask({ title: 'Submitted once' })
-    expect(first[0].position).toBe(3.5)
-    expect(task.position).toBe(3.5)
+    expect(first[0].position).toBe(0)
+    expect(task.position).toBe(0)
 
     let replayed = null
     global.fetch.mockImplementation(async (url, init) => {
@@ -549,7 +560,7 @@ describe('a write whose answer was lost', () => {
       return jsonResponse(200, { results: replayed.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'duplicate' })) })
     })
     await flushOutbox('http://x', 'tok')
-    expect(replayed.ops.map((o) => [o.kind, o.opId, o.body.position])).toEqual([['create_task', first[0].opId, 3.5]])
+    expect(replayed.ops.map((o) => [o.kind, o.opId, o.body.position])).toEqual([['create_task', first[0].opId, 0]])
   })
 })
 
@@ -562,11 +573,12 @@ describe('a create with no number to send', () => {
 
   test('the copy gives 1 when it is empty and no number when it cannot be read', async () => {
     expect(await nextCachedPosition()).toBe(1)
+    expect(await nextCachedPosition({ subtask: true })).toBe(1)
     setCacheBackend(failingBackend())
     expect(await nextCachedPosition()).toBeUndefined()
   })
 
-  test('with storage failing, an online create carries no number, and the server appends it', async () => {
+  test('with storage failing, an online create carries no number, and the server places it', async () => {
     // offlineCache.js swallows storage errors so the dashboard keeps working online. The tasks
     // the owner sees were loaded all the same, so a number made up from the copy that could not
     // be read (1, for "nothing stored") would put the new task before them.
@@ -624,7 +636,7 @@ describe('a create with no number to send', () => {
       return jsonResponse(201, { task: { ...TASK, id: body.id, title: body.title, position: 7 } })
     })
     const { task } = await client.createTask({ title: 'Plain' })
-    expect(sent.map((b) => b.position)).toEqual([2, undefined])
+    expect(sent.map((b) => b.position)).toEqual([0, undefined])
     // The same create, so the server that saved the first attempt would call the second a duplicate.
     expect(sent[1]).toMatchObject({ title: 'Plain', id: sent[0].id, opId: sent[0].opId, deviceId: sent[0].deviceId })
     expect(task).toMatchObject({ id: sent[0].id, position: 7 })

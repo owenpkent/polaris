@@ -191,16 +191,17 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     // The task writes carry an `offline` description, so they are queued when the server is away.
     // A create or a comment is not safe to apply twice, so it names itself on the first attempt
     // too: if the server saved it and only the answer was lost, the replay is a duplicate.
-    // The number after the last task in the copy goes with the first attempt too, not only with
+    // The copy's number for a new task (before the first, or after the last for a subtask;
+    // nextCachedPosition) goes with the first attempt too, not only with
     // the queued copy: if the server saved the task and only the answer was lost, the replay is
     // a duplicate and keeps what the server has, which must be the number the owner saw it at,
     // or a move made beside it would come out reversed. No number goes when the copy cannot be
-    // read (the server appends), or to a daemon from before manual ordering, which refuses the
+    // read (the server places it), or to a daemon from before manual ordering, which refuses the
     // field: that create is sent again without it, under the same op id and task id.
     createTask: async (payload) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }
       const taskId = newTaskId()
-      const position = await nextCachedPosition()
+      const position = await nextCachedPosition({ subtask: Boolean(payload?.parentId) })
       const send = (body) => call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
       try {
         return await send(position === undefined ? payload : { ...payload, position })

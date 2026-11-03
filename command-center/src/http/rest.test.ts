@@ -66,8 +66,9 @@ test('GET /api/projects/:ref resolves by slug, name, or id and lists sections/ta
   t.after(() => app.close());
   const project = app.store.upsertProject({ slug: 'nimbus', name: 'Project Nimbus' });
   const section = app.store.ensureSection(project.id, 'Backlog');
-  const first = app.store.createTask({ title: 'first', projectId: project.id, sectionId: section.id }, 'human');
-  app.store.createTask({ title: 'second', projectId: project.id, sectionId: section.id }, 'human');
+  app.store.createTask({ title: 'older', projectId: project.id, sectionId: section.id }, 'human');
+  // A new task goes first, so the one made last leads the list.
+  const first = app.store.createTask({ title: 'newer', projectId: project.id, sectionId: section.id }, 'human');
   const dropped = app.store.createTask({ title: 'dropped one', projectId: project.id }, 'human');
   app.store.updateTask(dropped.id, { status: 'dropped' }, 'human');
 
@@ -81,6 +82,7 @@ test('GET /api/projects/:ref resolves by slug, name, or id and lists sections/ta
       const titles = json.tasks.map((t: { id: string; title: string }) => t.title);
       assert.ok(!titles.includes('dropped one'));
       assert.equal(json.tasks[0].id, first.id);
+      assert.deepEqual(titles, ['newer', 'older']);
     }
     const missing = await api(base, 'GET', '/api/projects/does-not-exist');
     assert.equal(missing.status, 404);

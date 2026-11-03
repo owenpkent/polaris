@@ -78,7 +78,8 @@ export function importTasks(store: Store, text: string, opts: ImportOptions = {}
     return result;
   }
 
-  result.created = store.db.transaction(() => {
+  // One transaction, with the new tasks at the top in the file's order (Store.createInOrder).
+  result.created = store.createInOrder(() => {
     const made: Task[] = [];
     parsed.rows.forEach((row, i) => {
       const r = resolved[i];
@@ -94,6 +95,6 @@ export function importTasks(store: Store, text: string, opts: ImportOptions = {}
       }, actor));
     });
     return made;
-  });
+  }).map((t) => store.getTask(t.id) ?? t); // read back: the block was renumbered at its end
   return result;
 }

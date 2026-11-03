@@ -29,7 +29,8 @@ export function importChecklistContent(store: Store, project: Pick<Project, 'id'
   const taskIdBySourceId = new Map<string, string>();
   const sectionIdByHeading = new Map<string, string>();
 
-  for (const item of checklistToSourceItems(content, project.slug, file)) {
+  // New items go to the top in the file's order, not each above the last (Store.createInOrder).
+  store.createInOrder(() => { for (const item of checklistToSourceItems(content, project.slug, file)) {
     currentIds.add(item.sourceId);
     const r = store.upsertFromSource(
       {
@@ -67,7 +68,7 @@ export function importChecklistContent(store: Store, project: Pick<Project, 'id'
       if (item.checked && current.status !== 'done') store.completeTask(current.id, 'system');
       else if (!item.checked && current.status === 'done') store.reopenTask(current.id, 'system');
     }
-  }
+  } });
 
   for (const goneId of goneSourceIds(prevActive, currentIds)) {
     store.markSourceGone('todo_md', goneId, 'drop_open', 'system');

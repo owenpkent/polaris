@@ -3,6 +3,12 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- A new task goes to the top of the list under Sort: Manual, wherever it is made, offline too.
+  A subtask still goes to the bottom of its parent's list, and an import or a repo checklist
+  puts its new tasks at the top in the file's order. Tasks you already have keep their order.
+
 ## 2.3.0 (2026-11-02)
 
 Migration 14 renumbers every task's position into one order across all projects and sections,
