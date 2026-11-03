@@ -738,6 +738,40 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'settings', 'reminders', [values])
   })
 
+  test('settings: app update', async ({ page }, testInfo) => {
+    await page.addInitScript(() => {
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        nativePromise: async (plugin, method) => (
+          plugin === 'App' && method === 'getInfo'
+            ? { version: '2.3.0', build: '20300' }
+            : { display: 'granted', notifications: [] }
+        ),
+        addListener: () => ({ remove() {} }),
+      }
+    })
+    await page.route('https://api.github.com/**', (route) => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        tag_name: 'v2.4.0',
+        draft: false,
+        prerelease: false,
+        assets: [{
+          name: 'polaris-2.4.0.apk',
+          browser_download_url: 'https://github.com/owenpkent/polaris/releases/download/v2.4.0/polaris-2.4.0.apk',
+          size: 4348073,
+        }],
+      }),
+    }))
+    await openView(page, 'settings')
+    const card = page.getByRole('region', { name: 'App update' })
+    await card.getByRole('button', { name: 'Check for updates' }).click()
+    await expect(card.getByRole('link', { name: 'Download polaris-2.4.0.apk' })).toBeVisible()
+    await card.evaluate((el) => el.scrollIntoView({ block: 'start' }))
+    const values = page.getByText(/^(Folder|Newest copy|Dashboard)$/).locator('xpath=following-sibling::span')
+    await shot(page, testInfo, 'settings', 'app-update', [values])
+  })
+
   // A preview with one problem, so both the task list and the problem list are in the shot.
   test('settings: import preview', async ({ page }, testInfo) => {
     await openView(page, 'settings')

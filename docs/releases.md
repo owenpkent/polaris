@@ -54,10 +54,10 @@ git tag -d test-signing
 
 ## Release checklist
 
-Releases are batched: one is cut when there is something worth installing, not for every merged pull request, because each needs the owner's signature and a full UI test run.
+Releases are batched: one is cut when there is something worth installing, not for every merged pull request, because each needs the owner's signature.
 
 1. CI is green on the commit on `main` that becomes the release.
-2. `npm run test:ui` has run on it. CI runs the UI tests on every pull request into `main`, but the release is the commit on `main`, and that run is yours to check.
+2. The Tests run for that push to `main` passed, all twelve UI test parts included (`gh run list --workflow test.yml --branch main`). That run tests the commit as merged, so no local `npm run test:ui` is needed.
 3. The version is bumped in `package.json`, `command-center/package.json`, and `mobile/package.json` (with its lockfile), to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). The Android app takes its versionName and versionCode from mobile/package.json, so it carries the release version without a separate edit. Nothing after the patch: a prerelease or build suffix is not a version and never installs.
 4. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
 5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most). With the certificate, that is `scripts\sign-release.ps1` as above. With the SSH key:
@@ -72,12 +72,13 @@ Releases are batched: one is cut when there is something worth installing, not f
 
 6. Push the tag: `git push origin v2.1.0`. Installs find it with a credential-free `git fetch --tags`.
 7. Make a GitHub release for the tag with the same notes, for people reading the repository. Installs never read it: the signature on the tag is what they trust, and GitHub's own signing (the web-flow key on merge commits) proves nothing to them.
+8. Build the Android app, signed with the same certificate, and attach it to that release: `npm run release:apk -- --upload` from a clean checkout of the tag (mobile/README.md, "Release build"). The App update card in the app's Settings offers the APK of the newest release, and Android installs it only over an app signed with the same key.
 
 An install then updates with `cc update --release` (or names the version with `cc update --to v2.1.0`), after `cc update --check` has shown what it would do.
 
 ## Key rotation
 
-A new key enters the way the first one did, and the old key vouches for it. A renewed certificate with a new key is the same procedure, its line made with `ssh-keygen -i -m PKCS8` from the new public key:
+A new key enters the way the first one did, and the old key vouches for it. A renewed certificate with a new key is the same procedure, its line made with `ssh-keygen -i -m PKCS8` from the new public key. The Android app is signed with the same certificate, and its installs need the old key to vouch too, in a signing lineage made once with both keys (mobile/README.md, "When the certificate is renewed"):
 
 1. Make the new key (the setup above, a new file name) and add its line to `release-signers`, keeping the old line.
 2. Make a release signed by the old key that carries the new file.

@@ -39,6 +39,51 @@ Either copy `app-debug.apk` to the phone and open it (allow installs from that s
 
 On first launch, type the server URL and paste the token from `command-center/data/api-token`. The app keeps them.
 
+## Release build
+
+`npm run apk` makes a debug APK signed with the SDK's debug key, for sideloading while developing. A release is signed with the OK Studio EV certificate on the SafeNet eToken, the key that signs the release tags (docs/releases.md, "Signing with the certificate"), so an installed release can only be replaced by an APK signed with that key, and the App update card in Settings (below) can offer the APK attached to the newest GitHub release.
+
+With the token plugged in, from a normal (not elevated) terminal on Windows, at the repo root:
+
+```sh
+npm run release:apk                 # builds dist/, syncs, assembleRelease, signs, verifies
+npm run release:apk -- --install    # and adb install -r on the one connected device
+npm run release:apk -- --upload     # and attach it to the GitHub release for the tag
+```
+
+The script (mobile/scripts/release-apk.mjs) runs apksigner against the Windows certificate store, where the certificate's private key is the token's: the token asks for its PIN in its own dialog, once per session, and nothing reads a PIN, a password, or a keystore file. apksigner needs a Java with the store's provider (the `jdk.crypto.mscapi` module), which Android Studio's bundled runtime leaves out: an Adoptium JDK or JRE 21 on the PATH or in `JAVA_HOME` has it. Gradle keeps using the JDK `npm run apk` uses.
+
+The signed file is `android/app/build/outputs/apk/release/polaris-X.Y.Z.apk`, with the version from package.json. Before it is kept, the script verifies it the way Android does (one signer, signature schemes v2 and v3) and checks that the signing certificate's public key is a pinned release signer in `release-signers`, a line an X.509 tag signature may verify against; an APK signed by any other certificate is removed. `--upload` runs only from a clean checkout of the tag `vX.Y.Z` and needs the GitHub release to exist (docs/releases.md, step 7); it attaches the file with `gh release upload --clobber`. It refuses `--skip-build`: `dist/` is not under git, so an APK for a release is always built from the checkout it is uploaded from.
+
+Android lets an APK replace an installed app only when both carry the same signing key. The first release-signed install over a debug build is an uninstall (`adb uninstall com.okstudio.polaris`, or Uninstall on the phone) and then the install; from then on each release installs over the last one, from the App update card, a browser download, or adb.
+
+CI (`.github/workflows/android.yml`, the release-build job) runs `assembleRelease` unsigned on pull requests that touch the app, so a change that breaks the release variant fails there and not at release time. Nothing in CI signs.
+
+### When the certificate is renewed
+
+A renewed certificate usually has a new key, and Android would refuse the next APK as a different signer. APK Signature Scheme v3 lets the old key vouch for the new one in a signing lineage, so an install signed by the old key still updates on Android 9 and later (an older device reinstalls). Every renewal adds one link to the lineage file `mobile/android/signing-lineage`, and the file must keep the whole chain: an install already updated to the second key needs that key in the proof of rotation. Run the commands with both certificates in the Windows store (an expired one still signs: Android ignores a certificate's dates), answering the token's PIN prompt for each key. Below, `apksigner` stands for `java -jar %LOCALAPPDATA%\Android\Sdk\build-tools\37.0.0\lib\apksigner.jar`.
+
+First renewal (A to B). There is no lineage file yet, so the original certificate is the old signer:
+
+```sh
+apksigner rotate --out mobile\android\signing-lineage --old-signer --ks NONE --ks-type Windows-MY --ks-key-alias "OK Studio Inc." --ks-pass pass:windows-store --new-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of B>" --ks-pass pass:windows-store
+```
+
+Every later renewal (B to C, and so on). Do not repeat the first command: it would start a new A to C chain and overwrite the file that holds B. Read the existing lineage with `--in`, name its current leaf (the most recent certificate, B here, not the original) as the old signer, and write the extended chain back. Write to a new file and then replace the old one, so a failed run leaves the old lineage intact:
+
+```sh
+apksigner rotate --in mobile\android\signing-lineage --out mobile\android\signing-lineage.new --old-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of B>" --ks-pass pass:windows-store --new-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of C>" --ks-pass pass:windows-store
+move /Y mobile\android\signing-lineage.new mobile\android\signing-lineage
+```
+
+Check the chain after each rotation. It must list every certificate, oldest first (A, B, then C):
+
+```sh
+apksigner lineage --in mobile\android\signing-lineage --print-certs
+```
+
+Commit `mobile/android/signing-lineage` (it holds public keys and the signatures that link them, nothing secret), add the new key's line to `release-signers` as docs/releases.md "Key rotation" describes, and append the new alias to `KEY_ALIASES` in mobile/scripts/release-apk.mjs, after the others. The alias is the certificate's friendly name in the store; `keytool -list -storetype Windows-MY` prints them. From then on every signing passes the lineage and two keys: the newest, which makes the signature installs are updated by, and the one the lineage starts from (A), which apksigner requires with a lineage and which makes the v2 signature for devices before Android 9. The middle keys do not sign; they are only in the lineage file. `--alias=` and `--old-alias=` override the two for one run. The original certificate stays in the store for that, and never signs on its own again. mobile/scripts/apkLineage.test.js rehearses both rotations (A to B, then B to C with `--in`) and the signing with three throwaway keys where a JDK and the build-tools exist.
+
 ## What the dashboard does differently inside the app
 
 Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, which asks the `window.Capacitor` object the shell injects whether it is running on a native platform. The dashboard has no dependency on Capacitor.

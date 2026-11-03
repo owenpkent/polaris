@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import ReorderableRows from './ReorderableRows'
+import ReorderableRows, { ReorderScope } from './ReorderableRows'
 import ReorderHandle from './ReorderHandle'
 
 afterEach(cleanup)
@@ -107,5 +107,73 @@ describe('ReorderableRows', () => {
     expect(screen.getByRole('menuitem', { name: 'Move down' }).disabled).toBe(true)
     expect(screen.getByRole('menuitem', { name: 'Move to bottom' }).disabled).toBe(true)
     expect(screen.getByRole('menuitem', { name: 'Move up' }).disabled).toBe(false)
+  })
+})
+
+describe('ReorderScope across groups', () => {
+  const OLD = [{ id: 'o', title: 'Old', position: 0 }]
+  const NOW = [{ id: 'a', title: 'Alpha', position: 1 }]
+  const GROUPS = [
+    { id: 'overdue', label: 'Overdue', tasks: OLD, closed: true },
+    { id: 'today', label: 'Today', tasks: NOW, closed: false },
+  ]
+
+  // Overdue spans 0 to 88 (header 0 to 44, its row 44 to 88), Today 88 to 176 (its row 132 to 176).
+  function renderGroups(onMoveAcross) {
+    const row = (task, reorder, rowClass) => (
+      <div key={task.id} data-testid="row" data-task-id={task.id} className={`row${rowClass}`}>
+        <ReorderHandle task={task} reorder={reorder} />
+        {task.title}
+      </div>
+    )
+    render(
+      <ReorderScope enabled crossGroup groups={GROUPS} onReorder={vi.fn()} onMoveAcross={onMoveAcross}>
+        {GROUPS.map((g) => (
+          <section key={g.id} data-reorder-group={g.id} data-testid={`group-${g.id}`}>
+            <h2 data-reorder-header data-testid={`header-${g.id}`}>{g.label}</h2>
+            <ReorderableRows groupId={g.id} tasks={g.tasks} enabled>{row}</ReorderableRows>
+          </section>
+        ))}
+      </ReorderScope>
+    )
+    const rect = (top, bottom) => () => ({ top, bottom, height: bottom - top, left: 0, right: 500, width: 500 })
+    screen.getByTestId('group-overdue').getBoundingClientRect = rect(0, 88)
+    screen.getByTestId('header-overdue').getBoundingClientRect = rect(0, 44)
+    screen.getByTestId('group-today').getBoundingClientRect = rect(88, 176)
+    screen.getByTestId('header-today').getBoundingClientRect = rect(88, 132)
+    const [old, now] = screen.getAllByTestId('row')
+    old.getBoundingClientRect = rect(44, 88)
+    now.getBoundingClientRect = rect(132, 176)
+  }
+
+  test('a row dragged over a closed group lands at the top of the open group below', () => {
+    const onMoveAcross = vi.fn()
+    renderGroups(onMoveAcross)
+    const handle = screen.getByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 150 })
+    fireEvent.pointerMove(handle, { clientY: 80 })
+    // Over Overdue's row, which wears no drop mark: the drop is the top of Today, where Alpha is.
+    expect(screen.getAllByTestId('row').map((el) => el.className)).toEqual(['row', 'row is-dragging'])
+    fireEvent.pointerUp(handle, { clientY: 80 })
+    expect(onMoveAcross).not.toHaveBeenCalled()
+  })
+
+  test('a row in a closed group can be dragged out of it', () => {
+    const onMoveAcross = vi.fn()
+    renderGroups(onMoveAcross)
+    const handle = screen.getByRole('button', { name: 'Reorder Old' })
+    fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 60 })
+    fireEvent.pointerMove(handle, { clientY: 170 })
+    fireEvent.pointerUp(handle, { clientY: 170 })
+    expect(onMoveAcross).toHaveBeenCalledWith({ task: OLD[0], fromId: 'overdue', toId: 'today', slot: 1 })
+  })
+
+  test('the arrow keys never move a row into a closed group', () => {
+    const onMoveAcross = vi.fn()
+    renderGroups(onMoveAcross)
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowUp' })
+    expect(onMoveAcross).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Old' }), { key: 'ArrowDown' })
+    expect(onMoveAcross).toHaveBeenCalledWith({ task: OLD[0], fromId: 'overdue', toId: 'today', slot: 0 })
   })
 })

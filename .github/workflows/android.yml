@@ -86,3 +86,45 @@ jobs:
             mobile/android/app/build/reports/androidTests/
             mobile/android/app/build/outputs/androidTest-results/
           retention-days: 7
+
+  # The release build type, unsigned: Gradle's assembleRelease on the same dashboard build, so a
+  # change that breaks the release variant (a manifest or Gradle edit, a resource only the debug
+  # build has) fails here and not on the owner's machine at release time. Signing never happens
+  # in CI: the certificate is on the eToken, and mobile/scripts/release-apk.mjs signs there
+  # (mobile/README.md, Release build). The unsigned file is kept a week for a look, not for use.
+  release-build:
+    name: Android release build (unsigned)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: mobile
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      - run: npm run build
+      - run: npm run sync
+        working-directory: mobile
+      - run: ./gradlew assembleRelease
+        working-directory: mobile/android
+      # The signing lineage rehearsal (mobile/scripts/apkLineage.test.js) needs apksigner and a JDK,
+      # which this job has and the fast job does not: there it skips itself.
+      - run: npx vitest run mobile/scripts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android-release-unsigned
+          path: mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 7

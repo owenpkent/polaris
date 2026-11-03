@@ -50,8 +50,10 @@ function saveCollapsed(state) {
   }
 }
 
+// `closed`: a row can be reordered inside the group and moved out of it, never moved into it.
+// Overdue is where a date lands by passing, not somewhere to put a task.
 const GROUP_ORDER = [
-  { id: 'overdue', label: 'Overdue', alwaysShow: false, addRow: null },
+  { id: 'overdue', label: 'Overdue', alwaysShow: false, closed: true, addRow: null },
   { id: 'today', label: 'Today', alwaysShow: true, addRow: (bounds) => ({ dueAt: bounds.today }) },
   { id: 'tomorrow', label: 'Tomorrow', alwaysShow: true, addRow: (bounds) => ({ dueAt: bounds.tomorrow }) },
   { id: 'next7', label: 'Next 7 days', alwaysShow: false, addRow: null },
@@ -454,9 +456,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [api, fetchTasks])
 
   // A row moved into another due-date group, by drag, arrow key, or the handle's menu (the due-date
-  // grouping under the manual sort). The group sets the date (dueForDrop): Today and Tomorrow set
-  // that day, No due date clears it, and a range (Overdue, Next 7 days, Later) opens the due date
-  // picker on the row, starting on the day of the row it was dropped next to. Until a day is picked
+  // grouping under the manual sort; never into Overdue, which is closed). The group sets the date
+  // (dueForDrop): Today and Tomorrow set that day, No due date clears it, and a range (Next 7
+  // days, Later) opens the due date picker on the row, starting on the day of the row it was dropped next to. Until a day is picked
   // the row shows at the drop with that day; Esc or closing the picker takes the move back whole.
   // The position is the drop slot's, and both writes go through handleReorder's queue.
   const [pendingMove, setPendingMove] = useState(null) // { task, plan, startDay, dueAt } | null
@@ -571,10 +573,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     if (view.group === 'due') {
       const groups = groupTasks(sortedTasks, dueBounds)
       // Under the manual sort a row can be dropped into any day group, so the ones hidden for being
-      // empty show while a row is held, as drop targets.
+      // empty show while a row is held, as drop targets (not a closed one, which takes no drop).
       crossGroup = reorderable
-      const shown = GROUP_ORDER.filter((g) => g.alwaysShow || groups[g.id].length > 0 || (crossGroup && dragging))
-      scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id] }))
+      const shown = GROUP_ORDER.filter((g) => g.alwaysShow || groups[g.id].length > 0 || (crossGroup && dragging && !g.closed))
+      scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id], closed: Boolean(g.closed) }))
       groupRowsRef.current = groups
       content = shown.map((g) => {
         const groupTasksList = groups[g.id]

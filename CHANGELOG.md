@@ -5,6 +5,10 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- My tasks no longer lets a task be dragged or arrowed into Overdue, so a move never gives a
+  task a date in the past by accident. A drag over Overdue lands at the top of Today; tasks
+  already in Overdue can still be reordered there or moved out. The due date picker still takes
+  a past date.
 - Right-click a My tasks row or a Board card, or press Shift+F10 or the ContextMenu key on it, for a menu with Open task, Complete or Reopen, Due, Priority, and Move to project or section.
 
 ## 2.3.0 (2026-11-02)

@@ -7,7 +7,8 @@ import { Menu } from './Menu'
 // top, to the bottom), and the arrow keys make the one-step moves without the menu, so nothing
 // needs a drag (CONTRIBUTING.md, Accessibility). `reorder` comes from ReorderableRows.jsx:
 // { index, count, groupId, onPointerDown, onMove, wasDrag, quick }. Under the due-date grouping the
-// arrow keys also cross a group's edge (the row takes the other group's date), and the menu adds
+// arrow keys also cross a group's edge (the row takes the other group's date, and a closed group
+// such as Overdue is skipped), and the menu adds
 // moves to Today, Tomorrow, and No due date, leaving out the group the row is already in.
 export default function ReorderHandle({ task, reorder }) {
   const ref = useRef(null)

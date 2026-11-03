@@ -419,13 +419,13 @@ describe('dropping a task into a due-date group', () => {
   test('No due date clears the date, with its time', () => {
     expect(dueForDrop('noDue', '2026-10-20T09:30', bounds)).toEqual({ mode: 'set', dueAt: null })
   })
-  test('the ranges ask for a day, and other groupings change nothing', () => {
-    for (const id of ['overdue', 'next7', 'later']) expect(dueForDrop(id, '2026-10-20', bounds)).toEqual({ mode: 'pick' })
+  test('the ranges ask for a day; Overdue and other groupings change nothing', () => {
+    for (const id of ['next7', 'later']) expect(dueForDrop(id, '2026-10-20', bounds)).toEqual({ mode: 'pick' })
+    expect(dueForDrop('overdue', '2026-10-20', bounds)).toEqual({ mode: 'none' })
     expect(dueForDrop('p1', '2026-10-20', bounds)).toEqual({ mode: 'none' })
   })
   test('the picker starts on the neighbour row day, or the range first day when empty', () => {
     expect(dropStartDay('next7', bounds, '2026-10-19T08:00')).toBe('2026-10-19')
-    expect(dropStartDay('overdue', bounds, null)).toBe('2026-10-13')
     expect(dropStartDay('next7', bounds, null)).toBe('2026-10-16')
     expect(dropStartDay('later', bounds, null)).toBe('2026-10-22')
   })
