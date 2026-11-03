@@ -3,8 +3,17 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.4.0 (2026-11-03)
 
+No migration.
+
+- The Android app has a signed release APK: `npm run release:apk` builds it and signs it with the
+  EV code-signing certificate on the eToken, and a release can carry it. Settings in the app has
+  an App update card that checks the public releases when you press it and offers the newer APK
+  as a download; Android installs it only over an app signed with the same key.
+- More contrast: the dark theme sits a step above near-black, the lines between rows and around
+  the sidebar and panels are stronger in both themes, and each My tasks group header has a band
+  and a clear rule under it, so the groups read as separate blocks.
 - My tasks no longer lets a task be dragged or arrowed into Overdue, so a move never gives a
   task a date in the past by accident. A drag over Overdue lands at the top of Today; tasks
   already in Overdue can still be reordered there or moved out. The due date picker still takes
