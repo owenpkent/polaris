@@ -19,7 +19,7 @@ export function useReorderScope() {
   return useContext(ScopeContext)
 }
 
-export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, onMoveAcross, onDragChange, children }) {
+export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, onMoveAcross, onDragChange, onMoved, children }) {
   const [notice, setNotice] = useState('')
   const groupsRef = useRef(groups)
   groupsRef.current = groups
@@ -41,8 +41,9 @@ export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, o
     const plan = planReorder(tasks, task.id, slot)
     if (!plan) return
     setNotice(`${task.title} moved to ${plan.index + 1} of ${tasks.length}`)
+    onMoved?.(task.id)
     onReorder(plan)
-  }, [crossGroup, moveAcross, onReorder])
+  }, [crossGroup, moveAcross, onReorder, onMoved])
 
   const { containerRef, drag, startDrag, wasDrag } = useReorderDrag({ enabled, crossGroup, isClosed, onRelease: commit })
 

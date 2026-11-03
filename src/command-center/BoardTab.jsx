@@ -7,6 +7,7 @@ import TaskDetailPanel from './TaskDetailPanel'
 import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
+import { markChanged, useJustChanged } from './useJustChanged'
 import { oneLine, useFitToText } from './useFitToText'
 import { Popover } from './Menu'
 import { taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
@@ -185,10 +186,12 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
   const classes = ['board-card']
   if (menuOpen) classes.push('is-menu-open')
   if (completing) classes.push('is-completing')
+  const { changed, ref: cardRef } = useJustChanged(task.id)
+  if (changed) classes.push('just-changed')
 
   return (
     <div style={{ position: 'relative' }}>
-      <div className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
+      <div ref={cardRef} className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
         <CardCheck
           task={task}
           pending={pending}
@@ -545,6 +548,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
 
   const handleMove = useCallback(async (task, sectionId) => {
     const prevBoard = board
+    markChanged(task.id)
     // Optimistic move within the local board state.
     setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, sectionId } : t)) } : b))
     try {
@@ -610,7 +614,8 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   // the last project's while the next one loads.
   const handleCreate = useCallback(async (title, sectionId) => {
     const pid = projectRef
-    await api.createTask({ title, projectId: pid, sectionId })
+    const res = await api.createTask({ title, projectId: pid, sectionId })
+    markChanged(res?.task?.id)
     await refreshIfShown(pid)
   }, [api, projectRef, refreshIfShown])
 
