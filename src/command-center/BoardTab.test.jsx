@@ -36,6 +36,7 @@ beforeEach(() => {
     completeTask: vi.fn().mockResolvedValue({}),
     reopenTask: vi.fn().mockResolvedValue({}),
     createTask: vi.fn().mockResolvedValue({ task: { id: 'new' } }),
+    updateTask: vi.fn().mockResolvedValue({}),
   })
 })
 
@@ -296,5 +297,32 @@ describe('BoardTab', () => {
     render(<BoardTab />)
     expect(api.listProjects).not.toHaveBeenCalled()
     expect(screen.getByText('Connection settings')).toBeTruthy()
+  })
+
+  test('right-click on a card opens the task menu, and its items use the board actions', async () => {
+    render(<BoardTab />)
+    await screen.findByRole('region', { name: 'Todo' })
+    const card = document.querySelector('[data-task-id="t1"]')
+    expect(fireEvent.contextMenu(card, { clientX: 20, clientY: 20 })).toBe(false)
+    expect(screen.getByRole('menu', { name: 'Actions for Task One' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Urgent' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t1', { priority: 'urgent' }))
+
+    fireEvent.contextMenu(card)
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Doing' }))
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('t1', { section: 's2' }))
+
+    fireEvent.contextMenu(document.querySelector('[data-task-id="t1"]'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Complete' }))
+    await waitFor(() => expect(api.completeTask).toHaveBeenCalledWith('t1'))
+  })
+
+  test('Shift+F10 on a card opens the same menu', async () => {
+    render(<BoardTab />)
+    await screen.findByRole('region', { name: 'Todo' })
+    const open = screen.getByRole('button', { name: 'Move Task One' })
+    fireEvent.keyDown(open, { key: 'F10', shiftKey: true })
+    expect(screen.getByRole('menu', { name: 'Actions for Task One' })).toBeTruthy()
   })
 })

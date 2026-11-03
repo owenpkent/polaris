@@ -9,6 +9,7 @@ import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { oneLine, useFitToText } from './useFitToText'
 import { Popover } from './Menu'
+import { taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
 import { useRequestGuard } from './useRequestGuard'
 import { afterRelease, usePointerPress } from './pointerPress'
 
@@ -154,7 +155,7 @@ function CardCheck({ task, pending, completing, burstKey, onToggle }) {
 // A card as Asana draws one: the check circle, the title, the priority pill, and a foot with the
 // assignee and the due date in the list's words and colours (formatDueCell). The card face opens
 // the task, and the arrow at the top right moves it to another lane, so nothing needs a drag.
-function BoardCard({ task, dueBounds, pending, onToggleComplete, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
+function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, destinations, onMove, onOpen, menuOpen, onToggleMenu, onCloseMenu }) {
   const done = task.status === 'done'
   const priority = PRIORITY_META[task.priority]
   const due = formatDueCell(task.dueAt, dueBounds)
@@ -165,13 +166,29 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, destinations, o
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
 
+  // Right-click, Shift+F10, or the ContextMenu key on the card (TaskContextMenu.jsx).
+  const { handlers: menuHandlers, menu: contextMenu } = useTaskContextMenu({
+    label: `Actions for ${task.title}`,
+    getItems: () => taskMenuItems({
+      task,
+      dueBounds,
+      pending,
+      onOpen,
+      onToggleComplete,
+      onUpdate,
+      sections: destinations.map((d) => ({ id: d.id, name: d.name, noSection: d.id === NO_SECTION })),
+      sectionKey: sectionKey(task),
+      onMove,
+    }),
+  })
+
   const classes = ['board-card']
   if (menuOpen) classes.push('is-menu-open')
   if (completing) classes.push('is-completing')
 
   return (
     <div style={{ position: 'relative' }}>
-      <div className={classes.join(' ')} data-task-id={task.id}>
+      <div className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
         <CardCheck
           task={task}
           pending={pending}
@@ -222,6 +239,7 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, destinations, o
         </button>
       </div>
 
+      {contextMenu}
       {menuOpen && (
         <MoveMenu task={task} destinations={destinations} onMove={onMove} anchorRef={anchorRef} onClose={onCloseMenu} />
       )}
@@ -368,7 +386,7 @@ function LaneAddTask({ section, onCreate }) {
   )
 }
 
-function Column({ section, tasks, destinations, dueBounds, pendingIds, exitingIds, openMoveId, onToggleMenu, onCloseMenu, onMove, onOpen, onToggleComplete, onCreate }) {
+function Column({ section, tasks, destinations, dueBounds, pendingIds, exitingIds, openMoveId, onToggleMenu, onCloseMenu, onMove, onOpen, onToggleComplete, onUpdate, onCreate }) {
   const [showDone, setShowDone] = useState(false)
   // A card being completed stays among the open ones until its celebration ends.
   const active = tasks.filter((t) => t.status !== 'done' || exitingIds.has(t.id))
@@ -380,6 +398,7 @@ function Column({ section, tasks, destinations, dueBounds, pendingIds, exitingId
     dueBounds,
     pending: pendingIds.has(task.id),
     onToggleComplete,
+    onUpdate,
     destinations,
     onMove,
     onOpen,
@@ -571,6 +590,21 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     }
   }, [api, projectRef, refreshIfShown, setTaskStatus])
 
+  // The context menu's due date and priority (TaskContextMenu.jsx): the list's quick edit, shown at
+  // once and put back on failure.
+  const handleQuickUpdate = useCallback(async (task, patch) => {
+    const pid = projectRef
+    setError(null)
+    setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, ...patch } : t)) } : b))
+    try {
+      await api.updateTask(task.id, patch)
+      await refreshIfShown(pid)
+    } catch (err) {
+      setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? task : t)) } : b))
+      setError(err.message || 'Could not update that task.')
+    }
+  }, [api, projectRef, refreshIfShown])
+
   // A new task from a lane's Add task: the selected project, that lane's section (null for No
   // section). The project is read when the card is submitted, never from a board that may still be
   // the last project's while the next one loads.
@@ -653,6 +687,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
               onMove={handleMove}
               onOpen={setDetailTaskId}
               onToggleComplete={handleToggleComplete}
+              onUpdate={handleQuickUpdate}
               onCreate={handleCreate}
             />
           ))}
