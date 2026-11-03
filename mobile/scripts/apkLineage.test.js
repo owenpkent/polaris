@@ -1,5 +1,5 @@
-// The signing lineage path of release-apk.mjs, against the real apksigner with two throwaway
-// keys: a lineage is made, an archive is signed the way the script signs (the key the lineage
+// The signing lineage path of release-apk.mjs, against the real apksigner with throwaway
+// keys: a lineage is made, extended once with --in for a third key, an archive is signed the way the script signs (the key the lineage
 // starts from and the current key), and it verifies with v2 and v3 and one signer. Signing with
 // the current key alone, which an earlier version of the script did, is refused by apksigner, so
 // the test pins that too. Needs a JDK (keytool and jar) and the Android build-tools (apksigner):
@@ -40,7 +40,7 @@ describe.skipIf(!ready)('signing with a lineage', () => {
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'polaris-lineage-'))
-    for (const name of ['old', 'new']) {
+    for (const name of ['old', 'new', 'third']) {
       const made = tool(exe('keytool'), ['-genkeypair', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '1', '-dname', `CN=${name}`, '-alias', name, '-storepass', 'throwaway', '-keypass', 'throwaway', '-keystore', `${name}.jks`], dir)
       if (made.status !== 0) throw new Error(made.text)
     }
@@ -52,6 +52,10 @@ describe.skipIf(!ready)('signing with a lineage', () => {
     if (zipped.status !== 0) throw new Error(zipped.text)
     const rotated = apksigner(rotateArgs({ oldSigner: signer('old'), newSigner: signer('new'), out: 'lineage' }))
     if (rotated.status !== 0) throw new Error(rotated.text)
+    // The second renewal extends the first lineage: it is read with --in and its current leaf
+    // (the newest certificate so far) is the old signer, so the chain keeps every key.
+    const extended = apksigner(rotateArgs({ oldSigner: signer('new'), newSigner: signer('third'), out: 'lineage3', in: 'lineage' }))
+    if (extended.status !== 0) throw new Error(extended.text)
   }, SLOW)
 
   afterAll(() => {
@@ -79,5 +83,24 @@ describe.skipIf(!ready)('signing with a lineage', () => {
     // The certificate apksigner reports first is the current key's, the one pinnedSignerFor checks.
     expect(parsed.certs.length).toBeGreaterThanOrEqual(1)
     expect(verified.text).toContain('CN=new')
+  }, SLOW)
+
+  test('a second renewal extends the lineage to old, new, third, and the key it starts from and the newest sign', () => {
+    const printed = apksigner(['lineage', '--in', 'lineage3', '--print-certs'])
+    expect(printed.status, printed.text).toBe(0)
+    const order = ['CN=old', 'CN=new', 'CN=third'].map((subject) => printed.text.indexOf(subject))
+    expect(order.every((i) => i >= 0), printed.text).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+
+    const three = apksigner(signArgs({ signers: [signer('old'), signer('third')], lineage: 'lineage3', out: 'three.apk', input: 'in.zip' }))
+    expect(three.status, three.text).toBe(0)
+    const verified = apksigner(['verify', '--verbose', '--print-certs-pem', 'three.apk'])
+    expect(verified.status, verified.text).toBe(0)
+    const parsed = parseVerifyOutput(verified.text)
+    expect(parsed.verifies).toBe(true)
+    expect(parsed.v2).toBe(true)
+    expect(parsed.v3).toBe(true)
+    expect(parsed.signers).toBe(1)
+    expect(verified.text).toContain('CN=third')
   }, SLOW)
 })

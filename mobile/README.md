@@ -61,13 +61,28 @@ CI (`.github/workflows/android.yml`, the release-build job) runs `assembleReleas
 
 ### When the certificate is renewed
 
-A renewed certificate usually has a new key, and Android would refuse the next APK as a different signer. APK Signature Scheme v3 lets the old key vouch for the new one in a signing lineage, so an install signed by the old key still updates on Android 9 and later (an older device reinstalls). Once, with both certificates in the Windows store (the expired one still signs: Android ignores a certificate's dates), make the lineage file, answering the token's PIN prompt for each key:
+A renewed certificate usually has a new key, and Android would refuse the next APK as a different signer. APK Signature Scheme v3 lets the old key vouch for the new one in a signing lineage, so an install signed by the old key still updates on Android 9 and later (an older device reinstalls). Every renewal adds one link to the lineage file `mobile/android/signing-lineage`, and the file must keep the whole chain: an install already updated to the second key needs that key in the proof of rotation. Run the commands with both certificates in the Windows store (an expired one still signs: Android ignores a certificate's dates), answering the token's PIN prompt for each key. Below, `apksigner` stands for `java -jar %LOCALAPPDATA%\Android\Sdk\build-tools\37.0.0\lib\apksigner.jar`.
+
+First renewal (A to B). There is no lineage file yet, so the original certificate is the old signer:
 
 ```sh
-java -jar %LOCALAPPDATA%\Android\Sdk\build-tools\37.0.0\lib\apksigner.jar rotate --out mobile\android\signing-lineage --old-signer --ks NONE --ks-type Windows-MY --ks-key-alias "OK Studio Inc." --ks-pass pass:windows-store --new-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<new alias>" --ks-pass pass:windows-store
+apksigner rotate --out mobile\android\signing-lineage --old-signer --ks NONE --ks-type Windows-MY --ks-key-alias "OK Studio Inc." --ks-pass pass:windows-store --new-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of B>" --ks-pass pass:windows-store
 ```
 
-Commit `mobile/android/signing-lineage` (it holds public keys and the two signatures that link them, nothing secret), add the new key's line to `release-signers` as docs/releases.md "Key rotation" describes, and append the new alias to `KEY_ALIASES` in mobile/scripts/release-apk.mjs, after the old one. The alias is the certificate's friendly name in the store; `keytool -list -storetype Windows-MY` prints them. From then on every signing passes the lineage and both keys: the new one makes the signature installs are updated by, and the old one, which apksigner requires with a lineage, the v2 signature for devices before Android 9 (`--alias=` and `--old-alias=` override the two for one run). The old certificate stays in the store for that, and never signs on its own again. mobile/scripts/apkLineage.test.js rehearses the whole thing with two throwaway keys where a JDK and the build-tools exist.
+Every later renewal (B to C, and so on). Do not repeat the first command: it would start a new A to C chain and overwrite the file that holds B. Read the existing lineage with `--in`, name its current leaf (the most recent certificate, B here, not the original) as the old signer, and write the extended chain back. Write to a new file and then replace the old one, so a failed run leaves the old lineage intact:
+
+```sh
+apksigner rotate --in mobile\android\signing-lineage --out mobile\android\signing-lineage.new --old-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of B>" --ks-pass pass:windows-store --new-signer --ks NONE --ks-type Windows-MY --ks-key-alias "<alias of C>" --ks-pass pass:windows-store
+move /Y mobile\android\signing-lineage.new mobile\android\signing-lineage
+```
+
+Check the chain after each rotation. It must list every certificate, oldest first (A, B, then C):
+
+```sh
+apksigner lineage --in mobile\android\signing-lineage --print-certs
+```
+
+Commit `mobile/android/signing-lineage` (it holds public keys and the signatures that link them, nothing secret), add the new key's line to `release-signers` as docs/releases.md "Key rotation" describes, and append the new alias to `KEY_ALIASES` in mobile/scripts/release-apk.mjs, after the others. The alias is the certificate's friendly name in the store; `keytool -list -storetype Windows-MY` prints them. From then on every signing passes the lineage and two keys: the newest, which makes the signature installs are updated by, and the one the lineage starts from (A), which apksigner requires with a lineage and which makes the v2 signature for devices before Android 9. The middle keys do not sign; they are only in the lineage file. `--alias=` and `--old-alias=` override the two for one run. The original certificate stays in the store for that, and never signs on its own again. mobile/scripts/apkLineage.test.js rehearses both rotations (A to B, then B to C with `--in`) and the signing with three throwaway keys where a JDK and the build-tools exist.
 
 ## What the dashboard does differently inside the app
 

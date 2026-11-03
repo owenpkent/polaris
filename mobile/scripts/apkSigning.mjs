@@ -67,9 +67,10 @@ export function signArgs({ signers, lineage = null, rotationMinSdk = '28', out, 
   ]
 }
 
-/** `apksigner rotate` arguments: the lineage in which `oldSigner` vouches for `newSigner`. */
-export function rotateArgs({ oldSigner, newSigner, out }) {
-  return ['rotate', '--out', out, '--old-signer', ...signerArgs(oldSigner), '--new-signer', ...signerArgs(newSigner)]
+/** `apksigner rotate` arguments: the lineage in which `oldSigner` vouches for `newSigner`. To
+ *  extend an existing lineage pass it as `in`: `oldSigner` must then be its current leaf. */
+export function rotateArgs({ oldSigner, newSigner, out, in: input = null }) {
+  return ['rotate', ...(input ? ['--in', input] : []), '--out', out, '--old-signer', ...signerArgs(oldSigner), '--new-signer', ...signerArgs(newSigner)]
 }
 
 /** The newest build-tools folder name by version, or undefined when none is a version. */
