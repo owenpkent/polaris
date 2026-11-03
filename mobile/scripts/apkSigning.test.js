@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { apkName, newestBuildTools, parseVerifyOutput, pinnedSignerFor } from './apkSigning.mjs'
+import { apkName, newestBuildTools, parseArgs, parseVerifyOutput, pinnedSignerFor, rotateArgs, shellLine, signArgs, windowsStoreSigner } from './apkSigning.mjs'
 
 // A real `apksigner verify --verbose --print-certs-pem` output for an APK signed with the EV
 // certificate, CRLF line ends as apksigner prints them on Windows.
@@ -90,5 +90,64 @@ describe('newestBuildTools and apkName', () => {
 
   test('the APK is named for the version', () => {
     expect(apkName('2.4.0')).toBe('polaris-2.4.0.apk')
+  })
+})
+
+describe('parseArgs', () => {
+  test('reads the flags and the aliases', () => {
+    expect(parseArgs([])).toEqual({ skipBuild: false, upload: false, install: false, alias: null, oldAlias: null })
+    expect(parseArgs(['--skip-build', '--install', '--alias=New Cert', '--old-alias=OK Studio Inc.'])).toEqual({ skipBuild: true, upload: false, install: true, alias: 'New Cert', oldAlias: 'OK Studio Inc.' })
+    expect(parseArgs(['--upload']).upload).toBe(true)
+  })
+
+  test('refuses an unknown option, an empty alias, and --skip-build with --upload', () => {
+    expect(() => parseArgs(['--release'])).toThrow(/Unknown option: --release/)
+    expect(() => parseArgs(['--alias='])).toThrow(/Unknown option/)
+    // An upload must carry a dashboard built from the release checkout: dist/ is ignored by git,
+    // so a stale one would pass the clean-checkout check.
+    expect(() => parseArgs(['--skip-build', '--upload'])).toThrow(/--skip-build cannot go with --upload/)
+    expect(() => parseArgs(['--upload', '--skip-build'])).toThrow(/--skip-build cannot go with --upload/)
+  })
+})
+
+describe('shellLine', () => {
+  test('quotes words with spaces and leaves the rest alone', () => {
+    expect(shellLine('C:\\Program Files\\x\\gradlew.bat', ['assembleRelease'])).toBe('"C:\\Program Files\\x\\gradlew.bat" assembleRelease')
+    expect(shellLine('npm', ['run', 'build'])).toBe('npm run build')
+  })
+
+  test('refuses a word with a quote rather than escaping it', () => {
+    expect(() => shellLine('npm', ['run', 'say "hi"'])).toThrow(/contains a quote/)
+  })
+})
+
+describe('signArgs and rotateArgs', () => {
+  const store = windowsStoreSigner('OK Studio Inc.')
+
+  test('one signer from the Windows store, v2 and v3 on, v4 off, no lineage', () => {
+    expect(signArgs({ signers: [store], out: 'out.apk', input: 'in.apk' })).toEqual([
+      'sign', '--ks', 'NONE', '--ks-type', 'Windows-MY', '--ks-key-alias', 'OK Studio Inc.', '--ks-pass', 'pass:windows-store',
+      '--v2-signing-enabled', 'true', '--v3-signing-enabled', 'true', '--v4-signing-enabled', 'false',
+      '--out', 'out.apk', 'in.apk',
+    ])
+  })
+
+  test('with a lineage, the key it starts from comes first and the current key as --next-signer', () => {
+    const args = signArgs({ signers: [store, windowsStoreSigner('OK Studio Inc. 2027')], lineage: 'signing-lineage', out: 'out.apk', input: 'in.apk' })
+    const next = args.indexOf('--next-signer')
+    expect(args.indexOf('OK Studio Inc.')).toBeLessThan(next)
+    expect(args.slice(next, next + 8)).toEqual(['--next-signer', '--ks', 'NONE', '--ks-type', 'Windows-MY', '--ks-key-alias', 'OK Studio Inc. 2027', '--ks-pass'])
+    expect(args.slice(args.indexOf('--lineage'), args.indexOf('--lineage') + 4)).toEqual(['--lineage', 'signing-lineage', '--rotation-min-sdk-version', '28'])
+  })
+
+  test('a lineage needs two signers, and two signers need a lineage', () => {
+    expect(() => signArgs({ signers: [store], lineage: 'signing-lineage', out: 'o', input: 'i' })).toThrow(/key it starts from/)
+    expect(() => signArgs({ signers: [store, store], out: 'o', input: 'i' })).toThrow(/needs a lineage/)
+    expect(() => signArgs({ signers: [], out: 'o', input: 'i' })).toThrow(/at least one signer/)
+  })
+
+  test('rotate names the old signer then the new one', () => {
+    const args = rotateArgs({ oldSigner: { ks: 'old.jks', alias: 'old', pass: 'pass:x' }, newSigner: { ks: 'new.jks', alias: 'new', pass: 'pass:x' }, out: 'lineage' })
+    expect(args).toEqual(['rotate', '--out', 'lineage', '--old-signer', '--ks', 'old.jks', '--ks-key-alias', 'old', '--ks-pass', 'pass:x', '--new-signer', '--ks', 'new.jks', '--ks-key-alias', 'new', '--ks-pass', 'pass:x'])
   })
 })

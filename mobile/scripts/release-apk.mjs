@@ -25,29 +25,32 @@ import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { androidDir, gradlew, requireToolchain, win } from './android-env.mjs'
-import { apkName, newestBuildTools, parseVerifyOutput, pinnedSignerFor } from './apkSigning.mjs'
+import { apkName, newestBuildTools, parseArgs, parseVerifyOutput, pinnedSignerFor, shellLine, signArgs, windowsStoreSigner } from './apkSigning.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const MOBILE = join(ROOT, 'mobile')
 const LINEAGE = join(androidDir, 'signing-lineage')
 const APP_ID = 'com.okstudio.polaris'
-// The certificate's friendly name in the Windows store (docs/releases.md, "Current keys" names
-// the key). `keytool -list -storetype Windows-MY` prints the aliases.
-const KEY_ALIAS = 'OK Studio Inc.'
+// The certificates' friendly names in the Windows store, oldest first: the last one signs, and
+// when a signing lineage exists the first one, the key the lineage starts from, signs alongside
+// it (apksigner refuses a lineage without it). A renewed certificate is appended here
+// (mobile/README.md, "When the certificate is renewed"). `keytool -list -storetype Windows-MY`
+// prints the aliases; docs/releases.md "Current keys" names the keys.
+const KEY_ALIASES = ['OK Studio Inc.']
 // Android 9 and later read the signing lineage (scheme v3); an older install signed by the
 // previous key cannot update and is reinstalled instead.
 const ROTATION_MIN_SDK = '28'
 
-const args = process.argv.slice(2)
-const flags = new Set(['--skip-build', '--upload', '--install'])
-const aliasArg = args.find((arg) => arg.startsWith('--alias='))
-const unknown = args.filter((arg) => !flags.has(arg) && arg !== aliasArg)
-if (unknown.length) {
-  console.error(`Unknown option: ${unknown.join(' ')}\nUsage: npm run release:apk -- [--skip-build] [--upload] [--install] [--alias=<certificate alias>]`)
+let options
+try {
+  options = parseArgs(process.argv.slice(2))
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err))
   process.exit(1)
 }
-const skipBuild = args.includes('--skip-build')
-const alias = aliasArg ? aliasArg.slice('--alias='.length) : KEY_ALIAS
+const { skipBuild } = options
+const alias = options.alias || KEY_ALIASES.at(-1)
+const oldAlias = options.oldAlias || KEY_ALIASES[0]
 
 if (!win) {
   console.error('The release APK is signed on Windows, where the eToken holds the certificate (mobile/README.md, Release build).')
@@ -64,12 +67,11 @@ function run(command, commandArgs, options = {}) {
   if (result.status !== 0) fail(`${command} ${commandArgs.join(' ')} failed (${result.status ?? result.signal}).`)
 }
 
-// npm and gradlew are .cmd and .bat files, which need a shell; the line is quoted here, since
-// a shell gets the arguments concatenated and nothing else.
-function runInShell(command, commandArgs, options = {}) {
-  const quote = (s) => (/[\s"]/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s)
-  const line = [command, ...commandArgs].map(quote).join(' ')
-  const result = spawnSync(line, { stdio: 'inherit', shell: true, ...options })
+// npm and gradlew are .cmd and .bat files, which need a shell; the line is quoted by shellLine,
+// since a shell gets the arguments concatenated and nothing else.
+function runInShell(command, commandArgs, spawnOptions = {}) {
+  const line = shellLine(command, commandArgs)
+  const result = spawnSync(line, { stdio: 'inherit', shell: true, ...spawnOptions })
   if (result.status !== 0) fail(`${line} failed (${result.status ?? result.signal}).`)
 }
 
@@ -125,16 +127,16 @@ for (const stale of [aligned, out, `${out}.idsig`]) rmSync(stale, { force: true 
 run(zipalign, ['-p', '-f', '4', unsigned, aligned])
 
 const lineage = existsSync(LINEAGE)
-console.log(`Signing ${name} as "${alias}"${lineage ? ' with the signing lineage' : ''} (the eToken may ask for its PIN)`)
-const signed = spawnSync(...apksigner([
-  'sign',
-  '--ks', 'NONE', '--ks-type', 'Windows-MY', '--ks-key-alias', alias,
-  // The Windows store has no password and ignores this; apksigner only insists on being given one.
-  '--ks-pass', 'pass:windows-store',
-  '--v2-signing-enabled', 'true', '--v3-signing-enabled', 'true', '--v4-signing-enabled', 'false',
-  ...(lineage ? ['--lineage', LINEAGE, '--rotation-min-sdk-version', ROTATION_MIN_SDK] : []),
-  '--out', out, aligned,
-], { stdio: 'inherit' }))
+if (lineage && oldAlias === alias) {
+  rmSync(aligned, { force: true })
+  fail(`A signing lineage exists, so the key it starts from signs too: name it in KEY_ALIASES before "${alias}", or pass --old-alias=.`)
+}
+const signers = lineage ? [windowsStoreSigner(oldAlias), windowsStoreSigner(alias)] : [windowsStoreSigner(alias)]
+console.log(`Signing ${name} as "${alias}"${lineage ? ` with the signing lineage from "${oldAlias}"` : ''} (the eToken may ask for its PIN)`)
+const signed = spawnSync(...apksigner(
+  signArgs({ signers, lineage: lineage ? LINEAGE : null, rotationMinSdk: ROTATION_MIN_SDK, out, input: aligned }),
+  { stdio: 'inherit' },
+))
 rmSync(aligned, { force: true })
 if (signed.status !== 0) {
   rmSync(out, { force: true })
@@ -163,7 +165,7 @@ if (problem) {
 }
 console.log(`Made ${out}\nSigned by ${signer} (release-signers), signature schemes v2 and v3.`)
 
-if (args.includes('--install')) {
+if (options.install) {
   const adb = join(sdk, 'platform-tools', 'adb.exe')
   if (!existsSync(adb)) fail(`adb not found at ${adb}. Install the SDK's platform-tools.`)
   const install = output(adb, ['install', '-r', out])
@@ -176,7 +178,7 @@ if (args.includes('--install')) {
   }
 }
 
-if (args.includes('--upload')) {
+if (options.upload) {
   const git = (gitArgs) => output('git', gitArgs, { cwd: ROOT })
   if (git(['status', '--porcelain']).text.trim()) fail('The checkout has changes: upload only from a clean checkout of the release tag.')
   const tags = git(['tag', '--points-at', 'HEAD']).text.split(/\r?\n/).map((t) => t.trim())
