@@ -365,7 +365,7 @@ function RepeatBuilderSection({ draft, dueIso, api, onDraft, onSave, onCancel })
       }}
     >
       <RepeatBuilder value={draft} dueIso={dueIso} onChange={onDraft} api={api} />
-      <div className="sheet-actions" style={{ marginTop: 12 }}>
+      <div className="sheet-actions" style={{ marginTop: 'var(--gap-field)' }}>
         <button type="button" className="btn" onClick={onCancel}>Cancel</button>
         <button type="button" className="btn btn-primary" disabled={!draft} onClick={onSave}>Save</button>
       </div>

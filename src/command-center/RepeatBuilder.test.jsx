@@ -1,7 +1,8 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import RepeatBuilder, { RepeatPicker, previewText } from './RepeatBuilder'
+import userEvent from '@testing-library/user-event'
+import RepeatBuilder, { RepeatPicker, moreOptionsSummary, previewText } from './RepeatBuilder'
 
 afterEach(cleanup)
 
@@ -20,6 +21,10 @@ function Host({ initial = 'weekly', onChange, api, Component = RepeatBuilder }) 
     />
   )
 }
+
+// Counts from and Ends sit behind More options, closed until opened.
+const moreButton = () => screen.getByRole('button', { name: /^More options/ })
+const openMore = () => fireEvent.click(moreButton())
 
 describe('RepeatBuilder', () => {
   test('More and Fewer step the interval', () => {
@@ -80,6 +85,7 @@ describe('RepeatBuilder', () => {
   test('Ends: On writes UNTIL from the date box, After writes COUNT, Never takes them off', () => {
     const onChange = vi.fn()
     render(<Host initial="daily" onChange={onChange} />)
+    openMore()
     const ends = screen.getByRole('group', { name: 'Ends' })
     expect(within(ends).getByRole('radio', { name: 'Never' }).checked).toBe(true)
 
@@ -102,6 +108,7 @@ describe('RepeatBuilder', () => {
 
   test('a rule that ends shows its end chosen', () => {
     render(<Host initial="FREQ=WEEKLY;BYDAY=MO;COUNT=1" />)
+    openMore()
     const ends = screen.getByRole('group', { name: 'Ends' })
     expect(within(ends).getByRole('radio', { name: /^After/ }).checked).toBe(true)
     expect(screen.getByRole('combobox', { name: 'Number of times' }).value).toBe('1')
@@ -111,6 +118,7 @@ describe('RepeatBuilder', () => {
   // An agent can write any COUNT; the builder must not try to list a million options.
   test('a COUNT beyond the list shows as one extra option with its value', () => {
     render(<Host initial="FREQ=DAILY;COUNT=1000000000" />)
+    openMore()
     const select = screen.getByRole('combobox', { name: 'Number of times' })
     const options = within(select).getAllByRole('option')
     expect(options).toHaveLength(101)
@@ -122,7 +130,8 @@ describe('RepeatBuilder', () => {
   test('counting from the finish hides the day choices and writes X-FROM; the due date brings them back', () => {
     const onChange = vi.fn()
     render(<Host onChange={onChange} />)
-    const from = screen.getByRole('group', { name: 'Counts from' })
+    openMore()
+    const from =screen.getByRole('group', { name: 'Counts from' })
     expect(within(from).getByRole('radio', { name: 'The due date' }).checked).toBe(true)
 
     fireEvent.click(within(from).getByRole('radio', { name: 'The day I finish it' }))
@@ -142,6 +151,7 @@ describe('RepeatBuilder', () => {
   test('a finish-anchored rule with an end round trips through the builder', () => {
     const onChange = vi.fn()
     render(<Host initial="FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION" onChange={onChange} />)
+    openMore()
     expect(screen.getByRole('radio', { name: 'The day I finish it' }).checked).toBe(true)
     fireEvent.change(screen.getByRole('combobox', { name: 'Number of times' }), { target: { value: '4' } })
     expect(onChange).toHaveBeenLastCalledWith('FREQ=DAILY;INTERVAL=3;COUNT=4;X-FROM=COMPLETION')
@@ -186,6 +196,92 @@ describe('RepeatBuilder', () => {
   test('has no line for the dates without a way to ask for them', () => {
     const { container } = render(<Host />)
     expect(container.querySelector('.repeat-preview')).toBeNull()
+  })
+})
+
+describe('RepeatBuilder summary and More options', () => {
+  test('a heading-like line words the rule, with the next dates under it', async () => {
+    const api = { previewRecurrence: vi.fn().mockResolvedValue({ dates: ['2026-10-24'] }) }
+    const { container } = render(<Host initial="FREQ=WEEKLY;BYDAY=WE,FR" api={api} />)
+    const summary = container.querySelector('.repeat-summary')
+    expect(summary.textContent).toMatch(/^Repeats weekly on /)
+    await screen.findByText('Next: Sat, Oct 24')
+    expect(summary.nextElementSibling.className).toBe('repeat-preview')
+  })
+
+  test('the summary follows the rule as it changes', () => {
+    const { container } = render(<Host initial="daily" />)
+    const before = container.querySelector('.repeat-summary').textContent
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(container.querySelector('.repeat-summary').textContent).not.toBe(before)
+    expect(container.querySelector('.repeat-summary').textContent).toMatch(/2 days/)
+  })
+
+  test('has no summary or More options in the plain choices form', () => {
+    const { container } = render(<Host initial="weekly" Component={RepeatPicker} />)
+    expect(container.querySelector('.repeat-summary')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^More options/ })).toBeNull()
+  })
+
+  test('More options starts closed and names the hidden values', () => {
+    render(<Host initial="daily" />)
+    const button = moreButton()
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.textContent).toBe('More optionsCounts from the due date, never ends')
+    expect(screen.queryByRole('group', { name: 'Ends' })).toBeNull()
+    expect(screen.queryByRole('radio', { name: 'Never' })).toBeNull()
+  })
+
+  test('the button controls the revealed region', () => {
+    render(<Host initial="daily" />)
+    openMore()
+    expect(moreButton().getAttribute('aria-expanded')).toBe('true')
+    const region = document.getElementById(moreButton().getAttribute('aria-controls'))
+    expect(region.hidden).toBe(false)
+    expect(within(region).getByRole('group', { name: 'Ends' })).toBeTruthy()
+    openMore()
+    expect(moreButton().getAttribute('aria-expanded')).toBe('false')
+    expect(region.hidden).toBe(true)
+  })
+
+  test('Enter and Space toggle it, and Tab moves into the revealed controls', async () => {
+    const user = userEvent.setup()
+    render(<Host initial="daily" />)
+    const button = moreButton()
+    button.focus()
+    await user.keyboard('{Enter}')
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    await user.keyboard(' ')
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    await user.keyboard('{Enter}')
+    await user.tab()
+    expect(document.activeElement.getAttribute('type')).toBe('radio')
+    expect(document.activeElement.closest('[hidden]')).toBeNull()
+  })
+
+  test('it stays open while the rule changes', () => {
+    render(<Host initial="daily" />)
+    openMore()
+    fireEvent.click(screen.getByRole('radio', { name: 'The day I finish it' }))
+    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(moreButton().getAttribute('aria-expanded')).toBe('true')
+  })
+
+  test('the summary words several rules', () => {
+    const shape = { fromCompletion: false, ends: 'never', until: '2026-12-31', count: 10 }
+    expect(moreOptionsSummary(shape)).toBe('Counts from the due date, never ends')
+    expect(moreOptionsSummary({ ...shape, fromCompletion: true, ends: 'after' })).toBe('Counts from the day you finish it, ends after 10 times')
+    expect(moreOptionsSummary({ ...shape, ends: 'after', count: 1 })).toBe('Counts from the due date, ends after 1 time')
+    expect(moreOptionsSummary({ ...shape, ends: 'on' })).toBe('Counts from the due date, ends on Dec 31, 2026')
+  })
+
+  test('the button text follows the rule', () => {
+    render(<Host initial="FREQ=DAILY;INTERVAL=3;COUNT=4;X-FROM=COMPLETION" />)
+    expect(moreButton().textContent).toBe('More optionsCounts from the day you finish it, ends after 4 times')
+    openMore()
+    fireEvent.click(screen.getByRole('radio', { name: 'The due date' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Never' }))
+    expect(moreButton().textContent).toBe('More optionsCounts from the due date, never ends')
   })
 })
 
@@ -251,6 +347,7 @@ describe('RepeatPicker', () => {
     render(<Host initial="FREQ=WEEKLY;BYDAY=WE" Component={RepeatPicker} />)
     fireEvent.change(choice(), { target: { value: 'custom' } })
     expect(choice().value).toBe('custom')
+    openMore()
     expect(screen.getByRole('radio', { name: 'Never' })).toBeTruthy()
     expect(screen.getByRole('combobox', { name: 'Repeat unit' })).toBeTruthy()
   })
@@ -258,6 +355,8 @@ describe('RepeatPicker', () => {
   test('a rule with an end shows as Custom, and an alias as its choice', () => {
     render(<Host initial="FREQ=DAILY;COUNT=3" Component={RepeatPicker} />)
     expect(choice().value).toBe('custom')
+    expect(moreButton().textContent).toBe('More optionsCounts from the due date, ends after 3 times')
+    openMore()
     expect(screen.getByRole('radio', { name: /^After/ }).checked).toBe(true)
     cleanup()
     render(<Host initial="weekly" Component={RepeatPicker} />)
