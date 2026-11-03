@@ -163,6 +163,9 @@ export function Popover({
       // here. mousedown-based outside-click detection above is unaffected,
       // since that's a plain DOM listener rather than this synthetic event.
       onClick={(e) => e.stopPropagation()}
+      // The browser's own menu has nothing to add to ours, and the key that opened a task's menu
+      // can send this event to the item that took focus.
+      onContextMenu={(e) => e.preventDefault()}
       style={{
         position: 'fixed',
         left: pos.left,

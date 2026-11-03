@@ -3,6 +3,10 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- Right-click a My tasks row or a Board card, or press Shift+F10 or the ContextMenu key on it, for a menu with Open task, Complete or Reopen, Due, Priority, and Move to project or section.
+
 ## 2.3.0 (2026-11-02)
 
 Migration 14 renumbers every task's position into one order across all projects and sections,
