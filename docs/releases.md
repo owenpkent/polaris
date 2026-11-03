@@ -72,12 +72,13 @@ Releases are batched: one is cut when there is something worth installing, not f
 
 6. Push the tag: `git push origin v2.1.0`. Installs find it with a credential-free `git fetch --tags`.
 7. Make a GitHub release for the tag with the same notes, for people reading the repository. Installs never read it: the signature on the tag is what they trust, and GitHub's own signing (the web-flow key on merge commits) proves nothing to them.
+8. Build the Android app, signed with the same certificate, and attach it to that release: `npm run release:apk -- --upload` from a clean checkout of the tag (mobile/README.md, "Release build"). The App update card in the app's Settings offers the APK of the newest release, and Android installs it only over an app signed with the same key.
 
 An install then updates with `cc update --release` (or names the version with `cc update --to v2.1.0`), after `cc update --check` has shown what it would do.
 
 ## Key rotation
 
-A new key enters the way the first one did, and the old key vouches for it. A renewed certificate with a new key is the same procedure, its line made with `ssh-keygen -i -m PKCS8` from the new public key:
+A new key enters the way the first one did, and the old key vouches for it. A renewed certificate with a new key is the same procedure, its line made with `ssh-keygen -i -m PKCS8` from the new public key. The Android app is signed with the same certificate, and its installs need the old key to vouch too, in a signing lineage made once with both keys (mobile/README.md, "When the certificate is renewed"):
 
 1. Make the new key (the setup above, a new file name) and add its line to `release-signers`, keeping the old line.
 2. Make a release signed by the old key that carries the new file.

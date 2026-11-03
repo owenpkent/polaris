@@ -6,6 +6,7 @@ vi.mock('./SettingsForm', () => ({ default: () => <div>connection card</div> }))
 vi.mock('./AgentSettings', () => ({ default: () => <div>agents card</div> }))
 vi.mock('./BackupSettings', () => ({ default: () => <div>backups card</div> }))
 vi.mock('./ReminderSettings', () => ({ default: () => <div>reminders card</div> }))
+vi.mock('./AppUpdateSettings', () => ({ default: () => <div>app update card</div> }))
 vi.mock('./ImportTasks', () => ({ default: () => <div>import card</div> }))
 vi.mock('./AboutSettings', () => ({ default: () => <div>about card</div> }))
 
@@ -40,5 +41,14 @@ describe('SettingsTab', () => {
     window.Capacitor = { isNativePlatform: () => true }
     render(<SettingsTab theme="system" onThemeChange={() => {}} />)
     expect(screen.getByRole('button', { name: 'Reminders' })).toBeTruthy()
+  })
+
+  test('the app update section is there only in the Android app', () => {
+    const { unmount } = render(<SettingsTab theme="system" onThemeChange={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'App update' })).toBeNull()
+    unmount()
+    window.Capacitor = { isNativePlatform: () => true }
+    render(<SettingsTab theme="system" onThemeChange={() => {}} />)
+    expect(screen.getByRole('button', { name: 'App update' })).toBeTruthy()
   })
 })
