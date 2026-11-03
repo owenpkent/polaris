@@ -121,9 +121,12 @@ The dashboard is built from layers with crisp edges, so surfaces never blend tog
 | Higher | `--bg3` | Task panel, menus, the Inbox column header |
 | Hover | `--bg-hover` | Hover on any row or item (a translucent wash, never a resting background) |
 | Pressed | `--bg-active` | Pressed or open state of a quiet control |
-| Divider | `--bd` | Hairlines between rows (a translucent wash, about twice the hover's strength) |
+| Divider | `--bd` | Hairlines between rows (a translucent wash, about three times the hover's strength) |
+| Surface edge | `--bd-surface` | The edge of the sidebar, the top bar, and a bordered panel |
+| Section rule | `--bd-section` | The rule under a My tasks group header, so each group reads as its own block |
+| Section band | `--bg-section` | The opaque band behind a My tasks group header (a resting surface, unlike `--bg-hover`) |
 
-Every token has one job, as in a stepped scale such as Radix Colors: surfaces, state layers, lines, fills, text. A job never borrows another's token. Hover, pressed, and both divider tokens are washes of the text colour (`color-mix` with `transparent`), so one value works on every surface and a line always reads stronger than a hover beside it. A chip or badge at rest uses `--neutral-soft` or a `--*-soft` tint, never `--bg-hover`.
+Every token has one job, as in a stepped scale such as Radix Colors: surfaces, state layers, lines, fills, text. A job never borrows another's token. Hover, pressed, and the three line tokens are washes of the text colour (`color-mix` with `transparent`), so one value works on every surface and a line always reads stronger than a hover beside it. A chip or badge at rest uses `--neutral-soft` or a `--*-soft` tint, never `--bg-hover`.
 
 - **Contrast.** `--t1`, `--t2`, and `--t3` reach at least 4.5:1 on every layer, hovered or pressed (t1 and t2 reach 7:1 on the page), and `--bd-strong` reaches 3:1 for control edges. `--bd` is for dividers only. Measure any new color against every layer it can sit on before using it.
 - **Depth.** Raised surfaces use `--shadow-1` (a lit top edge, a 1px dark ring, and a 1px drop: a resting panel sits on the page rather than floating over it); floating ones use `--shadow-pop`; recessed ones use `--shadow-inset`. Avoid soft glows and translucent blur.
