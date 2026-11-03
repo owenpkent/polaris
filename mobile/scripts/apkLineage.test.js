@@ -28,6 +28,11 @@ function tool(command, args, cwd) {
   return { status: result.status, text: `${result.stdout || ''}${result.stderr || ''}` }
 }
 
+// Two key pairs, a rotate, a sign, and a verify each start a JVM, and the key generation alone
+// can take tens of seconds on a loaded machine, so the setup and the tests get their own
+// timeouts in place of Vitest's 10 seconds.
+const SLOW = 180_000
+
 describe.skipIf(!ready)('signing with a lineage', () => {
   let dir
   const signer = (name) => ({ ks: `${name}.jks`, alias: name, pass: 'pass:throwaway' })
@@ -47,7 +52,7 @@ describe.skipIf(!ready)('signing with a lineage', () => {
     if (zipped.status !== 0) throw new Error(zipped.text)
     const rotated = apksigner(rotateArgs({ oldSigner: signer('old'), newSigner: signer('new'), out: 'lineage' }))
     if (rotated.status !== 0) throw new Error(rotated.text)
-  })
+  }, SLOW)
 
   afterAll(() => {
     if (dir) rmSync(dir, { recursive: true, force: true })
@@ -59,7 +64,7 @@ describe.skipIf(!ready)('signing with a lineage', () => {
     const one = apksigner(['sign', ...signerArgs(signer('new')), '--lineage', 'lineage', '--rotation-min-sdk-version', '28', '--out', 'one.apk', 'in.zip'])
     expect(one.status).not.toBe(0)
     expect(one.text).toMatch(/oldest signer/)
-  })
+  }, SLOW)
 
   test('the old key and the current key sign, and the result verifies with v2 and v3 and one signer', () => {
     const two = apksigner(signArgs({ signers: [signer('old'), signer('new')], lineage: 'lineage', out: 'two.apk', input: 'in.zip' }))
@@ -74,5 +79,5 @@ describe.skipIf(!ready)('signing with a lineage', () => {
     // The certificate apksigner reports first is the current key's, the one pinnedSignerFor checks.
     expect(parsed.certs.length).toBeGreaterThanOrEqual(1)
     expect(verified.text).toContain('CN=new')
-  })
+  }, SLOW)
 })
