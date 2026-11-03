@@ -1,6 +1,8 @@
 # Automated tests. See initiatives/automated-testing.md, Phase 3 (option A, chosen 2026-09-18):
-# the fast layers run on every push and every pull request, and the browser UI tests run only on
-# pull requests into main, because they are the slow part. The vulnerability gate for pull
+# the fast layers run on every push and every pull request, and the browser UI tests run on pull
+# requests into main and on every push to main, because they are the slow part. The run on main
+# tests the commit as merged, so a release commit is tested there (docs/releases.md); nothing runs
+# the whole UI suite on the owner's machine. The vulnerability gate for pull
 # requests is here too (the `osv` job), so that the one `Tests` check covers it.
 #
 # The fast and UI jobs run on Windows: the UI tests need Edge, and the fast job keeps to the
@@ -14,9 +16,11 @@ on:
   pull_request:
     branches: [main]
 
-# A newer push to the same branch makes the older run pointless.
+# A newer push to the same branch makes the older run pointless. Not on main: each commit there
+# has a group of its own, so a merge right after a release commit never cancels the run that
+# tests it, waiting or started.
 concurrency:
-  group: tests-${{ github.ref }}
+  group: tests-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -79,7 +83,13 @@ jobs:
     needs: changes
     # Skipped when the pull request touches nothing the dashboard or its server is built from
     # (the `ui` filter in `changes` below). `ui-passed` and `tests` accept that skip, and only that one.
-    if: github.event_name == 'pull_request' && needs.changes.outputs.ui == 'true'
+    # Every push to main runs it, with no filter: `changes` runs only on pull requests, so the
+    # condition is written to go on when that job was skipped.
+    if: >-
+      ${{ !cancelled() && (
+        (github.event_name == 'pull_request' && needs.changes.outputs.ui == 'true') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      ) }}
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:

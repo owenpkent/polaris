@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url'
 export { TOKEN } from './server.js'
 
 // The servers themselves start per worker in e2e/fixtures.js (see e2e/server.js). This only
-// checks that there is a dashboard to serve.
+// checks that there is a dashboard to serve. The suite lock is taken earlier, as
+// playwright.config.js loads, because Playwright empties .playwright/ before this runs.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 export default async function globalSetup() {
