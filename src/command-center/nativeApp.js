@@ -20,6 +20,13 @@ export function nativeCall(plugin, method, options = {}) {
   return window.Capacitor.nativePromise(plugin, method, options)
 }
 
+// The installed app's version and build number, from Capacitor's App plugin. A missing field is null.
+export async function getAppInfo() {
+  const res = await nativeCall('App', 'getInfo')
+  const text = (v) => (typeof v === 'string' && v ? v : null)
+  return { version: text(res?.version), build: text(res?.build) }
+}
+
 export async function checkNotificationPermission() {
   const res = await nativeCall('LocalNotifications', 'checkPermissions')
   return res?.display === 'granted'

@@ -5,6 +5,10 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- My tasks no longer lets a task be dragged or arrowed into Overdue, so a move never gives a
+  task a date in the past by accident. A drag over Overdue lands at the top of Today; tasks
+  already in Overdue can still be reordered there or moved out. The due date picker still takes
+  a past date.
 - A new task goes to the top of the list under Sort: Manual, wherever it is made, offline too.
   A subtask still goes to the bottom of its parent's list, and an import or a repo checklist
   puts its new tasks at the top in the file's order. Tasks you already have keep their order.

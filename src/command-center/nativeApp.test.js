@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import {
   subscribeNativeShares, nativeCall, checkNotificationPermission, requestNotificationPermission,
-  scheduleNotifications, cancelAllNotifications, subscribeNotificationTaps, subscribeAppResume,
+  scheduleNotifications, cancelAllNotifications, subscribeNotificationTaps, subscribeAppResume, getAppInfo,
 } from './nativeApp'
 
 afterEach(() => {
@@ -66,6 +66,16 @@ describe('native calls', () => {
     await expect(nativeCall('LocalNotifications', 'getPending')).rejects.toThrow()
     window.Capacitor = { isNativePlatform: () => true }
     await expect(nativeCall('LocalNotifications', 'getPending')).rejects.toThrow()
+  })
+
+  test('getAppInfo returns version and build, null for what is missing', async () => {
+    const cap = bridge({ getInfo: { version: '2.3.0', build: '20300' } })
+    expect(await getAppInfo()).toEqual({ version: '2.3.0', build: '20300' })
+    expect(cap.nativePromise).toHaveBeenCalledWith('App', 'getInfo', {})
+    bridge({ getInfo: { version: '2.3.0' } })
+    expect(await getAppInfo()).toEqual({ version: '2.3.0', build: null })
+    delete window.Capacitor
+    await expect(getAppInfo()).rejects.toThrow()
   })
 
   test('permission checks map display to a boolean', async () => {

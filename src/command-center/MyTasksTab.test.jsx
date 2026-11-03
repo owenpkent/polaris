@@ -588,6 +588,23 @@ describe('MyTasksTab moves between due-date groups', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
   })
 
+  test('nothing moves into Overdue: ArrowUp on the first row of Today stays put, and Overdue rows can still leave', async () => {
+    const yesterday = (() => { const [y, m, d] = bounds.today.split('-').map(Number); const t = new Date(y, m - 1, d - 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}` })()
+    api.listTasks.mockResolvedValue({
+      tasks: [mk('o', 'Old', 0, yesterday), mk('a', 'Alpha', 1, `${bounds.today}T09:00`), mk('b', 'Beta', 2, bounds.tomorrow)],
+    })
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowUp' })
+    expect(inGroup(container, 'overdue')).toEqual(['o'])
+    expect(inGroup(container, 'today')).toEqual(['a'])
+    expect(api.updateTask).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Due date for Alpha' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Old' }), { key: 'ArrowDown' })
+    expect(inGroup(container, 'today')).toEqual(['o', 'a'])
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('o', { dueAt: bounds.today }))
+  })
+
   test('the handle menu moves a row to No due date, and leaves out the group it is in', async () => {
     const { container } = render(<MyTasksTab />)
     await screen.findByRole('button', { name: 'Reorder Beta' })
