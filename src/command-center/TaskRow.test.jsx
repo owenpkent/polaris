@@ -395,3 +395,99 @@ describe('TaskRow under the manual sort', () => {
     expect(row.children[1].style.gridColumn).toBe('')
   })
 })
+
+describe('TaskRow context menu', () => {
+  function openMenu() {
+    const utils = renderRow({ task: { dueAt: '2026-09-29T09:30' } })
+    const row = utils.container.querySelector('.mytasks-row')
+    const notPrevented = fireEvent.contextMenu(row, { clientX: 40, clientY: 30 })
+    return { ...utils, row, notPrevented }
+  }
+
+  test('right-click replaces the browser menu with the task menu', () => {
+    const { notPrevented } = openMenu()
+    expect(notPrevented).toBe(false)
+    expect(screen.getByRole('menu', { name: 'Actions for Write the report' })).toBeTruthy()
+    for (const name of ['Open task', 'Complete', 'Today', 'Tomorrow', 'No due date']) {
+      expect(screen.getByRole('menuitem', { name })).toBeTruthy()
+    }
+    expect(screen.getByRole('menuitemradio', { name: 'High' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  test('Open task, Complete, due and priority items call the row handlers and close the menu', () => {
+    const { row, onOpen, onToggleComplete, onQuickUpdate, task } = openMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tomorrow' }))
+    // The time of day stays.
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: `${DUE_BOUNDS.tomorrow}T09:30` })
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'No due date' }))
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { dueAt: null })
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Urgent' }))
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { priority: 'urgent' })
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Beta' }))
+    expect(onQuickUpdate).toHaveBeenCalledWith(task, { projectId: 'p2', sectionId: null })
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Complete' }))
+    expect(onToggleComplete).toHaveBeenCalledWith(task)
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open task' }))
+    expect(onOpen).toHaveBeenCalledWith('t1')
+  })
+
+  test('a done task offers Reopen, and Complete is disabled while the task is pending', () => {
+    const { rerender, container, task } = renderRow({ task: { status: 'done' } })
+    fireEvent.contextMenu(container.querySelector('.mytasks-row'))
+    expect(screen.getByRole('menuitem', { name: 'Reopen' })).toBeTruthy()
+    cleanup()
+    renderRow({ props: { pending: true } })
+    fireEvent.contextMenu(document.querySelector('.mytasks-row'))
+    expect(screen.getByRole('menuitem', { name: 'Complete' }).disabled).toBe(true)
+    void rerender
+    void task
+  })
+
+  test('Shift+F10 and the ContextMenu key open it, and Esc closes it and returns focus', () => {
+    const { container } = renderRow()
+    const open = container.querySelector('.mytasks-open')
+    open.focus()
+    fireEvent.keyDown(open, { key: 'F10', shiftKey: true })
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(open)
+
+    fireEvent.keyDown(open, { key: 'ContextMenu' })
+    expect(screen.getByRole('menu')).toBeTruthy()
+    // F10 without Shift does nothing.
+    cleanup()
+    const second = renderRow()
+    fireEvent.keyDown(second.container.querySelector('.mytasks-open'), { key: 'F10' })
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  test('arrow keys move through the items', () => {
+    openMenu()
+    const items = screen.getAllByRole('menuitem')
+    items[0].focus()
+    fireEvent.keyDown(items[0], { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(items[1])
+  })
+
+  test('the browser menu stays while the name is renamed in place', () => {
+    const { container } = renderRow()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Write the report' }))
+    const input = screen.getByRole('textbox', { name: 'Task name' })
+    expect(fireEvent.contextMenu(input)).toBe(true)
+    fireEvent.keyDown(input, { key: 'F10', shiftKey: true })
+    expect(screen.queryByRole('menu')).toBeNull()
+    void container
+  })
+})

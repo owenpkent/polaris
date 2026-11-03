@@ -152,6 +152,18 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // The right-click menu on a row: due, priority, and project groups, at every width.
+  test('My tasks with the task context menu open', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'context menu')
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 200, y: 10 } })
+    await expect(page.getByRole('menu', { name: `Actions for ${title}` })).toBeVisible()
+    await expectNothingCutOff(page)
+    await page.keyboard.press('Escape')
+  })
+
   // A row dropped into Next 7 days opens the date picker on it, at every width.
   test('My tasks with the date picker open on a row dropped into a range', async ({ page, request }, testInfo) => {
     const day = new Date()

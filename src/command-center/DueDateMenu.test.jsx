@@ -510,3 +510,16 @@ describe('the Repeat button and the repeat view', () => {
     expect(screen.queryByRole('button', { name: /^Repeat/ })).toBeNull()
   })
 })
+
+describe('the browser menu inside the picker', () => {
+  test('a contextmenu event on the time box is left alone, and one on a day button is cancelled', () => {
+    renderMenu('2026-10-08T09:30')
+    const fire = (el) => {
+      const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+      el.dispatchEvent(ev)
+      return ev.defaultPrevented
+    }
+    expect(fire(screen.getByLabelText('Time'))).toBe(false)
+    expect(fire(day('Today'))).toBe(true)
+  })
+})

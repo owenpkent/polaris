@@ -10,6 +10,11 @@ import { Check } from 'lucide-react'
 // click outside) and positioning (portaled to <body>, clamped to the
 // viewport) only need to be right in one place.
 
+// A text field keeps the browser's own menu (paste, spell check), and a key typed in it is its own.
+export function inTextField(target) {
+  return Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'))
+}
+
 // Move focus between an open dropdown's items with the arrow keys, and jump
 // to the first/last with Home/End. Items are anything inside `containerRef`
 // marked with `data-menu-item` that isn't disabled.
@@ -163,6 +168,9 @@ export function Popover({
       // here. mousedown-based outside-click detection above is unaffected,
       // since that's a plain DOM listener rather than this synthetic event.
       onClick={(e) => e.stopPropagation()}
+      // The browser's own menu has nothing to add to ours, and the key that opened a task's menu
+      // can send this event to the item that took focus. A field in a picker keeps its own.
+      onContextMenu={(e) => { if (!inTextField(e.target)) e.preventDefault() }}
       style={{
         position: 'fixed',
         left: pos.left,
@@ -246,13 +254,14 @@ function MenuRow({ item }) {
 
 // A Popover whose content is a simple vertical list of items (see MenuRow).
 // Covers every dropdown that isn't a custom picker: column header menus,
-// and the toolbar's Sort/Group/Columns buttons.
-export function Menu({ anchorRef, open, onClose, items, align, minWidth, label }) {
+// and the toolbar's Sort/Group/Columns buttons. `preferFit` is Popover's: a long menu (a task's
+// right-click menu) opens above a row low on the screen rather than scrolling in what is left below.
+export function Menu({ anchorRef, open, onClose, items, align, minWidth, label, preferFit = false }) {
   const listRef = useRef(null)
   const onKeyDown = useRovingFocus(listRef)
 
   return (
-    <Popover anchorRef={anchorRef} open={open} onClose={onClose} align={align} minWidth={minWidth}>
+    <Popover anchorRef={anchorRef} open={open} onClose={onClose} align={align} minWidth={minWidth} preferFit={preferFit}>
       <div ref={listRef} role="menu" aria-label={label} onKeyDown={onKeyDown} style={{ padding: '6px 0' }}>
         {items.map((item, i) => (
           <MenuRow key={item.key ?? i} item={{ ...item, onAfterSelect: onClose }} />

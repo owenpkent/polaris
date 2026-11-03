@@ -115,6 +115,18 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'manual')
   })
 
+  // The menu a right-click opens on a row.
+  test('mytasks: context menu', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'context menu')
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 200, y: 10 } })
+    await expect(page.getByRole('menu', { name: `Actions for ${title}` })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'context-menu')
+    await page.keyboard.press('Escape')
+  })
+
   // A row dropped into a range of days (Next 7 days) asks for a day: the date picker opens on it.
   test('mytasks: drop into a range', async ({ page, request }, testInfo) => {
     const day = new Date()

@@ -118,6 +118,14 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await audit(page, testInfo, 'goal menu open')
   })
 
+  test('the task context menu', async ({ page }, testInfo) => {
+    await openView(page)
+    const title = 'Reply to accessibility audit feedback'
+    await page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) }).click({ button: 'right', position: { x: 200, y: 10 } })
+    await expect(page.getByRole('menu', { name: `Actions for ${title}` })).toBeVisible()
+    await audit(page, testInfo, 'task context menu open')
+  })
+
   test('the due date picker', async ({ page }, testInfo) => {
     await openView(page)
     await page.getByRole('button', { name: 'Change due date for Draft ADR-003 hosting options' }).click()

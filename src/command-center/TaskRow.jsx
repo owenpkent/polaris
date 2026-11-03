@@ -7,6 +7,7 @@ import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
 import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
+import { PRIORITY_OPTIONS, taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
 // medium (the default), so a pill always means a level was chosen.
@@ -15,14 +16,6 @@ const PRIORITY_DISPLAY = {
   high: { label: 'High', className: 'badge priority-pill is-high' },
   urgent: { label: 'Urgent', className: 'badge priority-pill is-urgent' },
 }
-
-const PRIORITY_MENU_OPTIONS = [
-  { value: 'none', label: 'None' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'urgent', label: 'Urgent' },
-]
 
 export const SOURCE_LABELS = {
   github: 'GitHub',
@@ -168,7 +161,7 @@ function PriorityCell({ task, onUpdate }) {
   const btnRef = useRef(null)
   const priority = PRIORITY_DISPLAY[task.priority]
 
-  const items = PRIORITY_MENU_OPTIONS.map((opt) => ({
+  const items = PRIORITY_OPTIONS.map((opt) => ({
     key: opt.value,
     label: opt.label,
     checked: (task.priority || 'none') === opt.value,
@@ -428,8 +421,24 @@ export default function TaskRow({
         textDecoration: done ? 'line-through' : 'none',
       }
 
+  // Right-click, Shift+F10, or the ContextMenu key on the row (TaskContextMenu.jsx).
+  const { handlers: menuHandlers, menu: contextMenu } = useTaskContextMenu({
+    label: `Actions for ${task.title}`,
+    getItems: () => taskMenuItems({
+      task,
+      dueBounds,
+      pending,
+      onOpen,
+      onToggleComplete,
+      onUpdate: onQuickUpdate,
+      projectOptions,
+    }),
+  })
+
   return (
+    <>
     <div
+      {...menuHandlers}
       className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${rowClass}`}
       data-task-id={depth === 0 ? task.id : undefined}
       data-subtask-id={depth > 0 ? task.id : undefined}
@@ -498,6 +507,8 @@ export default function TaskRow({
       {columnIds.has('priority') && <PriorityCell task={task} onUpdate={onQuickUpdate} />}
       {columnIds.has('source') && <span style={cellStyle}>{SOURCE_LABELS[task.sourceType] || ''}</span>}
     </div>
+    {contextMenu}
+    </>
   )
 }
 

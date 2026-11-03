@@ -180,3 +180,12 @@ describe('Popover preferFit', () => {
     }
   })
 })
+
+describe('the browser menu inside a popover', () => {
+  test('a contextmenu event on a menu item is cancelled', () => {
+    render(<Harness items={items3()} />)
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    screen.getByRole('menuitem', { name: 'Alpha' }).dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+  })
+})
