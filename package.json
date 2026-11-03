@@ -16,7 +16,7 @@
     "mockup": "node scripts/mockup.mjs",
     "test": "vitest run",
     "test:fast": "npm --prefix command-center test && npm --prefix command-center run typecheck && vitest run",
-    "test:ui": "node scripts/suite-lock.mjs vite build \"&&\" playwright test --project desktop --project phone --project desktop-light --project phone-light --project desktop-hc --project phone-landscape --project phone-320",
+    "test:ui": "node scripts/test-ui.mjs",
     "test:all": "npm run test:fast && npm run test:ui",
     "test:android": "npm --prefix mobile run test:device --",
     "shots": "node scripts/shots.mjs"

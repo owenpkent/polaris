@@ -1,4 +1,4 @@
-import { linkSync, readFileSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { readFileSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto'
 // waits, saying who it is waiting for.
 //
 // A run that holds the lock passes its token to the processes it starts in CC_UI_SUITE_LOCK, so
-// `npm run test:ui` (scripts/suite-lock.mjs) and `npm run shots` take it before they build, and
+// `npm run test:ui` (scripts/test-ui.mjs) and `npm run shots` take it before they build, and
 // the Playwright run they start goes on under the same lock (playwright.config.js, which takes
 // it as the config loads) instead of waiting for itself.
 
@@ -53,22 +53,83 @@ function ageMs(path) {
   }
 }
 
-// Move the lock aside, then delete it only if it is still the one judged stale. If another
-// waiter replaced it in between, put the new one back (a link never overwrites an existing file).
-function clearStale(path, judged) {
-  const aside = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.stale`
-  try {
-    renameSync(path, aside)
-  } catch (err) {
-    if (err.code === 'ENOENT') return
-    throw err
-  }
-  const moved = readLock(aside)
-  if ((moved?.token ?? null) !== (judged?.token ?? null)) {
-    try { linkSync(aside, path) } catch { /* a newer lock is already in place */ }
-  }
-  try { unlinkSync(aside) } catch { /* gone already */ }
+// Removing the lock file goes through a second, short-lived mutex file, `<lock>.reclaim`, created
+// exclusively and holding the pid and time of its owner. Only the owner of the mutex may remove the
+// lock file, whether it is reclaiming a lock it judged stale or releasing its own: it re-reads the
+// lock under the mutex and removes it only if it is still the one it meant to remove. Taking the
+// lock stays an exclusive create of the lock path, which cannot succeed while any lock file exists,
+// so a lock replaced by a live successor between a contender's inspection and its removal is
+// left alone. A mutex left by a dead process is cleared when its pid is gone or it is older than
+// `mutexStaleMs`. Residual window: clearing an abandoned mutex is itself an unlink, so two
+// contenders clearing the same dead mutex can in theory delete a third's fresh one; the mutex is
+// held for microseconds and only a process that died inside that window leaves one, so we accept it.
+
+const MUTEX_STALE_MS = 5000
+const MUTEX_WAIT_MS = 2000
+
+const reclaimPath = (path) => `${path}.reclaim`
+
+function pause(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
+
+function readMutex(mutex) {
+  try {
+    return JSON.parse(readFileSync(mutex, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+/** Run `fn` while holding the reclaim mutex. Returns `{ held: false }` when it could not be taken in time. */
+function withMutex(path, { isAlive = pidAlive, mutexStaleMs = MUTEX_STALE_MS, mutexWaitMs = MUTEX_WAIT_MS } = {}, fn) {
+  const mutex = reclaimPath(path)
+  const mine = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(4).toString('hex') })
+  const deadline = Date.now() + mutexWaitMs
+  for (;;) {
+    try {
+      writeFileSync(mutex, mine, { flag: 'wx' })
+      break
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err
+    }
+    const other = readMutex(mutex)
+    const age = ageMs(mutex)
+    const abandoned = other ? !isAlive(other.pid) || age > mutexStaleMs : age > mutexStaleMs
+    if (abandoned) {
+      // Only remove the very mutex that was judged.
+      if ((readMutex(mutex)?.nonce ?? null) === (other?.nonce ?? null)) {
+        try { unlinkSync(mutex) } catch { /* gone already */ }
+      }
+      continue
+    }
+    if (Date.now() >= deadline) return { held: false }
+    pause(2)
+  }
+  try {
+    return { held: true, value: fn() }
+  } finally {
+    if (readMutex(mutex)?.nonce === JSON.parse(mine).nonce) {
+      try { unlinkSync(mutex) } catch { /* gone already */ }
+    }
+  }
+}
+
+/**
+ * Remove the lock file if, read again under the reclaim mutex, `shouldRemove(record)` still holds
+ * (record is null for an unreadable file). Returns whether it was removed.
+ */
+export function removeLockIf(path, shouldRemove, opts = {}) {
+  const result = withMutex(path, opts, () => {
+    const record = readLock(path)
+    if (!shouldRemove(record)) return false
+    try { unlinkSync(path) } catch (err) { if (err.code !== 'ENOENT') throw err }
+    return true
+  })
+  return result.held ? result.value : false
+}
+
+export { reclaimPath }
 
 function describe(held, path, waitedMs) {
   const who = held
@@ -84,9 +145,9 @@ function touch(path, token) {
   try { utimesSync(path, now, now) } catch { /* released meanwhile */ }
 }
 
-function releaseIfOwned(path, token) {
+function releaseIfOwned(path, token, opts) {
   if (readLock(path)?.token !== token) return
-  try { unlinkSync(path) } catch { /* gone already */ }
+  removeLockIf(path, (record) => record?.token === token, opts)
 }
 
 /**
@@ -134,7 +195,14 @@ export async function acquireSuiteLock({
     const age = ageMs(path)
     const stale = held ? !isAlive(held.pid) || age > staleMs : age > tornMs
     if (stale) {
-      clearStale(path, held)
+      // The judged record, or for an unreadable file one still unreadable and still old.
+      removeLockIf(
+        path,
+        held
+          ? (now) => now?.token === held.token && (!isAlive(now.pid) || ageMs(path) > staleMs)
+          : (now) => now === null && ageMs(path) > tornMs,
+        { isAlive },
+      )
       continue
     }
     if (Date.now() - noticed >= noticeMs) {
