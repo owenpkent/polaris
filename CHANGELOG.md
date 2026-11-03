@@ -3,6 +3,18 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## 2.5.0 (2026-11-03)
+
+No migration.
+
+- The Android app signs in through Tailscale with no token on the phone. On a server with
+  `CC_TAILSCALE_LOGIN` set and `https://localhost` in `CC_CORS_ORIGINS`, type the server URL in
+  the app, leave the token empty, and connect: nothing is stored on the phone. The Access token
+  field on the connect form is now optional everywhere, and says what to paste when a server
+  still wants one. A write over the owner's Tailscale sign-in alone is accepted from the
+  dashboard's own origin or from an origin listed in `CC_CORS_ORIGINS`, never from the built-in
+  development default (docs/app-identity-proposal.md).
+
 ## 2.4.0 (2026-11-03)
 
 No migration.
