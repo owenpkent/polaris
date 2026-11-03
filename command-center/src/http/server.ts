@@ -15,7 +15,7 @@ import { createMcpHandler, type McpRequestHandler } from './mcp.ts';
 import { registerRestRoutes } from './rest.ts';
 import { createRouter } from './router.ts';
 import { createStaticHandler } from './static.ts';
-import { isSameOriginBrowserRequest, isTailscaleOwner } from './tailscale.ts';
+import { isListedOriginBrowserRequest, isSameOriginBrowserRequest, isTailscaleOwner } from './tailscale.ts';
 import type { HttpServerOptions } from './types.ts';
 import { readBarrier, updatingMessage } from '../update/barrier.ts';
 
@@ -148,10 +148,12 @@ export function createHttpServer(app: App, opts: HttpServerOptions): Server {
           if (!isGithubCallback && !isIdentity && !isOwnerOverTailscale && !hasApiToken) { sendError(res, 401, 'Unauthorized', 'missing or invalid bearer token'); return; }
           // The identity header proves the device, not the page: a site open in the owner's browser
           // could send a simple cross-site POST through the proxy and be stamped as the owner. So a
-          // write authorized by identity alone must come from the dashboard's own origin. Reads are
-          // left alone (another site cannot read the answer), and the token path is unchanged.
-          if (isOwnerOverTailscale && !hasApiToken && method !== 'GET' && method !== 'HEAD' && !isSameOriginBrowserRequest(req)) {
-            sendError(res, 403, 'Forbidden', 'a write signed in through Tailscale must come from the dashboard\'s own origin');
+          // write authorized by identity alone must come from the dashboard's own origin, or from an
+          // origin the owner listed in CC_CORS_ORIGINS (the Android app at https://localhost). Reads
+          // are left alone (another site cannot read the answer), and the token path is unchanged.
+          if (isOwnerOverTailscale && !hasApiToken && method !== 'GET' && method !== 'HEAD'
+            && !isSameOriginBrowserRequest(req) && !isListedOriginBrowserRequest(req, opts.identityWriteOrigins ?? [])) {
+            sendError(res, 403, 'Forbidden', 'a write signed in through Tailscale must come from the dashboard\'s own origin or the app');
             return;
           }
           // While `cc update` holds its write barrier (update/barrier.ts), from the stop before

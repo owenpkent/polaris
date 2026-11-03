@@ -57,7 +57,20 @@ describe('Connected through Tailscale', () => {
     render(<SettingsForm />)
     expect(screen.getByRole('note').textContent).toBe('Connected through Tailscale as owner@example.com. No token is stored on this device.')
     // The token field stays, for a server where identity is off.
-    expect(screen.getByLabelText('Access token')).toBeTruthy()
+    expect(screen.getByLabelText('Access token (optional)')).toBeTruthy()
+  })
+
+  test('the token is optional: the field says so, explains when to leave it empty, and Connect sends none', () => {
+    connection.token = ''
+    connection.connected = false
+    render(<SettingsForm />)
+    const field = screen.getByLabelText('Access token (optional)')
+    expect(field.getAttribute('aria-describedby')).toBe('cc-token-hint')
+    expect(document.getElementById('cc-token-hint').textContent).toContain('Leave empty when the server accepts your Tailscale sign-in')
+    fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: ' https://cc.tailnet.ts.net ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }))
+    expect(connection.saveSettings).toHaveBeenCalledWith('https://cc.tailnet.ts.net', '')
+    connection.connected = true
   })
 
   test('says nothing about Tailscale when the token got in', () => {

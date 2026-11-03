@@ -42,6 +42,17 @@ export function corsOriginsFromEnv(env: NodeJS.ProcessEnv = process.env): string
   return parsed.length ? parsed : DEFAULT_CORS_ORIGINS;
 }
 
+/**
+ * The origins the owner listed in CC_CORS_ORIGINS, for identity writes (tailscale.ts). Unlike
+ * corsOriginsFromEnv this never falls back to the development default: the Vite dev server gets
+ * CORS so development works unconfigured, not a write path over the owner's Tailscale sign-in.
+ */
+export function identityWriteOriginsFromEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = env.CC_CORS_ORIGINS;
+  if (!raw) return [];
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 export interface StartHttpOptions extends HttpServerOptions {
   port: number;
   host: string;
@@ -116,7 +127,7 @@ const serveCommand: Command = {
       // Test-only: undefined unless CC_GITHUB_FAKE is exactly "1" (see githubFakeFromEnv).
       const fake = await githubFakeFromEnv(app);
       const { url, close } = await startHttp(fake?.app ?? app, {
-        tokens, port, host, readonlyMcp, webhookSecret, dashboardDir, tailscaleLogin, corsOrigins: corsOriginsFromEnv(), ...fake?.http,
+        tokens, port, host, readonlyMcp, webhookSecret, dashboardDir, tailscaleLogin, corsOrigins: corsOriginsFromEnv(), identityWriteOrigins: identityWriteOriginsFromEnv(), ...fake?.http,
       });
       stdout(`Command Center HTTP server listening at ${url}`);
       if (tailscaleLogin) stdout(tailscaleIdentityLine(tailscaleLogin));

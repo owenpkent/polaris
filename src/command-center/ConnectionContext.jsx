@@ -43,6 +43,9 @@ const HANDOFF = takeHandoff()
 // mockup.mjs, which is what the fragment exists for.
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
 
+/** Shown when Connect was tried with no token and the server asked for one. */
+export const NEEDS_TOKEN_MESSAGE = 'This server needs a token. Paste the one printed by serve --show-token.'
+
 export function isAllowedHandoffUrl(raw) {
   try {
     // No base url on purpose: a handoff has to name an absolute http(s) address. Resolving a
@@ -135,7 +138,10 @@ export function ConnectionProvider({ children }) {
     } catch (err) {
       if (keepOnNetworkError && err instanceof ApiError && err.code === 'network_error') return false
       setConnected(false)
-      const message = err instanceof ApiError ? err.message : 'Could not reach the server.'
+      // No token was offered and the server wants one: it is not set up to take the owner's
+      // Tailscale sign-in (or this device did not reach it through the tailnet), so say what to paste.
+      const needsToken = !candidateToken && err instanceof ApiError && err.status === 401
+      const message = needsToken ? NEEDS_TOKEN_MESSAGE : err instanceof ApiError ? err.message : 'Could not reach the server.'
       if (!silent) setTestResult({ ok: false, message })
       return false
     } finally {

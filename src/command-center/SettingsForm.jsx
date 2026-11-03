@@ -39,7 +39,7 @@ export default function SettingsForm() {
       </div>
 
       <div className="field">
-        <label htmlFor="cc-token">Access token</label>
+        <label htmlFor="cc-token">Access token (optional)</label>
         <input
           id="cc-token"
           type={showToken ? 'text' : 'password'}
@@ -47,7 +47,11 @@ export default function SettingsForm() {
           onChange={(e) => setFormToken(e.target.value)}
           placeholder="Paste the token printed by serve --show-token"
           autoComplete="off"
+          aria-describedby="cc-token-hint"
         />
+        <p id="cc-token-hint" style={{ fontSize: '0.8rem', color: 'var(--t2)', margin: 0 }}>
+          Leave empty when the server accepts your Tailscale sign-in: nothing is then stored on this device.
+        </p>
       </div>
 
       <label

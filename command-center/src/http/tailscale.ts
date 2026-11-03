@@ -76,3 +76,19 @@ export function isSameOriginBrowserRequest(req: Pick<IncomingMessage, 'headers'>
     return false;
   }
 }
+
+/**
+ * Whether `req` was sent by a page on an origin the owner listed, as the browser reports it in
+ * `Origin`. The one such page is the Android app, whose WebView runs the dashboard at
+ * `https://localhost` and so is cross-origin to the server by construction (mobile/README.md,
+ * docs/app-identity-proposal.md). server.ts accepts a write authorized by identity alone from
+ * this or from the server's own origin.
+ *
+ * The browser writes `Origin`; a page cannot set it to another origin's value. So a listed origin
+ * trusts exactly the pages served there and nothing else. `origins` is the owner's explicit
+ * CC_CORS_ORIGINS, never the built-in development default, and empty leaves this off.
+ */
+export function isListedOriginBrowserRequest(req: Pick<IncomingMessage, 'headers'>, origins: readonly string[]): boolean {
+  const origin = req.headers.origin;
+  return typeof origin === 'string' && origin.length > 0 && origins.includes(origin);
+}
