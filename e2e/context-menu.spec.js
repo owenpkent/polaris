@@ -1,10 +1,23 @@
 import { test, expect } from './fixtures.js'
+import { TOKEN } from './server.js'
 import { createTask, openView } from './support.js'
 
 // The row's own element, which takes the right-click (the Open button is only its panel target).
 const rowEl = (page, title) => page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
 
 test.describe('Task context menu', { tag: ['@flow'] }, () => {
+  // The worker's database is shared with later specs, and the keyboard sweep of My tasks counts
+  // Tab stops per open row, so these tests complete every task they made.
+  test.afterEach(async ({ request }) => {
+    const auth = { Authorization: `Bearer ${TOKEN}` }
+    const list = await request.get('/api/tasks', { headers: auth })
+    for (const t of (await list.json()).tasks) {
+      if (t.title.startsWith('UI test menu ') && t.status === 'open') {
+        await request.post(`/api/tasks/${t.id}/complete`, { headers: auth })
+      }
+    }
+  })
+
   test('right-click on a My tasks row opens the menu, and Tomorrow sets the due date', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'menu due')
     await openView(page)

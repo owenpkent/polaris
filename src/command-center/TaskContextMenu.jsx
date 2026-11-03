@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { CalendarCheck, CalendarDays, CalendarX, CheckCircle2, Circle, PanelRightOpen } from 'lucide-react'
-import { Menu } from './Menu'
+import { Menu, inTextField } from './Menu'
 import { withDueDate } from './dueDates'
 
 // The menu a right-click (or Shift+F10, or the ContextMenu key) opens on a task: a My tasks row or
@@ -74,11 +74,6 @@ export function taskMenuItems({ task, dueBounds, pending, onOpen, onToggleComple
     )
   }
   return items
-}
-
-// A text field keeps the browser's own menu (paste, spell check), and a key typed in it is its own.
-function inTextField(target) {
-  return Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'))
 }
 
 // Handlers for a row or card and the menu to render beside it (never inside it, so the menu's own

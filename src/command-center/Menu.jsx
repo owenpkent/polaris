@@ -10,6 +10,11 @@ import { Check } from 'lucide-react'
 // click outside) and positioning (portaled to <body>, clamped to the
 // viewport) only need to be right in one place.
 
+// A text field keeps the browser's own menu (paste, spell check), and a key typed in it is its own.
+export function inTextField(target) {
+  return Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'))
+}
+
 // Move focus between an open dropdown's items with the arrow keys, and jump
 // to the first/last with Home/End. Items are anything inside `containerRef`
 // marked with `data-menu-item` that isn't disabled.
@@ -164,8 +169,8 @@ export function Popover({
       // since that's a plain DOM listener rather than this synthetic event.
       onClick={(e) => e.stopPropagation()}
       // The browser's own menu has nothing to add to ours, and the key that opened a task's menu
-      // can send this event to the item that took focus.
-      onContextMenu={(e) => e.preventDefault()}
+      // can send this event to the item that took focus. A field in a picker keeps its own.
+      onContextMenu={(e) => { if (!inTextField(e.target)) e.preventDefault() }}
       style={{
         position: 'fixed',
         left: pos.left,
