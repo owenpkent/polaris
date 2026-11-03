@@ -325,6 +325,46 @@ test('Tailscale identity: a write needs the dashboard\'s own origin, since the h
   });
 });
 
+test('Tailscale identity: a write from an origin the owner listed (the Android app) is accepted, and nothing else is widened', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const login = 'owner@example.com';
+  const viaProxy = { 'Tailscale-User-Login': login };
+  // The app's WebView runs the dashboard at https://localhost: the browser says cross-site and names that origin.
+  const fromApp = { ...viaProxy, 'Sec-Fetch-Site': 'cross-site', Origin: 'https://localhost' };
+  const task = app.store.createTask({ title: 'From the app' });
+  const complete = (base: string, headers: Record<string, string>) => fetch(`${base}/api/tasks/${task.id}/complete`, { method: 'POST', headers });
+  // With nothing listed, the app is refused like any other cross-site page.
+  await withServer(app, { tailscaleLogin: login }, async (base) => {
+    assert.equal((await complete(base, fromApp)).status, 403);
+    assert.equal(app.store.getTask(task.id)?.status, 'open');
+  });
+  await withServer(app, { tailscaleLogin: login, corsOrigins: ['https://localhost'], identityWriteOrigins: ['https://localhost'] }, async (base) => {
+    // Listed: the write goes through, as the owner.
+    const before = app.store.lastEventId();
+    assert.equal((await complete(base, fromApp)).status, 200);
+    assert.equal(app.store.getTask(task.id)?.status, 'done');
+    for (const e of app.store.eventsSince(before)) assert.equal(e.actor, 'human');
+    // Another site is still refused, with or without the browser saying cross-site, and so is the
+    // development default, which is CORS-only unless the owner lists it.
+    for (const headers of [
+      { ...viaProxy, Origin: 'https://evil.example' },
+      { ...viaProxy, 'Sec-Fetch-Site': 'cross-site', Origin: 'https://evil.example' },
+      { ...viaProxy, 'Sec-Fetch-Site': 'cross-site', Origin: 'http://localhost:5173' },
+      { ...viaProxy, 'Sec-Fetch-Site': 'cross-site' },
+    ]) {
+      assert.equal((await fetch(`${base}/api/tasks/${task.id}/reopen`, { method: 'POST', headers })).status, 403);
+    }
+    assert.equal(app.store.getTask(task.id)?.status, 'done');
+    // The listed origin needs the identity too: without the header it is just an unauthenticated request.
+    assert.equal((await fetch(`${base}/api/tasks/${task.id}/reopen`, { method: 'POST', headers: { 'Sec-Fetch-Site': 'cross-site', Origin: 'https://localhost' } })).status, 401);
+    // And it opens nothing on MCP.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { method: 'GET', headers: { ...fromApp, Accept: 'text/event-stream' } })).status, 401, path);
+    }
+  });
+});
+
 test('Tailscale identity is off until a login is configured', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());

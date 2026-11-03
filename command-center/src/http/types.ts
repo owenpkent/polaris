@@ -30,6 +30,13 @@ export interface HttpServerOptions {
   tokens: ApiTokens;
   /** Origins allowed to receive CORS headers (including preflight). */
   corsOrigins: string[];
+  /**
+   * Origins whose pages may write over Tailscale identity alone, besides the server's own
+   * (tailscale.ts, isListedOriginBrowserRequest): the owner's explicit CC_CORS_ORIGINS, so the
+   * Android app at https://localhost gets in with no token. Unset or empty leaves it at the
+   * server's own origin only.
+   */
+  identityWriteOrigins?: string[];
   /** When true, /mcp also serves the readonly tool set (in addition to /mcp/readonly). */
   readonlyMcp?: boolean;
   /** HMAC secret for the GitHub webhook receiver. When unset, /webhooks/github is 404. */

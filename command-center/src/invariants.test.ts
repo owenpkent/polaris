@@ -42,6 +42,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
+import { identityWriteOriginsFromEnv } from './http/commands.ts';
 import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
 import { VERSION } from './http/version.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
@@ -1236,6 +1237,46 @@ test('10. with a login named, identity is the owner on REST only, from a loopbac
   const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
   assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
   assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
+});
+
+test('10. a cross-site write over identity is accepted only from an origin the owner listed, and the development default does not count', async (t) => {
+  // The one such origin is the Android app, whose WebView runs the dashboard at https://localhost
+  // (docs/app-identity-proposal.md). The list is the owner's explicit CC_CORS_ORIGINS and nothing else.
+  assert.deepEqual(identityWriteOriginsFromEnv({}), []);
+  assert.deepEqual(identityWriteOriginsFromEnv({ CC_CORS_ORIGINS: ' , ' }), []);
+  assert.deepEqual(identityWriteOriginsFromEnv({ CC_CORS_ORIGINS: 'https://localhost, http://localhost:5173' }), ['https://localhost', 'http://localhost:5173']);
+  const app = fakeApp();
+  t.after(() => app.close());
+  const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
+  const enable = (base: string, headers: Record<string, string>) => fetch(`${base}/api/rules/${rule.id}`, {
+    method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+  });
+  const fromApp = { ...AS_OWNER, 'Sec-Fetch-Site': 'cross-site', Origin: 'https://localhost' };
+  // Nothing listed: the app is a cross-site page like any other.
+  await withServer(app, { tailscaleLogin: OWNER_LOGIN, corsOrigins: ['https://localhost'] }, async (base) => {
+    assert.equal((await enable(base, fromApp)).status, 403);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+  });
+  await withServer(app, { tailscaleLogin: OWNER_LOGIN, corsOrigins: ['https://localhost'], identityWriteOrigins: ['https://localhost'] }, async (base) => {
+    // Another site, the development default, and a page that does not say where it came from are still refused.
+    for (const headers of [
+      { ...AS_OWNER, 'Sec-Fetch-Site': 'cross-site', Origin: 'https://evil.example' },
+      { ...AS_OWNER, 'Sec-Fetch-Site': 'cross-site', Origin: 'http://localhost:5173' },
+      { ...AS_OWNER, 'Sec-Fetch-Site': 'cross-site' },
+    ]) {
+      assert.equal((await enable(base, headers)).status, 403);
+    }
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The listed origin without the owner's identity is nobody.
+    assert.equal((await enable(base, { 'Sec-Fetch-Site': 'cross-site', Origin: 'https://localhost' })).status, 401);
+    // The app, as the owner: in, with the dashboard's reach.
+    assert.equal((await enable(base, fromApp)).status, 200);
+    assert.equal(app.store.getRule(rule.id)?.enabled, true);
+    // Never MCP.
+    for (const path of ['/mcp', '/mcp/readonly']) {
+      assert.equal((await fetch(`${base}${path}`, { headers: { ...fromApp, Accept: 'text/event-stream' } })).status, 401, path);
+    }
+  });
 });
 
 // =====================================================================================

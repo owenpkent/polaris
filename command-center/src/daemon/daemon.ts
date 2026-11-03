@@ -3,7 +3,7 @@
 import { dirname } from 'node:path';
 import type { App } from '../app.ts';
 import { createScheduler } from '../automation/index.ts';
-import { corsOriginsFromEnv, resolveDashboardDir, startHttp, tailscaleIdentityLine, tailscaleLoginFromEnv, type RunningHttp } from '../http/commands.ts';
+import { corsOriginsFromEnv, identityWriteOriginsFromEnv, resolveDashboardDir, startHttp, tailscaleIdentityLine, tailscaleLoginFromEnv, type RunningHttp } from '../http/commands.ts';
 import { resolveTokens } from '../http/token.ts';
 import type { JobStatus } from '../http/types.ts';
 import { dueAtStartup, JOBS, runJob } from './jobs.ts';
@@ -63,6 +63,7 @@ export async function runDaemon(app: App, opts: DaemonOptions): Promise<number> 
         host: opts.host,
         tokens: resolveTokens(app.config.dbPath),
         corsOrigins: corsOriginsFromEnv(),
+        identityWriteOrigins: identityWriteOriginsFromEnv(),
         tailscaleLogin,
         readonlyMcp: opts.readonlyMcp,
         webhookSecret: process.env.GITHUB_WEBHOOK_SECRET,

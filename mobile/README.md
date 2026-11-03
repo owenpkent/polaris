@@ -37,7 +37,7 @@ Either copy `app-debug.apk` to the phone and open it (allow installs from that s
 %LOCALAPPDATA%\Android\Sdk\platform-tools\adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-On first launch, type the server URL and paste the token from `command-center/data/api-token`. The app keeps them.
+On first launch, type the server URL and connect. A server that takes the owner's Tailscale sign-in (`CC_TAILSCALE_LOGIN`, docs/tailscale-identity.md) needs nothing else, and the app stores no token; one that does not asks for the token from `command-center/data/api-token`, which the app then keeps. The app's requests are cross-origin (the page is `https://localhost`), so identity writes are accepted from that origin only because it is listed in `CC_CORS_ORIGINS` (docs/app-identity-proposal.md).
 
 ## Release build
 
@@ -90,7 +90,7 @@ Both cases are keyed off `isNativeApp()` in src/command-center/nativeApp.js, whi
 
 - The default server URL is empty instead of the page's own origin, since the page's origin is the app itself.
 - No service worker is registered: the app shell is inside the app, and the offline copy and the outbox live in the dashboard's own code and work as they do in a browser.
-- The app is left out of Android device backups (allowBackup is off in the manifest), so the saved server URL and token never leave the phone with a backup. A new phone means typing them again.
+- The app is left out of Android device backups (allowBackup is off in the manifest), so the saved server URL, and the token when one was used, never leave the phone with a backup. A new phone means typing them again.
 
 ## Share sheet
 

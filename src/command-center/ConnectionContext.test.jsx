@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach, beforeEach, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { DEFAULT_BASE_URL, MY_TASKS_QUERY } from './api'
-import { ConnectionProvider, isAllowedHandoffUrl, useConnection } from './ConnectionContext'
+import { ConnectionProvider, NEEDS_TOKEN_MESSAGE, isAllowedHandoffUrl, useConnection } from './ConnectionContext'
 import { memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus } from './offlineStatus'
 import { setOutboxBackend } from './outbox'
@@ -120,6 +120,27 @@ describe('ConnectionProvider with no saved connection', () => {
     expect((await ctx.api.listTasks(MY_TASKS_QUERY)).tasks.map((t) => t.id)).toEqual([made.id])
     expect((await ctx.api.getTask(made.id)).comments.map((c) => c.body)).toEqual(['a note'])
     await vi.waitFor(() => expect(getOfflineState().pending).toBe(2))
+  })
+
+  test('Connect with no token says what to paste when the server wants one, and keeps the server\'s words for a wrong token', async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 401, text: async () => JSON.stringify({ error: { code: 'Unauthorized', message: 'missing or invalid bearer token' } }) })
+    render(<ConnectionProvider><Probe /></ConnectionProvider>)
+    await act(() => ctx.saveSettings('http://cc.test', ''))
+    expect(ctx.connected).toBe(false)
+    expect(ctx.testResult).toEqual({ ok: false, message: NEEDS_TOKEN_MESSAGE })
+    expect(global.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
+    await act(() => ctx.saveSettings('http://cc.test', 'wrong'))
+    expect(ctx.testResult).toEqual({ ok: false, message: 'missing or invalid bearer token' })
+  })
+
+  test('Connect with no token connects, stores no token, and says how it got in', async () => {
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ version: '1', today: '2026-11-03', counts: { inbox: 2 }, auth: { via: 'tailscale', login: 'owner@example.com' } }) })
+    render(<ConnectionProvider><Probe /></ConnectionProvider>)
+    await act(() => ctx.saveSettings('https://cc.tailnet.ts.net', ''))
+    expect(ctx).toMatchObject({ connected: true, baseUrl: 'https://cc.tailnet.ts.net', token: '' })
+    expect(ctx.health.auth).toEqual({ via: 'tailscale', login: 'owner@example.com' })
+    expect(ctx.testResult.ok).toBe(true)
+    expect(JSON.parse(localStorage.getItem('cc-connection-v1'))).toEqual({ baseUrl: 'https://cc.tailnet.ts.net', token: '', connected: true })
   })
 
   test('a saved connection that fails its test is not local', async () => {

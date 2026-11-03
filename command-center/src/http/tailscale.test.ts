@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TAILSCALE_LOGIN_HEADER, isSameOriginBrowserRequest, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
+import { TAILSCALE_LOGIN_HEADER, isListedOriginBrowserRequest, isSameOriginBrowserRequest, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
 
 const LOGIN = 'owner@example.com';
 
@@ -78,4 +78,19 @@ test('isSameOriginBrowserRequest without Sec-Fetch-Site needs an Origin naming t
 
 test('isSameOriginBrowserRequest refuses a request with neither header', () => {
   assert.equal(isSameOriginBrowserRequest(browserReq({})), false);
+});
+
+test('isListedOriginBrowserRequest passes exactly the origins the owner listed, whatever Sec-Fetch-Site says', () => {
+  const app = ['https://localhost'];
+  // The Android app: cross-origin by construction, so the browser says cross-site and names the app's origin.
+  assert.equal(isListedOriginBrowserRequest(browserReq({ 'sec-fetch-site': 'cross-site', origin: 'https://localhost' }), app), true);
+  assert.equal(isListedOriginBrowserRequest(browserReq({ origin: 'https://localhost' }), app), true);
+  // Anything that is not exactly a listed origin is not: another site, a prefix, another scheme or
+  // port, a case variant, a missing or empty Origin, and the development default when it is not listed.
+  for (const origin of ['https://evil.example', 'https://localhost.evil.example', 'http://localhost', 'https://localhost:8443', 'https://LOCALHOST', 'null', '', undefined, 'http://localhost:5173']) {
+    assert.equal(isListedOriginBrowserRequest(browserReq({ 'sec-fetch-site': 'cross-site', origin }), app), false, String(origin));
+  }
+  // An empty list is off: not even the server's own origin passes here (that is the same-origin check's job).
+  assert.equal(isListedOriginBrowserRequest(browserReq({ origin: 'https://localhost' }), []), false);
+  assert.equal(isListedOriginBrowserRequest(browserReq({ origin: 'https://polaris.tail1234.ts.net' }), []), false);
 });
