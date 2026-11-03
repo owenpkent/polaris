@@ -249,13 +249,14 @@ function MenuRow({ item }) {
 
 // A Popover whose content is a simple vertical list of items (see MenuRow).
 // Covers every dropdown that isn't a custom picker: column header menus,
-// and the toolbar's Sort/Group/Columns buttons.
-export function Menu({ anchorRef, open, onClose, items, align, minWidth, label }) {
+// and the toolbar's Sort/Group/Columns buttons. `preferFit` is Popover's: a long menu (a task's
+// right-click menu) opens above a row low on the screen rather than scrolling in what is left below.
+export function Menu({ anchorRef, open, onClose, items, align, minWidth, label, preferFit = false }) {
   const listRef = useRef(null)
   const onKeyDown = useRovingFocus(listRef)
 
   return (
-    <Popover anchorRef={anchorRef} open={open} onClose={onClose} align={align} minWidth={minWidth}>
+    <Popover anchorRef={anchorRef} open={open} onClose={onClose} align={align} minWidth={minWidth} preferFit={preferFit}>
       <div ref={listRef} role="menu" aria-label={label} onKeyDown={onKeyDown} style={{ padding: '6px 0' }}>
         {items.map((item, i) => (
           <MenuRow key={item.key ?? i} item={{ ...item, onAfterSelect: onClose }} />

@@ -126,7 +126,7 @@ export function useTaskContextMenu({ getItems, label }) {
 
   const close = useCallback(() => setState(null), [])
   const menu = state ? (
-    <Menu anchorRef={anchorRef} open onClose={close} items={getItems()} label={label} minWidth={200} />
+    <Menu anchorRef={anchorRef} open onClose={close} items={getItems()} label={label} minWidth={200} preferFit />
   ) : null
 
   return { handlers, menu }
