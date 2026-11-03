@@ -135,3 +135,23 @@ test('importChecklistContent: gone-sweep is scoped per file -- removing a checkb
   const readmeTask = store.searchTasks({ projectId: project.id, sourceType: ['todo_md'], limit: 50 }).find((t) => t.title === 'Readme item')!;
   assert.equal(readmeTask.status, 'dropped');
 });
+
+test('importChecklistContent: new items go to the top of the list in the file order, above tasks made before', () => {
+  const { store, project } = freshStoreWithProject();
+  store.createTask({ title: 'Made by hand before the import', projectId: project.id });
+  importChecklistContent(store, project, 'TODO.md', TODO_V1);
+  const top = store.searchTasks({ orderBy: 'position' }).filter((t) => !t.parentId).map((t) => t.title);
+  assert.deepEqual(top, ['Set up project scaffolding', 'Write the parser', 'Ship the beta', 'Second phase item', 'Made by hand before the import']);
+  const nested = store.searchTasks({ orderBy: 'position' }).filter((t) => t.parentId).map((t) => t.title);
+  assert.deepEqual(nested, ['Handle nested checkboxes', 'Handle checked nested checkboxes']);
+});
+
+test('importChecklistContent: a step added to the file later goes after the parent\'s existing steps', () => {
+  const { store, project } = freshStoreWithProject();
+  const steps = (n: number) => ['# Plan', '', '- [ ] Parent', ...['one', 'two', 'three'].slice(0, n).map((s) => `  - [ ] Step ${s}`), ''].join('\n');
+  importChecklistContent(store, project, 'TODO.md', steps(2));
+  importChecklistContent(store, project, 'TODO.md', steps(3));
+  const parent = store.searchTasks({ projectId: project.id }).find((t) => t.title === 'Parent')!;
+  const kids = store.searchTasks({ projectId: project.id, orderBy: 'position' }).filter((t) => t.parentId === parent.id);
+  assert.deepEqual(kids.map((t) => t.title), ['Step one', 'Step two', 'Step three']);
+});

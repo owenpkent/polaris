@@ -10,6 +10,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
   already in Overdue can still be reordered there or moved out. The due date picker still takes
   a past date.
 - Right-click a My tasks row or a Board card, or press Shift+F10 or the ContextMenu key on it, for a menu with Open task, Complete or Reopen, Due, Priority, and Move to project or section.
+- A new task goes to the top of the list under Sort: Manual, wherever it is made, offline too.
+  A subtask still goes to the bottom of its parent's list, and an import or a repo checklist
+  puts its new tasks at the top in the file's order. Tasks you already have keep their order.
 
 ## 2.3.0 (2026-11-02)
 

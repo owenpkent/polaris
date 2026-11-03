@@ -334,18 +334,20 @@ test('newId produces prefix_ plus 10 lowercase alphanumerics and does not repeat
   assert.equal(seen.size, 500);
 });
 
-test('position is one order across every project and section: a new task goes last, and a re-filed task keeps its place', () => {
+test('position is one order across every project and section: a new task goes first, and a re-filed task keeps its place', () => {
   const s = fresh();
   const a = s.upsertProject({ slug: 'a', name: 'A' });
   const b = s.upsertProject({ slug: 'b', name: 'B' });
   const first = s.createTask({ title: 'first', projectId: a.id });
+  assert.equal(first.position, 1, 'the first task of an empty list is 1');
   const second = s.createTask({ title: 'second', projectId: b.id });
   const third = s.createTask({ title: 'third', projectId: a.id, sectionId: s.ensureSection(a.id, 'Doing').id });
-  assert.ok(first.position < second.position && second.position < third.position, 'numbered in creation order, whatever the project');
+  assert.ok(third.position < second.position && second.position < first.position, 'each new task above the rest, whatever the project');
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['third', 'second', 'first']);
 
-  // A midpoint puts second after third, and the list follows position before anything else.
-  s.moveTask(second.id, { position: third.position + 1 });
-  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['first', 'third', 'second']);
+  // A number past the last puts second at the bottom, and the list follows position before anything else.
+  s.moveTask(second.id, { position: first.position + 1 });
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['third', 'first', 'second']);
 
   // Changing the project or section, by either path, does not move the task in the list.
   const before = s.requireTask(second.id).position;
@@ -353,12 +355,59 @@ test('position is one order across every project and section: a new task goes la
   assert.equal(s.requireTask(second.id).position, before);
   s.moveTask(second.id, { projectId: b.id, sectionId: null });
   assert.equal(s.requireTask(second.id).position, before);
-  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['first', 'third', 'second']);
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).map((t) => t.title), ['third', 'first', 'second']);
 
   // A move records both positions, so an offline reorder can be weighed against it.
   const moved = s.taskHistory(second.id).filter((e) => e.kind === 'task.moved');
-  assert.deepEqual((moved[0].payload as { from: { position: number } }).from.position, first.position + 1);
-  assert.deepEqual((moved[0].payload as { to: { position: number } }).to.position, third.position + 1);
+  assert.deepEqual((moved[0].payload as { from: { position: number } }).from.position, first.position - 1);
+  assert.deepEqual((moved[0].payload as { to: { position: number } }).to.position, first.position + 1);
 
   assert.throws(() => s.moveTask(second.id, { position: Number.NaN }), ValidationError);
+});
+
+test('a subtask goes to the bottom of its parent, so the steps read in the order they were added', () => {
+  const s = fresh();
+  const parent = s.createTask({ title: 'parent' });
+  const one = s.createTask({ title: 'one', parentId: parent.id });
+  const two = s.createTask({ title: 'two', parentId: parent.id });
+  assert.ok(parent.position < one.position && one.position < two.position);
+  // A new top-level task still goes above everything.
+  assert.ok(s.createTask({ title: 'later' }).position < parent.position);
+});
+
+test('createInOrder puts a batch at the top in the order it was made, with nested calls joining it', () => {
+  const s = fresh();
+  const old = s.createTask({ title: 'old' });
+  const made = s.createInOrder(() => {
+    const a = s.createTask({ title: 'a' });
+    s.createTask({ title: 'a.1', parentId: a.id });
+    s.createInOrder(() => s.createTask({ title: 'b' }));
+    return [a, s.createTask({ title: 'c' })];
+  });
+  assert.deepEqual(s.searchTasks({ orderBy: 'position' }).filter((t) => !t.parentId).map((t) => t.title), ['a', 'b', 'c', 'old']);
+  assert.ok(s.requireTask(made[0].id).position < old.position);
+  // A task made after the batch goes above it again.
+  s.createTask({ title: 'newest' });
+  assert.equal(s.searchTasks({ orderBy: 'position' }).filter((t) => !t.parentId)[0].title, 'newest');
+  // A throw rolls the whole batch back.
+  assert.throws(() => s.createInOrder(() => { s.createTask({ title: 'lost' }); throw new Error('boom'); }), /boom/);
+  assert.equal(s.searchTasks({}).some((t) => t.title === 'lost'), false);
+});
+
+test('createInOrder: a batch task moved under an existing parent goes after the parent\'s steps, and the rest of the batch stays on top', () => {
+  const s = fresh();
+  const parent = s.createTask({ title: 'parent' });
+  s.createTask({ title: 'one', parentId: parent.id });
+  s.createTask({ title: 'two', parentId: parent.id });
+  s.createInOrder(() => {
+    s.createTask({ title: 'a' });
+    const kid = s.createTask({ title: 'kid' });
+    s.moveTask(kid.id, { parentId: parent.id });
+    s.createTask({ title: 'b' });
+    const kid2 = s.createTask({ title: 'kid2' });
+    s.moveTask(kid2.id, { parentId: parent.id });
+  });
+  const all = s.searchTasks({ orderBy: 'position' });
+  assert.deepEqual(all.filter((t) => t.parentId === parent.id).map((t) => t.title), ['one', 'two', 'kid', 'kid2']);
+  assert.deepEqual(all.filter((t) => !t.parentId).map((t) => t.title), ['a', 'b', 'parent']);
 });

@@ -54,6 +54,12 @@ function localToday() {
 // its own task and leaves the seeded ones alone. Titles carry the project name and a counter so
 // the desktop and phone runs never collide.
 let created = 0
+// A new task goes first in the manual order, so a test that needs one to sit at the end of its day
+// group, or two to sit in the order they were made, passes `{ position: endPosition() }`. Each call
+// is higher than the last and far past anything the seed or the server numbers.
+let endNumber = 1e9
+export const endPosition = () => ++endNumber
+
 export async function createTask(request, testInfo, label, extra = {}) {
   const title = `UI test ${label} ${testInfo.project.name} ${++created}`
   const res = await request.post('/api/tasks', {
