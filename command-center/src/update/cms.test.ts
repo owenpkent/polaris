@@ -10,8 +10,8 @@ import { createPublicKey, generateKeyPairSync, type KeyObject } from 'node:crypt
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decodeSignedMessageBlock, encodeLength, MAX_SIGNATURE_BYTES, publicKeyFingerprint, splitSignedTag, verifySignedMessage, type PinnedPublicKey } from './cms.ts';
-import { attribute, octetString, OIDS, oid, setOf, signedData, signedMessageBlock, tagObject, utcTime } from '../dev/der.ts';
+import { decodeSignedMessageBlock, encodeLength, MAX_SIGNATURE_BYTES, publicKeyFingerprint, splitSignedTag, sshRsaPublicKey, verifySignedMessage, type PinnedPublicKey } from './cms.ts';
+import { attribute, octetString, OIDS, oid, setOf, signedData, signedMessageBlock, sshRsaKey, tagObject, utcTime } from '../dev/der.ts';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const etokenTag = readFileSync(join(fixtures, 'x509-tag.txt'));
@@ -168,4 +168,17 @@ test('the OID table in cms.ts and the encoder in der.ts agree', () => {
   assert.deepEqual([...encodeLength(0x7f)], [0x7f]);
   assert.deepEqual([...encodeLength(0x80)], [0x81, 0x80]);
   assert.deepEqual([...encodeLength(0x100)], [0x82, 0x01, 0x00]);
+});
+
+test('sshRsaPublicKey reads the base64 of an ssh-rsa line, and nothing else', () => {
+  const b64 = (key: KeyObject) => sshRsaKey(key).split(' ')[1];
+  for (const key of [publicKey, other.publicKey, etokenKey]) {
+    const read = sshRsaPublicKey(b64(key));
+    assert.ok(read);
+    assert.equal(publicKeyFingerprint(read), publicKeyFingerprint(key));
+  }
+  const field = (b: Buffer) => { const len = Buffer.alloc(4); len.writeUInt32BE(b.length); return Buffer.concat([len, b]); };
+  const ed = Buffer.concat([field(Buffer.from('ssh-ed25519')), field(Buffer.alloc(32, 1))]).toString('base64');
+  const notRsa = Buffer.concat([field(Buffer.from('ssh-dss')), field(Buffer.from([1])), field(Buffer.from([2]))]).toString('base64');
+  for (const bad of ['', 'AAAA', notRsa, ed, '!!!!']) assert.equal(sshRsaPublicKey(bad), null, bad);
 });

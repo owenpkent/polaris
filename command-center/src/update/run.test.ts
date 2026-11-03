@@ -10,7 +10,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateKeyPairSync } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { sshRsaKey, signedData, signedMessageBlock } from '../dev/der.ts';
 import { inspectDatabaseFile, openNodeDriver, openStore } from '../core/index.ts';
 import { MIGRATIONS, localizeZonedDues } from '../core/schema.ts';
 import { listSnapshots } from '../daemon/backup.ts';
@@ -44,19 +46,26 @@ const FINGERPRINT = 'SHA256:7XkuoKngBtHFlb11TNVHq4BN7kSlZDld0g0xBo6AAos';
 /** A tag on the fake origin: whether `git verify-tag` passes against the pinned file, what the
  *  package.json at the tag says (default: the tag's own version), the annotation, and what
  *  signature block the raw tag object carries (default: one SSH signature). */
-interface FakeTag { tag: string; verifies?: boolean; version?: string; notes?: string; signature?: 'ssh' | 'pgp' | 'x509' | 'none' | 'ssh-twice' }
+interface FakeTag { tag: string; verifies?: boolean; version?: string; notes?: string; signature?: 'ssh' | 'pgp' | 'x509' | 'x509-real' | 'none' | 'ssh-twice' }
+
+/** The RSA key an 'x509-real' tag is signed with; SIGNERS_RSA pins it under the principal ok-studio-ev. */
+const RELEASE_RSA = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const SIGNERS_RSA = `${SIGNERS_A}ok-studio-ev namespaces="git" ${sshRsaKey(RELEASE_RSA.publicKey)}\n`;
 
 const SIGNATURE_BLOCKS = {
   ssh: '-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg\n-----END SSH SIGNATURE-----\n',
   pgp: '-----BEGIN PGP SIGNATURE-----\n\niQEzBAABCAAdFiEE\n-----END PGP SIGNATURE-----\n',
   x509: '-----BEGIN SIGNED MESSAGE-----\nMIIGdQYJKoZIhvcNAQcCoIIGZjCCBmICAQExDzANBglghkgBZQMEAgEFADALBgkq\n-----END SIGNED MESSAGE-----\n',
   none: '',
+  'x509-real': '',
   'ssh-twice': '-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n',
 };
 
 /** What `git cat-file tag` prints for a fake tag: the headers, the message, the signature block. */
 function rawTag(tag: FakeTag): string {
-  return `object ${TARGET}\ntype commit\ntag ${tag.tag}\ntagger test <test@example.com> 1760000000 +0000\n\n${tag.notes ?? `Release ${tag.tag}`}\n${SIGNATURE_BLOCKS[tag.signature ?? 'ssh']}`;
+  const payload = `object ${TARGET}\ntype commit\ntag ${tag.tag}\ntagger test <test@example.com> 1760000000 +0000\n\n${tag.notes ?? `Release ${tag.tag}`}\n`;
+  if (tag.signature === 'x509-real') return payload + signedMessageBlock(signedData(Buffer.from(payload, 'latin1'), RELEASE_RSA.privateKey));
+  return payload + SIGNATURE_BLOCKS[tag.signature ?? 'ssh'];
 }
 
 interface Scenario {
@@ -764,19 +773,19 @@ test('a snapshot that fails with the daemon stopped rolls back: the daemon is st
 // the fake `git cat-file tag` prints the raw tag with the signature block the scenario names.
 // -------------------------------------------------------------------------------------
 
-test('a tag whose signature is not one SSH signature does not verify, whatever git verify-tag said', async (t) => {
+test('a tag whose signature is not one signature from a pinned key does not verify, whatever git verify-tag said', async (t) => {
   // The fake git verify-tag exits 0 for every one of these (as git does with the signer's
   // OpenPGP key in the local keyring); the raw tag is what decides, and it is read first.
   const pgp = harness(t, { mode: 'release', tags: [{ tag: 'v2.1.0', signature: 'pgp' }] });
   assert.equal(await pgp.run(), 1);
-  assert.deepEqual(pgp.err, ['Skipped v2.1.0: the tag is signed with OpenPGP, not SSH; releases verify by SSH signature against the pinned signers only', 'Refused: no release newer than 2.0.0 verifies against the pinned signers (1 skipped). Nothing installed.']);
+  assert.deepEqual(pgp.err, ['Skipped v2.1.0: the tag is signed with OpenPGP; a release is signed with SSH or X.509 by a pinned key', 'Refused: no release newer than 2.0.0 verifies against the pinned signers (1 skipped). Nothing installed.']);
   assert.ok(pgp.commandLines().includes('git cat-file tag v2.1.0'), 'the raw tag was read');
   assert.deepEqual(pgp.state.verifiedAgainst, [], 'git verify-tag, which would have said yes, was not even asked');
 
   const cases: [NonNullable<FakeTag['signature']>, RegExp][] = [
-    ['x509', /signed with X\.509, not SSH/],
+    ['x509', /the X\.509 signature does not verify against the pinned keys: /],
     ['none', /no signature found/],
-    ['ssh-twice', /carries 2 signature blocks \(SSH, SSH\); a release carries one SSH signature/],
+    ['ssh-twice', /carries 2 signature blocks \(SSH, SSH\); a release carries one signature, SSH or X\.509/],
   ];
   for (const [signature, reason] of cases) {
     const h = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.1.0', signature }] });
@@ -791,6 +800,25 @@ test('a tag whose signature is not one SSH signature does not verify, whatever g
   assert.equal(await mixed.run(), 0, mixed.err.join('\n'));
   assert.match(mixed.err.join('\n'), /Skipped v2\.2\.0: the tag is signed with OpenPGP/);
   assert.equal(mixed.version(), '2.1.0');
+
+  // The stub X.509 block is not a signature, and git verify-tag is not asked about it.
+  const stub = harness(t, { mode: 'to', to: '2.1.0', tags: [{ tag: 'v2.1.0', signature: 'x509' }] });
+  assert.equal(await stub.run(), 1);
+  assert.deepEqual(stub.state.verifiedAgainst, []);
+});
+
+test('a tag signed with X.509 by a pinned RSA key verifies without git verify-tag, and without the pin it is skipped', async (t) => {
+  const pinnedRsa = harness(t, { mode: 'release', checkOnly: true, committed: SIGNERS_RSA, pinned: SIGNERS_RSA, tags: [{ tag: 'v2.1.0', signature: 'x509-real' }] });
+  assert.equal(await pinnedRsa.run(), 0, pinnedRsa.err.join('\n'));
+  assert.match(pinnedRsa.out.join('\n'), /v2\.1\.0 \(2\.1\.0\) at \w+ verifies \(X\.509, ok-studio-ev\)/);
+  assert.deepEqual(pinnedRsa.state.verifiedAgainst, [], 'git verify-tag was never asked');
+  assert.equal(readUpdateStatus(pinnedRsa.dbPath).available?.version, '2.1.0');
+
+  const unpinned = harness(t, { mode: 'release', checkOnly: true, pinned: SIGNERS_A, tags: [{ tag: 'v2.1.0', signature: 'x509-real' }] });
+  assert.equal(await unpinned.run(), 0, unpinned.err.join('\n'));
+  assert.match(unpinned.err.join('\n'), /Skipped v2\.1\.0: .*no pinned key signed it/);
+  assert.deepEqual(unpinned.state.verifiedAgainst, []);
+  assert.equal(readUpdateStatus(unpinned.dbPath).available, null);
 });
 
 test('--release installs the newest verified release: pinned on first use, verified against the pinned copy, checked out detached', async (t) => {

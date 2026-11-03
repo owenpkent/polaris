@@ -1,6 +1,8 @@
 # Releases
 
-A release is a tag `vX.Y.Z` on `main`, signed with the owner's SSH key. `cc update --release` on an install fetches the tags, takes the newest one strictly newer than the version it runs, verifies the signature against the keys that install has pinned, and installs it (the design is docs/update-proposal.md, section 2; the command is described under Updating in command-center/README.md). Nothing marks a commit as "meant to run" except this signature, so the key and this checklist are what stand between a push to `main` and every install.
+A release is a tag `vX.Y.Z` on `main`, signed by the owner: with the SSH release key, or with the EV code-signing certificate on the eToken (an X.509 signature, below under "Signing with the certificate"). `cc update --release` on an install fetches the tags, takes the newest one strictly newer than the version it runs, verifies the signature against the keys that install has pinned, and installs it (the design is docs/update-proposal.md, section 2; the command is described under Updating in command-center/README.md). Nothing marks a commit as "meant to run" except this signature, so the keys and this checklist are what stand between a push to `main` and every install.
+
+A tag verifies when it carries exactly one signature block, SSH or X.509, from a key in the pinned file, and the tag object is named for the tag. An SSH signature is checked with `git verify-tag` against the pinned file alone; an X.509 one by the updater's own verifier (command-center/src/update/cms.ts) against the RSA keys in that same file, with no certificate chain, trust store, or expiry date: the pin is the key, so a renewed or expired certificate changes nothing until its new key is pinned. The line's options still bind the key: an RSA line counts as an X.509 pin only with no options or a `namespaces` list that names `git`, and a line with `cert-authority`, `valid-after`, `valid-before`, or any other option is no X.509 pin at all, so switching envelope never lets a key sign what the SSH path would refuse. OpenPGP, no signature, and two blocks are refused before git is asked.
 
 ## One-time key setup
 
@@ -22,7 +24,25 @@ git add release-signers
 git commit -m "chore(release): allow the release key"
 ```
 
-The file carries comments that repeat the format. `namespaces="git"` is required: git signs tags in the `git` namespace and `git verify-tag` accepts nothing else. The signature must be an SSH one: installs read the tag object and skip a tag signed with OpenPGP or X.509, or carrying more than one signature, whatever keys their git could find.
+The file carries comments that repeat the format. `namespaces="git"` is required: git signs tags in the `git` namespace and `git verify-tag` accepts nothing else. Installs read the tag object and skip a tag signed with OpenPGP, or carrying more than one signature, whatever keys their git could find.
+
+## Signing with the certificate
+
+The OK Studio EV code-signing certificate lives on the SafeNet eToken, which asks for its PIN once per session, so a release signed with it needs no typed passphrase. Its RSA public key is in `release-signers` as an `ssh-rsa` line (the output of `ssh-keygen -i -m PKCS8 -f pubkey.pem`), which is the same key in the form ssh-keygen reads, so one file pins both kinds of signature and `--trust-signers` shows it like any other key.
+
+With the token plugged in, from a normal (not elevated) PowerShell 7, the notes in a file:
+
+```powershell
+pwsh -File scripts\sign-release.ps1 -Version 2.3.0 -NotesFile notes.txt
+```
+
+The script builds the tag object from `HEAD` (or `-Commit`), your git identity, and the notes, signs those bytes on the token as a detached CMS SignedData (the block git writes for `gpg.format x509`), stores the tag, and then verifies it the way an install will, with `scripts/verify-release-tag.mjs`, removing the tag if that fails. It prints the push command. The certificate's expiry does not matter to installs, and the script says so when it has passed; renewing the certificate with a new key is a key rotation (below).
+
+Either signing path can be checked before the push:
+
+```sh
+node scripts/verify-release-tag.mjs v2.3.0
+```
 
 Check that the setup signs and verifies before the first release:
 
@@ -40,7 +60,7 @@ Releases are batched: one is cut when there is something worth installing, not f
 2. `npm run test:ui` has run on it. CI runs the UI tests on every pull request into `main`, but the release is the commit on `main`, and that run is yours to check.
 3. The version is bumped in `package.json`, `command-center/package.json`, and `mobile/package.json` (with its lockfile), to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). The Android app takes its versionName and versionCode from mobile/package.json, so it carries the release version without a separate edit. Nothing after the patch: a prerelease or build suffix is not a version and never installs.
 4. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
-5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most):
+5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most). With the certificate, that is `scripts\sign-release.ps1` as above. With the SSH key:
 
    ```sh
    git tag -s v2.1.0 -m "Release 2.1.0
@@ -57,7 +77,7 @@ An install then updates with `cc update --release` (or names the version with `c
 
 ## Key rotation
 
-A new key enters the way the first one did, and the old key vouches for it:
+A new key enters the way the first one did, and the old key vouches for it. A renewed certificate with a new key is the same procedure, its line made with `ssh-keygen -i -m PKCS8` from the new public key:
 
 1. Make the new key (the setup above, a new file name) and add its line to `release-signers`, keeping the old line.
 2. Make a release signed by the old key that carries the new file.
@@ -79,5 +99,6 @@ The keys in `release-signers` on `main`, for checking a fingerprint before sayin
 | Principal | Type | Fingerprint | Added |
 |---|---|---|---|
 | polaris-release | ED25519 | `SHA256:SgblxfPsvIrosQE5pPclL9f+jPJDMrh8Nv6I462zpm8` | 2026-10-15 |
+| ok-studio-ev | RSA 4096 (the EV certificate, X.509 signatures) | `SHA256:eMHThaXAAD/pUDF5L2I7sggykNuhj7EIwkY25IT1eTA` | 2026-11-02 |
 
 A key added or removed later gets a row here in the same change that edits `release-signers`.

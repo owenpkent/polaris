@@ -10,7 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import { realExec, type Exec } from './exec.ts';
-import { git, LOCKFILES, NO_OTHER_SIGNATURE_PROGRAMS, SCHEMA_FILE, signatureFormatProblem } from './git.ts';
+import { createPublicKey } from 'node:crypto';
+import { sshRsaKey } from '../dev/der.ts';
+import { git, LOCKFILES, NO_OTHER_SIGNATURE_PROGRAMS, releaseSignatureFormat, SCHEMA_FILE, tagObjectName } from './git.ts';
+import { parseAllowedSigners, x509PinnedKeys } from './signers.ts';
 import { runUpdate } from './run.ts';
 
 // Every repository here is a temp one the test makes. A pre-push hook in a linked worktree runs
@@ -103,10 +106,10 @@ test('the git wrappers read a real repository', async (t) => {
   assert.equal((await g.tagNotes('not-a-release')).trim(), '', 'a lightweight tag has no notes of its own');
   const signers = join(r.base, 'signers');
   writeFileSync(signers, '# no keys\n');
-  const unsigned = await g.verifyTag('v2.1.0', signers);
+  const unsigned = await g.verifyTag('v2.1.0', signers, []);
   assert.equal(unsigned.ok, false);
   assert.match((unsigned as { reason: string }).reason, /no signature found/);
-  const lightweight = await g.verifyTag('not-a-release', signers);
+  const lightweight = await g.verifyTag('not-a-release', signers, []);
   assert.equal(lightweight.ok, false);
   assert.match((lightweight as { reason: string }).reason, /cannot verify a non-tag object/);
 
@@ -191,26 +194,100 @@ test('with the real git, each refusal stops before any other program runs', asyn
   assert.equal(sh(r.clone, ['rev-parse', 'HEAD']), sh(r.clone, ['rev-parse', 'origin/main~1']), 'the checkout never moved');
 });
 
-test('the signature gate takes exactly one SSH signature block and names any other format', () => {
+test('the signature gate takes exactly one SSH or X.509 signature block and names any other format', () => {
   const tag = (blocks: string) => `object ${'a'.repeat(40)}\ntype commit\ntag v2.1.0\ntagger t <t@example.com> 1760000000 +0000\n\nRelease 2.1.0\n${blocks}`;
   const ssh = '-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n';
   const pgp = '-----BEGIN PGP SIGNATURE-----\n\niQEz\n-----END PGP SIGNATURE-----\n';
   const x509 = '-----BEGIN SIGNED MESSAGE-----\nMIIG\n-----END SIGNED MESSAGE-----\n';
-  assert.equal(signatureFormatProblem(tag(ssh)), null);
-  assert.equal(signatureFormatProblem(tag(ssh.replace(/\n/g, '\r\n'))), null, 'CRLF line ends');
-  assert.equal(signatureFormatProblem(tag('')), 'no signature found');
-  assert.match(signatureFormatProblem(tag(pgp))!, /^the tag is signed with OpenPGP, not SSH/);
-  assert.match(signatureFormatProblem(tag('-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----\n'))!, /signed with OpenPGP/);
-  assert.match(signatureFormatProblem(tag(x509))!, /^the tag is signed with X\.509, not SSH/);
-  assert.match(signatureFormatProblem(tag(ssh + pgp))!, /^the tag carries 2 signature blocks \(SSH, OpenPGP\)/);
-  assert.match(signatureFormatProblem(tag(ssh + ssh))!, /carries 2 signature blocks \(SSH, SSH\)/);
+  assert.deepEqual(releaseSignatureFormat(tag(ssh)), { ok: true, format: 'SSH' });
+  assert.deepEqual(releaseSignatureFormat(tag(x509)), { ok: true, format: 'X.509' });
+  assert.deepEqual(releaseSignatureFormat(tag(ssh.replace(/\n/g, '\r\n'))), { ok: true, format: 'SSH' }, 'CRLF line ends');
+  assert.deepEqual(releaseSignatureFormat(tag(x509.replace(/\n/g, '\r\n'))), { ok: true, format: 'X.509' }, 'CRLF line ends');
+  assert.deepEqual(releaseSignatureFormat(tag('')), { ok: false, reason: 'no signature found' });
+  const openPgp = /signed with OpenPGP; a release is signed with SSH or X\.509/;
+  assert.match((releaseSignatureFormat(tag(pgp)) as { reason: string }).reason, openPgp);
+  assert.match((releaseSignatureFormat(tag('-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----\n')) as { reason: string }).reason, openPgp);
+  const reason = (text: string) => (releaseSignatureFormat(text) as { reason: string }).reason;
+  assert.match(reason(tag(ssh + pgp)), /carries 2 signature blocks \(SSH, OpenPGP\)/);
+  assert.match(reason(tag(ssh + ssh)), /carries 2 signature blocks \(SSH, SSH\)/);
+  assert.match(reason(tag(x509 + ssh)), /carries 2 signature blocks \(X\.509, SSH\)/);
   // A message that quotes a signature header is two blocks, and two blocks is a refusal.
-  assert.match(signatureFormatProblem(tag('').replace('Release 2.1.0', 'Release 2.1.0\n-----BEGIN SSH SIGNATURE-----\nquoted\n-----END SSH SIGNATURE-----') + ssh)!, /carries 2 signature blocks/);
-  assert.match(signatureFormatProblem(tag('-----BEGIN SOMETHING ELSE-----\nx\n-----END SOMETHING ELSE-----\n'))!, /signed with SOMETHING ELSE, not SSH/);
-  assert.equal(signatureFormatProblem(tag('  -----BEGIN SSH SIGNATURE-----\n')), 'no signature found', 'a header is a whole line, as git writes it');
+  assert.match(reason(tag('').replace('Release 2.1.0', 'Release 2.1.0\n-----BEGIN SSH SIGNATURE-----\nquoted\n-----END SSH SIGNATURE-----') + ssh), /carries 2 signature blocks/);
+  assert.match(reason(tag('-----BEGIN SOMETHING ELSE-----\nx\n-----END SOMETHING ELSE-----\n')), /signed with SOMETHING ELSE; a release is signed with SSH or X\.509/);
+  assert.deepEqual(releaseSignatureFormat(tag('  -----BEGIN SSH SIGNATURE-----\n')), { ok: false, reason: 'no signature found' }, 'a header is a whole line, as git writes it');
   assert.ok(NO_OTHER_SIGNATURE_PROGRAMS.includes('-c') && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.openpgp.program=')) && NO_OTHER_SIGNATURE_PROGRAMS.some((a) => a.startsWith('gpg.x509.program=')));
 });
 
+test('tagObjectName reads the tag header, and only the header', () => {
+  assert.equal(tagObjectName('object abc\ntype commit\ntag v2.1.0\ntagger t <t@e> 1 +0000\n\nRelease\n'), 'v2.1.0');
+  assert.equal(tagObjectName('object abc\ntype commit\n\nRelease\n'), null);
+  assert.equal(tagObjectName('object abc\r\ntype commit\r\ntag v2.1.0\r\ntagger t <t@e> 1 +0000\r\n\r\nRelease\r\n'), 'v2.1.0');
+  assert.equal(tagObjectName('object abc\ntype commit\n\ntag v9.9.9\nin the message\n'), null, 'a tag line in the message is not the header');
+  assert.equal(tagObjectName('object abc\ntype commit\ntag v1.0.0\n\ntag v9.9.9\n'), 'v1.0.0');
+});
+
+const fixtureDir = join(import.meta.dirname, 'fixtures');
+
+/** A fake Exec that answers `git cat-file tag` with the given bytes and records every command. */
+function catFileExec(raw: string, verifyStderr = ''): { exec: Exec; commands: string[] } {
+  const commands: string[] = [];
+  const exec: Exec = async (cmd, args) => {
+    commands.push(`${cmd} ${args.join(' ')}`);
+    if (args[0] === 'cat-file') return { code: 0, stdout: raw, stderr: '' };
+    if (args.includes('verify-tag')) return { code: 0, stdout: '', stderr: verifyStderr };
+    return { code: 1, stdout: '', stderr: 'unexpected' };
+  };
+  return { exec, commands };
+}
+
+test('verifyTag verifies an X.509 signature with the pinned RSA key and never asks git verify-tag', async () => {
+  const bytes = readFileSync(join(fixtureDir, 'x509-tag.txt'));
+  const raw = bytes.toString('latin1');
+  const keys = x509PinnedKeys(parseAllowedSigners(`ok-studio-ev namespaces="git" ${sshRsaKey(createPublicKey(readFileSync(join(fixtureDir, 'x509-signer.pem'))))}\n`));
+  assert.equal(keys.length, 1);
+
+  const ok = catFileExec(raw);
+  assert.deepEqual(await git(ok.exec, '/repo').verifyTag('v0.0.1-dryrun', '/nowhere', keys), { ok: true, format: 'X.509', signer: 'ok-studio-ev' });
+  assert.deepEqual(ok.commands, ['git cat-file tag v0.0.1-dryrun']);
+  assert.ok(!ok.commands.some((c) => c.includes('verify-tag')));
+
+  const noKeys = catFileExec(raw);
+  const none = await git(noKeys.exec, '/repo').verifyTag('v0.0.1-dryrun', '/nowhere', []);
+  assert.equal(none.ok, false);
+  assert.match((none as { reason: string }).reason, /no pinned key signed it/);
+
+  const renamed = catFileExec(raw);
+  const wrongName = await git(renamed.exec, '/repo').verifyTag('v9.9.9', '/nowhere', keys);
+  assert.equal(wrongName.ok, false);
+  assert.match((wrongName as { reason: string }).reason, /named v0\.0\.1-dryrun, not v9\.9\.9/);
+  assert.ok(!renamed.commands.some((c) => c.includes('verify-tag')));
+
+  const edited = Buffer.from(bytes);
+  const messageAt = edited.indexOf('\n\n') + 2;
+  edited[messageAt] ^= 0x01;
+  const changed = catFileExec(edited.toString('latin1'));
+  const bad = await git(changed.exec, '/repo').verifyTag('v0.0.1-dryrun', '/nowhere', keys);
+  assert.equal(bad.ok, false);
+  assert.match((bad as { reason: string }).reason, /changed after it was signed/);
+});
+
+test('a pinned key the SSH path would refuse for a tag does not verify the same release as X.509', async () => {
+  const raw = readFileSync(join(fixtureDir, 'x509-tag.txt')).toString('latin1');
+  const key = sshRsaKey(createPublicKey(readFileSync(join(fixtureDir, 'x509-signer.pem'))));
+  for (const options of ['namespaces="file"', 'namespaces="git",valid-before="20000101"', 'cert-authority,namespaces="git"']) {
+    const keys = x509PinnedKeys(parseAllowedSigners(`ok-studio-ev ${options} ${key}\n`));
+    const result = await git(catFileExec(raw).exec, '/repo').verifyTag('v0.0.1-dryrun', '/nowhere', keys);
+    assert.equal(result.ok, false, `${options} signs no release`);
+    assert.match((result as { reason: string }).reason, /no pinned key signed it/);
+  }
+});
+
+test('verifyTag verifies an SSH signature with git verify-tag and names the principal git reports', async () => {
+  const raw = `object ${'a'.repeat(40)}\ntype commit\ntag v2.1.0\ntagger t <t@example.com> 1760000000 +0000\n\nRelease 2.1.0\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lH\n-----END SSH SIGNATURE-----\n`;
+  const f = catFileExec(raw, 'Good "git" signature for polaris-release with ED25519 key SHA256:x');
+  assert.deepEqual(await git(f.exec, '/repo').verifyTag('v2.1.0', '/pinned/signers', []), { ok: true, format: 'SSH', signer: 'polaris-release' });
+  assert.ok(f.commands.some((c) => c.includes('verify-tag v2.1.0') && c.includes('gpg.ssh.allowedSignersFile=/pinned/signers')));
+});
 // The desktop app was removed in 2026-10 (PR #100), but a checkout that built or tested it still
 // holds its generated output. Those paths stay in the repo's .gitignore, because runUpdate
 // refuses a tree with untracked files and would otherwise be blocked on every such checkout.
