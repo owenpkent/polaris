@@ -733,6 +733,16 @@ test.describe('nothing is cut off between the breakpoint and the desktop width',
 // The check itself, on a page made of known cut-offs: each kind must be reported, and each thing
 // that only looks like one must not. Without this, a check that quietly stopped seeing anything
 // would pass every test above.
+test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@all-widths'] }, () => {
+  test('a long title wraps and the toast clears the bottom bar', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    await openView(page)
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    await expect(page.getByRole('button', { name: `Undo completing ${title}` })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+})
+
 test.describe('the cut-off check', { tag: ['@a11y'] }, () => {
   test('reports each kind of cut-off and nothing else', async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 300 })

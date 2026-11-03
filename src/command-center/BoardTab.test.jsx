@@ -1,6 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import BoardTab from './BoardTab'
+import UndoToast from '../UndoToast'
+import { resetUndoToast } from './undoToast'
 
 let connected = true
 const api = {}
@@ -28,6 +30,7 @@ function project(over = {}) {
 
 beforeEach(() => {
   connected = true
+  resetUndoToast()
   localStorage.clear()
   Object.assign(api, {
     listProjects: vi.fn().mockResolvedValue({ projects: [project()] }),
@@ -124,6 +127,15 @@ describe('BoardTab', () => {
     fireEvent.click(within(todo).getByRole('button', { name: 'Show 1 done' }))
     fireEvent.click(within(todo).getByRole('checkbox', { name: 'Reopen Task Four' }))
     await waitFor(() => expect(api.reopenTask).toHaveBeenCalledWith('t4'))
+  })
+
+  test("completing a card shows the toast, and its Undo reopens the card's task", async () => {
+    render(<><UndoToast /><BoardTab /></>)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Task One' }))
+    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledWith('t1'))
+    expect(screen.queryByRole('button', { name: 'Undo completing Task One' })).toBeNull()
   })
 
   test('a failed complete puts the card back and says so', async () => {

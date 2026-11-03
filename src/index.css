@@ -2160,6 +2160,52 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .fab:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
 }
 
+/* Completed toast (src/UndoToast.jsx). Centred near the bottom on a desktop; under 640px it sits
+   above the tab bar and left of the New task button, so neither is covered. The title wraps. */
+.undo-toast-region {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 24px;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.undo-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px 12px;
+  max-width: min(480px, 100%);
+  padding: 6px 6px 6px 16px;
+  background: var(--bg3);
+  color: var(--t1);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  font-size: 14px;
+  animation: undo-toast-in 160ms ease-out;
+}
+.undo-toast-text { min-width: 0; overflow-wrap: anywhere; }
+.undo-toast-title { font-weight: 600; }
+.undo-toast-btn { flex-shrink: 0; min-height: 44px; min-width: 44px; }
+@keyframes undo-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .undo-toast { animation: none; }
+}
+@media (max-width: 640px) {
+  .undo-toast-region {
+    right: 80px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    justify-content: flex-start;
+  }
+  .undo-toast { max-width: 100%; }
+}
+
 /* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
    the chip only adds its soft background. */
 .due-chip {

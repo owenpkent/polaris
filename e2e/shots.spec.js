@@ -175,6 +175,15 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'today-all-clear')
   })
 
+  // The "Completed <task>" toast with its Undo button, just after a task is completed.
+  test('mytasks: completed toast', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'toast shot')
+    await openView(page)
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    await expect(page.getByRole('button', { name: `Undo completing ${title}` })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'completed-toast')
+  })
+
   // A row with its name being edited in place.
   test('mytasks: rename', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'rename shot')

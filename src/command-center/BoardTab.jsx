@@ -6,6 +6,7 @@ import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
+import { showCompleted } from './undoToast'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { markChanged, useJustChanged } from './useJustChanged'
 import { oneLine, useFitToText } from './useFitToText'
@@ -569,6 +570,8 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === id ? { ...t, status } : t)) } : b))
   }, [])
 
+  // The completed toast's Undo reopens through this same handler, read at click time.
+  const handleToggleCompleteRef = useRef(null)
   const handleToggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
     const pid = projectRef
@@ -582,6 +585,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
       } else {
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         await api.completeTask(task.id)
+        showCompleted(task.title, () => handleToggleCompleteRef.current({ ...task, status: 'done' }))
         await exit
       }
       await refreshIfShown(pid)
@@ -593,6 +597,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
       setExitingIds((prev) => without(prev, task.id))
     }
   }, [api, projectRef, refreshIfShown, setTaskStatus])
+  useEffect(() => { handleToggleCompleteRef.current = handleToggleComplete }, [handleToggleComplete])
 
   // The context menu's due date and priority (TaskContextMenu.jsx): the list's quick edit, shown at
   // once and put back on failure.

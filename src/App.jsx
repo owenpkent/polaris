@@ -19,6 +19,7 @@ import { useSidebarHidden } from './sidebarState'
 import BottomNav from './BottomNav'
 import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
+import UndoToast from './UndoToast'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
 import SearchDialog from './command-center/SearchDialog'
 import { inTextField } from './command-center/Menu'
@@ -269,6 +270,7 @@ export default function App() {
           moreOpen={drawerOpen}
         />
         {searchOpen && <SearchDialog onClose={closeSearch} onOpenTask={openFoundTask} />}
+        <UndoToast />
         {chatMockup.enabled && (
           <ChatPanelMockup open={chatOpen} onClose={() => setChatOpen(false)} openButtonRef={chatButtonRef} />
         )}
