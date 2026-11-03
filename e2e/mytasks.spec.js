@@ -433,7 +433,9 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   }
 
   test('under the manual sort dragging a row onto Tomorrow sets its date and puts it at the top', async ({ page, request }, testInfo) => {
-    const title = await createTask(request, testInfo, 'day-drag')
+    // At the end of Today, just above Tomorrow's header (a new task goes first): from the top of
+    // a long Today on a phone the drag would scroll the page and land under the header.
+    const title = await createTask(request, testInfo, 'day-drag', { position: endPosition() })
     await openView(page)
     await manualSort(page)
     await dragToHeader(page, title, 'Tomorrow')
