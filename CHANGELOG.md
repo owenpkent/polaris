@@ -3,6 +3,13 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- My tasks no longer lets a task be dragged or arrowed into Overdue, so a move never gives a
+  task a date in the past by accident. A drag over Overdue lands at the top of Today; tasks
+  already in Overdue can still be reordered there or moved out. The due date picker still takes
+  a past date.
+
 ## 2.3.0 (2026-11-02)
 
 Migration 14 renumbers every task's position into one order across all projects and sections,

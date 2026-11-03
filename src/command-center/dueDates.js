@@ -109,19 +109,20 @@ export function bucketForTask(task, bounds) {
 }
 
 // What dropping a task into a due-date group does to its date. Today and Tomorrow set that day,
-// keeping the time; No due date clears it; Overdue, Next 7 days and Later name a range, not a day,
-// so the owner picks one: `{ mode: 'pick' }`. Anything else (another grouping) changes nothing.
+// keeping the time; No due date clears it; Next 7 days and Later name a range, not a day, so the
+// owner picks one: `{ mode: 'pick' }`. Anything else changes nothing: Overdue, which takes no drop
+// (it is closed in MyTasksTab), and the other groupings.
 export function dueForDrop(groupId, dueAt, bounds) {
   if (groupId === 'today') return { mode: 'set', dueAt: withDueDate(dueAt, bounds.today) }
   if (groupId === 'tomorrow') return { mode: 'set', dueAt: withDueDate(dueAt, bounds.tomorrow) }
   if (groupId === 'noDue') return { mode: 'set', dueAt: null }
-  if (groupId === 'overdue' || groupId === 'next7' || groupId === 'later') return { mode: 'pick' }
+  if (groupId === 'next7' || groupId === 'later') return { mode: 'pick' }
   return { mode: 'none' }
 }
 
 // The day the picker opens on after a drop into a range: the day of the row it was dropped next to
-// (`neighbourDueAt`), or the range's first day when the group is empty: yesterday, the day after
-// tomorrow, the day after the Next 7 days end.
+// (`neighbourDueAt`), or the range's first day when the group is empty: the day after tomorrow,
+// or the day after the Next 7 days end.
 export function dropStartDay(groupId, bounds, neighbourDueAt) {
   const near = dueDateOnly(neighbourDueAt)
   if (near) return near
@@ -129,7 +130,6 @@ export function dropStartDay(groupId, bounds, neighbourDueAt) {
     const [y, m, d] = iso.split('-').map(Number)
     return localIso(new Date(y, m - 1, d + n))
   }
-  if (groupId === 'overdue') return after(bounds.today, -1)
   if (groupId === 'next7') return after(bounds.tomorrow, 1)
   return after(bounds.in7, 1)
 }
