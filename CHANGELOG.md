@@ -3,10 +3,31 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.3.0 (2026-11-02)
 
-No schema migration.
+Migration 14 renumbers every task's position into one order across all projects and sections,
+keeping the order they had. `cc update` snapshots the database before it runs; a rollback restores
+the old per-project numbers.
 
+- My tasks keeps your own order: Manual is the default sort (a saved view keeps its sort), with
+  a handle before each row. Drag a handle to move a row, or use its menu (Move up, Move down, Move
+  to top, Move to bottom) or the arrow keys; a screen reader hears where the row landed. Offline
+  reorders are queued and replayed.
+- Drag a task to another day: dropping it in Today or Tomorrow sets that date (keeping any time),
+  No due date clears it, and Overdue, Next 7 days, and Later open the date picker on the row;
+  closing the picker without a date puts it back. Group headers, collapsed or empty, take a drop
+  at the top, the arrow keys cross from one day to the next, and the handle menu has Move to
+  Today, Move to Tomorrow, and Move to No due date.
+- Click a task's title to rename it in place (Enter or a click away saves, Esc cancels). An
+  always-visible button at the end of the name opens the task panel.
+- Hide the sidebar from the top bar or with Ctrl+\ (Cmd+\ on a Mac); each device remembers it.
+- Calmer colours: hover, pressed, and dividers each have their own strength in both themes, flat
+  buttons, quieter column headers, tabular digits, and ten matched project colours. Compact row
+  density, chosen per device in Settings, packs My tasks rows and board cards with 32px controls.
+- The add row names the task in the Name column with its due date in the Due date column, and a
+  click elsewhere with a title in it adds the task, as Enter does.
+- The due date picker shows Repeats in place of the month, with a Back button, so it never needs
+  scrolling; a repeating task's Repeat button names its rule.
 - A release tag can be signed with the OK Studio EV certificate on the eToken (an X.509
   signature, `scripts/sign-release.ps1`) as well as with the SSH release key. An install verifies
   an X.509 signature itself, against the RSA keys in its pinned `release-signers`, with no
