@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
+import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -157,7 +157,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     const day = new Date()
     day.setDate(day.getDate() + 1)
     const tomorrow = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
-    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow })
+    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow, position: endPosition() })
     await openView(page)
     // The row is last in Tomorrow, so ArrowDown drops it into Next 7 days, which asks for a day.
     const handle = page.getByRole('button', { name: `Reorder ${title}` })

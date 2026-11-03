@@ -393,3 +393,21 @@ test('createInOrder puts a batch at the top in the order it was made, with neste
   assert.throws(() => s.createInOrder(() => { s.createTask({ title: 'lost' }); throw new Error('boom'); }), /boom/);
   assert.equal(s.searchTasks({}).some((t) => t.title === 'lost'), false);
 });
+
+test('createInOrder: a batch task moved under an existing parent goes after the parent\'s steps, and the rest of the batch stays on top', () => {
+  const s = fresh();
+  const parent = s.createTask({ title: 'parent' });
+  s.createTask({ title: 'one', parentId: parent.id });
+  s.createTask({ title: 'two', parentId: parent.id });
+  s.createInOrder(() => {
+    s.createTask({ title: 'a' });
+    const kid = s.createTask({ title: 'kid' });
+    s.moveTask(kid.id, { parentId: parent.id });
+    s.createTask({ title: 'b' });
+    const kid2 = s.createTask({ title: 'kid2' });
+    s.moveTask(kid2.id, { parentId: parent.id });
+  });
+  const all = s.searchTasks({ orderBy: 'position' });
+  assert.deepEqual(all.filter((t) => t.parentId === parent.id).map((t) => t.title), ['one', 'two', 'kid', 'kid2']);
+  assert.deepEqual(all.filter((t) => !t.parentId).map((t) => t.title), ['a', 'b', 'parent']);
+});

@@ -536,12 +536,21 @@ export class Store {
       this.orderedBatch = made;
       try {
         const out = fn();
-        const placed = made
-          .map((id) => this.db.get<{ position: number }>('SELECT position FROM tasks WHERE id = ?', [id])?.position)
-          .filter((p): p is number => typeof p === 'number')
-          .sort((a, b) => a - b);
-        if (placed.length === made.length) {
-          made.forEach((id, i) => this.db.run('UPDATE tasks SET position = ? WHERE id = ?', [placed[i], id]));
+        // A task made top-level may have been given a parent since (the importers create an item,
+        // then move it under its parent). It is a subtask now, so it goes last, after the parent's
+        // existing steps, in the order made; only the tasks still at the top are renumbered as a block.
+        const rows = made
+          .map((id) => this.db.get<{ id: string; position: number; parent_id: string | null }>('SELECT id, position, parent_id FROM tasks WHERE id = ?', [id]))
+          .filter((r): r is { id: string; position: number; parent_id: string | null } => r != null);
+        if (rows.length === made.length) {
+          const top = rows.filter((r) => r.parent_id == null);
+          const placed = top.map((r) => r.position).sort((a, b) => a - b);
+          top.forEach((r, i) => this.db.run('UPDATE tasks SET position = ? WHERE id = ?', [placed[i], r.id]));
+          const kids = rows.filter((r) => r.parent_id != null);
+          if (kids.length > 0) {
+            const max = this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM tasks')?.p ?? 0;
+            kids.forEach((r, i) => this.db.run('UPDATE tasks SET position = ? WHERE id = ?', [max + 1 + i, r.id]));
+          }
         }
         return out;
       } finally {

@@ -1,3 +1,5 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,4 +41,26 @@ test('importInitiativeFiles: re-import with no changes produces zero task.* even
   assert.equal(second.tasks.gone, 0);
   const kinds = store.eventsSince(before).map((e) => e.kind);
   assert.deepEqual(kinds.filter((k) => k.startsWith('task.')), []);
+});
+
+test('importInitiativeFiles: a step added to the file later goes after the parent\'s existing steps', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-init-'));
+  try {
+    mkdirSync(join(root, 'initiatives'));
+    const write = (n: number) => writeFileSync(join(root, 'initiatives', 'plan.md'), [
+      '# Initiative: Plan', '', '## Tasks', '', '- [ ] Parent',
+      ...['one', 'two', 'three'].slice(0, n).map((s) => `  - [ ] Step ${s}`), '',
+    ].join('\n'));
+    const store = fresh();
+    write(2);
+    importInitiativeFiles(store, root);
+    write(3);
+    importInitiativeFiles(store, root);
+    const project = store.getProject('initiative-plan')!;
+    const parent = store.searchTasks({ projectId: project.id }).find((t) => t.title === 'Parent')!;
+    const kids = store.searchTasks({ projectId: project.id, orderBy: 'position' }).filter((t) => t.parentId === parent.id);
+    assert.deepEqual(kids.map((t) => t.title), ['Step one', 'Step two', 'Step three']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

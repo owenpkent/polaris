@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone, createTask, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
+import { openView, isPhone, createTask, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
 import { TOKEN } from './global-setup.js'
 
 const row = (page, title) => page.getByRole('button', { name: `Open ${title}`, exact: true })
@@ -342,8 +342,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   // The manual sort: each row leads with a handle that drags, and whose menu and arrow keys make
-  // the same moves. Both tasks are due today, so they share a group and the second (created
-  // last, numbered last) starts under the first.
+  // the same moves. Both tasks are due today, so they share a group and the second (numbered
+  // last by position) starts under the first.
   // Manual is the default sort, so a fresh browser already shows the handles.
   async function manualSort(page) {
     await expect(page.getByRole('button', { name: 'Sort', exact: true })).toBeVisible()
@@ -354,8 +354,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
 
   test('under the manual sort a handle menu moves a row, and the order survives a reload', async ({ page, request }, testInfo) => {
-    const first = await createTask(request, testInfo, 'reorder-menu')
-    const second = await createTask(request, testInfo, 'reorder-menu')
+    const first = await createTask(request, testInfo, 'reorder-menu', { position: endPosition() })
+    const second = await createTask(request, testInfo, 'reorder-menu', { position: endPosition() })
     await openView(page)
     // Under the Due date sort there are no handles.
     await page.getByRole('button', { name: 'Sort', exact: true }).click()
@@ -379,8 +379,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('under the manual sort the arrow keys move the focused handle one row', async ({ page, request }, testInfo) => {
-    const first = await createTask(request, testInfo, 'reorder-keys')
-    const second = await createTask(request, testInfo, 'reorder-keys')
+    const first = await createTask(request, testInfo, 'reorder-keys', { position: endPosition() })
+    const second = await createTask(request, testInfo, 'reorder-keys', { position: endPosition() })
     await openView(page)
     await manualSort(page)
     await page.getByRole('button', { name: `Reorder ${first}` }).focus()
@@ -392,8 +392,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('under the manual sort dragging a handle drops the row where the line shows', async ({ page, request }, testInfo) => {
-    const first = await createTask(request, testInfo, 'reorder-drag')
-    const second = await createTask(request, testInfo, 'reorder-drag')
+    const first = await createTask(request, testInfo, 'reorder-drag', { position: endPosition() })
+    const second = await createTask(request, testInfo, 'reorder-drag', { position: endPosition() })
     await openView(page)
     await manualSort(page)
     const handle = page.getByRole('button', { name: `Reorder ${second}` })
@@ -473,11 +473,11 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('under the manual sort ArrowDown on the last row of Today moves it to Tomorrow and the handle keeps focus', async ({ page, request }, testInfo) => {
-    const title = await createTask(request, testInfo, 'day-keys')
+    const title = await createTask(request, testInfo, 'day-keys', { position: endPosition() })
     await openView(page)
     await manualSort(page)
     const handle = page.getByRole('button', { name: `Reorder ${title}` })
-    // A new task is numbered last, so it ends its day group.
+    // Numbered last, so it ends its day group.
     await handle.scrollIntoViewIfNeeded()
     await handle.focus()
     await page.keyboard.press('ArrowDown')

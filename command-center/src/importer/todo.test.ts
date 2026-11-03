@@ -145,3 +145,13 @@ test('importChecklistContent: new items go to the top of the list in the file or
   const nested = store.searchTasks({ orderBy: 'position' }).filter((t) => t.parentId).map((t) => t.title);
   assert.deepEqual(nested, ['Handle nested checkboxes', 'Handle checked nested checkboxes']);
 });
+
+test('importChecklistContent: a step added to the file later goes after the parent\'s existing steps', () => {
+  const { store, project } = freshStoreWithProject();
+  const steps = (n: number) => ['# Plan', '', '- [ ] Parent', ...['one', 'two', 'three'].slice(0, n).map((s) => `  - [ ] Step ${s}`), ''].join('\n');
+  importChecklistContent(store, project, 'TODO.md', steps(2));
+  importChecklistContent(store, project, 'TODO.md', steps(3));
+  const parent = store.searchTasks({ projectId: project.id }).find((t) => t.title === 'Parent')!;
+  const kids = store.searchTasks({ projectId: project.id, orderBy: 'position' }).filter((t) => t.parentId === parent.id);
+  assert.deepEqual(kids.map((t) => t.title), ['Step one', 'Step two', 'Step three']);
+});
