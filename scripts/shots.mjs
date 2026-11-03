@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { acquireSuiteLock, TOKEN_ENV } from '../e2e/suiteLock.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SHOTS = join(ROOT, '.shots')
@@ -177,7 +178,7 @@ ${sections.join('\n')}
   writeFileSync(join(SHOTS, 'index.html'), html)
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (args.accept) return accept()
   if (args.list) {
@@ -185,6 +186,12 @@ function main() {
     writeGallery(statuses)
     return summarize(statuses, 0)
   }
+
+  // The machine-wide UI suite lock (e2e/suiteLock.js), taken before the build so dist/ is never
+  // replaced under another run. Playwright gets the token and goes on under this lock; the lock
+  // goes when this process exits.
+  const lock = await acquireSuiteLock({ command: `npm run shots ${process.argv.slice(2).join(' ')}`.trim() })
+  process.env[TOKEN_ENV] = lock.token
 
   if (args.build) {
     console.log('Building the dashboard')
@@ -209,4 +216,4 @@ function main() {
   process.exit(status === 0 ? 0 : 1)
 }
 
-main()
+await main()

@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test'
+import { acquireSuiteLock, TOKEN_ENV } from './e2e/suiteLock.js'
 
 // UI tests (npm run test:ui). They drive the installed Microsoft Edge, so no browser download is
 // needed, against throwaway Command Center servers, one per worker, that e2e/server.js seeds
@@ -29,6 +30,18 @@ const shotProjects = [['phone', PHONE], ['desktop', DESKTOP]].flatMap(([width, u
   }))
 )
 
+// One suite at a time on this machine (e2e/suiteLock.js): the run takes a machine-wide lock as
+// its config loads, before Playwright empties .playwright/ or starts a server, and a second run
+// waits here, saying who holds it, until the first is done. Only `playwright test` in the main
+// process takes it: workers load this file too (and carry TEST_WORKER_INDEX), and `--list` starts
+// nothing. A run started by `npm run test:ui` or `npm run shots` already holds the lock, from
+// before its build, and goes on under it. The lock goes when the process exits.
+const argv = process.argv.slice(2)
+if (argv[0] === 'test' && !argv.includes('--list') && process.env.TEST_WORKER_INDEX === undefined) {
+  const lock = await acquireSuiteLock({ command: `playwright ${argv.join(' ')}` })
+  process.env[TOKEN_ENV] = lock.token
+}
+
 export default defineConfig({
   testDir: 'e2e',
   // e2e/conventions.test.js is a Vitest file (npm test); Playwright runs only the .spec.js files.
@@ -43,7 +56,8 @@ export default defineConfig({
   // longer lists, and the clipping checks (which focus and photograph every control) slow down
   // with them: on a 16-core machine e2e/clipping.spec.js on desktop took 8-10 minutes at four
   // workers with 16-22 timeouts, 1.4 minutes at eight with none, and 1.6 minutes at twelve with
-  // three (out of CPU). Pass --workers to choose; never run two suites at once.
+  // three (out of CPU). Pass --workers to choose. Two suites never run at once: the suite lock
+  // above makes a second run wait for the first.
   fullyParallel: true,
   workers: process.env.CI ? 1 : 8,
   retries: 0,
