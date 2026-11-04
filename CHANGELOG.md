@@ -15,6 +15,9 @@ No migration.
   bar's icons follow the dashboard's theme.
 - `cc update` no longer rolls an update back because the machine was busy: the dashboard unit
   tests it runs give a slow test twenty seconds, and a slow element five, instead of five and one.
+- My tasks hides the Today and Tomorrow groups while they are empty, as it already did for the
+  other day groups. An empty group still shows while a row is held, as a drop target, and the
+  toolbar's Add task still opens its row in Today, which comes back for as long as the row is open.
 
 ## 2.5.0 (2026-11-03)
 
