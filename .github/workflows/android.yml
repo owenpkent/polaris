@@ -118,7 +118,8 @@ jobs:
       - run: npm run build
       - run: npm run sync
         working-directory: mobile
-      - run: ./gradlew assembleRelease
+      # The updater plugin's pure rules (AppUpdaterRulesTest) run on the JVM, no emulator.
+      - run: ./gradlew testDebugUnitTest assembleRelease
         working-directory: mobile/android
       # The signing lineage rehearsal (mobile/scripts/apkLineage.test.js) needs apksigner and a JDK,
       # which this job has and the fast job does not: there it skips itself.

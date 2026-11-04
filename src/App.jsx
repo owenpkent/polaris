@@ -26,6 +26,7 @@ import { parseShareParams, stripShareParams } from './command-center/shareIntake
 import { subscribeNativeShares, subscribeNotificationTaps } from './command-center/nativeApp'
 import { parseTaskParam, stripTaskParam } from './command-center/reminders'
 import ReminderScheduler from './command-center/ReminderScheduler'
+import AppUpdateScheduler from './command-center/AppUpdateScheduler'
 
 // Each view's icon is drawn by the sidebar and the drawer (src/NavItem.jsx); the phone tab bar
 // has its own three (src/BottomNav.jsx).
@@ -197,6 +198,7 @@ export default function App() {
         />
         <OfflineBanner onConnect={() => setTab('settings')} />
         <ReminderScheduler />
+        <AppUpdateScheduler />
         <JobWarningsBanner />
         <NavDrawer
           open={drawerOpen}

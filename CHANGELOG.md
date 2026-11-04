@@ -3,6 +3,15 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No migration.
+
+- The Android app updates itself, up to the one tap Android asks for: it checks the releases on
+  its own, downloads a newer APK into its own storage, checks that it is Polaris signed with the
+  same certificate, and offers Install from a notification and from the App update card. Check
+  for app updates automatically is on by default and can be turned off in Settings.
+
 ## 2.6.0 (2026-11-03)
 
 No migration.

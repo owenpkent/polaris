@@ -37,9 +37,16 @@ export async function requestNotificationPermission() {
   return res?.display === 'granted'
 }
 
+// The "update ready" notification has one fixed id. Reminder ids (reminders.js notificationIdFor)
+// are always positive, so a negative id can never be a reminder's.
+export const APP_UPDATE_NOTIFICATION_ID = -7001
+
+// Cancels every pending reminder. The update notification is not a reminder and is left alone.
 export async function cancelAllNotifications() {
   const pending = await nativeCall('LocalNotifications', 'getPending')
-  const notifications = (pending?.notifications || []).map(({ id }) => ({ id }))
+  const notifications = (pending?.notifications || [])
+    .filter(({ id }) => id !== APP_UPDATE_NOTIFICATION_ID)
+    .map(({ id }) => ({ id }))
   if (notifications.length) await nativeCall('LocalNotifications', 'cancel', { notifications })
 }
 
@@ -60,6 +67,60 @@ export async function scheduleNotifications(plan) {
       extra: { taskId: item.taskId },
     })),
   })
+}
+
+// The Android shell's AppUpdater plugin (mobile/): downloads the release APK into the app's own
+// cache, checks it is this app signed by the same certificate, and hands it to the system installer.
+export async function downloadAppUpdate({ url, name, size }) {
+  const res = await nativeCall('AppUpdater', 'download', { url, name, size })
+  return { path: res?.path, size: res?.size }
+}
+
+export async function verifyAppUpdate(path) {
+  const res = await nativeCall('AppUpdater', 'verify', { path })
+  return {
+    ok: res?.ok === true,
+    packageName: res?.packageName ?? null,
+    versionName: res?.versionName ?? null,
+    versionCode: res?.versionCode ?? null,
+    sameSigner: res?.sameSigner === true,
+  }
+}
+
+export async function canInstallApps() {
+  const res = await nativeCall('AppUpdater', 'canInstall')
+  return res?.allowed === true
+}
+
+export async function openInstallSettings() {
+  await nativeCall('AppUpdater', 'openInstallSettings')
+}
+
+export async function installAppUpdate(path) {
+  await nativeCall('AppUpdater', 'install', { path })
+}
+
+export async function discardAppUpdate() {
+  await nativeCall('AppUpdater', 'discard')
+}
+
+// One notification, shown at once, saying a checked APK is ready. Tapping it is handled by
+// subscribeAppUpdateTaps.
+export async function scheduleAppUpdateNotification({ version }) {
+  await nativeCall('LocalNotifications', 'schedule', {
+    notifications: [{
+      id: APP_UPDATE_NOTIFICATION_ID,
+      title: `Polaris ${version} is ready to install`,
+      body: 'Tap to install. Android asks you to confirm once.',
+      schedule: { at: new Date(Date.now() + 1000).toISOString(), allowWhileIdle: true },
+      isExactNotification: false,
+      extra: { kind: 'app-update' },
+    }],
+  })
+}
+
+export async function cancelAppUpdateNotification() {
+  await nativeCall('LocalNotifications', 'cancel', { notifications: [{ id: APP_UPDATE_NOTIFICATION_ID }] })
 }
 
 function subscribeBridge(plugin, event, handler) {
@@ -84,8 +145,17 @@ function subscribeBridge(plugin, event, handler) {
 // Calls `onTaskId(id)` when the owner taps a reminder.
 export function subscribeNotificationTaps(onTaskId) {
   return subscribeBridge('LocalNotifications', 'localNotificationActionPerformed', (event) => {
-    const id = event?.notification?.extra?.taskId
+    const extra = event?.notification?.extra
+    if (extra?.kind === 'app-update') return
+    const id = extra?.taskId
     if (typeof id === 'string' && id) onTaskId(id)
+  })
+}
+
+// Calls `cb()` when the owner taps the "update ready" notification.
+export function subscribeAppUpdateTaps(cb) {
+  return subscribeBridge('LocalNotifications', 'localNotificationActionPerformed', (event) => {
+    if (event?.notification?.extra?.kind === 'app-update') cb()
   })
 }
 
