@@ -44,9 +44,8 @@ export default function TopBar({
 
   return (
     <header
+      className="topbar"
       style={{
-        height: 56,
-        minHeight: 56,
         background: 'var(--bg2)',
         borderBottom: '1px solid var(--bd-surface)',
         boxShadow: 'var(--shadow-bar)',
@@ -55,7 +54,6 @@ export default function TopBar({
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
-        padding: '0 1rem',
         gap: '0.75rem',
       }}
     >

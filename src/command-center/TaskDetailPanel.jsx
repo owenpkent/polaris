@@ -907,7 +907,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
       style={{
         position: 'fixed',
-        top: 56,
+        top: 'calc(56px + var(--safe-top))',
         right: 0,
         bottom: 0,
         width: 560,

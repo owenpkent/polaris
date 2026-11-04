@@ -668,7 +668,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         {/* A flat column header stuck under the top bar, then the list: one panel holding every
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
         <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ position: 'sticky', top: 56, zIndex: 10, background: 'var(--bg)' }}>
+          <div className="mytasks-colhead-sticky">
             <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
               {reorderable && <div />}
               <div />

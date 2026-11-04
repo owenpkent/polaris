@@ -409,10 +409,12 @@ export default function TaskRow({
         color: done ? 'var(--t2)' : 'var(--t1)',
         textDecoration: done ? 'line-through' : 'none',
         overflow: 'hidden',
+        // Two lines at most; the full name is the button's accessible name and the panel's title.
+        // No padding here: inside an overflow-hidden line clamp, padding lets the top of the
+        // third line show through. The button pads instead (.mytasks-title under 640px).
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
-        padding: 'var(--row-pad) 0',
       }
     : {
         ...cellStyle,
@@ -468,15 +470,20 @@ export default function TaskRow({
         {/* On a phone a name too long for its line takes the line, and what follows it wraps
             under it, rather than squeezing the name to a word or two. */}
         <span className="mytasks-name-body">
+          <span className="mytasks-name-grid">
           <TitleCell task={task} nameText={nameText} disabled={pending} onRename={(title) => onQuickUpdate(task, { title })} />
-          {task.status === 'waiting' && (
-            <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
+          {(task.status === 'waiting' || subtaskCount > 0) && (
+            <span className="mytasks-name-meta">
+              {task.status === 'waiting' && (
+                <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
+              )}
+              {subtaskCount > 0 && (
+                <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
+              )}
+            </span>
           )}
-          {subtaskCount > 0 && (
-            <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
-          )}
-          {/* Always shown, at the right end of the name (on a phone it wraps under a name that fills
-              the line), so a long name still leaves a target that opens the panel. */}
+          {/* Always shown, at the right end of the name (on a phone, on the name's first line, with
+              Waiting and the count under it), so a long name still leaves a target that opens the panel. */}
           <button
             type="button"
             className="icon-btn mytasks-open"
@@ -486,6 +493,7 @@ export default function TaskRow({
           >
             <PanelRightOpen size={16} aria-hidden="true" />
           </button>
+          </span>
         </span>
       </span>
 

@@ -191,3 +191,28 @@ describe('useTheme', () => {
     expect(result.current.resolvedTheme).toBe('dark')
   })
 })
+
+describe('applyTheme inside the Android app', () => {
+  afterEach(() => {
+    delete window.Capacitor
+  })
+
+  test('tells the status bar which theme it sits over, and nothing in a browser', () => {
+    applyTheme('dark')
+    expect(window.Capacitor).toBeUndefined()
+    const nativePromise = vi.fn().mockResolvedValue({})
+    window.Capacitor = { isNativePlatform: () => true, nativePromise }
+    applyTheme('dark')
+    expect(nativePromise).toHaveBeenLastCalledWith('SystemBars', 'setStyle', { style: 'DARK' })
+    applyTheme('light')
+    expect(nativePromise).toHaveBeenLastCalledWith('SystemBars', 'setStyle', { style: 'LIGHT' })
+    expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
+  test('a bridge that refuses does not break the theme switch', async () => {
+    window.Capacitor = { isNativePlatform: () => true, nativePromise: vi.fn().mockRejectedValue(new Error('no plugin')) }
+    expect(() => applyTheme('dark')).not.toThrow()
+    await Promise.resolve()
+    expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+})
