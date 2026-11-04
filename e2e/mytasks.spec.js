@@ -676,13 +676,14 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Change priority for ${title}` })).toHaveText('Urgent')
   })
 
-  test('the phone tier shows Name and Due date only, and hides Columns', async ({ page }, testInfo) => {
+  test('the phone tier has no column header and hides Columns: its two columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     await openView(page)
-    await expect(page.getByRole('button', { name: 'Name column menu' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Due date column menu' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Priority column menu' })).toHaveCount(0)
+    for (const name of ['Name column menu', 'Due date column menu', 'Priority column menu']) {
+      await expect(page.getByRole('button', { name })).toBeHidden()
+    }
     await expect(page.getByRole('button', { name: 'Columns' })).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
   })
 })
 

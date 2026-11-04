@@ -409,10 +409,12 @@ export default function TaskRow({
         color: done ? 'var(--t2)' : 'var(--t1)',
         textDecoration: done ? 'line-through' : 'none',
         overflow: 'hidden',
+        // Two lines at most; the full name is the button's accessible name and the panel's title.
+        // No padding here: inside an overflow-hidden line clamp, padding lets the top of the
+        // third line show through. The button pads instead (.mytasks-title under 640px).
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
-        padding: 'var(--row-pad) 0',
       }
     : {
         ...cellStyle,

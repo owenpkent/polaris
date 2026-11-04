@@ -3,6 +3,17 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No migration.
+
+- Phone rows keep their shape: a long task name wraps on its own lines and the panel button stays
+  on the first one, instead of dropping under the name and leaving an empty band in the row. The
+  column header is gone from the phone tier, where the two columns are fixed and Sort lives in the
+  toolbar.
+- In the Android app the top bar now sits below the status bar instead of under it, and the status
+  bar's icons follow the dashboard's theme.
+
 ## 2.5.0 (2026-11-03)
 
 No migration.

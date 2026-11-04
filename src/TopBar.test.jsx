@@ -178,3 +178,13 @@ describe('TopBar sidebar toggle', () => {
     expect(screen.queryByRole('button', { name: /sidebar/ })).toBeNull()
   })
 })
+
+describe('TopBar under the status bar', () => {
+  test('adds the safe-area inset above its 56px, so the Android app does not draw it under the status bar', () => {
+    const { container } = render(<TopBar title="X" onMenuClick={vi.fn()} menuOpen={false} />)
+    // The sizes live in index.css (.topbar), where --safe-top is defined; the element only names the class.
+    const header = container.querySelector('header')
+    expect(header.classList.contains('topbar')).toBe(true)
+    expect(header.style.height).toBe('')
+  })
+})

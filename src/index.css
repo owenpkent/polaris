@@ -28,6 +28,9 @@
    shadow plus a 1px top highlight, and floating things (menus, panels,
    dialogs) use --shadow-pop. */
 :root {
+  /* The status bar's height inside the Android app, where the page runs edge to edge
+     (mobile/README.md); 0 in a browser. The top bar and everything stuck under it add it. */
+  --safe-top: env(safe-area-inset-top, 0px);
   color-scheme: dark;
 
   /* Each layer is a small step lighter than the one below it (1.05-1.1:1),
@@ -596,6 +599,9 @@ kbd { color: var(--t1); }
    (src/Sidebar.jsx) and the top bar's menu button goes away; under it the sidebar is hidden and
    the phone's tab bar and drawer take over. */
 .app-shell { display: flex; min-height: 100vh; }
+/* The top bar (TopBar.jsx): 56px of bar, below the status bar inside the Android app, where the
+   page runs edge to edge and --safe-top is the bar's height (0 in a browser). */
+.topbar { height: calc(56px + var(--safe-top)); min-height: calc(56px + var(--safe-top)); padding-top: var(--safe-top); }
 .app-content { flex: 1; min-width: 0; }
 .app-sidebar {
   position: sticky;
@@ -998,16 +1004,24 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 .mytasks-open { margin-left: auto; width: var(--row); min-width: var(--row); height: var(--row); color: var(--t3); }
 .mytasks-open:hover { color: var(--t1); }
 @media (max-width: 640px) {
+  .mytasks-title { padding: var(--row-pad) 4px; }
   .mytasks-title-input { font-size: 0.9375rem; }
 }
 .mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
-@media (max-width: 640px) {
-  .mytasks-name-body { flex-wrap: wrap; }
-}
 /* A name column too narrow for the name, Waiting, the count, and the panel button side by side
-   (a narrow window, or an open panel): what follows the name wraps under it, as on a phone. */
-@container (max-width: 260px) {
-  .mytasks-name-body { flex-wrap: wrap; }
+   (a narrow window, or an open panel): what follows the name wraps under it. Not on a phone: there
+   the name wraps instead and the panel button stays on its first line, so a row is as tall as its
+   name and never carries an empty band with a lone button in it. */
+@media (min-width: 641px) {
+  @container (max-width: 260px) {
+    .mytasks-name-body { flex-wrap: wrap; }
+  }
+}
+/* The column header, stuck under the top bar. A phone has no column header: its two columns are
+   fixed, and Sort lives in the toolbar. */
+.mytasks-colhead-sticky { position: sticky; top: calc(56px + var(--safe-top)); z-index: 10; background: var(--bg); }
+@media (max-width: 640px) {
+  .mytasks-colhead-sticky { display: none; }
 }
 /* The subtask count after a name, as Asana shows it: a quiet chip inside a 44px button that
    shows the subtasks under the row. */
@@ -1839,7 +1853,7 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
    nothing is covered; under 640px the panel covers the full width. */
 .chat-panel {
   position: fixed;
-  top: 56px;
+  top: calc(56px + var(--safe-top));
   right: 0;
   bottom: 0;
   width: 420px;

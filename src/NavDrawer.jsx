@@ -134,6 +134,7 @@ export default function NavDrawer({
           left: 0,
           bottom: 0,
           width: 280,
+          paddingTop: 'var(--safe-top)',
           background: 'var(--bg2)',
           borderRight: '1px solid var(--bd)',
           boxShadow: 'var(--shadow-pop)',

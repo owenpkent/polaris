@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { isNativeApp, nativeCall } from './command-center/nativeApp'
 
 // Light/dark theme. The choice is one of THEME_CHOICES and lives in
 // localStorage; what it resolves to ('light' or 'dark') is written to
@@ -51,6 +52,10 @@ export function applyTheme(resolved) {
   } catch {
     // No document (server render, bare test harness): nothing to paint.
   }
+  // Inside the Android app the status bar sits over the top bar, so its icons follow the
+  // dashboard's theme, not the phone's: light icons on the dark theme, dark on the light one.
+  // Capacitor's SystemBars plugin names the styles after the theme they suit.
+  if (isNativeApp()) nativeCall('SystemBars', 'setStyle', { style: resolved === 'dark' ? 'DARK' : 'LIGHT' }).catch(() => {})
 }
 
 // Watches the OS setting so a 'system' choice follows it while the tab is
