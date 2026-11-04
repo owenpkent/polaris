@@ -588,6 +588,38 @@ describe('MyTasksTab moves between due-date groups', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
   })
 
+  test('an empty Today is hidden, and ArrowUp on the first row of Tomorrow still moves it there', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [mk('b', 'Beta', 2, bounds.tomorrow), mk('c', 'Gamma', 3, bounds.tomorrow)] })
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Beta' })
+    expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Collapse Tomorrow' })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Beta' }), { key: 'ArrowUp' })
+    expect(inGroup(container, 'today')).toEqual(['b'])
+    expect(screen.getByRole('button', { name: 'Collapse Today' })).toBeTruthy()
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
+  })
+
+  test('an empty Tomorrow is hidden, and ArrowDown on the last row of Today still moves it there', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [mk('a', 'Alpha', 1, `${bounds.today}T09:00`)] })
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Alpha' })
+    expect(screen.queryByRole('button', { name: 'Collapse Tomorrow' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowDown' })
+    expect(inGroup(container, 'tomorrow')).toEqual(['a'])
+    expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('a', { dueAt: `${bounds.tomorrow}T09:00` }))
+  })
+
+  test('with no tasks no day group shows, and the toolbar keeps Add task', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [] })
+    render(<MyTasksTab />)
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('Loading tasks…')).toBeNull())
+    expect(screen.queryByRole('button', { name: /^(Collapse|Expand) / })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeTruthy()
+  })
+
   test('nothing moves into Overdue: ArrowUp on the first row of Today stays put, and Overdue rows can still leave', async () => {
     const yesterday = (() => { const [y, m, d] = bounds.today.split('-').map(Number); const t = new Date(y, m - 1, d - 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}` })()
     api.listTasks.mockResolvedValue({

@@ -2,7 +2,7 @@ import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { TOKEN } from './server.js'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -645,7 +645,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
       const main = page.getByRole('main')
       await expect(main.getByText(view.loading, { exact: true })).toHaveCount(0)
       for (const text of view.emptyText) await expect(main.getByText(text)).toBeVisible()
-      for (const name of view.emptyControls) await expect(main.getByRole('button', { name, exact: true }).first()).toBeVisible()
+      for (const name of (isPhone(testInfo) && view.phoneEmptyControls) || view.emptyControls) await expect(main.getByRole('button', { name, exact: true }).first()).toBeVisible()
       await expect(failureBanner(page)).toHaveCount(0)
       await shot(page, testInfo, view.id, 'empty')
     })

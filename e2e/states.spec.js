@@ -94,7 +94,7 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       await expect(failureBanner(page)).toHaveCount(0)
     })
 
-    test(`${view.label}: an empty answer shows the empty state with a way forward`, async ({ page }) => {
+    test(`${view.label}: an empty answer shows the empty state with a way forward`, async ({ page }, testInfo) => {
       await emptyRequest(page, view.emptyRequest || view.request, view.emptyBody)
       await openView(page, view.id)
 
@@ -103,7 +103,7 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       for (const text of view.emptyText) {
         await expect(main.getByText(text)).toBeVisible()
       }
-      for (const name of view.emptyControls) {
+      for (const name of (isPhone(testInfo) && view.phoneEmptyControls) || view.emptyControls) {
         await expect(main.getByRole('button', { name, exact: true }).first()).toBeVisible()
       }
       await expect(failureBanner(page)).toHaveCount(0)
