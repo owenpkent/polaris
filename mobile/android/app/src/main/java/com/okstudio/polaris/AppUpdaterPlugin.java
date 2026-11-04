@@ -26,9 +26,9 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 
 // The app's own updater, down to the one tap Android requires of a sideloaded app
 // (docs/app-auto-update-proposal.md). The dashboard decides when to check and what to fetch
@@ -73,8 +73,9 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     // Reads the downloaded file as a package. `ok` only when it is this app (same package name)
-    // signed by exactly this app's certificates. Anything else is deleted and refused, so a wrong
-    // file never reaches the installer.
+    // signed by this app's certificate, or by a newer one the installed certificate vouches for
+    // through the signing lineage (acceptsSigners). Anything else is deleted and refused, so a
+    // wrong file never reaches the installer.
     @PluginMethod
     public void verify(PluginCall call) {
         String path = call.getString("path", "");
@@ -95,7 +96,9 @@ public class AppUpdaterPlugin extends Plugin {
             return;
         }
         boolean samePackage = getContext().getPackageName().equals(info.packageName);
-        boolean sameSigner = sameSigners(signaturesOf(info), signaturesOf(own));
+        Signers archive = signersOf(info);
+        Signers installed = signersOf(own);
+        boolean sameSigner = acceptsSigners(archive.certs, archive.multiple, installed.certs, installed.multiple);
         boolean ok = samePackage && sameSigner;
         if (!ok) deleteTree(updatesDir(getContext()));
         ret.put("ok", ok);
@@ -186,14 +189,40 @@ public class AppUpdaterPlugin extends Plugin {
         return base;
     }
 
-    // Two signer sets are the same when they hold exactly the same certificates.
-    static boolean sameSigners(Signature[] a, Signature[] b) {
-        if (a == null || b == null || a.length == 0 || b.length == 0) return false;
-        Set<String> as = new HashSet<>();
-        for (Signature s : a) as.add(s.toCharsString());
-        Set<String> bs = new HashSet<>();
-        for (Signature s : b) bs.add(s.toCharsString());
-        return as.equals(bs);
+    // Whether the archive's signers are this app's. Each side is a list of certificates (as
+    // Signature.toCharsString gives them) and whether they are several signers at once.
+    // - Several signers at once: both sides must be, and the two sets must be exactly equal. There
+    //   is no lineage with multiple signers, so a lineage on one side and several signers on the
+    //   other is never the same signer.
+    // - One signer: each list is the signing history, oldest first, ending in the current key, which
+    //   is what Android 9 and later report (and a one-element list before that). The installed
+    //   history must be the start of the archive's: the same key, or the installed key vouching for
+    //   a newer one through the lineage mobile/README.md describes (A to B, then B to C), as the
+    //   platform accepts a rotation. A history that drops the installed key (a rollback) or forks
+    //   from it (another key that A never vouched for) is refused, as Android refuses it.
+    static boolean acceptsSigners(String[] archive, boolean archiveMultiple, String[] installed, boolean installedMultiple) {
+        if (archive == null || installed == null || archive.length == 0 || installed.length == 0) return false;
+        if (archiveMultiple != installedMultiple) return false;
+        if (archiveMultiple) {
+            return new HashSet<>(Arrays.asList(archive)).equals(new HashSet<>(Arrays.asList(installed)));
+        }
+        if (installed.length > archive.length) return false;
+        for (int i = 0; i < installed.length; i++) {
+            if (!installed[i].equals(archive[i])) return false;
+        }
+        return true;
+    }
+
+    // The flags for reading a package's signing information. Android 9 and 10 collect an
+    // archive's certificates only when GET_SIGNATURES is asked for, and fill signingInfo only when
+    // GET_SIGNING_CERTIFICATES is, so an archive on those versions needs both; Android 11 and later
+    // accept either, and before 9 there is only GET_SIGNATURES. An installed package is read by the
+    // package manager service, which answers GET_SIGNING_CERTIFICATES alone from 9 on.
+    @SuppressWarnings("deprecation")
+    static int signingFlags(int sdk, boolean archive) {
+        if (sdk < Build.VERSION_CODES.P) return PackageManager.GET_SIGNATURES;
+        if (archive && sdk < Build.VERSION_CODES.R) return PackageManager.GET_SIGNATURES | PackageManager.GET_SIGNING_CERTIFICATES;
+        return PackageManager.GET_SIGNING_CERTIFICATES;
     }
 
     // --- helpers ---
@@ -243,30 +272,45 @@ public class AppUpdaterPlugin extends Plugin {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private static PackageInfo archiveInfo(PackageManager pm, String path) {
-        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
-        return pm.getPackageArchiveInfo(path, flags);
+        return pm.getPackageArchiveInfo(path, signingFlags(Build.VERSION.SDK_INT, true));
     }
 
-    @SuppressWarnings("deprecation")
     private static PackageInfo ownInfo(PackageManager pm, String packageName) {
         try {
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
-            return pm.getPackageInfo(packageName, flags);
+            return pm.getPackageInfo(packageName, signingFlags(Build.VERSION.SDK_INT, false));
         } catch (PackageManager.NameNotFoundException e) {
             return null;
         }
     }
 
-    @SuppressWarnings("deprecation")
-    private static Signature[] signaturesOf(PackageInfo info) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
-            return info.signingInfo.hasMultipleSigners()
-                ? info.signingInfo.getApkContentsSigners()
-                : info.signingInfo.getSigningCertificateHistory();
+    // A package's signers as acceptsSigners reads them: the certificates and whether they are
+    // several at once. One signer on Android 9 and later gives its whole signing history.
+    static final class Signers {
+        final String[] certs;
+        final boolean multiple;
+
+        Signers(String[] certs, boolean multiple) {
+            this.certs = certs;
+            this.multiple = multiple;
         }
-        return info.signatures;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Signers signersOf(PackageInfo info) {
+        Signature[] sigs;
+        boolean multiple;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
+            multiple = info.signingInfo.hasMultipleSigners();
+            sigs = multiple ? info.signingInfo.getApkContentsSigners() : info.signingInfo.getSigningCertificateHistory();
+        } else {
+            sigs = info.signatures;
+            multiple = sigs != null && sigs.length > 1;
+        }
+        if (sigs == null) return new Signers(new String[0], multiple);
+        String[] certs = new String[sigs.length];
+        for (int i = 0; i < sigs.length; i++) certs[i] = sigs[i].toCharsString();
+        return new Signers(certs, multiple);
     }
 
     static void deleteTree(File file) {

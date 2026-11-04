@@ -42,7 +42,14 @@ beforeEach(() => {
 
 describe('prefs', () => {
   test('default to on, never checked, nothing ready', () => {
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null })
+  })
+
+  test('a state that is not one of the check results is dropped', () => {
+    localStorage.setItem(APP_UPDATE_PREFS_KEY, JSON.stringify({ lastState: 'installed', latest: 7 }))
+    expect(readAppUpdatePrefs()).toMatchObject({ lastState: null, latest: null })
+    localStorage.setItem(APP_UPDATE_PREFS_KEY, JSON.stringify({ lastState: 'no-apk', latest: '2.4.0' }))
+    expect(readAppUpdatePrefs()).toMatchObject({ lastState: 'no-apk', latest: '2.4.0' })
   })
 
   test('save stores them and tells the window', () => {
@@ -52,14 +59,14 @@ describe('prefs', () => {
     window.removeEventListener(APP_UPDATE_CHANGED_EVENT, seen)
     expect(seen).toHaveBeenCalledTimes(1)
     expect(JSON.parse(localStorage.getItem(APP_UPDATE_PREFS_KEY)).enabled).toBe(false)
-    expect(readAppUpdatePrefs()).toEqual({ enabled: false, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: false, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: null, latest: null })
   })
 
   test('garbage falls back to the defaults', () => {
     localStorage.setItem(APP_UPDATE_PREFS_KEY, '{nope')
     expect(readAppUpdatePrefs().enabled).toBe(true)
     localStorage.setItem(APP_UPDATE_PREFS_KEY, JSON.stringify({ ready: { version: 5 }, lastCheckedAt: 'x' }))
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null })
   })
 })
 
@@ -83,7 +90,7 @@ describe('runAppUpdateCheck', () => {
     expect(bridge.verify).toHaveBeenCalledWith(READY.path)
     expect(bridge.notify).toHaveBeenCalledWith({ version: '2.4.0' })
     expect(bridge.install).not.toHaveBeenCalled()
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: 'newer', latest: '2.4.0' })
   })
 
   test('a file that fails the check is discarded, recorded as an error, and never installed', async () => {
@@ -139,14 +146,63 @@ describe('runAppUpdateCheck', () => {
     expect(readAppUpdatePrefs().ready).toBeNull()
   })
 
-  test('no apk and unknown download nothing and clear ready', async () => {
-    for (const body of [release({ assets: [] }), release({ tag_name: 'nightly' })]) {
+  test('no apk and unknown download nothing, clear ready, and record which it was', async () => {
+    const cases = [
+      [release({ assets: [] }), { lastState: 'no-apk', latest: '2.4.0' }],
+      [release({ tag_name: 'nightly' }), { lastState: 'unknown', latest: null }],
+    ]
+    for (const [body, expected] of cases) {
       store({ ready: READY })
       const bridge = fakeBridge()
       await runAppUpdateCheck({ running: '2.3.0', now: NOW, fetchImpl: fakeFetch(body), bridge })
       expect(bridge.download).not.toHaveBeenCalled()
       expect(bridge.discard).toHaveBeenCalled()
-      expect(readAppUpdatePrefs().ready).toBeNull()
+      const prefs = readAppUpdatePrefs()
+      expect(prefs.ready).toBeNull()
+      expect(prefs.lastError).toBeNull()
+      expect(prefs.lastState).toBe(expected.lastState)
+      expect(prefs.latest).toBe(expected.latest)
+    }
+  })
+
+  test('every answer records its state: newer, current, and a failed check keeps the last one', async () => {
+    const bridge = fakeBridge()
+    await runAppUpdateCheck({ running: '2.3.0', now: NOW, fetchImpl: fakeFetch(release()), bridge })
+    expect(readAppUpdatePrefs()).toMatchObject({ lastState: 'newer', latest: '2.4.0', ready: READY })
+    await runAppUpdateCheck({ running: '2.4.0', now: NOW, force: true, fetchImpl: fakeFetch(release()), bridge })
+    expect(readAppUpdatePrefs()).toMatchObject({ lastState: 'current', latest: '2.4.0', ready: null })
+    await runAppUpdateCheck({ running: '2.4.0', now: NOW, force: true, fetchImpl: fakeFetch({}, 500), bridge })
+    expect(readAppUpdatePrefs()).toMatchObject({ lastState: 'current', lastError: 'GitHub did not answer (HTTP 500).' })
+  })
+
+  // The owner installed the ready file; the new app starts with it still recorded as ready and the
+  // last check too recent for another. The offer goes away without a request.
+  test('a ready version the running app has caught up with is cleared before the due check', async () => {
+    store({ ready: READY, lastCheckedAt: NOW.toISOString() })
+    const fetchImpl = fakeFetch(release())
+    const bridge = fakeBridge()
+    expect(await runAppUpdateCheck({ running: '2.4.0', now: NOW, fetchImpl, bridge })).toEqual({ skipped: 'not-due' })
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(bridge.discard).toHaveBeenCalledTimes(1)
+    expect(bridge.cancelNotification).toHaveBeenCalledTimes(1)
+    expect(readAppUpdatePrefs()).toMatchObject({ ready: null, lastState: 'current', latest: '2.4.0', lastCheckedAt: NOW.toISOString() })
+  })
+
+  test('the same applies with automatic checks off, and when the app is newer than the file', async () => {
+    store({ ready: READY, enabled: false })
+    const bridge = fakeBridge()
+    expect(await runAppUpdateCheck({ running: '2.5.0', now: NOW, fetchImpl: fakeFetch(release()), bridge })).toEqual({ skipped: 'disabled' })
+    expect(bridge.discard).toHaveBeenCalledTimes(1)
+    expect(readAppUpdatePrefs()).toMatchObject({ ready: null, enabled: false })
+  })
+
+  test('a ready file that is still newer than the running app, or an app of unknown version, is kept', async () => {
+    for (const running of ['2.3.0', null, 'dev']) {
+      store({ ready: READY, lastCheckedAt: NOW.toISOString() })
+      const bridge = fakeBridge()
+      expect(await runAppUpdateCheck({ running, now: NOW, fetchImpl: fakeFetch(release()), bridge })).toEqual({ skipped: 'not-due' })
+      expect(bridge.discard).not.toHaveBeenCalled()
+      expect(readAppUpdatePrefs().ready).toEqual(READY)
     }
   })
 

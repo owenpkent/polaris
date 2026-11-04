@@ -2,13 +2,19 @@
 // hand-off. Pure of React. The answer comes from appUpdate.js (GitHub's public releases API, no
 // credential); the download, the check of the file and the installer are the shell's AppUpdater
 // plugin, reached through the nativeApp.js wrappers. Android always asks the owner once to confirm.
-import { checkForAppUpdate } from './appUpdate'
+import { checkForAppUpdate, isNewerVersion, parseVersion } from './appUpdate'
 import * as native from './nativeApp'
 
 export const APP_UPDATE_PREFS_KEY = 'cc-app-update-v1'
 export const APP_UPDATE_CHANGED_EVENT = 'cc-app-update-changed'
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
-export const DEFAULT_APP_UPDATE_PREFS = { enabled: true, lastCheckedAt: null, ready: null, lastError: null }
+// lastState and latest are what the last finished check found (checkForAppUpdate's state and
+// version), kept so the card can say which: the newest version, a release with no APK yet, or one
+// without a version. A ready file stands on its own.
+export const DEFAULT_APP_UPDATE_PREFS = {
+  enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null,
+}
+const STATES = ['newer', 'no-apk', 'current', 'unknown']
 
 const text = (v) => (typeof v === 'string' && v ? v : null)
 
@@ -27,6 +33,8 @@ export function readAppUpdatePrefs() {
       lastCheckedAt: Number.isFinite(Date.parse(parsed.lastCheckedAt)) ? parsed.lastCheckedAt : null,
       ready,
       lastError: text(parsed.lastError),
+      lastState: STATES.includes(parsed.lastState) ? parsed.lastState : null,
+      latest: text(parsed.latest),
     }
   } catch {
     return { ...DEFAULT_APP_UPDATE_PREFS }
@@ -90,8 +98,18 @@ export function runAppUpdateCheck({ running, now = new Date(), force = false, fe
   return inFlight
 }
 
+// After the owner installs the ready file, the new app starts with that file still recorded as
+// ready. Settled here, before any exit, with no request: a ready version the running app has
+// caught up with is discarded, with its notification, so the card never offers the install again.
+async function settleInstalled(prefs, running, bridge) {
+  if (!prefs.ready || !parseVersion(running) || isNewerVersion(prefs.ready.version, running)) return prefs
+  await quietly(() => bridge.discard())
+  await quietly(() => bridge.cancelNotification())
+  return patch({ ready: null, lastState: 'current', latest: prefs.ready.version })
+}
+
 async function doCheck({ running, now, force, fetchImpl, bridge }) {
-  const prefs = readAppUpdatePrefs()
+  const prefs = await settleInstalled(readAppUpdatePrefs(), running, bridge)
   if (!prefs.enabled && !force) return { skipped: 'disabled' }
   if (!isCheckDue(prefs, now, { force })) return { skipped: 'not-due' }
   const checkedAt = now.toISOString()
@@ -103,27 +121,28 @@ async function doCheck({ running, now, force, fetchImpl, bridge }) {
       // A file already downloaded and still good is kept; one that is gone (the cache was cleared,
       // so the plugin refuses the path) or no longer checks out is downloaded again.
       const have = prefs.ready
+      const found = { lastCheckedAt: checkedAt, lastError: null, lastState: 'newer', latest: result.latest }
       if (have && have.version === result.latest && (await bridge.verify(have.path).then((v) => v.ok, () => false))) {
-        patch({ lastCheckedAt: checkedAt, lastError: null })
+        patch(found)
         return { state: 'newer', latest: result.latest }
       }
       replacing = true
       const { path } = await bridge.download({ url: result.apk.url, name: result.apk.name, size: result.apk.size })
       const checked = await bridge.verify(path)
       if (checked.ok) {
-        patch({ lastCheckedAt: checkedAt, lastError: null, ready: { version: result.latest, path, name: result.apk.name } })
+        patch({ ...found, ready: { version: result.latest, path, name: result.apk.name } })
         await quietly(() => bridge.notify({ version: result.latest }))
         return { state: 'newer', latest: result.latest }
       }
       await quietly(() => bridge.discard())
       await quietly(() => bridge.cancelNotification())
       const lastError = `The downloaded ${result.latest} file is not Polaris signed with this app's certificate, so it was not installed.`
-      patch({ lastCheckedAt: checkedAt, ready: null, lastError })
+      patch({ ...found, ready: null, lastError })
       return { error: lastError }
     }
     if (prefs.ready) await quietly(() => bridge.discard())
     await quietly(() => bridge.cancelNotification())
-    patch({ lastCheckedAt: checkedAt, ready: null, lastError: null })
+    patch({ lastCheckedAt: checkedAt, ready: null, lastError: null, lastState: result.state, latest: result.latest })
     return { state: result.state, latest: result.latest }
   } catch (e) {
     const lastError = e?.message || 'The update check failed.'

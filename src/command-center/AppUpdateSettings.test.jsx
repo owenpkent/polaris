@@ -76,13 +76,37 @@ describe('AppUpdateSettings', () => {
     render(<AppUpdateSettings />)
     await screen.findByText('v2.3.0')
     runAppUpdateCheck.mockImplementation(async () => {
-      prefs = { ...prefs, lastCheckedAt: new Date().toISOString() }
+      prefs = { ...prefs, lastCheckedAt: new Date().toISOString(), lastState: 'current', latest: '2.3.0' }
       return { state: 'current', latest: '2.3.0' }
     })
     fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
     expect(await screen.findByText('You have the newest version.')).toBeTruthy()
     expect(runAppUpdateCheck).toHaveBeenCalledWith({ running: '2.3.0', force: true })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Check now' }).disabled).toBe(false))
+  })
+
+  // A release is made before its APK is attached (docs/releases.md), so this is a normal window.
+  test('a newer release without an APK is reported as such, never as the newest version', async () => {
+    prefs = { ...prefs, lastCheckedAt: new Date().toISOString(), lastState: 'no-apk', latest: '2.7.0' }
+    render(<AppUpdateSettings />)
+    await screen.findByText('v2.3.0')
+    expect(screen.getByText(/v2\.7\.0 has no APK attached yet/)).toBeTruthy()
+    expect(screen.queryByText('You have the newest version.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Install/ })).toBeNull()
+  })
+
+  test('a release without a version is reported, and a check with no recorded state says nothing', async () => {
+    prefs = { ...prefs, lastCheckedAt: new Date().toISOString(), lastState: 'unknown', latest: null }
+    render(<AppUpdateSettings />)
+    await screen.findByText('v2.3.0')
+    expect(screen.getByText(/The newest release has no version/)).toBeTruthy()
+    expect(screen.queryByText('You have the newest version.')).toBeNull()
+    cleanup()
+    prefs = { ...prefs, lastState: null }
+    render(<AppUpdateSettings />)
+    await screen.findByText('v2.3.0')
+    expect(screen.queryByText('You have the newest version.')).toBeNull()
+    expect(screen.queryByText(/has no APK|has no version/)).toBeNull()
   })
 
   test('a ready update shows its version and an Install button', async () => {

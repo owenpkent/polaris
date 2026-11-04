@@ -117,8 +117,16 @@ export default function AppUpdateSettings() {
       <div aria-live="polite" style={{ marginTop: '0.5rem' }}>
         <p style={{ margin: 0 }}>Last checked: {checked || 'never'}</p>
         {prefs.ready && <p style={{ margin: '0.5rem 0 0' }}>{prefs.ready.version} is ready to install.</p>}
-        {!prefs.ready && !prefs.lastError && checked && (
+        {!prefs.ready && !prefs.lastError && prefs.lastState === 'current' && (
           <p style={{ margin: '0.5rem 0 0' }}>You have the newest version.</p>
+        )}
+        {!prefs.ready && !prefs.lastError && prefs.lastState === 'no-apk' && (
+          <p style={{ margin: '0.5rem 0 0' }}>
+            {prefs.latest ? `v${prefs.latest}` : 'The newest release'} has no APK attached yet. The app will check again later, or press Check now.
+          </p>
+        )}
+        {!prefs.ready && !prefs.lastError && prefs.lastState === 'unknown' && (
+          <p style={{ margin: '0.5rem 0 0' }}>The newest release has no version, so it could not be compared with this app.</p>
         )}
         {needsAllow && (
           <p style={{ margin: '0.5rem 0 0' }}>
