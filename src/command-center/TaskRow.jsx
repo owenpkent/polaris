@@ -470,6 +470,7 @@ export default function TaskRow({
         {/* On a phone a name too long for its line takes the line, and what follows it wraps
             under it, rather than squeezing the name to a word or two. */}
         <span className="mytasks-name-body">
+          <span className="mytasks-name-grid">
           <TitleCell task={task} nameText={nameText} disabled={pending} onRename={(title) => onQuickUpdate(task, { title })} />
           {(task.status === 'waiting' || subtaskCount > 0) && (
             <span className="mytasks-name-meta">
@@ -492,6 +493,7 @@ export default function TaskRow({
           >
             <PanelRightOpen size={16} aria-hidden="true" />
           </button>
+          </span>
         </span>
       </span>
 

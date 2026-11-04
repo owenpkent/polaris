@@ -238,6 +238,12 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expect(title).toBeVisible()
     const before = (await title.boundingBox()).width
     expect(before).toBeGreaterThan(0)
+    // Every nested name keeps some width of its own at every depth, 320px included: a phone cell
+    // too narrow for a name beside the panel button stacks them instead of squeezing the name to nothing.
+    for (const nested of [titles[0], titles[1]]) {
+      const row = page.locator('[data-subtask-id]').filter({ has: page.getByRole('button', { name: `Rename ${nested}`, exact: true }) }).first()
+      expect((await row.getByText(nested).boundingBox()).width).toBeGreaterThan(0)
+    }
 
     // Manual is the default sort.
     await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
@@ -250,6 +256,37 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expect(title).toBeVisible()
     // The handle column takes no room from a nested title: its name cell spans that column too.
     expect((await title.boundingBox()).width).toBeGreaterThanOrEqual(before)
+    await expectNothingCutOff(page)
+  })
+
+  test('a waiting task nested one level down, with its own subtasks and a due date: its count takes the click, not the date', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const suffix = testInfo.project.name
+    const parentTitle = await createTask(request, testInfo, 'nested waiting parent')
+    const idOf = async (title) => (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title).id
+    const parentId = await idOf(parentTitle)
+    const waitingTitle = `Waiting one level down ${suffix} ${parentTitle.slice(-2).trim()}`
+    expect((await request.post('/api/tasks', { headers, data: { title: waitingTitle, parentId, status: 'waiting', dueAt: new Date().toISOString().slice(0, 10) } })).ok()).toBeTruthy()
+    const waitingId = await idOf(waitingTitle)
+    for (const child of ['First child', 'Second child']) {
+      expect((await request.post('/api/tasks', { headers, data: { title: `${child} ${suffix} ${parentTitle.slice(-2).trim()}`, parentId: waitingId } })).ok()).toBeTruthy()
+    }
+    await openView(page)
+    const parentToggle = page.getByRole('button', { name: `1 open subtask of ${parentTitle}`, exact: true }).first()
+    await parentToggle.scrollIntoViewIfNeeded()
+    await parentToggle.click()
+    await expect(parentToggle).toHaveAttribute('aria-expanded', 'true')
+    // The nested waiting row: Waiting and its count share the little room after the check and the
+    // indent, and wrap within it rather than reaching under the due date control. A pointer click
+    // on the count opens the children; it never lands on the date.
+    const nested = page.locator('[data-subtask-id]').filter({ has: page.getByRole('button', { name: `Rename ${waitingTitle}`, exact: true }) }).first()
+    const escaped = waitingTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const count = nested.getByRole('button', { name: new RegExp('^2 open subtasks? of ' + escaped + '$') })
+    await count.scrollIntoViewIfNeeded()
+    await count.click()
+    await expect(count).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('dialog', { name: /^Due date for / })).toHaveCount(0)
+    expect((await nested.getByText(waitingTitle).boundingBox()).width).toBeGreaterThan(0)
     await expectNothingCutOff(page)
   })
 

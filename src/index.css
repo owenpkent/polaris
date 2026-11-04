@@ -1007,7 +1007,12 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .mytasks-title { padding: var(--row-pad) 4px; }
   .mytasks-title-input { font-size: 0.9375rem; }
 }
-.mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
+/* The body is a container of its own, so the phone rules below can measure the room left after a
+   nested row's check and indent, which .mytasks-name (the cell) includes. Its one child, the grid,
+   is invisible to layout above 640px (display: contents), so the body's flex row holds the name,
+   its followers, and the panel button as before. */
+.mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; container-type: inline-size; }
+.mytasks-name-grid { display: contents; }
 /* What follows the name: Waiting and the subtask count, which never shrink. */
 .mytasks-name-meta { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 /* A name column too narrow for the name, Waiting, the count, and the panel button side by side
@@ -1024,13 +1029,17 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
    cell too narrow for even 44px of name beside the button stacks instead: name, then its
    followers, then the button at the right. */
 @media (max-width: 640px) {
-  .mytasks-name-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
-  .mytasks-name-body > .mytasks-title { grid-column: 1; grid-row: 1; justify-self: start; min-width: min(44px, 100%); }
-  .mytasks-name-body > .mytasks-open { grid-column: 2; grid-row: 1; margin-left: 0; }
-  .mytasks-name-body > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; }
+  .mytasks-name-body { display: block; }
+  .mytasks-name-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+  .mytasks-name-grid > .mytasks-title { grid-column: 1; grid-row: 1; justify-self: start; min-width: min(44px, 100%); }
+  .mytasks-name-grid > .mytasks-open { grid-column: 2; grid-row: 1; margin-left: 0; }
+  /* Waiting and the count wrap within the room they have, so neither leaves the cell. */
+  .mytasks-name-grid > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .mytasks-name-grid .subtask-toggle { max-width: 100%; }
+  /* Measured on the body: the room after a nested row's check and indent. */
   @container (max-width: 100px) {
-    .mytasks-name-body { grid-template-columns: minmax(0, 1fr); }
-    .mytasks-name-body > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
+    .mytasks-name-grid { grid-template-columns: minmax(0, 1fr); }
+    .mytasks-name-grid > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
   }
 }
 /* The column header, stuck under the top bar. A phone has no column header: its two columns are
