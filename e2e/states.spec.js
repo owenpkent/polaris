@@ -94,7 +94,7 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       await expect(failureBanner(page)).toHaveCount(0)
     })
 
-    test(`${view.label}: an empty answer shows the empty state with a way forward`, async ({ page }) => {
+    test(`${view.label}: an empty answer shows the empty state with a way forward`, async ({ page }, testInfo) => {
       await emptyRequest(page, view.emptyRequest || view.request, view.emptyBody)
       await openView(page, view.id)
 
@@ -103,13 +103,26 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       for (const text of view.emptyText) {
         await expect(main.getByText(text)).toBeVisible()
       }
-      for (const name of view.emptyControls) {
+      for (const name of (isPhone(testInfo) && view.phoneEmptyControls) || view.emptyControls) {
         await expect(main.getByRole('button', { name, exact: true }).first()).toBeVisible()
       }
       await expect(failureBanner(page)).toHaveCount(0)
       await expectNoHorizontalOverflow(page)
     })
   }
+
+  // Today is hidden while it is empty, and it is where the toolbar's Add task opens the inline row:
+  // an empty list must still take a new task from that button.
+  test('My tasks: Add task on an empty list opens the new row in Today', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'a phone adds through the New task sheet')
+    const view = VIEWS.find((v) => v.emptyControls.includes('Add task'))
+    await emptyRequest(page, view.emptyRequest || view.request, view.emptyBody)
+    await openView(page, view.id)
+    await expect(page.getByRole('main').getByText(view.loading, { exact: true })).toHaveCount(0)
+    await page.getByRole('main').getByRole('button', { name: 'Add task', exact: true }).first().click()
+    await expect(page.getByRole('textbox', { name: 'New task name' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Collapse Today/ })).toBeVisible()
+  })
 
   // Board's project list has no loading state of its own: `loading` starts false and only turns
   // on once a project is picked, so while the list is in flight the view already says there are

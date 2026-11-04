@@ -588,6 +588,38 @@ describe('MyTasksTab moves between due-date groups', () => {
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
   })
 
+  test('an empty Today is hidden, and ArrowUp on the first row of Tomorrow still moves it there', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [mk('b', 'Beta', 2, bounds.tomorrow), mk('c', 'Gamma', 3, bounds.tomorrow)] })
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Beta' })
+    expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Collapse Tomorrow' })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Beta' }), { key: 'ArrowUp' })
+    expect(inGroup(container, 'today')).toEqual(['b'])
+    expect(screen.getByRole('button', { name: 'Collapse Today' })).toBeTruthy()
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: bounds.today }))
+  })
+
+  test('an empty Tomorrow is hidden, and ArrowDown on the last row of Today still moves it there', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [mk('a', 'Alpha', 1, `${bounds.today}T09:00`)] })
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Alpha' })
+    expect(screen.queryByRole('button', { name: 'Collapse Tomorrow' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Alpha' }), { key: 'ArrowDown' })
+    expect(inGroup(container, 'tomorrow')).toEqual(['a'])
+    expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('a', { dueAt: `${bounds.tomorrow}T09:00` }))
+  })
+
+  test('with no tasks no day group shows, and the toolbar keeps Add task', async () => {
+    api.listTasks.mockResolvedValue({ tasks: [] })
+    render(<MyTasksTab />)
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText('Loading tasks…')).toBeNull())
+    expect(screen.queryByRole('button', { name: /^(Collapse|Expand) / })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add task' })).toBeTruthy()
+  })
+
   test('nothing moves into Overdue: ArrowUp on the first row of Today stays put, and Overdue rows can still leave', async () => {
     const yesterday = (() => { const [y, m, d] = bounds.today.split('-').map(Number); const t = new Date(y, m - 1, d - 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}` })()
     api.listTasks.mockResolvedValue({
@@ -704,5 +736,31 @@ describe('MyTasksTab renaming in a row', () => {
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Task name' }), { key: 'Enter' })
     await screen.findByText('Request failed (503)')
     expect(screen.getByRole('button', { name: 'Rename Old name' })).toBeTruthy()
+  })
+})
+
+describe('MyTasksTab Add task with nothing in Today', () => {
+  const task = (id, title, dueAt) => ({
+    id, title, position: 1, projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  // Today is hidden while it is empty, but it is where the toolbar's Add task puts the new row, so
+  // it comes back for as long as that row is open: with no tasks at all, and with tasks on other days.
+  test.each([
+    ['an empty list', () => []],
+    ['a list with only a Tomorrow task', () => [task('t9', 'Later on', getDueBounds().tomorrow)]],
+  ])('the toolbar Add task opens the inline row in Today for %s, and Enter creates the task for today', async (_label, tasks) => {
+    stubMatchMedia(1280)
+    api.listTasks.mockResolvedValue({ tasks: tasks() })
+    render(<MyTasksTab />)
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
+    expect(screen.queryByRole('textbox', { name: 'New task name' })).toBeNull()
+    // The toolbar's button is the first; a shown group has an Add task row of its own after it.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add task' })[0])
+    const input = await screen.findByRole('textbox', { name: 'New task name' })
+    fireEvent.change(input, { target: { value: 'Call the vet' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Call the vet', dueAt: getDueBounds().today })))
   })
 })

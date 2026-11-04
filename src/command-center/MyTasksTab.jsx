@@ -53,12 +53,12 @@ function saveCollapsed(state) {
 // `closed`: a row can be reordered inside the group and moved out of it, never moved into it.
 // Overdue is where a date lands by passing, not somewhere to put a task.
 const GROUP_ORDER = [
-  { id: 'overdue', label: 'Overdue', alwaysShow: false, closed: true, addRow: null },
-  { id: 'today', label: 'Today', alwaysShow: true, addRow: (bounds) => ({ dueAt: bounds.today }) },
-  { id: 'tomorrow', label: 'Tomorrow', alwaysShow: true, addRow: (bounds) => ({ dueAt: bounds.tomorrow }) },
-  { id: 'next7', label: 'Next 7 days', alwaysShow: false, addRow: null },
-  { id: 'later', label: 'Later', alwaysShow: false, addRow: null },
-  { id: 'noDue', label: 'No due date', alwaysShow: false, addRow: () => ({ dueAt: null }) },
+  { id: 'overdue', label: 'Overdue', closed: true, addRow: null },
+  { id: 'today', label: 'Today', addRow: (bounds) => ({ dueAt: bounds.today }) },
+  { id: 'tomorrow', label: 'Tomorrow', addRow: (bounds) => ({ dueAt: bounds.tomorrow }) },
+  { id: 'next7', label: 'Next 7 days', addRow: null },
+  { id: 'later', label: 'Later', addRow: null },
+  { id: 'noDue', label: 'No due date', addRow: () => ({ dueAt: null }) },
 ]
 
 // The group id a task is rendered under in each grouping mode, or null for the flat list.
@@ -572,10 +572,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   if (!listLoading) {
     if (view.group === 'due') {
       const groups = groupTasks(sortedTasks, dueBounds)
-      // Under the manual sort a row can be dropped into any day group, so the ones hidden for being
-      // empty show while a row is held, as drop targets (not a closed one, which takes no drop).
+      // An empty group is hidden, except the one a new task is being typed into: the toolbar's Add
+      // task opens the inline row in Today, which owns that row and must be on the page to show it.
+      // Under the manual sort a row can be dropped into any day group, so the empty ones show
+      // while a row is held, as drop targets (not a closed one, which takes no drop).
       crossGroup = reorderable
-      const shown = GROUP_ORDER.filter((g) => g.alwaysShow || groups[g.id].length > 0 || (crossGroup && dragging && !g.closed))
+      const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed))
       scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id], closed: Boolean(g.closed) }))
       groupRowsRef.current = groups
       content = shown.map((g) => {

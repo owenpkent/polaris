@@ -299,11 +299,12 @@ export const VIEWS = [
     request: (url) => url.pathname === '/api/tasks',
     loading: 'Loading tasks…',
     emptyBody: { tasks: [] },
-    // No EmptyState here: the Today and Tomorrow groups always render, each with an Add task
-    // row, and the toolbar keeps its Add task button. The way forward is the control, not a
-    // sentence.
+    // No EmptyState here: every day group hides while it is empty, and the toolbar keeps its Add
+    // task button (on a phone, the floating New task button). The way forward is the control, not
+    // a sentence.
     emptyText: [],
-    emptyControls: ['Collapse Today', 'Collapse Tomorrow', 'Add task'],
+    emptyControls: ['Add task'],
+    phoneEmptyControls: ['New task'],
     ready: (page) => page.getByRole('button', { name: 'Open Reply to accessibility audit feedback', exact: true }),
   },
   {
