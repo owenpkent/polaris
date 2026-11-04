@@ -601,7 +601,7 @@ kbd { color: var(--t1); }
 .app-shell { display: flex; min-height: 100vh; }
 /* The top bar (TopBar.jsx): 56px of bar, below the status bar inside the Android app, where the
    page runs edge to edge and --safe-top is the bar's height (0 in a browser). */
-.topbar { height: calc(56px + var(--safe-top)); min-height: calc(56px + var(--safe-top)); padding-top: var(--safe-top); }
+.topbar { height: calc(56px + var(--safe-top)); min-height: calc(56px + var(--safe-top)); padding: var(--safe-top) 1rem 0; }
 .app-content { flex: 1; min-width: 0; }
 .app-sidebar {
   position: sticky;
@@ -1008,13 +1008,29 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .mytasks-title-input { font-size: 0.9375rem; }
 }
 .mytasks-name-body { flex: 1 1 auto; display: flex; align-items: center; column-gap: 6px; min-width: 0; }
+/* What follows the name: Waiting and the subtask count, which never shrink. */
+.mytasks-name-meta { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 /* A name column too narrow for the name, Waiting, the count, and the panel button side by side
-   (a narrow window, or an open panel): what follows the name wraps under it. Not on a phone: there
-   the name wraps instead and the panel button stays on its first line, so a row is as tall as its
-   name and never carries an empty band with a lone button in it. */
+   (a narrow window, or an open panel): what follows the name wraps under it. */
 @media (min-width: 641px) {
   @container (max-width: 260px) {
     .mytasks-name-body { flex-wrap: wrap; }
+  }
+}
+/* On a phone the name cell is a small grid: the name and the panel button share the first line,
+   the name wrapping (two lines at most) and the button keeping its 44px at the right, and Waiting
+   and the count go on a line of their own under the name. So a row is as tall as its name and
+   never carries an empty band with a lone button in it, and the button never leaves the cell. A
+   cell too narrow for even 44px of name beside the button stacks instead: name, then its
+   followers, then the button at the right. */
+@media (max-width: 640px) {
+  .mytasks-name-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+  .mytasks-name-body > .mytasks-title { grid-column: 1; grid-row: 1; justify-self: start; min-width: min(44px, 100%); }
+  .mytasks-name-body > .mytasks-open { grid-column: 2; grid-row: 1; margin-left: 0; }
+  .mytasks-name-body > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; }
+  @container (max-width: 100px) {
+    .mytasks-name-body { grid-template-columns: minmax(0, 1fr); }
+    .mytasks-name-body > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
   }
 }
 /* The column header, stuck under the top bar. A phone has no column header: its two columns are

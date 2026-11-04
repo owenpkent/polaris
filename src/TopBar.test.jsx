@@ -185,6 +185,9 @@ describe('TopBar under the status bar', () => {
     // The sizes live in index.css (.topbar), where --safe-top is defined; the element only names the class.
     const header = container.querySelector('header')
     expect(header.classList.contains('topbar')).toBe(true)
+    // No inline height or padding: an inline padding shorthand would set padding-top back to 0.
     expect(header.style.height).toBe('')
+    expect(header.style.padding).toBe('')
+    expect(header.style.paddingTop).toBe('')
   })
 })

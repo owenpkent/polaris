@@ -54,7 +54,6 @@ export default function TopBar({
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
-        padding: '0 1rem',
         gap: '0.75rem',
       }}
     >

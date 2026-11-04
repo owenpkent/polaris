@@ -345,7 +345,10 @@ describe('TaskTree subtasks', () => {
   test('Waiting stays beside the name, outside the part a long name shortens', () => {
     renderRow({ task: { status: 'waiting' } })
     const waiting = screen.getByText('Waiting')
-    expect(waiting.parentElement.className).toBe('mytasks-name-body')
+    // In the group that follows the name (with the subtask count), not inside the name button.
+    expect(waiting.parentElement.className).toBe('mytasks-name-meta')
+    expect(waiting.parentElement.parentElement.className).toBe('mytasks-name-body')
+    expect(waiting.closest('.mytasks-title')).toBeNull()
   })
 })
 

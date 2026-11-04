@@ -703,3 +703,19 @@ test.describe('the cut-off check', { tag: ['@a11y'] }, () => {
     expect(found).toContain('textarea "Squeezed box" is squeezed to 0px tall')
   })
 })
+
+// Inside the Android app the page runs edge to edge and --safe-top is the status bar's height
+// (src/index.css, .topbar). A browser has none, so the inset is set by hand here and the bar's
+// controls must start below it, not be centred across the enlarged bar.
+test.describe('the top bar under a status bar', { tag: ['@flow'] }, () => {
+  test('its controls start below the inset, as inside the Android app', async ({ page }) => {
+    await openView(page)
+    await page.addStyleTag({ content: ':root { --safe-top: 40px; }' })
+    const banner = page.getByRole('banner')
+    await expect.poll(async () => (await banner.boundingBox()).height).toBeGreaterThanOrEqual(96)
+    for (const control of [banner.getByRole('button').first(), banner.getByRole('heading', { level: 1 })]) {
+      expect((await control.boundingBox()).y).toBeGreaterThanOrEqual(40)
+    }
+    await expectNothingCutOff(page)
+  })
+})
