@@ -3,7 +3,7 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.7.0 (2026-11-04)
 
 No migration.
 
