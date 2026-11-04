@@ -13,6 +13,8 @@ No migration.
   toolbar.
 - In the Android app the top bar now sits below the status bar instead of under it, and the status
   bar's icons follow the dashboard's theme.
+- `cc update` no longer rolls an update back because the machine was busy: the dashboard unit
+  tests it runs give a slow test twenty seconds, and a slow element five, instead of five and one.
 
 ## 2.5.0 (2026-11-03)
 

@@ -28,5 +28,12 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.{js,jsx}', 'e2e/**/*.test.js', 'mobile/scripts/**/*.test.js'],
     restoreMocks: true,
+    setupFiles: ['src/setupTests.js'],
+    // `cc update` runs this suite on the install's own machine, which may be busy (an editor, an
+    // agent, a build) when the daily update lands. The defaults (5s a test, 1s for Testing
+    // Library's findBy and waitFor) made a 16-core box at load 12 roll an update back on seven
+    // timeouts with nothing wrong. A passing test is as fast as before; only a slow one waits longer.
+    testTimeout: 20000,
+    hookTimeout: 20000,
   },
 })
