@@ -3,6 +3,13 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No migration.
+
+- `cc update` no longer rolls an update back because the machine was busy: the dashboard unit
+  tests it runs give a slow test twenty seconds, and a slow element five, instead of five and one.
+
 ## 2.5.0 (2026-11-03)
 
 No migration.
