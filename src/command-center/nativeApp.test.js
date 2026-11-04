@@ -2,6 +2,8 @@ import { describe, test, expect, vi, afterEach } from 'vitest'
 import {
   subscribeNativeShares, nativeCall, checkNotificationPermission, requestNotificationPermission,
   scheduleNotifications, cancelAllNotifications, subscribeNotificationTaps, subscribeAppResume, getAppInfo,
+  downloadAppUpdate, verifyAppUpdate, canInstallApps, openInstallSettings, installAppUpdate, discardAppUpdate,
+  scheduleAppUpdateNotification, cancelAppUpdateNotification, subscribeAppUpdateTaps, APP_UPDATE_NOTIFICATION_ID,
 } from './nativeApp'
 
 afterEach(() => {
@@ -137,6 +139,23 @@ describe('subscribeNotificationTaps and subscribeAppResume', () => {
     expect(cap.remove).toHaveBeenCalledTimes(1)
   })
 
+  test('an update tap goes to the update subscriber and never to the reminder one', () => {
+    const cap = fakeCapacitor()
+    const onTask = vi.fn()
+    const onUpdate = vi.fn()
+    subscribeNotificationTaps(onTask)
+    subscribeAppUpdateTaps(onUpdate)
+    const [reminders, update] = cap.addListener.mock.calls.map((c) => c[2])
+    const tap = { notification: { extra: { kind: 'app-update' } } }
+    reminders(tap)
+    update(tap)
+    update({ notification: { extra: { taskId: 't_abc123def4' } } })
+    expect(onTask).not.toHaveBeenCalled()
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+    delete window.Capacitor
+    expect(() => subscribeAppUpdateTaps(onUpdate)()).not.toThrow()
+  })
+
   test('resume calls back, and both are no-ops outside the app', () => {
     const cap = fakeCapacitor()
     const cb = vi.fn()
@@ -147,5 +166,62 @@ describe('subscribeNotificationTaps and subscribeAppResume', () => {
     delete window.Capacitor
     expect(() => subscribeAppResume(cb)()).not.toThrow()
     expect(() => subscribeNotificationTaps(cb)()).not.toThrow()
+  })
+})
+
+describe('AppUpdater wrappers', () => {
+  function bridge(results = {}) {
+    const nativePromise = vi.fn(async (plugin, method) => results[method] ?? {})
+    window.Capacitor = { isNativePlatform: () => true, nativePromise, addListener: vi.fn() }
+    return nativePromise
+  }
+
+  test('each names the AppUpdater plugin and method', async () => {
+    const np = bridge({
+      download: { path: '/c/u/a.apk', size: 9 },
+      verify: { ok: true, packageName: 'p', versionName: '2.4.0', versionCode: 20400, sameSigner: true },
+      canInstall: { allowed: true },
+    })
+    expect(await downloadAppUpdate({ url: 'https://github.com/a', name: 'a.apk', size: 9 })).toEqual({ path: '/c/u/a.apk', size: 9 })
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'download', { url: 'https://github.com/a', name: 'a.apk', size: 9 })
+    expect(await verifyAppUpdate('/c/u/a.apk')).toEqual({ ok: true, packageName: 'p', versionName: '2.4.0', versionCode: 20400, sameSigner: true })
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'verify', { path: '/c/u/a.apk' })
+    expect(await canInstallApps()).toBe(true)
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'canInstall', {})
+    await openInstallSettings()
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'openInstallSettings', {})
+    await installAppUpdate('/c/u/a.apk')
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'install', { path: '/c/u/a.apk' })
+    await discardAppUpdate()
+    expect(np).toHaveBeenLastCalledWith('AppUpdater', 'discard', {})
+  })
+
+  test('a verify answer that is not ok stays not ok, and canInstall defaults to false', async () => {
+    bridge({ verify: { ok: 'yes' }, canInstall: {} })
+    expect((await verifyAppUpdate('/x')).ok).toBe(false)
+    expect(await canInstallApps()).toBe(false)
+  })
+
+  test('the update notification has a fixed id no reminder can have, and the tap kind', async () => {
+    const np = bridge()
+    await scheduleAppUpdateNotification({ version: '2.4.0' })
+    const [plugin, method, opts] = np.mock.calls[0]
+    expect([plugin, method]).toEqual(['LocalNotifications', 'schedule'])
+    expect(opts.notifications).toHaveLength(1)
+    expect(opts.notifications[0]).toMatchObject({
+      id: APP_UPDATE_NOTIFICATION_ID,
+      title: 'Polaris 2.4.0 is ready to install',
+      body: 'Tap to install. Android asks you to confirm once.',
+      extra: { kind: 'app-update' },
+    })
+    expect(APP_UPDATE_NOTIFICATION_ID).toBeLessThan(0)
+    await cancelAppUpdateNotification()
+    expect(np).toHaveBeenLastCalledWith('LocalNotifications', 'cancel', { notifications: [{ id: APP_UPDATE_NOTIFICATION_ID }] })
+  })
+
+  test('cancelling the reminders leaves the update notification pending', async () => {
+    const np = bridge({ getPending: { notifications: [{ id: 5 }, { id: APP_UPDATE_NOTIFICATION_ID }] } })
+    await cancelAllNotifications()
+    expect(np).toHaveBeenLastCalledWith('LocalNotifications', 'cancel', { notifications: [{ id: 5 }] })
   })
 })

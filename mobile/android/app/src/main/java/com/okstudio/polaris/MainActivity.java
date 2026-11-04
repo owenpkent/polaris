@@ -19,6 +19,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         rewriteShare(getIntent());
+        // The app's own updater (AppUpdaterPlugin): the dashboard reaches it through the bridge as
+        // "AppUpdater". Registered before the bridge is made, as a local plugin must be.
+        registerPlugin(AppUpdaterPlugin.class);
         super.onCreate(savedInstanceState);
         // The page is served from Capacitor's own scheme and never loads a content:// URL, so the
         // WebView is not allowed to; a link to a content provider from a third party stays a link.

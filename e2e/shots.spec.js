@@ -742,11 +742,20 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.addInitScript(() => {
       window.Capacitor = {
         isNativePlatform: () => true,
-        nativePromise: async (plugin, method) => (
-          plugin === 'App' && method === 'getInfo'
-            ? { version: '2.3.0', build: '20300' }
-            : { display: 'granted', notifications: [] }
-        ),
+        nativePromise: async (plugin, method) => {
+          if (plugin === 'App' && method === 'getInfo') return { version: '2.3.0', build: '20300' }
+          if (plugin === 'AppUpdater') {
+            if (method === 'download') {
+              return { path: '/data/user/0/com.okstudio.polaris/cache/updates/polaris-2.4.0.apk', size: 3416101 }
+            }
+            if (method === 'verify') {
+              return { ok: true, packageName: 'com.okstudio.polaris', versionName: '2.4.0', versionCode: 20400, sameSigner: true }
+            }
+            if (method === 'canInstall') return { allowed: true }
+            return {}
+          }
+          return { display: 'granted', notifications: [] }
+        },
         addListener: () => ({ remove() {} }),
       }
     })
@@ -765,8 +774,10 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     }))
     await openView(page, 'settings')
     const card = page.getByRole('region', { name: 'App update' })
-    await card.getByRole('button', { name: 'Check for updates' }).click()
-    await expect(card.getByRole('link', { name: 'Download polaris-2.4.0.apk' })).toBeVisible()
+    // The scheduler checks on start; the stand-in answers the download and the check of the file,
+    // so the card ends up with the version ready to install.
+    await expect(card.getByText('2.4.0 is ready to install.')).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Install 2.4.0' })).toBeVisible()
     await card.evaluate((el) => el.scrollIntoView({ block: 'start' }))
     const values = page.getByText(/^(Folder|Newest copy|Dashboard)$/).locator('xpath=following-sibling::span')
     await shot(page, testInfo, 'settings', 'app-update', [values])
