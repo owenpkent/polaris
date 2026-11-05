@@ -674,6 +674,9 @@ for (const long of [false, true]) {
     if (!long) return
     for (const view of [...VIEWS.map((v) => v.id), 'settings']) {
       test(`${view}`, async ({ page }) => {
+        // My tasks took 27s of the 30s limit at desktop on CI's Windows runner on main, and ran out
+        // of it on a pull request that changed nothing it checks, so the view scans get the time.
+        test.slow()
         await longNames(page)
         await openView(page, view)
         await expectNothingCutOff(page)
