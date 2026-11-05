@@ -48,6 +48,9 @@ export function useRovingFocus(containerRef) {
 // also opens it above when its whole content fits only there, or fits neither way and there is
 // more room above: the due date picker (DueDateMenu.jsx) is a whole month, too tall to scroll
 // through from a row low on the screen.
+// Content too tall for the side it opens on slides along the window until all of it shows, over the
+// trigger if it must, rather than scrolling inside itself with room to spare. Only content taller
+// than the window scrolls.
 export function Popover({
   anchorRef,
   open,
@@ -75,8 +78,18 @@ export function Popover({
     const spaceBelow = vh - a.bottom
     const spaceAbove = a.top
     // The content's full height (scrollHeight leaves out the 1px borders), once it is rendered.
-    const needed = preferFit && popRef.current ? popRef.current.scrollHeight + 2 + 12 : 0
+    const content = popRef.current ? popRef.current.scrollHeight + 2 : 0
+    const needed = preferFit && content ? content + 12 : 0
     const openUp = (spaceBelow < 160 || needed > spaceBelow) && spaceAbove > spaceBelow
+    if (content + 12 > (openUp ? spaceAbove : spaceBelow)) {
+      setPos({
+        left,
+        top: openUp ? 8 : Math.max(8, vh - 8 - content),
+        bottom: null,
+        maxHeight: vh - 16,
+      })
+      return
+    }
     setPos({
       left,
       top: openUp ? null : a.bottom + 4,

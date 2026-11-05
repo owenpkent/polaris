@@ -769,7 +769,7 @@ kbd { color: var(--t1); }
   border-radius: var(--radius);
 }
 .toolbar-chip.is-active { background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); }
-.toolbar-chip.is-active .toolbar-btn { background: transparent; border-color: transparent; padding-right: 4px; }
+.toolbar-chip.is-active .toolbar-btn { background: transparent; border-color: transparent; padding-right: 8px; }
 /* Blue on --bg-hover falls short of 4.5:1 in the light theme, so a hovered chip's label turns to
    --t1, as a plain toolbar button's does. An open one keeps the chip's tint: its popover shows it
    is open. */
@@ -2240,6 +2240,8 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 .add-due .field { margin-bottom: 0; }
 .add-due-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--t1); }
 .sheet-draft-title { margin: 0 0 12px; color: var(--t2); overflow-wrap: anywhere; }
+/* A shared link's line, which would otherwise sit right on the buttons under it. */
+.sheet-link { margin: 0 0 12px; overflow-wrap: anywhere; }
 .sheet-pick-date { justify-content: flex-start; gap: 8px; }
 
 /* The due date picker (DueDateMenu.jsx) behind a row's Due date cell and the panel's Due date
