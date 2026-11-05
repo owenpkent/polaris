@@ -61,7 +61,7 @@ const UNTRUSTED_HINT = 'Posting is off here: this task holds text written by a t
 const heading = { fontSize: 14, fontWeight: 600, color: 'var(--t1)', margin: 0 }
 const subheading = { fontSize: 13, fontWeight: 600, color: 'var(--t2)', margin: 0 }
 const muted = { fontSize: 13, color: 'var(--t2)' }
-const controlBorder = { border: '1px solid var(--bd-strong)', borderRadius: 8, background: 'var(--bg-inset)', color: 'var(--t1)', fontSize: 14 }
+const controlBorder = { border: '1px solid var(--bd-strong)', borderRadius: 8, background: 'var(--bg-field)', color: 'var(--t1)', fontSize: 14 }
 const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }
 
 export function postTypeLabel(type) {
@@ -138,7 +138,7 @@ function Switch({ checked, onChange, label, disabled }) {
         aria-hidden="true"
         style={{
           width: 34, height: 20, borderRadius: 10, position: 'relative', flex: 'none',
-          background: checked ? 'var(--blue)' : 'var(--bd-strong)', transition: 'background 0.15s',
+          background: disabled ? 'var(--t-disabled)' : checked ? 'var(--blue)' : 'var(--bd-strong)', transition: 'background 0.15s',
         }}
       >
         <span style={{

@@ -470,6 +470,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const recurrenceRef = useRef(null)
   const [commentDraft, setCommentDraft] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
+  const commentInputRef = useRef(null)
+  const commentButtonRef = useRef(null)
+  // A click elsewhere adds what is in the comment box on the release, as the list's Add task does,
+  // so the new comment does not move what was pressed before the click lands (pointerPress.js).
+  const commentPress = usePointerPress(Boolean(commentDraft))
+  useEffect(() => { setCommentDraft('') }, [taskId])
   const [actionNotice, setActionNotice] = useState(null)
   const [skipBusy, setSkipBusy] = useState(false)
   const [restoring, setRestoring] = useState(null)
@@ -596,11 +602,14 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      // Closing takes the notes box away with no blur, so it is left first and saves what it holds.
+      if (document.activeElement?.id === notesId) document.activeElement.blur()
+      onClose()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [onClose, notesId])
 
   // Tab/Shift+Tab focus trap while the panel is mounted (mirrors NavDrawer's).
   useEffect(() => {
@@ -873,18 +882,36 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   }
 
   async function handleAddComment() {
-    const body = commentDraft.trim()
+    const sent = commentDraft
+    const body = sent.trim()
     if (!body || commentBusy) return
     setCommentBusy(true)
     try {
       await api.addComment(taskId, body)
-      setCommentDraft('')
+      // A click-away can move the panel to another task before this answers, and a draft typed
+      // there is not this one.
+      setCommentDraft((current) => (current === sent ? '' : current))
       await load({ quiet: true })
     } catch (err) {
       setSaveError(err.message || 'Could not add comment.')
     } finally {
       setCommentBusy(false)
     }
+  }
+
+  // A click elsewhere adds what was typed, on the release and unless the click is back in the box
+  // or on its Comment button, which adds it itself. Leaving by keyboard keeps the draft.
+  function handleCommentBlur(e) {
+    if (commentBusy || !commentDraft.trim() || e.relatedTarget === commentButtonRef.current) return
+    if (!commentPress.current.clicking) return
+    const addOnLeave = (release) => {
+      const box = commentInputRef.current
+      if (!box || document.activeElement === box) return
+      if (release?.target === box || commentButtonRef.current?.contains(release?.target)) return
+      handleAddComment()
+    }
+    if (commentPress.current.held) afterRelease(addOnLeave)
+    else addOnLeave()
   }
 
   const done = data?.task?.status === 'done'
@@ -1575,7 +1602,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               <div style={{ fontSize: 13, color: 'var(--t2)' }}>No comments yet.</div>
             )}
             {(data.comments || []).map((c) => (
-              <div key={c.id} style={{ background: 'var(--bg-inset)', border: '1px solid var(--bd)', borderRadius: 8, padding: '10px 12px' }}>
+              <div key={c.id} style={{ background: 'var(--bg-inset)', border: '1px solid var(--bd-section)', borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 4 }}>
                   {c.author || 'You'}{c.authorName ? ` ${c.authorName}` : ''} · {formatDate(c.createdAt)}
                 </div>
@@ -1586,12 +1613,17 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
 
           <div style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
             <input
+              ref={commentInputRef}
+              className="panel-comment-input"
               value={commentDraft}
               onChange={(e) => setCommentDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddComment() } }}
+              onBlur={handleCommentBlur}
               placeholder="Add a comment"
               aria-label="Add a comment"
-              disabled={commentBusy}
+              // Read-only rather than disabled while it saves, so focus stays here for the next one.
+              readOnly={commentBusy}
+              aria-busy={commentBusy || undefined}
               style={{
                 flexGrow: 1,
                 minWidth: 0,
@@ -1599,25 +1631,18 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
                 padding: '0 14px',
                 border: '1px solid var(--bd-strong)',
                 borderRadius: 8,
-                background: 'var(--bg-inset)',
+                background: 'var(--bg-field)',
                 color: 'var(--t1)',
                 fontSize: 14,
               }}
             />
             <button
+              ref={commentButtonRef}
               type="button"
+              className="btn btn-primary"
               onClick={handleAddComment}
               disabled={commentBusy || !commentDraft.trim()}
-              style={{
-                flexShrink: 0,
-                height: 44,
-                padding: '0 16px',
-                border: '1px solid var(--bd-strong)',
-                borderRadius: 8,
-                background: 'var(--bg3)',
-                color: 'var(--t1)',
-                fontSize: 14,
-              }}
+              style={{ flexShrink: 0 }}
             >
               {commentBusy ? 'Adding…' : 'Comment'}
             </button>

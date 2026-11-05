@@ -31,7 +31,9 @@ const stepButtonPrimary = {
 
 const stepButtonDisabled = {
   ...stepButton,
-  opacity: 0.5,
+  background: 'transparent',
+  borderColor: 'var(--bd-section)',
+  color: 'var(--t-disabled)',
   cursor: 'default',
 }
 
@@ -140,11 +142,10 @@ function ToggleSwitch({ checked, onChange, label, disabled }) {
         minHeight: 44,
         minWidth: 44,
         padding: '0 10px',
-        border: '1px solid var(--bd-strong)',
+        border: `1px solid var(${isDisabled ? '--bd-section' : '--bd-strong'})`,
         borderRadius: 8,
         background: 'transparent',
         cursor: isDisabled ? 'default' : 'pointer',
-        opacity: isDisabled ? 0.5 : 1,
       }}
     >
       <span
@@ -153,7 +154,7 @@ function ToggleSwitch({ checked, onChange, label, disabled }) {
           width: 32,
           height: 18,
           borderRadius: 10,
-          background: checked ? 'var(--green)' : 'var(--bd)',
+          background: isDisabled ? 'var(--t-disabled)' : checked ? 'var(--green)' : 'var(--bd-strong)',
           position: 'relative',
           flexShrink: 0,
         }}
@@ -166,11 +167,11 @@ function ToggleSwitch({ checked, onChange, label, disabled }) {
             width: 14,
             height: 14,
             borderRadius: '50%',
-            background: 'var(--t1)',
+            background: 'var(--on-accent)',
           }}
         />
       </span>
-      <span style={{ fontSize: 13, color: 'var(--t1)' }}>{checked ? 'On' : 'Off'}</span>
+      <span style={{ fontSize: 13, color: isDisabled ? 'var(--t-disabled)' : 'var(--t1)' }}>{checked ? 'On' : 'Off'}</span>
     </button>
   )
 }

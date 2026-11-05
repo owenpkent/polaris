@@ -23,6 +23,7 @@ const api = {
   previewRecurrence: vi.fn(),
   skipOccurrence: vi.fn(),
   createTask: vi.fn(),
+  addComment: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -548,6 +549,76 @@ describe('Assign to AI', () => {
     await openHistory()
 
     expect(screen.getByText(/agent scribe task\.updated/)).toBeTruthy()
+  })
+
+  describe('the comment box saves as the Add task row does', () => {
+    async function openBox(props = {}) {
+      api.getTask.mockResolvedValue(detail(TASK, []))
+      api.addComment.mockResolvedValue({})
+      const utils = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} {...props} />)
+      const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Worth a look' } })
+      return { box, ...utils }
+    }
+
+    test('a click elsewhere adds it on the release, and the box empties', async () => {
+      const { box } = await openBox()
+      fireEvent.pointerDown(document.body)
+      act(() => { box.blur() })
+      expect(api.addComment).not.toHaveBeenCalled()
+      await act(async () => { fireEvent.pointerUp(document.body) })
+      expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+      await waitFor(() => expect(box.value).toBe(''))
+    })
+
+    test('leaving by keyboard keeps the draft', async () => {
+      const { box } = await openBox()
+      act(() => { box.blur() })
+      expect(api.addComment).not.toHaveBeenCalled()
+      expect(box.value).toBe('Worth a look')
+    })
+
+    test('a click on Comment adds it once', async () => {
+      const { box } = await openBox()
+      const button = screen.getByRole('button', { name: 'Comment' })
+      fireEvent.pointerDown(button)
+      act(() => { box.blur() })
+      await act(async () => {
+        fireEvent.pointerUp(button)
+        fireEvent.click(button)
+      })
+      expect(api.addComment).toHaveBeenCalledTimes(1)
+    })
+
+    test('Enter adds it and keeps focus for the next one', async () => {
+      const { box } = await openBox()
+      await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+      expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+      await waitFor(() => expect(box.value).toBe(''))
+      expect(document.activeElement).toBe(box)
+    })
+
+    test('a draft left by keyboard does not follow the panel to another task', async () => {
+      const { box, rerender } = await openBox()
+      act(() => { box.blur() })
+      rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+      await waitFor(() => expect(screen.getByRole('textbox', { name: 'Add a comment' }).value).toBe(''))
+      expect(api.addComment).not.toHaveBeenCalled()
+    })
+  })
+
+  test('Esc in the notes saves what is there before the panel closes', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({})
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    const notes = await screen.findByRole('textbox', { name: 'Notes' })
+    act(() => { notes.focus() })
+    fireEvent.change(notes, { target: { value: 'Typed, then Esc' } })
+    await act(async () => { fireEvent.keyDown(notes, { key: 'Escape' }) })
+    expect(api.updateTask).toHaveBeenCalledWith('t_1', { notes: 'Typed, then Esc' })
+    expect(onClose).toHaveBeenCalled()
   })
 
   test('a comment with an author name shows it after the author', async () => {

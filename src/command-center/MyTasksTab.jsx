@@ -90,9 +90,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const [detailTaskId, setDetailTaskId] = useState(null)
   const [pendingIds, setPendingIds] = useState(() => new Set())
   const [collapsedOverrides, setCollapsedOverrides] = useState(() => loadCollapsed())
-  const [inlineAdd, setInlineAdd] = useState(null) // { groupId, dueAt, position, seq } | null; groupId null == ungrouped top add
+  const [inlineAdd, setInlineAdd] = useState(null) // { groupId, dueAt, seq, heldIds } | null; groupId null == the row under the whole list
   // Each opening of the inline row is a new row (its key), so a row left empty that closes after
   // the click that opened another one can only close itself.
+  // `heldIds` are the tasks added from this opening, in the order they were typed. They stay just
+  // above the row while it is open, so nothing jumps as they are added; closing it drops the list
+  // with the rest of the state, and they take their places in the sort.
   const inlineSeq = useRef(0)
   const [legendOpen, setLegendOpen] = useState(false)
   // The phone tier creates tasks through a sheet opened by the floating Add task button; the
@@ -306,9 +309,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     })
   }, [isCollapsed])
 
-  const openInlineAdd = useCallback((groupId, dueAt, position) => {
+  const openInlineAdd = useCallback((groupId, dueAt) => {
     ensureExpanded('due', groupId)
-    setInlineAdd({ groupId, dueAt, position, seq: ++inlineSeq.current })
+    setInlineAdd({ groupId, dueAt, seq: ++inlineSeq.current, heldIds: [] })
   }, [ensureExpanded])
 
   const closeInlineAdd = useCallback(() => setInlineAdd(null), [])
@@ -316,20 +319,24 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const handleAddTaskClick = useCallback(() => {
     const dueBounds = getDueBounds()
     if (view.group === 'due') {
-      openInlineAdd('today', dueBounds.today, 'top')
+      openInlineAdd('today', dueBounds.today)
     } else {
-      setInlineAdd({ groupId: null, dueAt: dueBounds.today, position: 'top', seq: ++inlineSeq.current })
+      setInlineAdd({ groupId: null, dueAt: dueBounds.today, seq: ++inlineSeq.current, heldIds: [] })
     }
   }, [view.group, openInlineAdd])
 
   // The inline row (InlineTaskInput.jsx) hands over the group's date, or the date and repeat
   // picked in its "When is it due?" step. The row stays open for the next task, as Asana's does;
   // Esc or leaving it empty closes it, and a click elsewhere adds what was typed and closes it.
+  // The new task is held above the row (heldIds) only if this opening of the row is still the one.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
     if (dueAt) payload.dueAt = dueAt
     if (recurrence) payload.recurrence = recurrence
-    await api.createTask(payload)
+    const created = await api.createTask(payload)
+    const id = created?.task?.id
+    const seq = inlineAdd?.seq
+    if (id) setInlineAdd((cur) => (cur && cur.seq === seq ? { ...cur, heldIds: [...cur.heldIds, id] } : cur))
     await fetchTasks()
   }, [api, fetchTasks, inlineAdd])
 
@@ -545,7 +552,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     ? tasks.map((t) => (t.id === pendingMove.task.id ? { ...t, dueAt: pendingMove.dueAt, position: pendingMove.plan.updates.find((u) => u.id === t.id)?.position ?? t.position } : t))
     : tasks
   const filteredTasks = applyFilters(shownTasks, view.filters, goalWork, states)
-  const sortedTasks = sortTasks(filteredTasks, view.sort, projectNameById)
+  const allSorted = sortTasks(filteredTasks, view.sort, projectNameById)
+  // The tasks added from the open row come out of the sort and go just above it, in the order they
+  // were typed, even a task dated for another group. A row hidden by a change of grouping holds nothing.
+  const rowShown = inlineAdd && (inlineAdd.groupId === null || view.group === 'due')
+  const heldIds = rowShown ? inlineAdd.heldIds : []
+  const heldTasks = heldIds.map((id) => allSorted.find((t) => t.id === id)).filter(Boolean)
+  const sortedTasks = heldTasks.length > 0 ? allSorted.filter((t) => !heldIds.includes(t.id)) : allSorted
 
   const commonRowProps = {
     dueBounds,
@@ -572,6 +585,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   if (!listLoading) {
     if (view.group === 'due') {
       const groups = groupTasks(sortedTasks, dueBounds)
+      if (rowShown && inlineAdd.groupId !== null) groups[inlineAdd.groupId] = [...groups[inlineAdd.groupId], ...heldTasks]
       // An empty group is hidden, except the one a new task is being typed into: the toolbar's Add
       // task opens the inline row in Today, which owns that row and must be on the page to show it.
       // Under the manual sort a row can be dropped into any day group, so the empty ones show
@@ -594,7 +608,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             {...commonRowProps}
             addRow={addRow}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
-            onOpenInlineAdd={(position) => openInlineAdd(g.id, addRow?.dueAt ?? null, position)}
+            onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}
             onSubmitInlineAdd={submitInlineAdd}
             onCancelInlineAdd={closeInlineAdd}
           />
@@ -695,12 +709,15 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             </div>
           ) : (
             <div className="mytasks-list">
-              {inlineAdd?.groupId === null && (
-                <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
-              )}
               <ReorderScope enabled={reorderable} crossGroup={crossGroup} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging}>
                 {content}
               </ReorderScope>
+              {inlineAdd?.groupId === null && (
+                <>
+                  {heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
+                  <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                </>
+              )}
             </div>
           )}
         </div>

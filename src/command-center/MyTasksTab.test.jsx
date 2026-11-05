@@ -764,3 +764,55 @@ describe('MyTasksTab Add task with nothing in Today', () => {
     await waitFor(() => expect(api.createTask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Call the vet', dueAt: getDueBounds().today })))
   })
 })
+
+// A new task that sorts first (position 0) still shows under the rows that were there, until the
+// row closes. Each list here answers as the server would, with the task in it.
+describe('MyTasksTab Add task keeps new tasks just above the row until it closes', () => {
+  const task = (id, title, position, dueAt) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+  const view = (group) => localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({
+    sort: { field: 'manual', dir: 'asc' },
+    group,
+    filters: { projectIds: [], priorities: [], sources: [], goalIds: [] },
+  }))
+  const titles = () => screen.getAllByRole('button', { name: /^Open / }).map((b) => b.getAttribute('aria-label'))
+
+  afterEach(() => localStorage.clear())
+
+  async function addTwo() {
+    const today = getDueBounds().today
+    const list = [task('t1', 'Was here', 1, today)]
+    api.listTasks.mockImplementation(async () => ({ tasks: [...list] }))
+    api.createTask.mockImplementation(async ({ title }) => {
+      const made = task(title === 'First' ? 't2' : 't3', title, title === 'First' ? 0 : -1, today)
+      list.push(made)
+      return { task: made }
+    })
+    stubMatchMedia(1280)
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open Was here' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add task' })[0])
+    const input = await screen.findByRole('textbox', { name: 'New task name' })
+    for (const title of ['First', 'Second']) {
+      fireEvent.change(input, { target: { value: title } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      await screen.findByRole('button', { name: `Open ${title}` })
+      await waitFor(() => expect(input.value).toBe(''))
+    }
+    return input
+  }
+
+  test.each([['due'], ['none'], ['priority']])('grouped by %s', async (group) => {
+    view(group)
+    const input = await addTwo()
+    expect(titles()).toEqual(['Open Was here', 'Open First', 'Open Second'])
+    // The row is after every task in the document.
+    const last = screen.getByRole('button', { name: 'Open Second' })
+    expect(last.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'New task name' })).toBeNull())
+    expect(titles()).toEqual(['Open Second', 'Open First', 'Open Was here'])
+  })
+})
