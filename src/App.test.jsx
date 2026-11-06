@@ -10,7 +10,16 @@ vi.mock('./command-center/GoalsTab', () => ({ default: () => <div data-testid="t
 vi.mock('./command-center/ProjectsTab', () => ({ default: () => <div data-testid="tab-projects" /> }))
 vi.mock('./command-center/SettingsTab', () => ({ default: () => <div data-testid="tab-settings" /> }))
 vi.mock('./command-center/InboxTab', () => ({ default: () => <div data-testid="tab-inbox" /> }))
-vi.mock('./command-center/MyTasksTab', () => ({ default: () => <div data-testid="tab-mytasks" /> }))
+vi.mock('./command-center/MyTasksTab', () => ({ default: ({ focusTaskId }) => <div data-testid="tab-mytasks" data-focus-task={focusTaskId || ''} /> }))
+// The dialog itself is tested in SearchDialog.test.jsx. Here it is two buttons: a result and Close.
+vi.mock('./command-center/SearchDialog', () => ({
+  default: ({ onClose, onOpenTask }) => (
+    <div data-testid="search-dialog">
+      <button type="button" onClick={() => onOpenTask('t_9')}>A result</button>
+      <button type="button" onClick={onClose}>Close search</button>
+    </div>
+  ),
+}))
 vi.mock('./command-center/BoardTab', () => ({ default: () => <div data-testid="tab-board" /> }))
 vi.mock('./command-center/RulesTab', () => ({ default: () => <div data-testid="tab-rules" /> }))
 vi.mock('./command-center/DigestTab', () => ({ default: () => <div data-testid="tab-digest" /> }))
@@ -219,5 +228,50 @@ describe('App sidebar toggle', () => {
     fireEvent.keyDown(window, { key: '\\', ctrlKey: true })
     expect(screen.getByTestId('sidebar').hidden).toBe(true)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show sidebar' }))
+  })
+})
+
+describe('App search', () => {
+  test('the Search button opens the dialog, and closing it gives focus back to the button', () => {
+    render(<App />)
+    const button = screen.getByRole('button', { name: 'Search tasks' })
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByTestId('search-dialog')).toBeNull()
+
+    fireEvent.click(button)
+    expect(screen.getByTestId('search-dialog')).toBeTruthy()
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close search' }))
+    expect(screen.queryByTestId('search-dialog')).toBeNull()
+    expect(document.activeElement).toBe(button)
+  })
+
+  test('the slash key opens it, except while typing in a field', () => {
+    render(<App />)
+    const field = document.createElement('input')
+    document.body.appendChild(field)
+    try {
+      fireEvent.keyDown(field, { key: '/' })
+      expect(screen.queryByTestId('search-dialog')).toBeNull()
+      fireEvent.keyDown(document.body, { key: '/', ctrlKey: true })
+      expect(screen.queryByTestId('search-dialog')).toBeNull()
+      fireEvent.keyDown(document.body, { key: '/' })
+      expect(screen.getByTestId('search-dialog')).toBeTruthy()
+    } finally {
+      field.remove()
+    }
+  })
+
+  test('a result closes the dialog and opens that task on My tasks, from any view', () => {
+    setLocation('view=board')
+    const { container } = render(<App />)
+    expect(container.querySelector('[data-testid="tab-board"]')).not.toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search tasks' }))
+    fireEvent.click(screen.getByRole('button', { name: 'A result' }))
+    expect(screen.queryByTestId('search-dialog')).toBeNull()
+    expect(container.querySelector('[data-testid="tab-mytasks"]').getAttribute('data-focus-task')).toBe('t_9')
+    expect(container.querySelector('[data-testid="tab-board"]')).toBeNull()
   })
 })

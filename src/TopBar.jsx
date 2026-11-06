@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Menu as MenuIcon, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react'
+import { Menu as MenuIcon, MessageSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun } from 'lucide-react'
 import { Menu } from './command-center/Menu'
 import UpdateButton from './UpdateButton'
 
@@ -23,6 +23,9 @@ export default function TopBar({
   onChatClick,
   chatOpen,
   chatButtonRef,
+  onSearchClick,
+  searchOpen = false,
+  searchButtonRef,
   theme = 'system',
   resolvedTheme = 'dark',
   onThemeChange,
@@ -54,7 +57,6 @@ export default function TopBar({
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
-        gap: '0.75rem',
       }}
     >
       <button
@@ -97,9 +99,24 @@ export default function TopBar({
       >
         {title}
       </h1>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: 'auto' }}>
+      <div className="topbar-actions">
         {/* Only while the server names a newer signed release, or once after one went in (src/UpdateButton.jsx). */}
         <UpdateButton />
+        {onSearchClick && (
+          <button
+            ref={searchButtonRef}
+            type="button"
+            aria-label="Search tasks"
+            aria-haspopup="dialog"
+            aria-expanded={searchOpen}
+            title="Search tasks (/)"
+            onClick={onSearchClick}
+            className="icon-btn"
+            style={{ color: 'var(--t1)' }}
+          >
+            <Search size={20} aria-hidden="true" />
+          </button>
+        )}
         <button
           ref={themeButtonRef}
           type="button"

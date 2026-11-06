@@ -6,6 +6,7 @@ const SHORTCUTS = [
   ['Enter', 'Open the focused task'],
   ['Esc', 'Close the open panel, dialog, or inline input'],
   ['?', 'Toggle this help'],
+  ['/', 'Search tasks'],
   ['\\', 'With Ctrl (Cmd on a Mac): hide or show the sidebar'],
 ]
 

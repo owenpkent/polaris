@@ -602,6 +602,11 @@ kbd { color: var(--t1); }
 /* The top bar (TopBar.jsx): 56px of bar, below the status bar inside the Android app, where the
    page runs edge to edge and --safe-top is the bar's height (0 in a browser). */
 .topbar { height: calc(56px + var(--safe-top)); min-height: calc(56px + var(--safe-top)); padding: var(--safe-top) 1rem 0; }
+/* At 320px the bar holds the menu button, the title, and up to three icons (update, search,
+   theme), and "Checklists" needs every pixel of what is left. The gaps close up below 360px and
+   are whole from there on, so a phone of an ordinary width looks no different. */
+.topbar { gap: clamp(0.25rem, calc((100vw - 320px) * 0.2 + 0.25rem), 0.75rem); }
+.topbar-actions { display: flex; align-items: center; margin-left: auto; gap: clamp(0px, calc((100vw - 320px) * 0.1), 0.25rem); }
 .app-content { flex: 1; min-width: 0; }
 .app-sidebar {
   position: sticky;
@@ -1733,6 +1738,18 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   text-align: left;
 }
 .goal-list-row:focus-visible { outline-offset: -2px; }
+
+/* The search dialog (src/command-center/SearchDialog.jsx) hangs from the top of the window, below
+   the Android app's status bar, so a phone's keyboard does not cover the box and the results grow
+   downward. The box stays where it is and the results scroll under it. */
+.search-backdrop { align-items: flex-start; padding-top: calc(1rem + var(--safe-top)); }
+.search-modal { display: flex; flex-direction: column; gap: 0.75rem; max-height: 100%; padding: 1rem; overflow: hidden; }
+.search-head { display: flex; align-items: center; gap: 0.5rem; }
+.search-head input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 1rem; }
+.search-status { margin: 0; color: var(--t2); font-size: 0.85rem; overflow-wrap: anywhere; }
+.search-results { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.search-row { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; overflow-wrap: anywhere; }
+.search-row-meta { color: var(--t2); font-size: 0.8rem; }
 .goal-open-tasks { margin: 0; padding-left: 18px; color: var(--t1); font-size: 14px; line-height: 1.7; }
 
 @media (max-width: 640px) {

@@ -170,6 +170,17 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
     await audit(page, testInfo, 'theme menu open')
   })
 
+  // The search dialog with results listed: the seeded tasks that mention the audit.
+  test('the search dialog', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Search tasks' })
+    await audit(page, testInfo, 'search dialog open')
+    await dialog.getByRole('textbox', { name: 'Search tasks' }).fill('audit')
+    await expect(dialog.getByRole('button').nth(1)).toBeVisible()
+    await audit(page, testInfo, 'search dialog with results')
+  })
+
   // The icon needs a routed answer: the test server never names a newer release (e2e/support.js).
   test('the update panel', async ({ page }, testInfo) => {
     await fakeUpdate(page)

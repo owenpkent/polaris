@@ -682,6 +682,23 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     }
   })
 
+  // Search over My tasks: the empty dialog, and the seeded tasks that mention the audit.
+  test('search: empty', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    await expect(page.getByRole('dialog', { name: 'Search tasks' })).toBeVisible()
+    await shot(page, testInfo, 'search', 'empty')
+  })
+
+  test('search: results', async ({ page }, testInfo) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Search tasks' })
+    await dialog.getByRole('textbox', { name: 'Search tasks' }).fill('audit')
+    await expect(dialog.getByRole('button').nth(1)).toBeVisible()
+    await shot(page, testInfo, 'search', 'results')
+  })
+
   // The update icon shows only while the server names a newer signed release, which the test
   // server never does, so GET /api/update is routed to the fixture (docs/update-proposal.md, 4B).
   test('update: icon', async ({ page }, testInfo) => {
