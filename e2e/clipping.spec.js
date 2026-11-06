@@ -587,9 +587,11 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expect(dialog.getByRole('button', { name: title })).toBeVisible()
     await expect(dialog.getByRole('button', { name: wordy })).toBeVisible()
     await expectNothingCutOff(page)
-    // A common word fills the list, which then scrolls under the box.
+    // A common word fills the list, which then scrolls under the box in a short window.
+    await page.setViewportSize({ width: page.viewportSize().width, height: 420 })
     await box.fill('the')
     await expect(dialog.getByRole('button').nth(3)).toBeVisible()
+    await expect.poll(() => dialog.evaluate((el) => el.lastElementChild.scrollHeight > el.lastElementChild.clientHeight)).toBe(true)
     await expectNothingCutOff(page)
   })
 })
