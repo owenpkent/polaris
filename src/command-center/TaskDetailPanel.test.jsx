@@ -23,6 +23,7 @@ const api = {
   previewRecurrence: vi.fn(),
   skipOccurrence: vi.fn(),
   createTask: vi.fn(),
+  addComment: vi.fn(),
 }
 const connection = { connected: true, api }
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
@@ -548,6 +549,143 @@ describe('Assign to AI', () => {
     await openHistory()
 
     expect(screen.getByText(/agent scribe task\.updated/)).toBeTruthy()
+  })
+
+  describe('the comment box saves as the Add task row does', () => {
+    async function openBox(props = {}) {
+      api.getTask.mockResolvedValue(detail(TASK, []))
+      api.addComment.mockResolvedValue({})
+      const utils = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} {...props} />)
+      const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Worth a look' } })
+      return { box, ...utils }
+    }
+
+    test('a click elsewhere adds it on the release, and the box empties', async () => {
+      const { box } = await openBox()
+      fireEvent.pointerDown(document.body)
+      act(() => { box.blur() })
+      expect(api.addComment).not.toHaveBeenCalled()
+      await act(async () => { fireEvent.pointerUp(document.body) })
+      expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+      await waitFor(() => expect(box.value).toBe(''))
+    })
+
+    test('leaving by keyboard keeps the draft', async () => {
+      const { box } = await openBox()
+      act(() => { box.blur() })
+      expect(api.addComment).not.toHaveBeenCalled()
+      expect(box.value).toBe('Worth a look')
+    })
+
+    test('a click on Comment adds it once', async () => {
+      const { box } = await openBox()
+      const button = screen.getByRole('button', { name: 'Comment' })
+      fireEvent.pointerDown(button)
+      act(() => { box.blur() })
+      await act(async () => {
+        fireEvent.pointerUp(button)
+        fireEvent.click(button)
+      })
+      expect(api.addComment).toHaveBeenCalledTimes(1)
+    })
+
+    test('Enter adds it and keeps focus for the next one', async () => {
+      const { box } = await openBox()
+      await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+      expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+      await waitFor(() => expect(box.value).toBe(''))
+      expect(document.activeElement).toBe(box)
+    })
+
+    test('a draft left by keyboard does not follow the panel to another task', async () => {
+      const { box, rerender } = await openBox()
+      act(() => { box.blur() })
+      rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+      await waitFor(() => expect(screen.getByRole('textbox', { name: 'Add a comment' }).value).toBe(''))
+      expect(api.addComment).not.toHaveBeenCalled()
+    })
+
+    // A click on another task's row leaves the box and moves the panel in one go: the save for
+    // the first task is still out when the second has loaded.
+    describe('a save still out when the panel moves to another task', () => {
+      const SECOND = { ...TASK, id: 't_2', title: 'Second title', notes: 'Second notes' }
+
+      async function leaveForSecondTask(save) {
+        api.getTask.mockImplementation(async (id) => detail(id === 't_2' ? SECOND : TASK, []))
+        api.addComment.mockReturnValue(save.promise)
+        api.updateTask.mockResolvedValue({})
+        const { rerender } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+        const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+        act(() => { box.focus() })
+        fireEvent.change(box, { target: { value: 'Worth a look' } })
+        fireEvent.pointerDown(document.body)
+        act(() => { box.blur() })
+        await act(async () => { fireEvent.pointerUp(document.body) })
+        expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+        rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('Second notes'))
+      }
+
+      test('its answer leaves the second task its own fields, and an edit saves to the second task', async () => {
+        const save = deferred()
+        await leaveForSecondTask(save)
+        api.getTask.mockClear()
+        await act(async () => { save.resolve({}) })
+
+        expect(api.getTask).not.toHaveBeenCalledWith('t_1')
+        const notes = screen.getByRole('textbox', { name: 'Notes' })
+        expect(notes.value).toBe('Second notes')
+        act(() => { notes.focus() })
+        fireEvent.change(notes, { target: { value: 'Second notes plus edit' } })
+        await act(async () => { fireEvent.keyDown(notes, { key: 'Escape' }) })
+        expect(api.updateTask).toHaveBeenCalledWith('t_2', { notes: 'Second notes plus edit' })
+        expect(api.updateTask).not.toHaveBeenCalledWith('t_1', expect.anything())
+      })
+
+      test('the comment box on the second task is free while the first save is out, and after it', async () => {
+        const save = deferred()
+        await leaveForSecondTask(save)
+        const box = screen.getByRole('textbox', { name: 'Add a comment' })
+        expect(box.readOnly).toBe(false)
+        expect(box.getAttribute('aria-busy')).toBeNull()
+
+        // A comment typed on the second task meanwhile is its own: the first answer does not clear it.
+        fireEvent.change(box, { target: { value: 'About the second task' } })
+        await act(async () => { save.resolve({}) })
+        expect(box.value).toBe('About the second task')
+        expect(box.readOnly).toBe(false)
+
+        api.addComment.mockResolvedValue({})
+        await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+        expect(api.addComment).toHaveBeenLastCalledWith('t_2', 'About the second task')
+      })
+
+      test('a save that fails after the move says the comment on the task left was not added', async () => {
+        let fail
+        const save = { promise: new Promise((_, reject) => { fail = reject }) }
+        await leaveForSecondTask(save)
+        await act(async () => { fail(new Error('boom')) })
+
+        expect(await screen.findByText('Could not add your comment to the task you just left: Worth a look')).toBeTruthy()
+        expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('Second notes')
+        expect(screen.getByRole('textbox', { name: 'Add a comment' }).readOnly).toBe(false)
+      })
+    })
+  })
+
+  test('Esc in the notes saves what is there before the panel closes', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({})
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    const notes = await screen.findByRole('textbox', { name: 'Notes' })
+    act(() => { notes.focus() })
+    fireEvent.change(notes, { target: { value: 'Typed, then Esc' } })
+    await act(async () => { fireEvent.keyDown(notes, { key: 'Escape' }) })
+    expect(api.updateTask).toHaveBeenCalledWith('t_1', { notes: 'Typed, then Esc' })
+    expect(onClose).toHaveBeenCalled()
   })
 
   test('a comment with an author name shows it after the author', async () => {

@@ -114,7 +114,7 @@ const controlStyle = {
   padding: '0 12px',
   border: '1px solid var(--bd-strong)',
   borderRadius: 8,
-  background: 'var(--bg-inset)',
+  background: 'var(--bg-field)',
   color: 'var(--t1)',
   fontSize: 14,
   fontFamily: 'inherit',

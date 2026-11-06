@@ -6,9 +6,10 @@ import { formatDueCell, getDueBounds } from './dueDates'
 import { afterRelease, usePointerPress } from './pointerPress'
 
 // A single-row inline "new task" input used by the toolbar's "Add task" button and each group's
-// "Add task" row, which opens it at the top of the group, as Asana's list does. Enter with a title
+// "Add task" row, which it replaces in place, at the end of the group. Enter with a title
 // adds the task on the group's date at once, then empties the row and keeps focus in it, so several
-// tasks can be typed one after another. The name takes the Name column alone and the due date
+// tasks can be typed one after another; MyTasksTab keeps them just above the row, in the order they
+// were typed, until it closes. The name takes the Name column alone and the due date
 // button sits in the Due date column, as a task row has them (`dueColumn`; with that column hidden
 // the button follows the name). It opens "When is it due?" (AddDuePanel.jsx) under itself, on
 // the group's date, with Repeats under the month: Add task there calls onSubmit(title, { dueAt,
@@ -34,12 +35,19 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // desktop it opens under the due date button and keeps 8px off the window's edge (`phone`).
   const mounted = useRef(true)
   const dueText = formatDueCell(dueAt, getDueBounds()).text || 'Due date'
+  // Counts the tasks saved from this row. Each one pushes the row down, so it is kept on screen.
+  const [saved, setSaved] = useState(0)
 
   useEffect(() => {
     mounted.current = true
     inputRef.current?.focus()
     return () => { mounted.current = false }
   }, [])
+
+  // jsdom has no scrollIntoView.
+  useEffect(() => {
+    if (saved > 0) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [saved])
 
   // A click elsewhere that takes focus from the row waits for the release before the row closes
   // or adds: closing on the press would move the rows under it up by a row, and the release would
@@ -105,6 +113,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       setDueAt(defaultDueAt)
       setRecurrence('')
       setCustomRepeat(false)
+      setSaved((n) => n + 1)
     } catch (err) {
       if (!mounted.current) return
       setError(err.message || 'Could not add task.')
@@ -196,7 +205,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       </div>
       {dueColumn && <div className="inline-add-due-cell" style={{ gridColumn: handleColumn ? 4 : 3 }}>{dueButton}</div>}
       {error && <span className="inline-add-error" style={{ gridColumn: handleColumn ? '3 / -1' : '2 / -1' }}>{error}</span>}
-      <Popover anchorRef={dueAnchorRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={768} gutter={phone ? 0 : 8} focusSelector="[data-cal-focus]">
+      <Popover anchorRef={dueAnchorRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={768} gutter={phone ? 0 : 8} preferFit focusSelector="[data-cal-focus]">
         <div role="dialog" aria-label={`Due date for ${title.trim()}`} className="add-due-pop">
           <AddDuePanel dueAt={dueAt} onPick={commit} recurrence={recurrence} customRepeat={customRepeat} api={api} />
         </div>

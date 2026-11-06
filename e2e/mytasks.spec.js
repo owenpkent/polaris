@@ -64,28 +64,49 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(titles).toContain(second)
   })
 
-  test("a group's Add task opens the new row at the top of that group, on its date", async ({ page, request }, testInfo) => {
+  test("a group's Add task opens the new row where it was, on its date, and what is added stays just above it", async ({ page, request }, testInfo) => {
     const title = `UI test tomorrow add ${testInfo.project.name}`
     await openView(page)
     const tomorrow = page.locator('section').filter({ has: page.getByRole('button', { name: 'Collapse Tomorrow' }) })
     await tomorrow.getByRole('button', { name: 'Add task' }).click()
     const input = tomorrow.getByRole('textbox', { name: 'New task name' })
     await expect(input).toBeFocused()
-    // In place, above the group's rows.
-    const firstRow = tomorrow.getByRole('button', { name: /^Open / }).first()
-    const inputBox = await input.boundingBox()
-    const rowBox = await firstRow.boundingBox()
-    expect(inputBox.y).toBeLessThan(rowBox.y)
+    // In place, below the group's rows.
+    const lastRow = tomorrow.getByRole('button', { name: /^Open / }).last()
+    expect((await input.boundingBox()).y).toBeGreaterThan((await lastRow.boundingBox()).y)
     await expect(tomorrow.getByRole('button', { name: 'Due date: Tomorrow' })).toBeVisible()
     await input.fill(title)
     await input.press('Enter')
     await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toHaveText('Tomorrow')
     await expect(input).toHaveValue('')
+    await expect(tomorrow.getByRole('button', { name: /^Open / }).last()).toHaveAccessibleName(`Open ${title}`)
+    expect((await input.boundingBox()).y).toBeGreaterThan((await row(page, title).boundingBox()).y)
     // Leaving the empty row closes it with nothing more saved.
     const before = (await listTaskTitles(request)).length
     await input.blur()
     await expect(input).toHaveCount(0)
     expect((await listTaskTitles(request)).length).toBe(before)
+  })
+
+  test('a click away saves a comment and the notes in the task panel', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'click away saves')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    const comment = panel.getByRole('textbox', { name: 'Add a comment' })
+    await comment.fill('Saved by the click away')
+    await panel.getByText('Comments', { exact: true }).click()
+    await expect(panel.getByText('Saved by the click away')).toBeVisible()
+    await expect(comment).toHaveValue('')
+
+    const notes = panel.getByRole('textbox', { name: 'Notes' })
+    await notes.fill('Notes saved the same way')
+    await panel.getByText('Comments', { exact: true }).click()
+    await expect(notes).not.toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+    await openTask(page, title)
+    await expect(panel.getByRole('textbox', { name: 'Notes' })).toHaveValue('Notes saved the same way')
   })
 
   // A task with open subtasks shows their count after its name, as Asana's list does, and the

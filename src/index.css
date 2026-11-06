@@ -39,6 +39,9 @@
      page they frame. The whole stack sits a step above near-black (it was
      #16181d for the page), which read as heavy over a long session. */
   --bg-inset: #191c22;
+  /* What a form field is filled with. Recessed here; white in the light theme, where a grey fill
+     read as a disabled field. */
+  --bg-field: #191c22;
   --bg: #1e2128;
   --bg2: #252931;
   --bg3: #2d313a;
@@ -48,28 +51,32 @@
   --bg-active: color-mix(in srgb, var(--t1) 9%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 3%, var(--bg2)); /* alternate list rows on bg2 */
   --bg-selected: color-mix(in srgb, var(--blue) 16%, var(--bg2));
-  /* Lines, measured on --bg: a row hairline 1.7:1, a surface edge 1.85:1, and the rule under a
-     group header (--bd-section) 2.6:1, so a group reads as its own block at a glance. */
-  --bd: color-mix(in srgb, var(--t1) 17%, transparent);
-  --bd-surface: color-mix(in srgb, var(--t1) 20%, transparent);
-  --bd-section: color-mix(in srgb, var(--t1) 30%, transparent);
+  /* Lines, measured on --bg: a row hairline 2.1:1, a surface edge 2.4:1, and the rule under a
+     group header (--bd-section) 3.3:1, so a group reads as its own block at a glance. */
+  --bd: color-mix(in srgb, var(--t1) 24%, transparent);
+  --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
+  --bd-section: color-mix(in srgb, var(--t1) 38%, transparent);
   /* The resting band behind a My tasks group header: a surface, not a state layer, so it is
      opaque and the hover wash still reads on top of it. */
   --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
   --bd-strong: #8d95a3; /* 5.3 / 4.3 */
 
   --t1: #f3f5f8; /* 14.8 / 11.9 on --bg / --bg3 */
-  --t2: #c2c9d3; /* 9.7 / 7.8 */
-  --t3: #aab2bd; /* 7.5 / 6.1, placeholders and counts */
+  --t2: #d0d6de; /* 11.0 / 8.9 */
+  --t3: #bcc3cd; /* 9.1 / 7.3, placeholders and counts */
+  /* A disabled control's text and icon: plainly dimmer than --t3, and still readable (5.0 at the
+     least, on --bg3). A disabled control is drawn in this, never faded with opacity, which took
+     its text under 3:1 and its edge under 2:1. */
+  --t-disabled: #9aa1ac;
 
-  --blue: #80bcff;
-  --blue-hover: #a3cfff;
-  --green: #6ade78;
-  --green-hover: #8ee89a;
-  --yellow: #ecc050;
-  --purple: #c9adff;
-  --red: #ff9189;
-  --orange: #f9b070;
+  --blue: #96c8ff;
+  --blue-hover: #b3d8ff;
+  --green: #7de88a;
+  --green-hover: #9eefa8;
+  --yellow: #f0ca68;
+  --purple: #d3bcff;
+  --red: #ffa59e;
+  --orange: #fbbd86;
 
   /* Text that sits on a solid accent fill (primary and success buttons). */
   --on-accent: #0b1220;
@@ -154,31 +161,33 @@
   color-scheme: light;
 
   --bg-inset: #eaedf1;
+  --bg-field: #ffffff;
   --bg: #f4f5f8;
   --bg2: #fcfcfd;
   --bg3: #ffffff;
   --bg-hover: color-mix(in srgb, var(--t1) 4.5%, transparent);
   --bg-active: color-mix(in srgb, var(--t1) 8%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 2.5%, var(--bg2)); /* alternate list rows on bg2 */
-  /* Lines on --bg: a row hairline 1.45:1, a surface edge 1.55:1, a group header's rule 2.0:1. */
-  --bd: color-mix(in srgb, var(--t1) 17%, transparent);
-  --bd-surface: color-mix(in srgb, var(--t1) 20%, transparent);
-  --bd-section: color-mix(in srgb, var(--t1) 32%, transparent);
+  /* Lines on --bg: a row hairline 1.7:1, a surface edge 1.85:1, a group header's rule 2.55:1. */
+  --bd: color-mix(in srgb, var(--t1) 24%, transparent);
+  --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
+  --bd-section: color-mix(in srgb, var(--t1) 40%, transparent);
   --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
   --bd-strong: #6f7887; /* 4.1 / 4.5, and 3.3 on bg-inset under bg-active */
 
   --t1: #12151b; /* 16.8 / 18.3 */
-  --t2: #474e5b; /* 7.7 / 8.4 */
-  --t3: #5c6473; /* 5.5 / 6.0, placeholders and counts */
+  --t2: #3c434f; /* 9.1 / 10.0 */
+  --t3: #4a5260; /* 7.2 / 7.9, placeholders and counts */
+  --t-disabled: #646c7c; /* 4.8 / 5.3, and 4.5 on --bg-inset: see the dark theme's note */
 
-  --blue: #1560c8; /* 5.3 / 5.9 */
-  --blue-hover: #0e4ba3; /* darker, not lighter: hover deepens in this theme */
-  --green: #157044;
-  --green-hover: #0f5a37; /* deepens on hover, like --blue-hover */
-  --yellow: #8a5d00;
-  --purple: #6b3fd4;
-  --red: #bd2b26;
-  --orange: #9a4f0d;
+  --blue: #1254b0; /* 6.6 / 7.2 */
+  --blue-hover: #0e4596; /* darker, not lighter: hover deepens in this theme */
+  --green: #10603a;
+  --green-hover: #0c4f2e; /* deepens on hover, like --blue-hover */
+  --yellow: #755000;
+  --purple: #5d33c0;
+  --red: #a8231f;
+  --orange: #85430a;
 
   /* Text on a solid accent fill (primary and success buttons). */
   --on-accent: #ffffff;
@@ -272,7 +281,7 @@ html { scroll-padding-top: 64px; }
 textarea, input, select {
   font-family: inherit;
   color: var(--t1);
-  background: var(--bg-inset);
+  background: var(--bg-field);
   border: 1px solid var(--bd-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow-inset);
@@ -281,6 +290,7 @@ textarea, input, select {
 }
 input[type='checkbox'], input[type='radio'] { box-shadow: none; }
 textarea:hover, input:hover, select:hover { border-color: var(--t3); }
+textarea:disabled, input:disabled, select:disabled { background: transparent; border-color: var(--bd-section); color: var(--t-disabled); box-shadow: none; }
 textarea:focus, input:focus, select:focus { border-color: var(--blue); }
 textarea:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--focus);
@@ -294,6 +304,19 @@ input[type='checkbox'], input[type='radio'] {
   height: 18px;
   cursor: pointer;
 }
+/* Unticked, the browser draws these dim on the dark theme, so they are drawn here. Ticked, they
+   stay the browser's own, in the accent colour. */
+input[type='checkbox']:not(:checked):not(:indeterminate), input[type='radio']:not(:checked) {
+  appearance: none;
+  flex-shrink: 0;
+  margin: 3px;
+  background: var(--bg-field);
+  border: 2px solid var(--bd-strong);
+}
+input[type='checkbox']:not(:checked):not(:indeterminate) { border-radius: 3px; }
+input[type='radio']:not(:checked) { border-radius: 50%; }
+input[type='checkbox']:not(:checked):not(:indeterminate):hover:not(:disabled), input[type='radio']:not(:checked):hover:not(:disabled) { border-color: var(--t3); }
+input[type='checkbox']:not(:checked):not(:indeterminate):disabled, input[type='radio']:not(:checked):disabled { background: transparent; border-color: var(--bd-section); cursor: default; }
 
 button { cursor: pointer; font-family: inherit; }
 button:disabled, .btn:disabled, [aria-disabled='true'] { cursor: not-allowed; }
@@ -448,8 +471,7 @@ kbd { color: var(--t1); }
 
 .progress-bar {
   height: 6px;
-  background: var(--bg-inset);
-  box-shadow: var(--shadow-inset);
+  background: var(--bd-surface);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -480,7 +502,8 @@ kbd { color: var(--t1); }
 }
 .btn:hover:not(:disabled) { background: var(--raised-hover); border-color: var(--t3); }
 .btn:active:not(:disabled) { box-shadow: var(--shadow-inset); }
-.btn:disabled { opacity: 0.55; box-shadow: none; }
+/* Flat and outlined whatever the button's kind, so a disabled primary is not a faded blue. */
+.btn:disabled { background: transparent; border-color: var(--bd-section); color: var(--t-disabled); box-shadow: none; }
 /* A filled button is one flat colour: no gradient, no lit edge, no glow. */
 .btn-primary {
   background: var(--blue);
@@ -515,6 +538,7 @@ kbd { color: var(--t1); }
   transition: background 0.15s, color 0.15s;
 }
 .btn-ghost:hover:not(:disabled) { color: var(--t1); background: var(--bg-hover); }
+.btn-ghost:disabled { border-color: transparent; }
 
 /* Hover and pressed feedback for menu items and toolbar buttons whose layout
    and resting background come from inline styles. !important is needed to
@@ -540,7 +564,7 @@ kbd { color: var(--t1); }
 }
 .icon-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--t1); }
 .icon-btn.is-danger:hover:not(:disabled) { background: var(--red-soft); color: var(--red); }
-.icon-btn:disabled { opacity: 0.55; }
+.icon-btn:disabled { color: var(--t-disabled); }
 
 .modal-backdrop {
   position: fixed;
@@ -816,7 +840,7 @@ kbd { color: var(--t1); }
   flex-shrink: 0;
 }
 .view-pop-reset:hover { background: var(--bg-hover); }
-.view-pop-reset:disabled { color: var(--t3); background: transparent; cursor: default; }
+.view-pop-reset:disabled { color: var(--t-disabled); background: transparent; cursor: default; }
 .view-pop-label { padding: 8px 14px 6px; font-size: 12px; color: var(--t2); }
 .view-pop-divided { margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--bd); }
 .view-pop-group > .sheet-chips { padding: 0 14px 4px; }
@@ -958,7 +982,7 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   background: transparent;
   border: none;
   border-bottom: 1px solid transparent;
-  color: var(--t3);
+  color: var(--t2);
   text-align: left;
   font-size: 14px;
   transition: background 0.12s, color 0.12s;
@@ -1517,24 +1541,20 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .panel-handoff { flex-shrink: 0; }
 }
 .panel-action-label { min-width: 0; overflow-wrap: break-word; }
-.panel-action:disabled { opacity: 0.55; }
-.panel-action:disabled:hover { background: transparent; color: var(--t2); }
+.panel-action:disabled, .panel-action:disabled:hover { background: transparent; color: var(--t-disabled); }
 @media (max-width: 640px) {
   .panel-action-label { display: none; }
 }
-/* Notes, as Asana's description: no frame at rest, only the text or its placeholder, with a hover
-   tint; the inset box and the focus ring while it is written in. It grows with its text
-   (useFitToText), so it never scrolls inside itself. The negative margin lines the text up with
-   the heading above it. */
+/* Notes: an inset box with a full-strength edge at rest, like the comment box, so it reads as a
+   place to write. It grows with its text (useFitToText), so it never scrolls inside itself. */
 .panel-notes {
   display: block;
   flex-shrink: 0;
-  width: calc(100% + 20px);
+  width: 100%;
   min-height: var(--target);
-  margin: 0 -10px;
-  padding: 10px;
-  background: transparent;
-  border: 1px solid transparent;
+  padding: 10px 14px;
+  background: var(--bg-field);
+  border: 1px solid var(--bd-strong);
   box-shadow: none;
   font-size: 14px;
   line-height: 1.5;
@@ -1543,13 +1563,10 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   overflow: hidden;
   overflow-wrap: anywhere;
 }
-/* Only where there is a real pointer: a phone keeps :hover after a tap, which would leave the
-   tint behind like a box. */
-@media (hover: hover) {
-  .panel-notes:hover { background: var(--bg-hover); }
-}
-.panel-notes:hover { border-color: transparent; }
-.panel-notes:focus { background: var(--bg-inset); border-color: var(--blue); box-shadow: var(--shadow-inset); }
+.panel-notes:hover { border-color: var(--t3); }
+.panel-notes:focus { background: var(--bg-field); border-color: var(--blue); box-shadow: var(--shadow-inset); }
+/* The two boxes are the panel's main places to write, so their prompts take the stronger text. */
+.panel-notes::placeholder, .panel-comment-input::placeholder { color: var(--t2); }
 /* A section heading with its count and add button on one line (Subtasks). */
 .panel-section-head {
   display: flex;
@@ -1595,7 +1612,7 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   box-shadow: none;
   font-size: 14px;
 }
-.subtask-add-input:focus { background: var(--bg-inset); border-color: var(--blue); }
+.subtask-add-input:focus { background: var(--bg-field); border-color: var(--blue); }
 /* The quiet Add subtask row at the end of the list. */
 .subtask-add-row {
   display: flex;
@@ -1615,7 +1632,7 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   transition: background 0.15s, color 0.15s;
 }
 .subtask-add-row:hover:not(:disabled) { background: var(--bg-hover); color: var(--t1); }
-.subtask-add-row:disabled { opacity: 0.55; cursor: default; }
+.subtask-add-row:disabled { color: var(--t-disabled); cursor: default; }
 
 /* GitHub repos (GithubTab.jsx): a table on a wide screen. On a phone each repo is a card, cells on
    their own lines and each switch beside its label, so no switch sits past the edge of a table
@@ -1672,12 +1689,14 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 }
 .goals-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .goals-summary { color: var(--t2); font-size: 14px; margin-left: 4px; }
-.btn[aria-pressed='true'] {
-  background: var(--bg-selected);
+/* Solid, as a pressed calendar day or repeat day is: a tint beside an unpressed button was hard to tell apart. */
+.btn[aria-pressed='true']:not(:disabled) {
+  background: var(--blue);
   border-color: var(--blue);
-  color: var(--t1);
-  box-shadow: var(--shadow-inset);
+  color: var(--on-accent);
+  box-shadow: none;
 }
+.btn[aria-pressed='true']:hover:not(:disabled) { background: var(--blue-hover); border-color: var(--blue-hover); }
 .goal-vision { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px; }
 .goal-vision-text { color: var(--t1); font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
 .goal-import { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-color: var(--blue); }
@@ -1978,8 +1997,8 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   min-height: var(--target);
   resize: none;
   padding: 10px 12px;
-  background: var(--bg-inset);
-  border: 1px solid var(--bd);
+  background: var(--bg-field);
+  border: 1px solid var(--bd-strong);
   border-radius: var(--radius);
   color: var(--t1);
   font: inherit;
@@ -2062,6 +2081,8 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   /* With the New task button over the bottom right, the last row must be able to scroll clear of
      it, not just of the tab bar: the button's bottom offset, its height, and a gap. */
   .app-main-full:has(.fab) { padding-bottom: calc(80px + 56px + 16px + env(safe-area-inset-bottom)); }
+  /* The Add task row is scrolled to as it moves down, and stops clear of the bar and the button. */
+  .inline-add-row { scroll-margin-bottom: calc(80px + 56px + 16px + env(safe-area-inset-bottom)); }
 
   .mytasks-toolbar-add { display: none; }
   .fab {
