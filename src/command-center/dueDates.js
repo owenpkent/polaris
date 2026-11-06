@@ -187,3 +187,16 @@ export function formatDueShort(dueAt, locale) {
   const t = dueTimeOnly(dueAt)
   return t ? `${date}, ${formatTime(t, locale)}` : date
 }
+
+// The query for the tasks finished today (local midnight to the next), for the Today group's
+// progress. `now` is injectable for tests.
+export function doneTodayQuery(now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  return { status: 'done', completedAfter: start.toISOString(), completedBefore: end.toISOString(), limit: 1000 }
+}
+
+// How many of those finished tasks were due today: the "done" half of the Today group's progress.
+export function countDoneToday(doneTasks, bounds) {
+  return (doneTasks || []).filter((t) => t.status === 'done' && !t.parentId && bucketForTask(t, bounds) === 'today').length
+}

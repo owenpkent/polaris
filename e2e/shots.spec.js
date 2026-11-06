@@ -144,6 +144,37 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // The Today header's progress: tasks finished today beside the open ones, and with no
+  // open task due today at all ("All clear"). The lists are routed so the seeded tasks stay as they are.
+  const seededToday = () => {
+    const d = new Date(process.env.CC_UI_SEED_TIME)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const finishedToday = (n) => Array.from({ length: n }, (_, i) => ({ id: `shot-done-${i}`, title: `Finished ${i}`, status: 'done', priority: 'none', dueAt: seededToday(), projectId: null }))
+  const routeTodayLists = async (page, { done, openLeft }) => {
+    await page.route('**/api/tasks?*', async (route) => {
+      const url = route.request().url()
+      if (route.request().method() !== 'GET') return route.fallback()
+      if (url.includes('status=done')) return route.fulfill({ json: { tasks: finishedToday(done) } })
+      if (!openLeft && url.includes('status=open')) return route.fulfill({ json: { tasks: [] } })
+      return route.fallback()
+    })
+  }
+
+  test('mytasks: today progress', async ({ page }, testInfo) => {
+    await routeTodayLists(page, { done: 3, openLeft: true })
+    await openView(page)
+    await expect(page.locator('[data-reorder-group="today"]').getByText('3 done')).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'today-progress')
+  })
+
+  test('mytasks: today all clear', async ({ page }, testInfo) => {
+    await routeTodayLists(page, { done: 3, openLeft: false })
+    await openView(page)
+    await expect(page.getByText('All clear')).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'today-all-clear')
+  })
+
   // A row with its name being edited in place.
   test('mytasks: rename', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'rename shot')

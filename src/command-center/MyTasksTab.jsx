@@ -15,7 +15,7 @@ import InlineTaskInput from './InlineTaskInput'
 import NewTaskSheet from './NewTaskSheet'
 import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
-import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
+import { getDueBounds, doneTodayQuery, countDoneToday, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
 import DueDateMenu from './DueDateMenu'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
 import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
@@ -80,6 +80,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
   const [tasks, setTasks] = useState([])
+  const [doneToday, setDoneToday] = useState(0) // tasks due today that were finished today
   const [projects, setProjects] = useState([])
   const [goals, setGoals] = useState([])
   const [goalsLoaded, setGoalsLoaded] = useState(false)
@@ -175,8 +176,16 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     const isCurrent = beginRequest()
     setError(null)
     try {
-      const res = await api.listTasks(MY_TASKS_QUERY)
-      if (isCurrent()) setTasks(withPendingPositions(res.tasks || []))
+      // The done-today count is a nicety: if it cannot be read, the list still loads and the
+      // count stays as it was.
+      const [res, done] = await Promise.all([
+        api.listTasks(MY_TASKS_QUERY),
+        Promise.resolve().then(() => api.listDoneToday(doneTodayQuery())).catch(() => null),
+      ])
+      if (isCurrent()) {
+        setTasks(withPendingPositions(res.tasks || []))
+        if (done) setDoneToday(countDoneToday(done.tasks, getDueBounds()))
+      }
     } catch (err) {
       if (isCurrent()) setError(err.message || 'Could not load tasks.')
     } finally {
@@ -607,6 +616,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             onToggleCollapse={() => toggleGroup('due', g.id)}
             {...commonRowProps}
             addRow={addRow}
+            progress={g.id === 'today' ? { done: doneToday } : null}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
             onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}
             onSubmitInlineAdd={submitInlineAdd}

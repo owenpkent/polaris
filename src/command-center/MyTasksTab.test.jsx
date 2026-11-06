@@ -816,3 +816,39 @@ describe('MyTasksTab Add task keeps new tasks just above the row until it closes
     expect(titles()).toEqual(['Open Second', 'Open First', 'Open Was here'])
   })
 })
+
+describe('MyTasksTab Today progress', () => {
+  const todayIso = () => getDueBounds().today
+  const open = (id) => ({ id, title: `Open ${id}`, status: 'open', priority: 'none', dueAt: todayIso(), projectId: null })
+  const finished = (id) => ({ id, title: `Done ${id}`, status: 'done', priority: 'none', dueAt: todayIso(), projectId: null })
+
+  test('Today reads "n left" and "m done", from the tasks finished today, with no bar', async () => {
+    stubMatchMedia(1280)
+    api.listTasks.mockResolvedValue({ tasks: [open('a'), open('b')] })
+    api.listDoneToday = vi.fn().mockResolvedValue({ tasks: [finished('c')] })
+    render(<MyTasksTab />)
+    expect(await screen.findByText('2 left')).toBeTruthy()
+    expect(await screen.findByText('1 done')).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    const query = api.listDoneToday.mock.calls[0][0]
+    expect(query.status).toBe('done')
+    expect(query.completedAfter).toBeTruthy()
+  })
+
+  test('Today with nothing left says All clear', async () => {
+    stubMatchMedia(1280)
+    api.listDoneToday = vi.fn().mockResolvedValue({ tasks: [finished('c')] })
+    render(<MyTasksTab />)
+    expect(await screen.findByText('All clear')).toBeTruthy()
+    expect(screen.getByText('1 done')).toBeTruthy()
+  })
+
+  test('the list still loads when the done-today read fails', async () => {
+    stubMatchMedia(1280)
+    api.listTasks.mockResolvedValue({ tasks: [open('a')] })
+    api.listDoneToday = vi.fn().mockRejectedValue(new Error('down'))
+    render(<MyTasksTab />)
+    expect(await screen.findByText('1 left')).toBeTruthy()
+    expect(screen.queryByText(/ done$/)).toBeNull()
+  })
+})

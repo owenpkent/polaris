@@ -839,3 +839,21 @@ test('GET /api/tasks reads dueAfter and dueBefore as a due is stored, so the val
     assert.ok(ids(later).includes(created.json.task.id));
   });
 });
+
+test('GET /api/tasks reads completedAfter and completedBefore as the bounds of when a task was finished', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    const made = await api(base, 'POST', '/api/tasks', { title: 'Finish me' });
+    const other = await api(base, 'POST', '/api/tasks', { title: 'Leave me open' });
+    assert.equal((await api(base, 'POST', `/api/tasks/${made.json.task.id}/complete`, {})).status, 200);
+    const ids = (r: { json: { tasks: { id: string }[] } }) => r.json.tasks.map((x) => x.id);
+    const past = encodeURIComponent('2000-01-01T00:00:00Z');
+    const future = encodeURIComponent('2999-01-01T00:00:00Z');
+    const since = await api(base, 'GET', `/api/tasks?status=done&completedAfter=${past}&completedBefore=${future}`);
+    assert.deepEqual(ids(since), [made.json.task.id]);
+    assert.ok(!ids(since).includes(other.json.task.id));
+    assert.deepEqual(ids(await api(base, 'GET', `/api/tasks?status=done&completedAfter=${future}`)), []);
+    assert.deepEqual(ids(await api(base, 'GET', `/api/tasks?status=done&completedBefore=${past}`)), []);
+  });
+});

@@ -100,6 +100,13 @@ function taskFilterFromQuery(store: Store, url: URL): TaskFilter {
   const dueAfter = q.get('dueAfter');
   if (dueAfter) filter.dueAfter = dueAfter;
 
+  // Read-only bounds on when a task was finished (the My tasks "done today" count).
+  const completedAfter = q.get('completedAfter');
+  if (completedAfter) filter.completedAfter = completedAfter;
+
+  const completedBefore = q.get('completedBefore');
+  if (completedBefore) filter.completedBefore = completedBefore;
+
   const blocked = parseBoolParam(q.get('blocked'), 'blocked');
   if (blocked !== undefined) filter.blocked = blocked;
 
