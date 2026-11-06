@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
-import { Minus, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Minus, Plus, X } from 'lucide-react'
 import { useOffline } from './offlineStatus'
+import { repeatLabel } from './dueDates'
 import {
   WEEKDAYS, WEEKDAY_NAMES, NTH_NAMES, MAX_INTERVAL, MAX_COUNT, UNITS,
   buildRule, defaultShape, parseRule, frequencyOf, frequencyRule,
@@ -34,6 +35,21 @@ export function useRecurrencePreview(api, rule, from, count = 3) {
   return dates
 }
 
+function formatLong(iso) {
+  const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// What the settings behind More options say, in words, so closing them hides nothing: where the
+// next date counts from, and when the rule ends.
+export function moreOptionsSummary(shape) {
+  const from = shape.fromCompletion ? 'the day you finish it' : 'the due date'
+  let ends = 'never ends'
+  if (shape.ends === 'on') ends = `ends on ${formatLong(shape.until)}`
+  else if (shape.ends === 'after') ends = `ends after ${shape.count} ${shape.count === 1 ? 'time' : 'times'}`
+  return `Counts from ${from}, ${ends}`
+}
+
 // The preview line. A rule counted from the finish has no fixed next dates, so its preview says
 // what they would be if each one were finished on the day it is due.
 export function previewText(dates, fromCompletion = false) {
@@ -63,6 +79,11 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   const [shape, setShape] = useState(() => parseRule(value, dueIso) || defaultShape(dueIso))
   const fetched = useRecurrencePreview(preview === undefined ? api : null, value, dueIso)
   const dates = preview === undefined ? fetched : preview
+  // Counts from and Ends sit behind More options, closed until asked for, and stay open for as long
+  // as this editor does.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreId = `${uid}-more`
+  const summary = compact ? null : repeatLabel(value)
 
   // A rule changed from outside (the task reloaded) is shown; one this builder just wrote is not
   // parsed back, so a half-made choice (no weekday picked yet) is not snapped back.
@@ -89,8 +110,19 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
   // Laid out as Asana lays its repeat out under the month: each row a label on the left and its
   // controls beside it, wrapping under the label only where the two do not fit. A plain choice
   // (compact) has no Every row: its interval is one, and a rule with more is Custom.
+  const previewLine = (preview !== undefined || api?.previewRecurrence) && (
+    <p className="repeat-preview" role={previewText(dates, shape.fromCompletion) ? 'status' : undefined}>
+      {previewText(dates, shape.fromCompletion)}
+    </p>
+  )
   return (
     <div className="repeat-builder">
+      {!compact && (
+        <div className="repeat-head">
+          {summary && <p className="repeat-summary">{`Repeats ${summary}`}</p>}
+          {previewLine}
+        </div>
+      )}
       {(!compact || shape.fromCompletion) && (
       <div className="repeat-row">
         <span className="field-label repeat-label" id={`${uid}-every`}>Every</span>
@@ -135,22 +167,6 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
         )}
         </div>
       </div>
-      )}
-
-      {!compact && (
-      <fieldset className="repeat-row repeat-set">
-        <legend className="field-label repeat-label">Counts from</legend>
-        <div className="repeat-controls">
-          <label className="repeat-choice">
-            <input type="radio" name={`${uid}-from`} checked={!shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: false })} />
-            <span>The due date</span>
-          </label>
-          <label className="repeat-choice">
-            <input type="radio" name={`${uid}-from`} checked={shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: true })} />
-            <span>The day I finish it</span>
-          </label>
-        </div>
-      </fieldset>
       )}
 
       {shape.fromCompletion && (
@@ -229,48 +245,74 @@ export default function RepeatBuilder({ value, dueIso, onChange, api, disabled =
       )}
 
       {!compact && (
-      <fieldset className="repeat-row repeat-set">
-        <legend className="field-label repeat-label">Ends</legend>
-        <div className="repeat-controls">
-        <label className="repeat-choice">
-          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'never'} disabled={disabled} onChange={() => update({ ends: 'never' })} />
-          <span>Never</span>
-        </label>
-        <label className="repeat-choice">
-          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'on'} disabled={disabled} onChange={() => update({ ends: 'on' })} />
-          <span>On</span>
-          <input
-            type="date"
-            aria-label="End date"
-            value={shape.until}
-            min={dueIso || undefined}
-            disabled={disabled}
-            // A cleared box keeps the last date: an end with no date would silently mean never.
-            onChange={(e) => { if (e.target.value) update({ ends: 'on', until: e.target.value }) }}
-          />
-        </label>
-        <label className="repeat-choice">
-          <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'after'} disabled={disabled} onChange={() => update({ ends: 'after' })} />
-          <span>After</span>
-          <select
-            aria-label="Number of times"
-            value={shape.count}
-            disabled={disabled}
-            onChange={(e) => update({ ends: 'after', count: Number(e.target.value) })}
+        <div className="repeat-more">
+          <button
+            type="button"
+            className="repeat-more-btn"
+            aria-expanded={moreOpen}
+            aria-controls={moreId}
+            onClick={() => setMoreOpen((v) => !v)}
           >
-            {countOptions.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <span>{shape.count === 1 ? 'time' : 'times'}</span>
-        </label>
-        </div>
-      </fieldset>
-      )}
+            {moreOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+            <span className="repeat-more-text">
+              <span className="repeat-more-title">More options</span>
+              <span className="repeat-more-summary">{moreOptionsSummary(shape)}</span>
+            </span>
+          </button>
+          <div id={moreId} className="repeat-more-body" hidden={!moreOpen}>
+          <fieldset className="repeat-row repeat-set">
+            <legend className="field-label repeat-label">Counts from</legend>
+            <div className="repeat-controls repeat-stack">
+              <label className="repeat-choice">
+                <input type="radio" name={`${uid}-from`} checked={!shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: false })} />
+                <span>The due date</span>
+              </label>
+              <label className="repeat-choice">
+                <input type="radio" name={`${uid}-from`} checked={shape.fromCompletion} disabled={disabled} onChange={() => update({ fromCompletion: true })} />
+                <span>The day I finish it</span>
+              </label>
+            </div>
+          </fieldset>
 
-      {(preview !== undefined || api?.previewRecurrence) && (
-        <p className="repeat-preview" role={previewText(dates, shape.fromCompletion) ? 'status' : undefined}>
-          {previewText(dates, shape.fromCompletion)}
-        </p>
+          <fieldset className="repeat-row repeat-set">
+            <legend className="field-label repeat-label">Ends</legend>
+            <div className="repeat-controls repeat-stack">
+            <label className="repeat-choice">
+              <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'never'} disabled={disabled} onChange={() => update({ ends: 'never' })} />
+              <span>Never</span>
+            </label>
+            <label className="repeat-choice">
+              <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'on'} disabled={disabled} onChange={() => update({ ends: 'on' })} />
+              <span>On</span>
+              <input
+                type="date"
+                aria-label="End date"
+                value={shape.until}
+                min={dueIso || undefined}
+                disabled={disabled}
+                // A cleared box keeps the last date: an end with no date would silently mean never.
+                onChange={(e) => { if (e.target.value) update({ ends: 'on', until: e.target.value }) }}
+              />
+            </label>
+            <label className="repeat-choice">
+              <input type="radio" name={`${uid}-ends`} checked={shape.ends === 'after'} disabled={disabled} onChange={() => update({ ends: 'after' })} />
+              <span>After</span>
+              <select
+                aria-label="Number of times"
+                value={shape.count}
+                disabled={disabled}
+                onChange={(e) => update({ ends: 'after', count: Number(e.target.value) })}
+              >
+                {countOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span>{shape.count === 1 ? 'time' : 'times'}</span>
+            </label>
+            </div>
+          </fieldset>
+          </div>
+        </div>
       )}
+      {compact && previewLine}
     </div>
   )
 }

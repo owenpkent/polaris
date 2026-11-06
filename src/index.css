@@ -140,6 +140,19 @@
   --row-head: var(--target);
   --row-pad: 10px; /* above and below a phone row's name, which wraps and so sets the row's height */
   --section-gap: 20px;
+
+  /* Spacing: one scale and four roles (CONTRIBUTING.md, Visual system > Spacing). New or changed
+     rules take margins, gaps, and padding from these, not raw pixel values. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --gap-inline: var(--space-2); /* between controls in one row */
+  --gap-field: var(--space-4); /* between the rows of a form */
+  --gap-group: var(--space-5); /* between groups, with a divider or a heading */
+  --pad-panel: var(--space-4); /* inside a popover, panel, or card */
 }
 :root[data-density='compact'] {
   --row: 32px;
@@ -2400,18 +2413,18 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 .inline-add-due { flex: 0 1 auto; gap: 6px; min-width: 0; max-width: 100%; padding-left: 0.75rem; padding-right: 0.75rem; text-align: left; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
-.repeat-inline { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }
-.repeat-builder { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.repeat-inline { margin: var(--space-1) 0 var(--space-3); padding: var(--pad-panel); border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }
+.repeat-builder { display: flex; flex-direction: column; gap: var(--gap-field); margin-top: var(--gap-inline); }
 /* One row per setting, as Asana's repeat reads: the label on the left, its controls beside it.
    Where the two do not fit (a phone, or the weekdays in a narrow box) the controls go under the
    label. A fieldset's legend is floated so it lays out as the row's first item. */
-.repeat-row { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 12px; row-gap: 0; min-width: 0; }
+.repeat-row { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: var(--gap-inline); row-gap: 0; min-width: 0; }
 .repeat-set { margin: 0; padding: 0; border: none; min-width: 0; }
 .repeat-set > legend { float: left; padding: 0; }
 .repeat-label { flex: 0 0 6rem; display: flex; align-items: center; min-height: var(--target); margin: 0; }
 .repeat-builder .field-label, .repeat-picker .field-label { font-size: 0.85rem; color: var(--t2); font-weight: 500; }
-/* Wrapped lines of controls keep 6px apart, room for the 2px focus ring and its 2px offset. */
-.repeat-controls { flex: 1 1 12rem; display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 6px; min-width: 0; }
+/* Wrapped lines of controls keep a gap apart, room for the 2px focus ring and its 2px offset. */
+.repeat-controls { flex: 1 1 12rem; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--gap-inline); row-gap: var(--gap-inline); min-width: 0; }
 .repeat-stack { flex-direction: column; align-items: flex-start; }
 .repeat-builder select, .field .repeat-builder select { width: auto; min-width: var(--target); min-height: var(--target); }
 .repeat-builder input[type='date'], .field .repeat-builder input[type='date'] { width: auto; max-width: 100%; min-width: 0; min-height: var(--target); padding: 0 12px; }
@@ -2448,6 +2461,20 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 /* One line high while empty, so the dates arriving do not grow the builder (RepeatBuilder.jsx). */
 .repeat-preview { margin: 0; min-height: 1lh; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
 .repeat-note { margin: 0; font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+/* The summary of the rule and its next dates, on top of the custom editor. */
+.repeat-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.repeat-summary { margin: 0; font-size: 1rem; font-weight: 600; color: var(--t1); overflow-wrap: anywhere; }
+/* Counts from and Ends, behind a full-width button that names their values (RepeatBuilder.jsx).
+   The group gap above and a hairline set the section apart from the rows over it. */
+.repeat-more { margin-top: calc(var(--gap-group) - var(--gap-field)); padding-top: var(--gap-inline); border-top: 1px solid var(--bd); min-width: 0; }
+.repeat-more-btn { display: flex; align-items: center; gap: var(--gap-inline); width: 100%; min-height: var(--target); padding: 0 var(--space-2); border: none; border-radius: var(--radius); background: transparent; color: var(--t1); font: inherit; text-align: start; cursor: pointer; }
+.repeat-more-btn:hover { background: var(--bg-hover); }
+.repeat-more-btn > svg { flex: 0 0 auto; color: var(--t2); }
+.repeat-more-text { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.repeat-more-title { font-size: 0.9rem; font-weight: 500; }
+.repeat-more-summary { font-size: 0.85rem; color: var(--t2); overflow-wrap: anywhere; }
+.repeat-more-body { display: flex; flex-direction: column; gap: var(--gap-field); padding-top: var(--gap-inline); }
+.repeat-more-body[hidden] { display: none; }
 
 @media (max-width: 640px) {
   .sheet {

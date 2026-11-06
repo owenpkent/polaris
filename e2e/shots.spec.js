@@ -341,6 +341,21 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'task', 'custom-repeat')
   })
 
+  // The same editor with More options open: Counts from and Ends under the hairline.
+  test('task: custom repeat with more options', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'custom repeat more', { recurrence: 'FREQ=WEEKLY;BYDAY=MO,TH' })
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: /^Repeat, / }).click()
+    await page.getByRole('menuitemradio', { name: 'Custom' }).click()
+    const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await expect(builder.getByRole('status')).toHaveText(/^Next: /)
+    await builder.getByRole('button', { name: /^More options/ }).click()
+    await expect(builder.getByRole('group', { name: 'Ends' })).toBeVisible()
+    await shot(page, testInfo, 'task', 'custom-repeat-more')
+  })
+
   // The Repeat menu's quick picks, worded from a Wednesday, October 13 due date. The task is due a
   // year out, in the Later group that starts collapsed, so the list shots that follow never show it.
   test('task: repeat menu', async ({ page, request }, testInfo) => {
@@ -364,6 +379,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await panel.getByRole('button', { name: /^Repeat, / }).click()
     await page.getByRole('menuitemradio', { name: 'Custom' }).click()
     const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await builder.getByRole('button', { name: /^More options/ }).click()
     await expect(builder.getByRole('radio', { name: 'The day I finish it' })).toBeChecked()
     await expect(builder.getByRole('status')).toHaveText(/^If each is finished on its due date, next: /)
     await builder.getByRole('group', { name: 'Ends' }).scrollIntoViewIfNeeded()

@@ -127,6 +127,8 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await panel.getByRole('button', { name: /^Repeat, weekly/ }).click()
     await page.getByRole('menuitemradio', { name: 'Custom' }).click()
     const builder = page.getByRole('group', { name: 'Custom repeat' })
+    await expect(builder.getByRole('radio', { name: 'The day I finish it' })).toHaveCount(0)
+    await builder.getByRole('button', { name: /^More options/ }).click()
     expect(await smallTargets(builder, 'button, select, input[type="date"]')).toEqual([])
 
     await builder.getByRole('radio', { name: 'The day I finish it' }).check()
@@ -134,6 +136,7 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await expect(builder.getByRole('button', { name: 'Monday' })).toHaveCount(0)
     await builder.getByRole('combobox', { name: 'Number of times' }).selectOption('3')
     await expect(builder.getByRole('radio', { name: /^After/ })).toBeChecked()
+    await expect(builder.getByRole('button', { name: /^More options/ })).toContainText('Counts from the day you finish it, ends after 3 times')
     await builder.getByRole('button', { name: 'Save' }).click()
 
     await expect(panel.getByRole('button', { name: 'Repeat, weekly after you finish it, 2 more after this' })).toBeVisible()
@@ -154,6 +157,10 @@ test.describe('Repeating tasks', { tag: ['@flow'] }, () => {
     await panel.getByRole('button', { name: /^Repeat, daily/ }).click()
     await page.getByRole('menuitemradio', { name: 'Custom' }).click()
     const builder = page.getByRole('group', { name: 'Custom repeat' })
+    const more = builder.getByRole('button', { name: /^More options/ })
+    await more.focus()
+    await page.keyboard.press('Enter')
+    await expect(more).toHaveAttribute('aria-expanded', 'true')
     const never = builder.getByRole('radio', { name: 'Never' })
     await never.focus()
     await page.keyboard.press('ArrowDown')
