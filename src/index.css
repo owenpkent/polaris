@@ -2169,7 +2169,9 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   bottom: 24px;
   z-index: 50;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   pointer-events: none;
 }
 .undo-toast {
@@ -2204,7 +2206,7 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .undo-toast-region {
     right: 80px;
     bottom: calc(80px + env(safe-area-inset-bottom));
-    justify-content: flex-start;
+    align-items: flex-start;
   }
   .undo-toast { max-width: 100%; }
 }

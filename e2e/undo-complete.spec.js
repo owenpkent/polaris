@@ -24,9 +24,12 @@ test.describe('completing a task shows an undoable toast', { tag: ['@flow'] }, (
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
     const undo = page.getByRole('button', { name: `Undo completing ${title}` })
     await undo.hover() // holds the toast's timer while the page changes
-    await openNavigation(page, testInfo)
-    await page.getByRole('button', { name: 'Goals', exact: true }).click()
-    await expect(undo).toBeVisible()
+    const nav = await openNavigation(page, testInfo)
+    const goals = nav.getByRole('button', { name: 'Goals', exact: true })
+    // Secondary views sit behind More in the phone's drawer.
+    if (!(await goals.isVisible())) await nav.getByRole('button', { name: 'More' }).click()
+    await goals.click()
+    await undo.hover()
 
     const reopen = /\/api\/tasks\/[^/]+\/reopen$/
     await page.route(reopen, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))

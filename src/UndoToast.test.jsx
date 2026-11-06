@@ -48,6 +48,69 @@ describe('UndoToast', () => {
     expect(screen.getByRole('status').textContent).toBe('')
   })
 
+  describe('a reopen that fails after another task was completed', () => {
+    function deferred() {
+      let reject
+      const promise = new Promise((_resolve, rej) => { reject = rej })
+      return { promise, reject }
+    }
+    const later = (name) => screen.getByRole('button', { name: `Undo completing ${name}` })
+
+    test('a failed Undo leaves the newer toast and its Undo, each on its own terms', async () => {
+      const first = deferred()
+      const newer = vi.fn()
+      render(<UndoToast />)
+      act(() => showCompleted('Task A', () => first.promise))
+      fireEvent.click(later('Task A'))
+      act(() => showCompleted('Task B', newer))
+      await act(async () => { first.reject(new Error('down')) })
+
+      expect(screen.getByRole('status').textContent).toContain('Could not reopen Task A')
+      expect(later('Task B')).toBeTruthy()
+      // The newer toast still runs out, and the failure stays until the owner chooses.
+      act(() => { vi.advanceTimersByTime(TOAST_MS + 100) })
+      expect(screen.queryByRole('button', { name: 'Undo completing Task B' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Retry reopening Task A' })).toBeTruthy()
+    })
+
+    test('a failed Retry leaves the newer toast too', async () => {
+      const retried = deferred()
+      const undo = vi.fn().mockRejectedValueOnce(new Error('down')).mockReturnValueOnce(retried.promise)
+      const newer = vi.fn()
+      render(<UndoToast />)
+      act(() => showCompleted('Task A', undo))
+      await act(async () => { fireEvent.click(later('Task A')) })
+      fireEvent.click(screen.getByRole('button', { name: 'Retry reopening Task A' }))
+      act(() => showCompleted('Task B', newer))
+      await act(async () => { retried.reject(new Error('down')) })
+
+      fireEvent.click(later('Task B'))
+      expect(newer).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Retry reopening Task A' })).toBeTruthy()
+    })
+
+    test('the failure shows above the newer toast, which does not move', async () => {
+      const first = deferred()
+      render(<UndoToast />)
+      act(() => showCompleted('Task A', () => first.promise))
+      fireEvent.click(later('Task A'))
+      act(() => showCompleted('Task B', () => {}))
+      await act(async () => { first.reject(new Error('down')) })
+      const retry = screen.getByRole('button', { name: 'Retry reopening Task A' })
+      expect(retry.compareDocumentPosition(later('Task B')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    test('two failures both stay', async () => {
+      render(<UndoToast />)
+      act(() => showCompleted('Task A', () => Promise.reject(new Error('down'))))
+      await act(async () => { fireEvent.click(later('Task A')) })
+      act(() => showCompleted('Task B', () => Promise.reject(new Error('down'))))
+      await act(async () => { fireEvent.click(later('Task B')) })
+      expect(screen.getByRole('button', { name: 'Retry reopening Task A' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Retry reopening Task B' })).toBeTruthy()
+    })
+  })
+
   test('a failed Undo can be dismissed', async () => {
     render(<UndoToast />)
     act(() => showCompleted('Pay rent', () => Promise.reject(new Error('down'))))

@@ -758,6 +758,8 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
 
   test('a failed Undo shows whole, with Retry and Dismiss', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    // The toast slides in, and a focus ring measured during that would be measured in the wrong place.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await openView(page)
     await page.route(/\/api\/tasks\/[^/]+\/reopen$/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
