@@ -197,6 +197,7 @@ export function doneTodayQuery(now = new Date()) {
 }
 
 // How many of those finished tasks were due today: the "done" half of the Today group's progress.
+// A subtask counts, since it has its own row in the group and so its own place in the "left" half.
 export function countDoneToday(doneTasks, bounds) {
-  return (doneTasks || []).filter((t) => t.status === 'done' && !t.parentId && bucketForTask(t, bounds) === 'today').length
+  return (doneTasks || []).filter((t) => t.status === 'done' && bucketForTask(t, bounds) === 'today').length
 }

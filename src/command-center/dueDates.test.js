@@ -441,7 +441,7 @@ describe('done today', () => {
     expect(q.completedBefore).toBe(new Date(2026, 8, 19).toISOString())
   })
 
-  test('counts finished top-level tasks that were due today only', () => {
+  test('counts finished tasks and subtasks that were due today only', () => {
     const bounds = getDueBounds(new Date(2026, 8, 18))
     const done = [
       { status: 'done', dueAt: '2026-09-18' },
@@ -451,7 +451,7 @@ describe('done today', () => {
       { status: 'done', dueAt: '2026-09-18', parentId: 'p' },
       { status: 'open', dueAt: '2026-09-18' },
     ]
-    expect(countDoneToday(done, bounds)).toBe(2)
+    expect(countDoneToday(done, bounds)).toBe(3)
     expect(countDoneToday(undefined, bounds)).toBe(0)
   })
 })

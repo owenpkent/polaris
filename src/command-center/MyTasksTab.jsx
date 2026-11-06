@@ -80,7 +80,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
   const [tasks, setTasks] = useState([])
-  const [doneToday, setDoneToday] = useState(0) // tasks due today that were finished today
+  const [doneTasks, setDoneTasks] = useState([]) // tasks finished today, for the Today group's "done"
   const [projects, setProjects] = useState([])
   const [goals, setGoals] = useState([])
   const [goalsLoaded, setGoalsLoaded] = useState(false)
@@ -184,7 +184,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       ])
       if (isCurrent()) {
         setTasks(withPendingPositions(res.tasks || []))
-        if (done) setDoneToday(countDoneToday(done.tasks, getDueBounds()))
+        if (done) setDoneTasks(done.tasks || [])
       }
     } catch (err) {
       if (isCurrent()) setError(err.message || 'Could not load tasks.')
@@ -561,6 +561,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     ? tasks.map((t) => (t.id === pendingMove.task.id ? { ...t, dueAt: pendingMove.dueAt, position: pendingMove.plan.updates.find((u) => u.id === t.id)?.position ?? t.position } : t))
     : tasks
   const filteredTasks = applyFilters(shownTasks, view.filters, goalWork, states)
+  // Through the same filters as the list, so "left" and "done" count the same tasks. Ready and
+  // Blocked hold only unfinished tasks, so with one of them chosen nothing counts as done.
+  const doneToday = countDoneToday(applyFilters(doneTasks, view.filters, goalWork, states), dueBounds)
   const allSorted = sortTasks(filteredTasks, view.sort, projectNameById)
   // The tasks added from the open row come out of the sort and go just above it, in the order they
   // were typed, even a task dated for another group. A row hidden by a change of grouping holds nothing.

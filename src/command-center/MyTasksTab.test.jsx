@@ -843,6 +843,53 @@ describe('MyTasksTab Today progress', () => {
     expect(screen.getByText('1 done')).toBeTruthy()
   })
 
+  test('a finished subtask counts, and keeps Today on the page to say All clear', async () => {
+    stubMatchMedia(1280)
+    api.listTasks.mockResolvedValue({ tasks: [] })
+    api.listDoneToday = vi.fn().mockResolvedValue({ tasks: [{ ...finished('s'), parentId: 'p' }] })
+    render(<MyTasksTab />)
+    expect(await screen.findByText('All clear')).toBeTruthy()
+    expect(screen.getByText('1 done')).toBeTruthy()
+  })
+
+  describe('with a project filter on', () => {
+    const inProject = (task, projectId) => ({ ...task, projectId })
+    const filterTo = (projectId) => localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({
+      sort: { field: 'due', dir: 'asc' },
+      group: 'due',
+      filters: { projectIds: [projectId], priorities: [], sources: [], goalIds: [] },
+    }))
+    afterEach(() => localStorage.clear())
+    beforeEach(() => {
+      stubMatchMedia(1280)
+      api.listTasks.mockResolvedValue({ tasks: [inProject(open('a'), 'A')] })
+      api.listDoneToday = vi.fn().mockResolvedValue({ tasks: [inProject(finished('b'), 'B')] })
+    })
+
+    test('a task finished in another project is not counted', async () => {
+      filterTo('A')
+      render(<MyTasksTab />)
+      expect(await screen.findByText('1 left')).toBeTruthy()
+      await waitFor(() => expect(api.listDoneToday).toHaveBeenCalled())
+      expect(screen.queryByText(/\d+ done$/)).toBeNull()
+    })
+
+    test('the filtered project counts its own', async () => {
+      filterTo('B')
+      render(<MyTasksTab />)
+      expect(await screen.findByText('All clear')).toBeTruthy()
+      expect(screen.getByText('1 done')).toBeTruthy()
+    })
+
+    test('a filter that matches nothing finished leaves an empty Today hidden', async () => {
+      filterTo('C')
+      render(<MyTasksTab />)
+      await waitFor(() => expect(api.listDoneToday).toHaveBeenCalled())
+      await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
+      expect(screen.queryByText('All clear')).toBeNull()
+    })
+  })
+
   test('an empty Today with nothing finished today stays hidden', async () => {
     stubMatchMedia(1280)
     api.listTasks.mockResolvedValue({ tasks: [] })
