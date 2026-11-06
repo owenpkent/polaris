@@ -20,6 +20,8 @@ import BottomNav from './BottomNav'
 import OfflineBanner from './OfflineBanner'
 import JobWarningsBanner from './JobWarningsBanner'
 import ChatPanelMockup from './command-center/ChatPanelMockup'
+import SearchDialog from './command-center/SearchDialog'
+import { inTextField } from './command-center/Menu'
 import { useTheme } from './theme'
 import { useDensity } from './density'
 import { parseShareParams, stripShareParams } from './command-center/shareIntake'
@@ -117,6 +119,29 @@ export default function App() {
     setBoardProject(id)
     setTab('board')
   }, [])
+  // Search is a dialog over whichever view is open (SearchDialog.jsx). A result opens on My
+  // tasks the way a tapped reminder does, and closing without one gives focus back to the button.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchButtonRef = useRef(null)
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false)
+    searchButtonRef.current?.focus()
+  }, [])
+  const openFoundTask = useCallback((taskId) => {
+    setSearchOpen(false)
+    setPendingTaskId(taskId)
+    setTab(DEFAULT_TAB)
+  }, [])
+  // `/` opens it from anywhere, except while typing in a field, where it is a character.
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || inTextField(e.target)) return
+      e.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
   const [chatMockup] = useState(readChatMockup)
   const [chatOpen, setChatOpen] = useState(chatMockup.enabled && chatMockup.open)
   const chatButtonRef = useRef(null)
@@ -192,6 +217,9 @@ export default function App() {
           onChatClick={chatMockup.enabled ? () => setChatOpen((v) => !v) : undefined}
           chatOpen={chatOpen}
           chatButtonRef={chatButtonRef}
+          onSearchClick={() => setSearchOpen(true)}
+          searchOpen={searchOpen}
+          searchButtonRef={searchButtonRef}
           theme={theme}
           resolvedTheme={resolvedTheme}
           onThemeChange={setTheme}
@@ -240,6 +268,7 @@ export default function App() {
           onMore={openDrawer}
           moreOpen={drawerOpen}
         />
+        {searchOpen && <SearchDialog onClose={closeSearch} onOpenTask={openFoundTask} />}
         {chatMockup.enabled && (
           <ChatPanelMockup open={chatOpen} onClose={() => setChatOpen(false)} openButtonRef={chatButtonRef} />
         )}

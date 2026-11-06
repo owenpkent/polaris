@@ -191,3 +191,21 @@ describe('TopBar under the status bar', () => {
     expect(header.style.paddingTop).toBe('')
   })
 })
+
+describe('TopBar search button', () => {
+  test('is absent when onSearchClick is undefined', () => {
+    render(<TopBar title="My tasks" onMenuClick={() => {}} menuOpen={false} />)
+    expect(screen.queryByRole('button', { name: 'Search tasks' })).toBeNull()
+  })
+
+  test('calls onSearchClick, says whether the dialog is open, and takes the ref', () => {
+    const onSearchClick = vi.fn()
+    const ref = { current: null }
+    render(<TopBar title="My tasks" onMenuClick={() => {}} menuOpen={false} onSearchClick={onSearchClick} searchOpen searchButtonRef={ref} />)
+    const button = screen.getByRole('button', { name: 'Search tasks' })
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(ref.current).toBe(button)
+    fireEvent.click(button)
+    expect(onSearchClick).toHaveBeenCalledTimes(1)
+  })
+})

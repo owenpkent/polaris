@@ -557,6 +557,43 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expect(page.getByRole('dialog', { name: 'Update available' })).toBeVisible()
     await expectNothingCutOff(page)
   })
+
+  // The top bar with every icon it can hold, on each view: the title must still show whole.
+  test('the top bar with the update icon and Search, on every view', async ({ page }) => {
+    await fakeUpdate(page)
+    for (const view of VIEWS) {
+      await openView(page, view.id)
+      await expect(page.getByRole('button', { name: 'Update available' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Search tasks' })).toBeVisible()
+      expect(await clippedContent(page, page.getByRole('banner')), view.label).toEqual([])
+    }
+  })
+
+  // The search dialog empty, with nothing found, and with results that include a title with no
+  // place to break and a very long one, which wrap inside their rows.
+  test('the search dialog', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `search clipping${LONG_SUFFIX}`, { notes: 'vermilion' })
+    const wordy = await createTask(request, testInfo, `search clipping ${WORDY}`, { notes: 'vermilion' })
+    await openView(page)
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Search tasks' })
+    await expect(dialog).toBeVisible()
+    await expectNothingCutOff(page)
+    const box = dialog.getByRole('textbox', { name: 'Search tasks' })
+    await box.fill('zzqqxx no such task')
+    await expect(dialog.getByRole('status')).toHaveText('No tasks match.')
+    await expectNothingCutOff(page)
+    await box.fill('vermilion')
+    await expect(dialog.getByRole('button', { name: title })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: wordy })).toBeVisible()
+    await expectNothingCutOff(page)
+    // A common word fills the list, which then scrolls under the box in a short window.
+    await page.setViewportSize({ width: page.viewportSize().width, height: 420 })
+    await box.fill('the')
+    await expect(dialog.getByRole('button').nth(3)).toBeVisible()
+    await expect.poll(() => dialog.evaluate((el) => el.lastElementChild.scrollHeight > el.lastElementChild.clientHeight)).toBe(true)
+    await expectNothingCutOff(page)
+  })
 })
 
 // The task panel opens from four views; each is checked with it open. Names are matched by their

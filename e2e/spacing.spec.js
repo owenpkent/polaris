@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, openTask, openNavigation, crowdedTargets, applyViewSettings } from './support.js'
+import { openView, openTask, openNavigation, crowdedTargets, applyViewSettings, fakeUpdate } from './support.js'
 
 // Targets that are big enough can still be too close together. WCAG 2.5.8 asks for 24px targets
 // or spacing; the bar here is 44px targets (accessibility.spec.js) with at least 8px between
@@ -10,6 +10,23 @@ test.describe('target spacing', { tag: ['@a11y'] }, () => {
     await openView(page)
     expect(await crowdedTargets(page.locator('header'))).toEqual([])
     expect(await crowdedTargets(page.getByRole('toolbar', { name: 'Tasks' }))).toEqual([])
+  })
+
+  // The top bar with every icon it can hold: update, search, and theme.
+  test('top bar with the update icon', async ({ page }) => {
+    await fakeUpdate(page)
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Update available' })).toBeVisible()
+    expect(await crowdedTargets(page.locator('header'))).toEqual([])
+  })
+
+  test('search dialog', async ({ page }) => {
+    await openView(page)
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Search tasks' })
+    await dialog.getByRole('textbox', { name: 'Search tasks' }).fill('audit')
+    await expect(dialog.getByRole('button').nth(1)).toBeVisible()
+    expect(await crowdedTargets(dialog)).toEqual([])
   })
 
   test('navigation: the sidebar on desktop, the drawer on a phone', async ({ page }, testInfo) => {
