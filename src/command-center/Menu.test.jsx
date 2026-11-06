@@ -194,6 +194,40 @@ describe('Popover preferFit', () => {
     }
   })
 
+  // A popover over the phone's tab bar left slivers of its buttons, too small to press.
+  test('the room ends at the tab bar when one is shown', async () => {
+    const restore = layout()
+    const nav = document.createElement('nav')
+    nav.className = 'bottom-nav'
+    nav.getBoundingClientRect = () => ({ top: 700, bottom: 768, left: 0, right: 390, width: 390, height: 68 })
+    document.body.appendChild(nav)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('290px'))
+      expect(pop.style.maxHeight).toBe('684px')
+    } finally {
+      nav.remove()
+      restore()
+    }
+  })
+
+  test('a tab bar that is not shown takes no room', async () => {
+    const restore = layout()
+    const nav = document.createElement('nav')
+    nav.className = 'bottom-nav'
+    nav.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 })
+    document.body.appendChild(nav)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('358px'))
+    } finally {
+      nav.remove()
+      restore()
+    }
+  })
+
   test('only content taller than the window scrolls, in all of the window', async () => {
     const restore = layout(900)
     try {

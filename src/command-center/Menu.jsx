@@ -50,7 +50,8 @@ export function useRovingFocus(containerRef) {
 // through from a row low on the screen.
 // Content too tall for the side it opens on slides along the window until all of it shows, over the
 // trigger if it must, rather than scrolling inside itself with room to spare. Only content taller
-// than the window scrolls.
+// than the window scrolls. On a phone the window ends at the tab bar, whose buttons a popover must
+// not cover and leave as slivers.
 export function Popover({
   anchorRef,
   open,
@@ -75,7 +76,10 @@ export function Popover({
     const width = Math.max(minWidth, popRef.current?.offsetWidth || minWidth)
     let left = align === 'end' ? a.right - width : a.left
     left = Math.max(gutter, Math.min(left, vw - width - gutter))
-    const spaceBelow = vh - a.bottom
+    // The tab bar has no size above the breakpoint, where it is not shown.
+    const tabBar = document.querySelector('.bottom-nav')?.getBoundingClientRect()
+    const floor = tabBar?.height ? tabBar.top : vh
+    const spaceBelow = floor - a.bottom
     const spaceAbove = a.top
     // The content's full height (scrollHeight leaves out the 1px borders), once it is rendered.
     const content = popRef.current ? popRef.current.scrollHeight + 2 : 0
@@ -84,9 +88,9 @@ export function Popover({
     if (content + 12 > (openUp ? spaceAbove : spaceBelow)) {
       setPos({
         left,
-        top: openUp ? 8 : Math.max(8, vh - 8 - content),
+        top: openUp ? 8 : Math.max(8, floor - 8 - content),
         bottom: null,
-        maxHeight: vh - 16,
+        maxHeight: floor - 16,
       })
       return
     }
