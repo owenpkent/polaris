@@ -23,7 +23,7 @@
     "release:apk": "npm --prefix mobile run release --"
   },
   "dependencies": {
-    "lucide-react": "^1.63.0",
+    "lucide-react": "^1.66.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
