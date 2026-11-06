@@ -22,6 +22,7 @@ import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, group
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
 import { planInsert } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
+import { markChanged } from './useJustChanged'
 
 const GROUPS_STORAGE_KEY = 'cc-mytasks-groups-v1'
 
@@ -335,6 +336,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     if (recurrence) payload.recurrence = recurrence
     const created = await api.createTask(payload)
     const id = created?.task?.id
+    markChanged(id)
     const seq = inlineAdd?.seq
     if (id) setInlineAdd((cur) => (cur && cur.seq === seq ? { ...cur, heldIds: [...cur.heldIds, id] } : cur))
     await fetchTasks()
@@ -352,6 +354,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       const groupId = groupIdFor(task, view.group, getDueBounds())
       if (groupId !== null) ensureExpanded(view.group, groupId)
     }
+    markChanged(task?.id)
     await fetchTasks()
     if (task) setRevealTaskId(task.id)
   }, [api, fetchTasks, ensureExpanded, view.group])
@@ -398,6 +401,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // then refetch either way (mirrors handleToggleComplete above).
   const handleQuickUpdate = useCallback(async (task, patch) => {
     setActionError(null)
+    markChanged(task.id)
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)))
     try {
       await api.updateTask(task.id, patch)
@@ -421,6 +425,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // a failure puts back the old fields along with the old positions.
   const handleReorder = useCallback((plan, patch = null, task = null) => {
     setActionError(null)
+    markChanged(task?.id)
     const next = new Map(plan.updates.map((u) => [u.id, u.position]))
     for (const [id, position] of next) pendingPositions.current.set(id, position)
     if (patch) pendingPatches.current.set(task.id, { ...pendingPatches.current.get(task.id), ...patch })
@@ -709,7 +714,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             </div>
           ) : (
             <div className="mytasks-list">
-              <ReorderScope enabled={reorderable} crossGroup={crossGroup} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging}>
+              <ReorderScope enabled={reorderable} crossGroup={crossGroup} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging} onMoved={markChanged}>
                 {content}
               </ReorderScope>
               {inlineAdd?.groupId === null && (

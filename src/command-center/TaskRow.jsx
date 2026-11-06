@@ -8,6 +8,7 @@ import DueDateMenu from './DueDateMenu'
 import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 import { PRIORITY_OPTIONS, taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
+import { useJustChanged } from './useJustChanged'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
 // medium (the default), so a pill always means a level was chosen.
@@ -358,6 +359,7 @@ export default function TaskRow({
   // ends it at once.
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
+  const { changed, ref: rowRef } = useJustChanged(task.id)
 
   const check = (
     <button
@@ -440,8 +442,9 @@ export default function TaskRow({
   return (
     <>
     <div
+      ref={rowRef}
       {...menuHandlers}
-      className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${rowClass}`}
+      className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${changed ? ' just-changed' : ''}${rowClass}`}
       data-task-id={depth === 0 ? task.id : undefined}
       data-subtask-id={depth > 0 ? task.id : undefined}
       onClick={() => onOpen(task.id)}

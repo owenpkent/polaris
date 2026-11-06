@@ -1200,6 +1200,19 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .complete-burst { display: none; }
 }
 
+/* A row or card the owner just added, moved, or edited here (useJustChanged.js): a soft blue tint
+   that fades over 1.2s (JUST_CHANGED_MS) where the task now is. The scroll margin keeps a row
+   scrolled into view clear of the sticky bars. Reduced motion shows the tint without the fade,
+   and the hook removes the class after the same time. */
+.just-changed { animation: just-changed 1.2s ease-out both; scroll-margin-top: 120px; scroll-margin-bottom: 80px; }
+@keyframes just-changed {
+  0%, 25% { background: var(--blue-soft); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .just-changed { animation: none; background: var(--blue-soft); }
+}
+
 /* Rows and items that touch their neighbours draw their focus ring inside. An outward ring
    reaches 4px past the box, where a panel that clips its rows (overflow: hidden), a menu that
    scrolls (Popover in Menu.jsx), the sticky column header, or the next row's highlight would
