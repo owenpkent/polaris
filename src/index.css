@@ -1748,7 +1748,10 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
    the Android app's status bar, so a phone's keyboard does not cover the box and the results grow
    downward. The box stays where it is and the results scroll under it: the list is the only
    scroll box, and the dialog itself clips nothing. */
-.search-backdrop { align-items: flex-start; padding-top: calc(1rem + var(--safe-top)); }
+/* It opens over whatever is on screen, from the top bar or with the slash key, so it is drawn
+   above every layer it can open over: a task panel (200), which fills a phone's screen under the
+   top bar, and the drawer, the sheets, and the menus (300 and 301). */
+.search-backdrop { z-index: 400; align-items: flex-start; padding-top: calc(1rem + var(--safe-top)); }
 .search-modal { display: flex; flex-direction: column; gap: 0.75rem; max-height: 100%; padding: 1rem; overflow: visible; }
 .search-head { display: flex; align-items: center; gap: 0.5rem; }
 .search-head input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 1rem; }

@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { MIN_TARGET, createTask, expectFocusRing, openView, smallTargets } from './support.js'
+import { MIN_TARGET, createTask, expectFocusRing, openTask, openView, smallTargets } from './support.js'
 
 // Search (src/command-center/SearchDialog.jsx): the top bar's Search button, or `/`, opens a
 // dialog over whichever view is showing. It asks the server for tasks whose title or notes hold
@@ -36,6 +36,36 @@ test.describe('search', { tag: ['@flow'] }, () => {
     const dialog = page.getByRole('dialog', { name: 'Search tasks' })
     await dialog.getByRole('textbox', { name: 'Search tasks' }).fill('marigold')
     await expect(dialog.getByRole('button', { name: title })).toContainText('Done')
+  })
+
+  // The top bar stays in reach with a task's panel open, and on a phone that panel fills the
+  // screen under it. Search is drawn over the panel: a result that is only visible is not enough,
+  // so the point at its middle must be the result itself before it is clicked.
+  test('opened over a task panel, it is drawn above it and a result opens the other task', async ({ page, request }, testInfo) => {
+    const first = await createTask(request, testInfo, 'search over panel first')
+    const second = await createTask(request, testInfo, 'search over panel amaranth')
+    await openView(page)
+    await openTask(page, first)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(first)
+
+    await page.getByRole('button', { name: 'Search tasks' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Search tasks' })
+    await dialog.getByRole('textbox', { name: 'Search tasks' }).fill('amaranth')
+    const row = dialog.getByRole('button', { name: second })
+    await expect(row).toBeVisible()
+    for (const control of [dialog.getByRole('textbox', { name: 'Search tasks' }), dialog.getByRole('button', { name: 'Close search' }), row]) {
+      const onTop = await control.evaluate((el) => {
+        const r = el.getBoundingClientRect()
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+        return el === hit || el.contains(hit)
+      })
+      expect(onTop, 'something is drawn over the search dialog').toBe(true)
+    }
+    await row.click()
+
+    await expect(dialog).toHaveCount(0)
+    await expect(panel.getByRole('textbox', { name: 'Task title' })).toHaveValue(second)
   })
 
   test('says when nothing matches', async ({ page }) => {
