@@ -137,6 +137,22 @@ function patchTaskEverywhere(id, fields) {
   })
 }
 
+// A task finished offline joins each stored list of finished tasks whose time window holds that
+// moment (doneTodayQuery in dueDates.js), which patchTaskEverywhere cannot do for a task the list
+// does not have yet. A preview only: the server's answer replaces the list once it is reachable.
+// A reopen needs nothing here, since api.js applies the status filter again when it reads the copy.
+function addToFinishedLists(baseUrl, task, at) {
+  const prefix = `${baseUrl}/api/tasks?`
+  return cachePatchAll((data, key) => {
+    if (!key.startsWith(prefix) || !Array.isArray(data?.tasks) || data.tasks.some((t) => t?.id === task.id)) return undefined
+    const query = new URLSearchParams(key.slice(prefix.length))
+    const after = query.get('completedAfter')
+    const before = query.get('completedBefore')
+    if (query.get('status') !== 'done' || !after || !before || at < after || at >= before) return undefined
+    return { ...data, tasks: [...data.tasks, task] }
+  })
+}
+
 /**
  * Where a new task goes, from the copy, as Store.nextPosition answers on the server: the number
  * before the first task in the copy, so it shows at the top, or for a subtask (`subtask` true) the
@@ -240,6 +256,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     if (typeof body.position === 'number' && Number.isFinite(body.position)) fields = { ...fields, position: body.position }
   }
   await patchTaskEverywhere(taskId, fields)
+  if (kind === 'complete_task' && existing) await addToFinishedLists(baseUrl, { ...existing, ...fields }, at)
   notifyTaskChanges()
   const task = { ...(existing || { id: taskId }), ...fields }
   return kind === 'complete_task' ? { task, next: null } : { task }

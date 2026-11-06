@@ -15,6 +15,8 @@ import {
   repeatLabel,
   dueForDrop,
   dropStartDay,
+  doneTodayQuery,
+  countDoneToday,
 } from './dueDates'
 
 describe('repeatLabel', () => {
@@ -428,5 +430,28 @@ describe('dropping a task into a due-date group', () => {
     expect(dropStartDay('next7', bounds, '2026-10-19T08:00')).toBe('2026-10-19')
     expect(dropStartDay('next7', bounds, null)).toBe('2026-10-16')
     expect(dropStartDay('later', bounds, null)).toBe('2026-10-22')
+  })
+})
+
+describe('done today', () => {
+  test('the query spans local midnight to the next midnight', () => {
+    const q = doneTodayQuery(new Date(2026, 8, 18, 15, 30))
+    expect(q.status).toBe('done')
+    expect(q.completedAfter).toBe(new Date(2026, 8, 18).toISOString())
+    expect(q.completedBefore).toBe(new Date(2026, 8, 19).toISOString())
+  })
+
+  test('counts finished tasks and subtasks that were due today only', () => {
+    const bounds = getDueBounds(new Date(2026, 8, 18))
+    const done = [
+      { status: 'done', dueAt: '2026-09-18' },
+      { status: 'done', dueAt: '2026-09-18T09:00' },
+      { status: 'done', dueAt: '2026-09-17' },
+      { status: 'done', dueAt: null },
+      { status: 'done', dueAt: '2026-09-18', parentId: 'p' },
+      { status: 'open', dueAt: '2026-09-18' },
+    ]
+    expect(countDoneToday(done, bounds)).toBe(3)
+    expect(countDoneToday(undefined, bounds)).toBe(0)
   })
 })

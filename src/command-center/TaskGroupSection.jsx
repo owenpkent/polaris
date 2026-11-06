@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { TaskTree } from './TaskRow'
 import InlineTaskInput from './InlineTaskInput'
 import ReorderableRows, { useReorderScope } from './ReorderableRows'
@@ -12,6 +12,9 @@ import ReorderableRows, { useReorderScope } from './ReorderableRows'
 // inline input -- already filtered to this group by the caller, so any other
 // group's inline input has no effect here. It stays at the end of the group, with the tasks
 // added from it in `tasks` just above it (heldIds in MyTasksTab.jsx).
+// `progress` ({ done }), given to the Today group only, turns its count into "n left", adds
+// "m done" once something due today is finished, and shows "All clear" when nothing
+// is left (the Zeigarnik and goal-gradient cues; the numbers come from MyTasksTab).
 // `subtasksByParent` (indexSubtasks in TaskRow.jsx) gives each row its subtask count.
 // `reorderable` (the manual sort) gives each row a handle, and a move calls `onReorder` with the
 // plan from reorder.js; `handleColumn` keeps the inline add row's cells in step with the rows.
@@ -34,6 +37,7 @@ export default function TaskGroupSection({
   onOpenTask,
   onQuickUpdate,
   addRow,
+  progress = null,
   inlineAdd,
   onOpenInlineAdd,
   onSubmitInlineAdd,
@@ -62,7 +66,7 @@ export default function TaskGroupSection({
           {collapsed ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
         </button>
         <span className="mytasks-section-title">{title}</span>
-        <span className="mytasks-section-count">{tasks.length}</span>
+        {progress ? <TodayProgress left={tasks.length} done={progress.done} /> : <span className="mytasks-section-count">{tasks.length}</span>}
       </div>
 
       {!collapsed && (
@@ -104,5 +108,22 @@ export default function TaskGroupSection({
         </div>
       )}
     </section>
+  )
+}
+
+// The Today header's count: "n left", then "m done" once any is done, or "All clear" with a quiet
+// check when nothing is left. Numbers only, no bar (the owner's choice).
+export function TodayProgress({ left, done }) {
+  const clear = left === 0
+  return (
+    <>
+      <span className="mytasks-section-count">{clear ? 0 : `${left} left`}</span>
+      {clear && (
+        <span className="mytasks-all-clear">
+          <Check size={14} aria-hidden="true" /> All clear
+        </span>
+      )}
+      {done > 0 && <span className="mytasks-section-count">{done} done</span>}
+    </>
   )
 }
