@@ -44,6 +44,30 @@ function reducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
+// Whether the whole element shows: inside the viewport and inside every ancestor that clips it,
+// such as the Board's lanes, which scroll sideways.
+function fullyInView(el) {
+  const rect = el.getBoundingClientRect()
+  let left = 0
+  let top = 0
+  let right = window.innerWidth
+  let bottom = window.innerHeight
+  for (let n = el.parentElement; n; n = n.parentElement) {
+    const { overflowX, overflowY } = getComputedStyle(n)
+    if (overflowX === 'visible' && overflowY === 'visible') continue
+    const box = n.getBoundingClientRect()
+    if (overflowX !== 'visible') {
+      left = Math.max(left, box.left)
+      right = Math.min(right, box.right)
+    }
+    if (overflowY !== 'visible') {
+      top = Math.max(top, box.top)
+      bottom = Math.min(bottom, box.bottom)
+    }
+  }
+  return rect.left >= left && rect.right <= right && rect.top >= top && rect.bottom <= bottom
+}
+
 // Returns { changed, ref }: put `ref` on the row's element and add 'just-changed' to its class
 // while `changed`. A row that mounts after the mark (a new task, or one that moved to another
 // group) is highlighted for what remains of the time.
@@ -54,9 +78,8 @@ export function useJustChanged(id) {
     if (!changed) return
     const el = ref.current
     if (!el?.scrollIntoView) return
-    const rect = el.getBoundingClientRect()
-    if (rect.top >= 0 && rect.bottom <= window.innerHeight) return
-    el.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' })
+    if (fullyInView(el)) return
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' })
   }, [changed])
   return { changed, ref }
 }

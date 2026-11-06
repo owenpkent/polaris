@@ -54,11 +54,62 @@ describe('useJustChanged', () => {
     expect(scroll).not.toHaveBeenCalled()
     cleanup()
 
-    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 5000, bottom: 5040 })
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 5000, bottom: 5040, left: 0, right: 100 })
     render(<Probe id="t1" />)
-    expect(scroll).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' })
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
     spy.mockRestore()
     delete Element.prototype.scrollIntoView
+  })
+
+  describe('a card in a lane off to the side', () => {
+    const CARD = { top: 10, bottom: 50 }
+    function Probe() {
+      const { ref } = useJustChanged('t1')
+      return <div style={{ overflowX: 'auto' }} data-testid="lanes"><div ref={ref} data-testid="card" /></div>
+    }
+    function layout(card, lanes) {
+      return vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function rect() {
+        if (this.dataset.testid === 'card') return { ...CARD, ...card }
+        if (this.dataset.testid === 'lanes') return { top: 0, bottom: 700, ...lanes }
+        return { top: 0, bottom: 0, left: 0, right: 0 }
+      })
+    }
+    let scroll
+    beforeEach(() => {
+      scroll = vi.fn()
+      Element.prototype.scrollIntoView = scroll
+      act(() => markChanged('t1'))
+    })
+    afterEach(() => {
+      vi.restoreAllMocks()
+      delete Element.prototype.scrollIntoView
+      delete window.matchMedia
+    })
+
+    test('scrolls when it is past the side of the viewport, though its height fits', () => {
+      layout({ left: window.innerWidth + 100, right: window.innerWidth + 300 }, { left: 0, right: window.innerWidth + 300 })
+      render(<Probe />)
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    })
+
+    test('scrolls when the lanes clip it, though it is inside the viewport', () => {
+      layout({ left: 310, right: 500 }, { left: 0, right: 300 })
+      render(<Probe />)
+      expect(scroll).toHaveBeenCalledTimes(1)
+    })
+
+    test('jumps instead of gliding under reduced motion', () => {
+      window.matchMedia = vi.fn(() => ({ matches: true }))
+      layout({ left: 310, right: 500 }, { left: 0, right: 300 })
+      render(<Probe />)
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+    })
+
+    test('stays put when the lanes show all of it', () => {
+      layout({ left: 10, right: 200 }, { left: 0, right: 300 })
+      render(<Probe />)
+      expect(scroll).not.toHaveBeenCalled()
+    })
   })
 })
 
