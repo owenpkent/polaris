@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { useRef, useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Menu, Popover } from './Menu'
+import { Menu, Popover, safeTopInset } from './Menu'
 
 afterEach(() => cleanup())
 
@@ -149,9 +149,9 @@ describe('Popover preferFit', () => {
   }
 
   // A 768px window with the trigger's bottom at 500 (268px below, 480 above) and a 400px tall popover.
-  function layout() {
+  function layout(contentHeight = 400) {
     const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 480, bottom: 500, left: 10, right: 110, width: 100, height: 20 })
-    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(400)
+    const height = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(contentHeight)
     return () => { rect.mockRestore(); height.mockRestore() }
   }
 
@@ -167,14 +167,113 @@ describe('Popover preferFit', () => {
     }
   })
 
-  test('stays below without it', async () => {
+  // 402px with its borders, so the top is 768 - 8 - 402, over the trigger, and all of it shows.
+  test('without it, content too tall for the room below slides up until it fits', async () => {
     const restore = layout()
     try {
       render(<Host preferFit={false} />)
       const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
-      await new Promise((resolve) => requestAnimationFrame(() => resolve()))
-      expect(pop.style.top).toBe('504px')
+      await waitFor(() => expect(pop.style.top).toBe('358px'))
       expect(pop.style.bottom).toBe('')
+      expect(pop.style.maxHeight).toBe('752px')
+    } finally {
+      restore()
+    }
+  })
+
+  test('content too tall for either side, under the window, starts at the top of the window', async () => {
+    const restore = layout(600)
+    try {
+      render(<Host preferFit />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('8px'))
+      expect(pop.style.bottom).toBe('')
+      expect(pop.style.maxHeight).toBe('752px')
+    } finally {
+      restore()
+    }
+  })
+
+  // A popover over the phone's tab bar left slivers of its buttons, too small to press.
+  test('the room ends at the tab bar when one is shown', async () => {
+    const restore = layout()
+    const nav = document.createElement('nav')
+    nav.className = 'bottom-nav'
+    nav.getBoundingClientRect = () => ({ top: 700, bottom: 768, left: 0, right: 390, width: 390, height: 68 })
+    document.body.appendChild(nav)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('290px'))
+      expect(pop.style.maxHeight).toBe('684px')
+    } finally {
+      nav.remove()
+      restore()
+    }
+  })
+
+  test('a tab bar that is not shown takes no room', async () => {
+    const restore = layout()
+    const nav = document.createElement('nav')
+    nav.className = 'bottom-nav'
+    nav.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 })
+    document.body.appendChild(nav)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('358px'))
+    } finally {
+      nav.remove()
+      restore()
+    }
+  })
+
+  // The Android app draws its status bar over the top of the page, 32px here.
+  function statusBar(height) {
+    safeTopInset()
+    const probe = document.querySelector('[data-safe-top-probe]')
+    Object.defineProperty(probe, 'offsetHeight', { configurable: true, get: () => height })
+    return () => { delete probe.offsetHeight }
+  }
+
+  // 462px with its borders fits the 480px above the trigger, but not the 448px under the bar:
+  // anchored to the trigger it would start at 14px, behind the clock.
+  test('the room above starts under the status bar', async () => {
+    const restore = layout(460)
+    const noBar = statusBar(32)
+    try {
+      render(<Host preferFit />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('40px'))
+      expect(pop.style.bottom).toBe('')
+      expect(pop.style.maxHeight).toBe('720px')
+    } finally {
+      noBar()
+      restore()
+    }
+  })
+
+  test('content that slides up stops under the status bar', async () => {
+    const restore = layout(740)
+    const noBar = statusBar(32)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('40px'))
+      expect(pop.style.maxHeight).toBe('720px')
+    } finally {
+      noBar()
+      restore()
+    }
+  })
+
+  test('only content taller than the window scrolls, in all of the window', async () => {
+    const restore = layout(900)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('8px'))
+      expect(pop.style.maxHeight).toBe('752px')
     } finally {
       restore()
     }

@@ -296,7 +296,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         </div>
 
         {sourceUrl && (
-          <p className="field-label" title={sourceUrl}>Link: {linkLabel(sourceUrl)}</p>
+          <p className="field-label sheet-link" title={sourceUrl}>Link: {linkLabel(sourceUrl)}</p>
         )}
 
         {error && <p className="sheet-error" role="alert">{error}</p>}
