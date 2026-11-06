@@ -598,9 +598,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       // An empty group is hidden, except the one a new task is being typed into: the toolbar's Add
       // task opens the inline row in Today, which owns that row and must be on the page to show it.
       // Under the manual sort a row can be dropped into any day group, so the empty ones show
-      // while a row is held, as drop targets (not a closed one, which takes no drop).
+      // while a row is held, as drop targets (not a closed one, which takes no drop). Today also
+      // stays once something due today is finished, since that is when it says All clear.
       crossGroup = reorderable
-      const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed))
+      const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed) || (g.id === 'today' && doneToday > 0))
       scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id], closed: Boolean(g.closed) }))
       groupRowsRef.current = groups
       content = shown.map((g) => {

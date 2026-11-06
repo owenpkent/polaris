@@ -843,6 +843,17 @@ describe('MyTasksTab Today progress', () => {
     expect(screen.getByText('1 done')).toBeTruthy()
   })
 
+  test('an empty Today with nothing finished today stays hidden', async () => {
+    stubMatchMedia(1280)
+    api.listTasks.mockResolvedValue({ tasks: [] })
+    api.listDoneToday = vi.fn().mockResolvedValue({ tasks: [] })
+    render(<MyTasksTab />)
+    await waitFor(() => expect(api.listDoneToday).toHaveBeenCalled())
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
+    expect(screen.queryByText('All clear')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+  })
+
   test('the list still loads when the done-today read fails', async () => {
     stubMatchMedia(1280)
     api.listTasks.mockResolvedValue({ tasks: [open('a')] })
