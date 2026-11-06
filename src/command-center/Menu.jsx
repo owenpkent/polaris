@@ -34,6 +34,21 @@ export function useRovingFocus(containerRef) {
   }, [containerRef])
 }
 
+// The height of the status bar the Android app draws over the page (--safe-top in index.css), 0
+// in a browser. A custom property that holds env() does not compute to a length, so the height is
+// read off a hidden element sized by it, made once and left in the page.
+export function safeTopInset() {
+  let probe = document.querySelector('[data-safe-top-probe]')
+  if (!probe) {
+    probe = document.createElement('div')
+    probe.setAttribute('data-safe-top-probe', '')
+    probe.setAttribute('aria-hidden', 'true')
+    probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:var(--safe-top,0px);visibility:hidden;pointer-events:none'
+    document.body.appendChild(probe)
+  }
+  return probe.offsetHeight || 0
+}
+
 // Portals its content to <body> and positions it near `anchorRef`, so a
 // dropdown opened from the sticky My Tasks header (or from a header cell
 // near the right edge of the page) is never clipped by either. Handles the
@@ -51,7 +66,8 @@ export function useRovingFocus(containerRef) {
 // Content too tall for the side it opens on slides along the window until all of it shows, over the
 // trigger if it must, rather than scrolling inside itself with room to spare. Only content taller
 // than the window scrolls. On a phone the window ends at the tab bar, whose buttons a popover must
-// not cover and leave as slivers.
+// not cover and leave as slivers, and in the Android app it starts under the status bar, which is
+// drawn over the page (safeTopInset).
 export function Popover({
   anchorRef,
   open,
@@ -79,8 +95,9 @@ export function Popover({
     // The tab bar has no size above the breakpoint, where it is not shown.
     const tabBar = document.querySelector('.bottom-nav')?.getBoundingClientRect()
     const floor = tabBar?.height ? tabBar.top : vh
+    const roof = safeTopInset()
     const spaceBelow = floor - a.bottom
-    const spaceAbove = a.top
+    const spaceAbove = a.top - roof
     // The content's full height (scrollHeight leaves out the 1px borders), once it is rendered.
     const content = popRef.current ? popRef.current.scrollHeight + 2 : 0
     const needed = preferFit && content ? content + 12 : 0
@@ -88,9 +105,9 @@ export function Popover({
     if (content + 12 > (openUp ? spaceAbove : spaceBelow)) {
       setPos({
         left,
-        top: openUp ? 8 : Math.max(8, floor - 8 - content),
+        top: openUp ? roof + 8 : Math.max(roof + 8, floor - 8 - content),
         bottom: null,
-        maxHeight: floor - 16,
+        maxHeight: floor - roof - 16,
       })
       return
     }

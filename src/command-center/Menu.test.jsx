@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { useRef, useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Menu, Popover } from './Menu'
+import { Menu, Popover, safeTopInset } from './Menu'
 
 afterEach(() => cleanup())
 
@@ -224,6 +224,45 @@ describe('Popover preferFit', () => {
       await waitFor(() => expect(pop.style.top).toBe('358px'))
     } finally {
       nav.remove()
+      restore()
+    }
+  })
+
+  // The Android app draws its status bar over the top of the page, 32px here.
+  function statusBar(height) {
+    safeTopInset()
+    const probe = document.querySelector('[data-safe-top-probe]')
+    Object.defineProperty(probe, 'offsetHeight', { configurable: true, get: () => height })
+    return () => { delete probe.offsetHeight }
+  }
+
+  // 462px with its borders fits the 480px above the trigger, but not the 448px under the bar:
+  // anchored to the trigger it would start at 14px, behind the clock.
+  test('the room above starts under the status bar', async () => {
+    const restore = layout(460)
+    const noBar = statusBar(32)
+    try {
+      render(<Host preferFit />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('40px'))
+      expect(pop.style.bottom).toBe('')
+      expect(pop.style.maxHeight).toBe('720px')
+    } finally {
+      noBar()
+      restore()
+    }
+  })
+
+  test('content that slides up stops under the status bar', async () => {
+    const restore = layout(740)
+    const noBar = statusBar(32)
+    try {
+      render(<Host preferFit={false} />)
+      const pop = (await screen.findByRole('dialog', { name: 'Tall' })).closest('[data-popover]')
+      await waitFor(() => expect(pop.style.top).toBe('40px'))
+      expect(pop.style.maxHeight).toBe('720px')
+    } finally {
+      noBar()
       restore()
     }
   })

@@ -758,4 +758,22 @@ test.describe('the top bar under a status bar', { tag: ['@flow'] }, () => {
     }
     await expectNothingCutOff(page)
   })
+
+  // A menu is placed by script (Popover in Menu.jsx), which has to read the inset as well: the
+  // date picker of a row low on the screen opens upward, and slid up behind the phone's clock.
+  // The window is made short so the picker has to go as high as it is allowed to.
+  test('a date picker that opens upward stops below the inset', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'picker under status bar')
+    await page.setViewportSize({ width: page.viewportSize().width, height: 560 })
+    await openView(page)
+    await page.addStyleTag({ content: ':root { --safe-top: 40px; }' })
+    const trigger = page.getByRole('button', { name: `Change due date for ${title}` })
+    await trigger.scrollIntoViewIfNeeded()
+    await trigger.click()
+    const menu = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await expect(menu).toBeVisible()
+    // 8px under the bar, and the picker's own 1px border.
+    await expect.poll(async () => (await menu.boundingBox()).y).toBeGreaterThanOrEqual(48)
+    await page.keyboard.press('Escape')
+  })
 })
