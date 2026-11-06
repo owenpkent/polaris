@@ -2190,6 +2190,9 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 .undo-toast-text { min-width: 0; overflow-wrap: anywhere; }
 .undo-toast-title { font-weight: 600; }
 .undo-toast-btn { flex-shrink: 0; min-height: 44px; min-width: 44px; }
+.undo-toast.is-failed { flex-wrap: wrap; }
+.undo-toast.is-failed .undo-toast-text { flex: 1 1 100%; padding-top: 6px; }
+.undo-toast-actions { display: flex; gap: 8px; margin-left: auto; }
 @keyframes undo-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: none; opacity: 1; }

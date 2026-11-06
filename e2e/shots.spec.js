@@ -184,6 +184,16 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'completed-toast')
   })
 
+  test('mytasks: undo failed toast', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'toast failed shot')
+    await openView(page)
+    await page.route(new RegExp('/api/tasks/[^/]+/reopen$'), (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    await page.getByRole('button', { name: `Undo completing ${title}` }).click()
+    await expect(page.getByRole('button', { name: `Retry reopening ${title}` })).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'undo-failed-toast')
+  })
+
   // A row with its name being edited in place.
   test('mytasks: rename', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'rename shot')

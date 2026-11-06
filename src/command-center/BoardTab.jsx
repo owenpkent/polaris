@@ -570,9 +570,10 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === id ? { ...t, status } : t)) } : b))
   }, [])
 
-  // The completed toast's Undo reopens through this same handler, read at click time.
-  const handleToggleCompleteRef = useRef(null)
-  const handleToggleComplete = useCallback(async (task) => {
+  // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
+  // rejects, so the toast can say so: this tab may have gone by then.
+  const toggleCompleteRef = useRef(null)
+  const toggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
     const pid = projectRef
     setError(null)
@@ -585,19 +586,22 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
       } else {
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         await api.completeTask(task.id)
-        showCompleted(task.title, () => handleToggleCompleteRef.current({ ...task, status: 'done' }))
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
         await exit
       }
       await refreshIfShown(pid)
     } catch (err) {
       setTaskStatus(task.id, task.status)
-      setError(err.message || 'Could not update that task.')
+      throw err
     } finally {
       setPendingIds((prev) => without(prev, task.id))
       setExitingIds((prev) => without(prev, task.id))
     }
   }, [api, projectRef, refreshIfShown, setTaskStatus])
-  useEffect(() => { handleToggleCompleteRef.current = handleToggleComplete }, [handleToggleComplete])
+  useEffect(() => { toggleCompleteRef.current = toggleComplete }, [toggleComplete])
+  const handleToggleComplete = useCallback((task) => toggleComplete(task).catch((err) => {
+    setError(err.message || 'Could not update that task.')
+  }), [toggleComplete])
 
   // The context menu's due date and priority (TaskContextMenu.jsx): the list's quick edit, shown at
   // once and put back on failure.

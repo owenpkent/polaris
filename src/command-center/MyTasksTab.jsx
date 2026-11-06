@@ -377,9 +377,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     setRevealTaskId(null)
   }, [revealTaskId, loading])
 
-  // The completed toast's Undo reopens through this same handler, read at click time.
-  const handleToggleCompleteRef = useRef(null)
-  const handleToggleComplete = useCallback(async (task) => {
+  // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
+  // rejects, so the toast can say so: this tab may have gone by then.
+  const toggleCompleteRef = useRef(null)
+  const toggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
     setActionError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
@@ -392,14 +393,14 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         // The row stays while its check celebrates and it fades (TaskRow, CompleteBurst.jsx).
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         await api.completeTask(task.id)
-        showCompleted(task.title, () => handleToggleCompleteRef.current({ ...task, status: 'done' }))
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
         await exit
       }
       await fetchTasks()
     } catch (err) {
       // Roll back on failure.
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)))
-      setActionError(err.message || 'Could not update that task.')
+      throw err
     } finally {
       setPendingIds((prev) => {
         const next = new Set(prev)
@@ -408,7 +409,10 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       })
     }
   }, [api, fetchTasks])
-  useEffect(() => { handleToggleCompleteRef.current = handleToggleComplete }, [handleToggleComplete])
+  useEffect(() => { toggleCompleteRef.current = toggleComplete }, [toggleComplete])
+  const handleToggleComplete = useCallback((task) => toggleComplete(task).catch((err) => {
+    setActionError(err.message || 'Could not update that task.')
+  }), [toggleComplete])
 
   // Due date/Project/Priority quick edits from a TaskRow's inline dropdowns:
   // optimistic update, roll back and surface the error banner on failure,

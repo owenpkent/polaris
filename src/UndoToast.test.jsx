@@ -35,6 +35,27 @@ describe('UndoToast', () => {
     expect(toast()).toBeNull()
   })
 
+  test('a failed Undo says so with no timer, Retry runs it again, and success clears it', async () => {
+    const undo = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce()
+    render(<UndoToast />)
+    act(() => showCompleted('Pay rent', undo))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo completing Pay rent' })) })
+    expect(screen.getByRole('status').textContent).toContain('Could not reopen Pay rent')
+    act(() => { vi.advanceTimersByTime(TOAST_MS * 3) })
+    const retry = screen.getByRole('button', { name: 'Retry reopening Pay rent' })
+    await act(async () => { fireEvent.click(retry) })
+    expect(undo).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
+  test('a failed Undo can be dismissed', async () => {
+    render(<UndoToast />)
+    act(() => showCompleted('Pay rent', () => Promise.reject(new Error('down'))))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo completing Pay rent' })) })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss, Pay rent stays completed' }))
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
   test('goes away after about six seconds', () => {
     render(<UndoToast />)
     act(() => showCompleted('Pay rent', () => {}))

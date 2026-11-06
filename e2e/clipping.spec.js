@@ -734,12 +734,38 @@ test.describe('nothing is cut off between the breakpoint and the desktop width',
 // that only looks like one must not. Without this, a check that quietly stopped seeing anything
 // would pass every test above.
 test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@all-widths'] }, () => {
-  test('a long title wraps and the toast clears the bottom bar', async ({ page, request }, testInfo) => {
+  // The toast may cover the list for its few seconds, so the sweep of the whole page waits until
+  // it has gone. While it shows, it has to fit, and what stays usable has to stay reachable.
+  test('a long title wraps, the toast clears the bottom bar, and the list is whole once it goes', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
     await openView(page)
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
-    await expect(page.getByRole('button', { name: `Undo completing ${title}` })).toBeVisible()
+    const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+    await expect(undo).toBeVisible()
+    await undo.hover() // holds the toast's timer
+    const toast = page.getByRole('status').filter({ has: undo })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    await undo.click({ trial: true })
+    for (const name of ['New task', 'More views']) {
+      const control = page.getByRole('button', { name, exact: true })
+      if (await control.isVisible()) await control.click({ trial: true })
+    }
+    await undo.focus()
+    await page.keyboard.press('Escape')
+    await expect(undo).toHaveCount(0)
     await expectNothingCutOff(page)
+  })
+
+  test('a failed Undo shows whole, with Retry and Dismiss', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    await openView(page)
+    await page.route(/\/api\/tasks\/[^/]+\/reopen$/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    await page.getByRole('button', { name: `Undo completing ${title}` }).click()
+    const retry = page.getByRole('button', { name: `Retry reopening ${title}` })
+    await expect(retry).toBeVisible()
+    const toast = page.getByRole('status').filter({ has: retry })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
   })
 })
 
