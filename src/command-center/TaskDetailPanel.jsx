@@ -475,7 +475,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // A click elsewhere adds what is in the comment box on the release, as the list's Add task does,
   // so the new comment does not move what was pressed before the click lands (pointerPress.js).
   const commentPress = usePointerPress(Boolean(commentDraft))
-  useEffect(() => { setCommentDraft('') }, [taskId])
+  useEffect(() => { setCommentDraft(''); setCommentBusy(false) }, [taskId])
   const [actionNotice, setActionNotice] = useState(null)
   const [skipBusy, setSkipBusy] = useState(false)
   const [restoring, setRestoring] = useState(null)
@@ -521,7 +521,10 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // server's version (a trimmed title, say) replaces what was sent.
   const load = useCallback(async ({ quiet = false, sent = {} } = {}) => {
     const opening = openingRef.current.seq
-    const stale = () => openingRef.current.seq !== opening
+    // A caller that outlived its task (a save answered after the panel moved on) holds the load
+    // for the old task, and it is stale before it starts: its answer would pass for the new one.
+    const stale = () => openingRef.current.seq !== opening || openingRef.current.taskId !== taskId
+    if (stale()) return
     if (!quiet) {
       setLoading(true)
       setError(null)
@@ -885,17 +888,24 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     const sent = commentDraft
     const body = sent.trim()
     if (!body || commentBusy) return
+    // A click-away can move the panel to another task before this answers (openingRef), as a
+    // click on another task's row does. Nothing from this task is then written into the next
+    // one's panel: not its fields, not the busy state, and a draft typed there is not this one.
+    const opening = openingRef.current.seq
+    const stale = () => openingRef.current.seq !== opening
+    setSaveError(null)
     setCommentBusy(true)
     try {
       await api.addComment(taskId, body)
-      // A click-away can move the panel to another task before this answers, and a draft typed
-      // there is not this one.
+      if (stale()) return
       setCommentDraft((current) => (current === sent ? '' : current))
       await load({ quiet: true })
     } catch (err) {
-      setSaveError(err.message || 'Could not add comment.')
+      // The box that held it went with the task, so the words are given back here.
+      if (stale()) setSaveError(`Could not add your comment to the task you just left: ${body}`)
+      else setSaveError(err.message || 'Could not add comment.')
     } finally {
-      setCommentBusy(false)
+      if (!stale()) setCommentBusy(false)
     }
   }
 

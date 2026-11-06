@@ -606,6 +606,73 @@ describe('Assign to AI', () => {
       await waitFor(() => expect(screen.getByRole('textbox', { name: 'Add a comment' }).value).toBe(''))
       expect(api.addComment).not.toHaveBeenCalled()
     })
+
+    // A click on another task's row leaves the box and moves the panel in one go: the save for
+    // the first task is still out when the second has loaded.
+    describe('a save still out when the panel moves to another task', () => {
+      const SECOND = { ...TASK, id: 't_2', title: 'Second title', notes: 'Second notes' }
+
+      async function leaveForSecondTask(save) {
+        api.getTask.mockImplementation(async (id) => detail(id === 't_2' ? SECOND : TASK, []))
+        api.addComment.mockReturnValue(save.promise)
+        api.updateTask.mockResolvedValue({})
+        const { rerender } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+        const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+        act(() => { box.focus() })
+        fireEvent.change(box, { target: { value: 'Worth a look' } })
+        fireEvent.pointerDown(document.body)
+        act(() => { box.blur() })
+        await act(async () => { fireEvent.pointerUp(document.body) })
+        expect(api.addComment).toHaveBeenCalledWith('t_1', 'Worth a look')
+        rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+        await waitFor(() => expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('Second notes'))
+      }
+
+      test('its answer leaves the second task its own fields, and an edit saves to the second task', async () => {
+        const save = deferred()
+        await leaveForSecondTask(save)
+        api.getTask.mockClear()
+        await act(async () => { save.resolve({}) })
+
+        expect(api.getTask).not.toHaveBeenCalledWith('t_1')
+        const notes = screen.getByRole('textbox', { name: 'Notes' })
+        expect(notes.value).toBe('Second notes')
+        act(() => { notes.focus() })
+        fireEvent.change(notes, { target: { value: 'Second notes plus edit' } })
+        await act(async () => { fireEvent.keyDown(notes, { key: 'Escape' }) })
+        expect(api.updateTask).toHaveBeenCalledWith('t_2', { notes: 'Second notes plus edit' })
+        expect(api.updateTask).not.toHaveBeenCalledWith('t_1', expect.anything())
+      })
+
+      test('the comment box on the second task is free while the first save is out, and after it', async () => {
+        const save = deferred()
+        await leaveForSecondTask(save)
+        const box = screen.getByRole('textbox', { name: 'Add a comment' })
+        expect(box.readOnly).toBe(false)
+        expect(box.getAttribute('aria-busy')).toBeNull()
+
+        // A comment typed on the second task meanwhile is its own: the first answer does not clear it.
+        fireEvent.change(box, { target: { value: 'About the second task' } })
+        await act(async () => { save.resolve({}) })
+        expect(box.value).toBe('About the second task')
+        expect(box.readOnly).toBe(false)
+
+        api.addComment.mockResolvedValue({})
+        await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+        expect(api.addComment).toHaveBeenLastCalledWith('t_2', 'About the second task')
+      })
+
+      test('a save that fails after the move says the comment on the task left was not added', async () => {
+        let fail
+        const save = { promise: new Promise((_, reject) => { fail = reject }) }
+        await leaveForSecondTask(save)
+        await act(async () => { fail(new Error('boom')) })
+
+        expect(await screen.findByText('Could not add your comment to the task you just left: Worth a look')).toBeTruthy()
+        expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('Second notes')
+        expect(screen.getByRole('textbox', { name: 'Add a comment' }).readOnly).toBe(false)
+      })
+    })
   })
 
   test('Esc in the notes saves what is there before the panel closes', async () => {
