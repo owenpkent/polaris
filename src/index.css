@@ -2160,6 +2160,71 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .fab:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
 }
 
+/* Completed toast (src/UndoToast.jsx). Centred near the bottom on a desktop; under 640px it sits
+   above the tab bar and left of the New task button, so neither is covered. The title wraps. */
+.undo-toast-region {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 24px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+.undo-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  max-width: min(480px, 100%);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  background: var(--bg3);
+  color: var(--t1);
+  border: 1px solid var(--bd-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  font-size: 14px;
+  animation: undo-toast-in 160ms ease-out;
+}
+/* Failed Undos scroll here, past half the screen. It takes the pointer, so its scrollbar can be
+   clicked as well as wheeled, and it is only there while a failure is. */
+.undo-toast-failures {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  width: min(480px, 100%);
+  max-height: 50dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.undo-toast-failures .undo-toast { flex-shrink: 0; max-width: 100%; }
+.undo-toast-text { min-width: 0; overflow-wrap: anywhere; }
+.undo-toast-title { font-weight: 600; }
+.undo-toast-btn { flex-shrink: 0; min-height: 44px; min-width: 44px; }
+.undo-toast.is-failed { flex-wrap: wrap; }
+.undo-toast.is-failed .undo-toast-text { flex: 1 1 100%; padding-top: var(--space-2); }
+.undo-toast-actions { display: flex; gap: var(--gap-inline); margin-left: auto; }
+@keyframes undo-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .undo-toast { animation: none; }
+}
+@media (max-width: 640px) {
+  .undo-toast-region {
+    right: 80px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    align-items: flex-start;
+  }
+  .undo-toast { max-width: 100%; }
+}
+
 /* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
    the chip only adds its soft background. */
 .due-chip {

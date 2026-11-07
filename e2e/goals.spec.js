@@ -28,7 +28,7 @@ test.describe('Goals', { tag: ['@flow'] }, () => {
     const audience = card(page, 'Grow the audience')
     await expect(audience).toContainText('Stalled: no open task')
     await expect(audience.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '250 of 1000 subscribers (25%)')
-    await expect(page.getByRole('status')).toContainText(/\d+ goals?, [1-9]\d* need attention/)
+    await expect(page.getByRole('status').filter({ hasText: /\d+ goals?, [1-9]\d* need attention/ })).toBeVisible()
   })
 
   test('details list the open tasks that move the goal', async ({ page }) => {

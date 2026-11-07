@@ -1,6 +1,8 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import BoardTab from './BoardTab'
+import UndoToast from '../UndoToast'
+import { resetUndoToast } from './undoToast'
 
 let connected = true
 const api = {}
@@ -28,6 +30,7 @@ function project(over = {}) {
 
 beforeEach(() => {
   connected = true
+  resetUndoToast()
   localStorage.clear()
   Object.assign(api, {
     listProjects: vi.fn().mockResolvedValue({ projects: [project()] }),
@@ -112,6 +115,27 @@ describe('BoardTab', () => {
     expect((await screen.findByTestId('task-detail-panel')).textContent).toBe('t1')
   })
 
+  test('an Undo that fails after the Board has gone is shown by the toast, and Retry works', async () => {
+    const view = render(<><BoardTab /><UndoToast /></>)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    const undo = await screen.findByRole('button', { name: 'Undo completing Task One' })
+    await waitFor(() => expect(api.getProject).toHaveBeenCalledTimes(2))
+    // App keeps the toast and unmounts the tab, as leaving the Board does.
+    view.rerender(<>{null}<UndoToast /></>)
+    expect(screen.queryByRole('region', { name: 'Todo' })).toBeNull()
+
+    api.reopenTask.mockRejectedValueOnce(new Error('Server error'))
+    fireEvent.click(undo)
+    const retry = await screen.findByRole('button', { name: 'Retry reopening Task One' })
+    expect(screen.getByRole('status').textContent).toContain('Could not reopen Task One')
+
+    fireEvent.click(retry)
+    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry reopening Task One' })).toBeNull())
+    expect(screen.getByRole('status').textContent).toBe('')
+  })
+
   test("a card's check circle completes the task, and a done card's check reopens it", async () => {
     render(<BoardTab />)
     const todo = await screen.findByRole('region', { name: 'Todo' })
@@ -124,6 +148,15 @@ describe('BoardTab', () => {
     fireEvent.click(within(todo).getByRole('button', { name: 'Show 1 done' }))
     fireEvent.click(within(todo).getByRole('checkbox', { name: 'Reopen Task Four' }))
     await waitFor(() => expect(api.reopenTask).toHaveBeenCalledWith('t4'))
+  })
+
+  test("completing a card shows the toast, and its Undo reopens the card's task", async () => {
+    render(<><UndoToast /><BoardTab /></>)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Task One' }))
+    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledWith('t1'))
+    expect(screen.queryByRole('button', { name: 'Undo completing Task One' })).toBeNull()
   })
 
   test('a failed complete puts the card back and says so', async () => {

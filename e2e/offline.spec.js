@@ -84,7 +84,8 @@ test('a task completed before the first connection leaves the list, and stays ou
   await expect(page.getByRole('checkbox', { name: `Complete ${title}` })).toBeVisible()
 
   await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
-  await expect(page.getByText(title, { exact: true })).toHaveCount(0)
+  // The completed toast names the task for a few seconds, so this looks at the list's row.
+  await expect(page.getByRole('checkbox', { name: `Complete ${title}` })).toHaveCount(0)
   await expect(page.getByRole('status').filter({ hasText: '2 changes waiting' })).toBeVisible()
 
   // There is no server to refresh from: the copy itself must leave the done task out.

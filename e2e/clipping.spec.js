@@ -733,6 +733,79 @@ test.describe('nothing is cut off between the breakpoint and the desktop width',
 // The check itself, on a page made of known cut-offs: each kind must be reported, and each thing
 // that only looks like one must not. Without this, a check that quietly stopped seeing anything
 // would pass every test above.
+test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@all-widths'] }, () => {
+  // The toast may cover the list for its few seconds, so the sweep of the whole page waits until
+  // it has gone. While it shows, it has to fit, and what stays usable has to stay reachable.
+  test('a long title wraps, the toast clears the bottom bar, and the list is whole once it goes', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    await openView(page)
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+    await expect(undo).toBeVisible()
+    await undo.hover() // holds the toast's timer
+    const toast = page.getByRole('status').filter({ has: undo })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    await undo.click({ trial: true })
+    for (const name of ['New task', 'More views']) {
+      const control = page.getByRole('button', { name, exact: true })
+      if (await control.isVisible()) await control.click({ trial: true })
+    }
+    await undo.focus()
+    await page.keyboard.press('Escape')
+    await expect(undo).toHaveCount(0)
+    await expectNothingCutOff(page)
+  })
+
+  test('a stack of failed Undos stays on screen, and every Retry and Dismiss can be reached', async ({ page, request }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const failing = []
+    for (let i = 0; i < 8; i++) failing.push(await createTask(request, testInfo, `stack ${i} ${WORDY}`))
+    const newest = await createTask(request, testInfo, 'stack newest')
+    await openView(page)
+    await page.route(/\/api\/tasks\/[^/]+\/reopen$/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
+    for (const title of failing) {
+      await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+      await page.getByRole('button', { name: `Undo completing ${title}` }).click()
+      await expect(page.getByRole('button', { name: `Retry reopening ${title}` })).toBeVisible()
+    }
+    const retry = (title) => page.getByRole('button', { name: `Retry reopening ${title}` })
+    const dismiss = (title) => page.getByRole('button', { name: `Dismiss, ${title} stays completed` })
+    // The newest failure is the one in view.
+    await expect(retry(failing.at(-1))).toBeInViewport({ ratio: 1 })
+
+    // A newer completion's Undo sits below the stack, whole and reachable, and the stack fits.
+    await page.getByRole('checkbox', { name: `Complete ${newest}` }).click()
+    const undo = page.getByRole('button', { name: `Undo completing ${newest}` })
+    await undo.hover() // holds its timer
+    await expect(undo).toBeInViewport({ ratio: 1 })
+    const region = page.getByRole('status').filter({ has: undo })
+    expect((await region.boundingBox()).y).toBeGreaterThanOrEqual(0)
+    expect(await clippedContent(page, region)).toEqual([])
+
+    for (const title of failing) {
+      await retry(title).click({ trial: true })
+      await expect(retry(title)).toBeInViewport({ ratio: 1 })
+      await dismiss(title).click({ trial: true })
+      await expect(dismiss(title)).toBeInViewport({ ratio: 1 })
+    }
+    expect(await hiddenFocusRings(page, page.getByRole('status').filter({ has: retry(failing[0]) }))).toEqual([])
+  })
+
+  test('a failed Undo shows whole, with Retry and Dismiss', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    // The toast slides in, and a focus ring measured during that would be measured in the wrong place.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openView(page)
+    await page.route(/\/api\/tasks\/[^/]+\/reopen$/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    await page.getByRole('button', { name: `Undo completing ${title}` }).click()
+    const retry = page.getByRole('button', { name: `Retry reopening ${title}` })
+    await expect(retry).toBeVisible()
+    const toast = page.getByRole('status').filter({ has: retry })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+  })
+})
+
 test.describe('the cut-off check', { tag: ['@a11y'] }, () => {
   test('reports each kind of cut-off and nothing else', async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 300 })
