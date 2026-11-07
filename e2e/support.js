@@ -695,7 +695,8 @@ export async function clippedContent(page, scope = page.locator('body')) {
     // Then controls, each scrolled to the middle of the screen first.
     const controls = root.querySelectorAll('button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"], [role="radio"]')
     for (const el of controls) {
-      if (hidden(el)) continue
+      // Inert content cannot be reached (the held row's copy, a picture that follows the pointer).
+      if (hidden(el) || el.closest('[inert]')) continue
       el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
       const r = el.getBoundingClientRect()
       if (r.width === 0 || r.height === 0) continue
