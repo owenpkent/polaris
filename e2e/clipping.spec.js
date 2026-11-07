@@ -756,6 +756,41 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
     await expectNothingCutOff(page)
   })
 
+  test('a stack of failed Undos stays on screen, and every Retry and Dismiss can be reached', async ({ page, request }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const failing = []
+    for (let i = 0; i < 8; i++) failing.push(await createTask(request, testInfo, `stack ${i} ${WORDY}`))
+    const newest = await createTask(request, testInfo, 'stack newest')
+    await openView(page)
+    await page.route(/\/api\/tasks\/[^/]+\/reopen$/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
+    for (const title of failing) {
+      await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+      await page.getByRole('button', { name: `Undo completing ${title}` }).click()
+      await expect(page.getByRole('button', { name: `Retry reopening ${title}` })).toBeVisible()
+    }
+    const retry = (title) => page.getByRole('button', { name: `Retry reopening ${title}` })
+    const dismiss = (title) => page.getByRole('button', { name: `Dismiss, ${title} stays completed` })
+    // The newest failure is the one in view.
+    await expect(retry(failing.at(-1))).toBeInViewport({ ratio: 1 })
+
+    // A newer completion's Undo sits below the stack, whole and reachable, and the stack fits.
+    await page.getByRole('checkbox', { name: `Complete ${newest}` }).click()
+    const undo = page.getByRole('button', { name: `Undo completing ${newest}` })
+    await undo.hover() // holds its timer
+    await expect(undo).toBeInViewport({ ratio: 1 })
+    const region = page.getByRole('status').filter({ has: undo })
+    expect((await region.boundingBox()).y).toBeGreaterThanOrEqual(0)
+    expect(await clippedContent(page, region)).toEqual([])
+
+    for (const title of failing) {
+      await retry(title).click({ trial: true })
+      await expect(retry(title)).toBeInViewport({ ratio: 1 })
+      await dismiss(title).click({ trial: true })
+      await expect(dismiss(title)).toBeInViewport({ ratio: 1 })
+    }
+    expect(await hiddenFocusRings(page, page.getByRole('status').filter({ has: retry(failing[0]) }))).toEqual([])
+  })
+
   test('a failed Undo shows whole, with Retry and Dismiss', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
     // The toast slides in, and a focus ring measured during that would be measured in the wrong place.

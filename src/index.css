@@ -2189,6 +2189,20 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   font-size: 14px;
   animation: undo-toast-in 160ms ease-out;
 }
+/* Failed Undos scroll here, past half the screen. It takes the pointer, so its scrollbar can be
+   clicked as well as wheeled, and it is only there while a failure is. */
+.undo-toast-failures {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  width: min(480px, 100%);
+  max-height: 50dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.undo-toast-failures .undo-toast { flex-shrink: 0; max-width: 100%; }
 .undo-toast-text { min-width: 0; overflow-wrap: anywhere; }
 .undo-toast-title { font-weight: 600; }
 .undo-toast-btn { flex-shrink: 0; min-height: 44px; min-width: 44px; }

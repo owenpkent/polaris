@@ -11,9 +11,25 @@ export const TOAST_MS = 6000
 // was completed on has gone. The title is third-party text at times: it is rendered as text only.
 export default function UndoToast() {
   const toasts = useUndoToasts()
+  const failures = toasts.filter((t) => t.failed)
   return (
     <div className="undo-toast-region" role="status" aria-live="polite" aria-atomic="true">
-      {toasts.map((toast) => <Toast key={toast.id} toast={toast} />)}
+      {failures.length > 0 && <FailureStack failures={failures} />}
+      {toasts.filter((t) => !t.failed).map((toast) => <Toast key={toast.id} toast={toast} />)}
+    </div>
+  )
+}
+
+// Failures do not expire, so there can be more than fit. They scroll in a box of their own, which
+// the page cannot do for a fixed layer, and the newest, at the bottom, is the one in view.
+function FailureStack({ failures }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
+  }, [failures.length])
+  return (
+    <div ref={ref} className="undo-toast-failures">
+      {failures.map((toast) => <Toast key={toast.id} toast={toast} />)}
     </div>
   )
 }
