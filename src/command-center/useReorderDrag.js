@@ -29,6 +29,10 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
     return () => document.body.classList.remove('is-reordering')
   }, [drag])
 
+  // Leaving the view mid-drag ends the drag, so the held row's copy does not stay on the page.
+  const stopDrag = useRef(null)
+  useEffect(() => () => stopDrag.current?.(), [])
+
   const startDrag = useCallback((e, task, index, group) => {
     if (!enabled || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
     const handle = e.currentTarget
@@ -36,15 +40,67 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
     const startY = e.clientY
     let active = false
     lastWasDrag.current = false
+    // The list as it would be with no gap open. While a row is held, the rows part where it would
+    // land (the margin on .is-drop-before or .is-drop-after, index.css), which moves everything
+    // below the gap down by its height; measured as it is, the pointer would chase the gap it
+    // opened. So everything below a gap is read back up by the margin it has right now. That means
+    // every row's margin, not only the marked row's: the gap the pointer just left takes 120ms to
+    // close, and until it has, it still moves what is under it.
     const readLayout = () => {
-      const sections = Array.from(containerRef.current?.querySelectorAll('[data-reorder-group]') ?? [])
+      const root = containerRef.current
+      const sections = Array.from(root?.querySelectorAll('[data-reorder-group]') ?? [])
         .filter((el) => { const id = el.getAttribute('data-reorder-group'); return id === group || !isClosed?.(id) })
+      const gaps = []
+      for (const row of root?.querySelectorAll('[data-task-id]') ?? []) {
+        const { marginTop, marginBottom } = getComputedStyle(row)
+        const r = row.getBoundingClientRect()
+        // The margin above a row moves the row itself, and the one below it only what follows.
+        if (parseFloat(marginTop)) gaps.push({ moves: (y) => y >= r.top, size: parseFloat(marginTop) })
+        if (parseFloat(marginBottom)) gaps.push({ moves: (y) => y > r.bottom, size: parseFloat(marginBottom) })
+      }
+      const back = (y) => gaps.reduce((rest, gap) => (gap.moves(y) ? rest - gap.size : rest), y)
       return sections.map((el) => ({
         id: el.getAttribute('data-reorder-group'),
-        bottom: el.getBoundingClientRect().bottom,
-        headerBottom: el.querySelector('[data-reorder-header]')?.getBoundingClientRect().bottom ?? -Infinity,
-        rows: Array.from(el.querySelectorAll('[data-task-id]')).map((r) => r.getBoundingClientRect()),
+        bottom: back(el.getBoundingClientRect().bottom),
+        headerBottom: back(el.querySelector('[data-reorder-header]')?.getBoundingClientRect().bottom ?? -Infinity),
+        rows: Array.from(el.querySelectorAll('[data-task-id]')).map((row) => {
+          const r = row.getBoundingClientRect()
+          return { top: back(r.top), height: r.height }
+        }),
       }))
+    }
+
+    // The held row lifts out of the list: a copy of it, raised with a shadow, follows the pointer,
+    // while the row itself stays in place, faded, as the gap it came from. The copy is only a
+    // picture (aria-hidden, inert, no ids), so nothing in it can be focused or read twice.
+    const row = handle.closest?.('[data-task-id]')
+    let ghost = null
+    let grabOffset = 0
+    const lift = (y) => {
+      if (!row) return
+      const rect = row.getBoundingClientRect()
+      grabOffset = y - rect.top
+      ghost = row.cloneNode(true)
+      for (const el of [ghost, ...ghost.querySelectorAll('[id]')]) el.removeAttribute('id')
+      for (const el of [ghost, ...ghost.querySelectorAll('[data-task-id], [data-subtask-id], [data-testid]')]) {
+        el.removeAttribute('data-task-id')
+        el.removeAttribute('data-subtask-id')
+        el.removeAttribute('data-testid')
+      }
+      ghost.setAttribute('aria-hidden', 'true')
+      ghost.inert = true
+      ghost.classList.remove('is-dragging', 'is-drop-before', 'is-drop-after')
+      ghost.classList.add('reorder-ghost')
+      Object.assign(ghost.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+      document.body.appendChild(ghost)
+      // The gap the rows open where it would land is the held row's own height.
+      document.body.style.setProperty('--drag-gap', `${rect.height}px`)
+    }
+    const follow = (y) => { if (ghost) ghost.style.top = `${y - grabOffset}px` }
+    const drop = () => {
+      ghost?.remove()
+      ghost = null
+      document.body.style.removeProperty('--drag-gap')
     }
 
     const onMove = (ev) => {
@@ -52,8 +108,10 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
         if (Math.abs(ev.clientY - startY) < DRAG_THRESHOLD_PX) return
         active = true
         lastWasDrag.current = true
+        lift(startY)
       }
       ev.preventDefault()
+      follow(ev.clientY)
       const hit = dropTargetAt(readLayout(), ev.clientY, crossGroup ? null : group)
       if (!hit) return
       live.current = { id: task.id, index, group, slot: hit.slot, target: hit.groupId, header: hit.header }
@@ -66,10 +124,12 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
       handle.removeEventListener('pointermove', onMove)
       handle.removeEventListener('pointerup', onUp)
       handle.removeEventListener('pointercancel', onCancel)
-      handle.removeEventListener('lostpointercapture', onCancel)
+      document.removeEventListener('lostpointercapture', onLost)
       window.removeEventListener('keydown', onKey, true)
       if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
+      drop()
       live.current = null
+      stopDrag.current = null
       setDrag(null)
     }
     const onUp = () => {
@@ -78,6 +138,9 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
       if (active && result) onRelease(task, result.group, result.target, result.slot)
     }
     const onCancel = () => stop()
+    // On the document, because a handle taken out of the page (a refresh dropped the task) loses its
+    // capture there, and no other pointer event would ever reach it to end the drag.
+    const onLost = (ev) => { if (ev.pointerId === pointerId) stop() }
     // Esc drops the row where it was (listed in the keyboard legend as closing what is open).
     function onKey(ev) {
       if (ev.key !== 'Escape') return
@@ -90,8 +153,9 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
     handle.addEventListener('pointermove', onMove)
     handle.addEventListener('pointerup', onUp)
     handle.addEventListener('pointercancel', onCancel)
-    handle.addEventListener('lostpointercapture', onCancel)
+    document.addEventListener('lostpointercapture', onLost)
     window.addEventListener('keydown', onKey, true)
+    stopDrag.current = stop
   }, [enabled, crossGroup, isClosed, onRelease])
 
   const wasDrag = useCallback(() => {
