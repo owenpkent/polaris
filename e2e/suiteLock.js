@@ -24,6 +24,12 @@ export const TOKEN_ENV = 'CC_UI_SUITE_LOCK'
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 
+// While another process is deleting a file, Windows refuses to create it, with one of these and
+// not EEXIST. That is the lock changing hands, so the create is tried again. One that goes on being
+// refused for this long is a real fault, such as a folder this user cannot write, and is thrown.
+const REFUSED = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const REFUSED_MS = 5000
+
 /** Whether a process with this pid exists (EPERM: it does, but belongs to someone else). */
 export function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false
@@ -82,16 +88,24 @@ function readMutex(mutex) {
 }
 
 /** Run `fn` while holding the reclaim mutex. Returns `{ held: false }` when it could not be taken in time. */
-function withMutex(path, { isAlive = pidAlive, mutexStaleMs = MUTEX_STALE_MS, mutexWaitMs = MUTEX_WAIT_MS } = {}, fn) {
+function withMutex(path, { isAlive = pidAlive, mutexStaleMs = MUTEX_STALE_MS, mutexWaitMs = MUTEX_WAIT_MS, createFile = writeFileSync, refusedMs = REFUSED_MS } = {}, fn) {
   const mutex = reclaimPath(path)
   const mine = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(4).toString('hex') })
   const deadline = Date.now() + mutexWaitMs
+  let refusedSince = null
   for (;;) {
     try {
-      writeFileSync(mutex, mine, { flag: 'wx' })
+      createFile(mutex, mine, { flag: 'wx' })
       break
     } catch (err) {
+      if (REFUSED.has(err.code)) {
+        refusedSince ??= Date.now()
+        if (Date.now() - refusedSince > refusedMs) throw err
+        pause(2)
+        continue
+      }
       if (err.code !== 'EEXIST') throw err
+      refusedSince = null
     }
     const other = readMutex(mutex)
     const age = ageMs(mutex)
@@ -167,6 +181,8 @@ export async function acquireSuiteLock({
   tornMs = 10000,
   isAlive = pidAlive,
   log = (line) => console.log(line),
+  createFile = writeFileSync,
+  refusedMs = REFUSED_MS,
 } = {}) {
   const heartbeat = (token) => {
     const timer = setInterval(() => touch(path, token), heartbeatMs)
@@ -184,12 +200,20 @@ export async function acquireSuiteLock({
   const record = { token, pid: process.pid, startedAt: new Date().toISOString(), cwd: process.cwd(), command }
   const started = Date.now()
   let noticed = -Infinity
+  let refusedSince = null
   for (;;) {
     try {
-      writeFileSync(path, JSON.stringify(record), { flag: 'wx' })
+      createFile(path, JSON.stringify(record), { flag: 'wx' })
       break
     } catch (err) {
+      if (REFUSED.has(err.code)) {
+        refusedSince ??= Date.now()
+        if (Date.now() - refusedSince > refusedMs) throw err
+        await sleep(Math.min(pollMs, 20))
+        continue
+      }
       if (err.code !== 'EEXIST') throw err
+      refusedSince = null
     }
     const held = readLock(path)
     const age = ageMs(path)

@@ -803,6 +803,11 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
     await expect(retry).toBeVisible()
     const toast = page.getByRole('status').filter({ has: retry })
     expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    // A failure stays until it is dismissed, and may cover the end of the list until then.
+    await page.getByRole('button', { name: `Dismiss, ${title} stays completed` }).click()
+    await expect(retry).toHaveCount(0)
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await expectNothingCutOff(page)
   })
 })
 

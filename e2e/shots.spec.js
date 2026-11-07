@@ -2,7 +2,7 @@ import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { TOKEN } from './server.js'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -30,7 +30,7 @@ const variant = (testInfo) => testInfo.project.name.replace(/^shots-/, '')
 // name, a timestamp. Masked areas are drawn as solid boxes, so a mask covers the smallest element
 // that holds the unstable text and never a whole card: whatever is under it can change unseen.
 // Returns the shot's status.
-async function shot(page, testInfo, view, state, mask = []) {
+async function shot(page, testInfo, view, state, mask = [], scope = undefined) {
   const name = `${view}-${state}-${variant(testInfo)}`
   for (const dir of Object.values(DIRS)) mkdirSync(dir, { recursive: true })
   const current = join(DIRS.current, `${name}.png`)
@@ -53,8 +53,10 @@ async function shot(page, testInfo, view, state, mask = []) {
   }
   // What the shot cannot show in full (CONTRIBUTING.md, "Nothing is cut off"), listed by the run
   // beside the pixel changes. Measured after the screenshot, since the check scrolls controls.
-  // The focus ring check is left to e2e/clipping.spec.js: it photographs every control.
-  const clipped = [...(await clippedContent(page)), ...(await danglingLines(page))]
+  // The focus ring check is left to e2e/clipping.spec.js: it photographs every control. A layer
+  // that may cover the page until it is dismissed passes `scope`, and clipping.spec.js checks the
+  // page whole once it has gone.
+  const clipped = [...(await clippedContent(page, scope)), ...(await danglingLines(page, scope))]
   writeFileSync(join(DIRS.status, `${name}.json`), JSON.stringify({ name, view, state, variant: variant(testInfo), status, clipped }))
   return status
 }
@@ -132,7 +134,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     const day = new Date()
     day.setDate(day.getDate() + 1)
     const tomorrow = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
-    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow })
+    const title = await createTask(request, testInfo, 'drop range', { dueAt: tomorrow, position: endPosition() })
     await openView(page)
     // The row is last in Tomorrow, so ArrowDown drops it into Next 7 days, which asks for a day.
     const handle = page.getByRole('button', { name: `Reorder ${title}` })
@@ -180,8 +182,9 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     const title = await createTask(request, testInfo, 'toast shot')
     await openView(page)
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
-    await expect(page.getByRole('button', { name: `Undo completing ${title}` })).toBeVisible()
-    await shot(page, testInfo, 'mytasks', 'completed-toast')
+    const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+    await expect(undo).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'completed-toast', [], page.getByRole('status').filter({ has: undo }))
   })
 
   test('mytasks: undo failed toast', async ({ page, request }, testInfo) => {
@@ -190,8 +193,9 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.route(new RegExp('/api/tasks/[^/]+/reopen$'), (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"no"}}' }))
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
     await page.getByRole('button', { name: `Undo completing ${title}` }).click()
-    await expect(page.getByRole('button', { name: `Retry reopening ${title}` })).toBeVisible()
-    await shot(page, testInfo, 'mytasks', 'undo-failed-toast')
+    const retry = page.getByRole('button', { name: `Retry reopening ${title}` })
+    await expect(retry).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'undo-failed-toast', [], page.getByRole('status').filter({ has: retry }))
   })
 
   // A row with its name being edited in place.
@@ -802,6 +806,8 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   // installed before the page loads.
   test('settings: reminders', async ({ page }, testInfo) => {
     await page.addInitScript(() => {
+      // This stand-in counts as the app, so the automatic update check would run and call GitHub.
+      localStorage.setItem('cc-app-update-v1', JSON.stringify({ enabled: false }))
       window.Capacitor = {
         isNativePlatform: () => true,
         nativePromise: async () => ({ display: 'granted', notifications: [] }),
