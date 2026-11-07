@@ -242,7 +242,13 @@ public class AppUpdaterPlugin extends Plugin {
     }
 
     private static long fetchTo(String url, File target, Long expectedSize) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        URL address;
+        try {
+            address = new URI(url).toURL();
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            throw new IOException("the download address is not valid", e);
+        }
+        HttpURLConnection conn = (HttpURLConnection) address.openConnection();
         conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
         conn.setReadTimeout(READ_TIMEOUT_MS);
         conn.setInstanceFollowRedirects(true);
