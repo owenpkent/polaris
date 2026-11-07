@@ -933,9 +933,9 @@ kbd { color: var(--t1); }
 
 /* The My Tasks list is a flat table on the page, not a card: a column header stuck to the top,
    then every group in turn with its own header row (title and count) and its rows under it.
-   A hairline runs under each row and nowhere else: the columns are told apart by alignment and
-   the space between them, not by lines, so the list reads as a list rather than a spreadsheet.
-   The column header is the quietest text on the page (small, --t3); the group headers are the
+   A hairline runs under each row, and a hairline divides the columns after the name (Due date,
+   Project, Priority, ...), from the column header down through every row, so the eye can run
+   down a column without losing it. The column header is the quietest text on the page (small, --t3); the group headers are the
    loudest, so the eye lands on the groups first. */
 .mytasks-colhead {
   min-height: 40px;
@@ -946,7 +946,7 @@ kbd { color: var(--t1); }
   background: var(--bg);
 }
 .mytasks-colhead > :nth-child(n+3),
-.mytasks-row > :nth-child(n+3) { padding-left: 12px; }
+.mytasks-row > :nth-child(n+3) { padding-left: 12px; border-left: 1px solid var(--bd); }
 /* Dates, counts, and anything else with digits in the list line up in columns. */
 .mytasks-grid, .mytasks-section-count, .board-card-foot, .board-lane-count { font-variant-numeric: tabular-nums; }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
@@ -955,29 +955,57 @@ kbd { color: var(--t1); }
    subtask row under its parent (.is-nested) has no handle: its name cell spans both columns
    (TaskRow.jsx), so its third cell is the first column and keeps its line. */
 .mytasks-reorderable .mytasks-colhead > :nth-child(3),
-.mytasks-reorderable .mytasks-row:not(.is-nested) > :nth-child(3) { border-left: none; padding-left: 0; }
+.mytasks-reorderable .mytasks-row:not(.is-nested) > :nth-child(3),
+.reorder-ghost:not(.is-nested) > :nth-child(3) { border-left: none; padding-left: 0; }
 .reorder-handle { color: var(--t3); cursor: grab; touch-action: none; height: var(--row); }
 .reorder-handle:hover:not(:disabled), .reorder-handle:focus-visible { color: var(--t1); }
 body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-select: none; }
-/* The held row fades, and a 2px line marks the slot it would drop into (useReorderDrag.js). */
+/* The held row lifts out (useReorderDrag.js): a copy of it (.reorder-ghost), raised one step with
+   a pop shadow and a blue edge, follows the pointer; the row itself stays behind, faded, as the
+   gap it came from; and the rows part where it would land, opening a space its height
+   (--drag-gap, set on the body for the drag) with a dashed outline in it. */
 .mytasks-row { position: relative; }
-.mytasks-row.is-dragging { opacity: 0.5; }
+.mytasks-row.is-dragging { opacity: 0.35; }
+.reorder-ghost {
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  pointer-events: none;
+  background: var(--bg3);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop), inset 3px 0 0 var(--blue);
+  transform: scale(1.015);
+  transform-origin: left center;
+  cursor: grabbing;
+}
+.reorder-ghost * { cursor: grabbing; }
+body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 0.12s; }
+.mytasks-row.is-drop-before { margin-top: var(--drag-gap, 0px); }
+.mytasks-row.is-drop-after { margin-bottom: var(--drag-gap, 0px); }
 .mytasks-row.is-drop-before::before,
 .mytasks-row.is-drop-after::after {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
-  height: 2px;
-  background: var(--blue);
+  height: max(2px, calc(var(--drag-gap, 0px) - 8px));
+  border: 2px dashed var(--blue);
+  border-radius: var(--radius-sm);
+  background: var(--blue-soft);
   pointer-events: none;
   z-index: 2;
 }
-.mytasks-row.is-drop-before::before { top: -1px; }
-.mytasks-row.is-drop-after::after { bottom: -1px; }
+.mytasks-row.is-drop-before::before { top: calc(4px - var(--drag-gap, 0px)); }
+.mytasks-row.is-drop-after::after { bottom: calc(4px - var(--drag-gap, 0px)); }
+@media (prefers-reduced-motion: reduce) {
+  body.is-reordering .mytasks-row { transition: none; }
+}
 /* The row's focus ring is drawn inside its edge, so the last cell keeps its content clear of it. */
 .mytasks-row > :last-child { padding-right: 4px; }
 .mytasks-section + .mytasks-section { padding-top: var(--section-gap); }
+/* Holds the gap a held row opens under a group's last row, so the group's bottom edge moves with
+   it and useReorderDrag.js can read the layout back as it was before the gap. */
+[data-reorder-group] { display: flow-root; }
 .mytasks-section-header {
   display: flex;
   flex-wrap: wrap;
@@ -2226,32 +2254,36 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 }
 
 /* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
-   the chip only adds its soft background. */
+   the chip only adds its soft background. Every chip fills the column, text at its left, so the
+   chips in a list are one size and line up instead of each fitting its own word. */
 .due-chip {
   display: inline-flex;
   align-items: center;
-  max-width: 100%;
+  justify-content: flex-start;
+  width: 100%;
   height: 32px;
   padding: 0 12px;
-  border-radius: 16px;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* With a time the day and the time are two words that each stay whole: the time moves under
-   the day when the 120px column cannot hold both on one line, and the chip grows to fit. */
+/* With a time the chip is two lines by design, not by wrapping: the day, then the time under it
+   in smaller type, each word whole. */
 .due-chip.has-time {
-  flex-wrap: wrap;
-  column-gap: 4px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   height: auto;
   min-height: 32px;
-  padding: 3px 12px;
+  padding: 4px 12px;
   line-height: 1.2;
   overflow: visible;
 }
 .due-chip.has-time > span { white-space: nowrap; }
+.due-chip.has-time > span + span { font-size: 12px; font-weight: 500; }
 
 /* New task sheet (NewTaskSheet.jsx): a dialog that rises from the bottom edge under 640px and
    sits centred like a modal above it. Same layer as the navigation drawer. */
@@ -2311,7 +2343,9 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
 /* A set width: the month and the full-width Repeats box would otherwise stretch the popover to
    the window's edge. 360px less the 12px sides is room for the 308px month; at 320px the
    window less the 1px borders and 5px sides is exactly 308px. */
-.add-due-pop { width: min(360px, calc(100vw - 2px)); padding: 12px; }
+.add-due-pop { width: min(360px, calc(100vw - 2px)); max-width: 100%; padding: 12px; }
+/* max-width: never wider than the popover around it, which loses a scrollbar's width when the
+   window is too short for the step: the right column gives the room, and nothing scrolls sideways. */
 /* Above the breakpoint the popover sits under a row in the middle of the list, with about half
    the window below it, so the quick dates and Repeats go beside the month (which keeps Asana's
    place on the left) and the step is little taller than the month. Repeats needs the month's
@@ -2333,14 +2367,19 @@ body.is-reordering, body.is-reordering .reorder-handle { cursor: grabbing; user-
   .add-due-pop .add-due-repeat { grid-area: repeat; }
   .add-due-pop .add-due-foot { grid-area: foot; }
 }
-/* Inside the 12px sides: the 308px month, a 20px gap, then a 96px label, a 12px gap, and the
-   308px weekdays. */
-@container add-due (min-width: 744px) {
+/* Inside the 12px sides: the 308px month, a 20px gap, then at least 312px for the right column,
+   room for the 308px weekdays, which go under their label when the label cannot sit beside them
+   (.repeat-row wraps). 640px rather than the 744px that fits label and weekdays side by side, so
+   a scrollbar's width never drops the popover back to the taller layout. Everything but the month
+   goes in the right column (the title at its top, Add time and the submit button at its foot),
+   so the step is only as tall as the month. */
+@container add-due (min-width: 640px) {
   .add-due-pop .add-due {
-    grid-template-areas: 'title title' 'cal chips' 'cal repeat' 'foot foot';
+    grid-template-areas: 'cal title' 'cal chips' 'cal repeat' 'cal foot';
     grid-template-rows: auto auto 1fr auto;
   }
-  .add-due-pop .add-due-chips { flex-direction: row; align-items: center; }
+  .add-due-pop .add-due-foot { align-self: end; }
+  .add-due-pop .add-due-chips { flex-direction: row; flex-wrap: wrap; align-items: center; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }

@@ -58,6 +58,51 @@ describe('ReorderableRows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
+  test('the held row lifts out as a copy that follows the pointer, hidden from assistive tech, and goes on drop', () => {
+    renderRows()
+    layRows()
+    const handle = screen.getByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 20 })
+    expect(document.querySelector('.reorder-ghost')).toBeNull()
+    fireEvent.pointerMove(handle, { clientY: 120 })
+    const ghost = document.querySelector('.reorder-ghost')
+    expect(ghost).not.toBeNull()
+    expect(ghost.getAttribute('aria-hidden')).toBe('true')
+    expect(ghost.hasAttribute('data-task-id')).toBe(false)
+    // Grabbed 20px into a row at the top, so with the pointer at 120 its top is at 100.
+    expect(ghost.style.top).toBe('100px')
+    expect(screen.getAllByRole('button', { name: 'Reorder Alpha' })).toHaveLength(1)
+    fireEvent.pointerUp(handle, { clientY: 120 })
+    expect(document.querySelector('.reorder-ghost')).toBeNull()
+  })
+
+  test('the held row\'s copy goes when the handle is taken out of the page, and when the list goes', () => {
+    const { unmount } = render(
+      <ReorderableRows tasks={TASKS} enabled onReorder={vi.fn()}>
+        {(task, reorder, rowClass) => (
+          <div key={task.id} data-testid="row" data-task-id={task.id} className={`row${rowClass}`}>
+            <ReorderHandle task={task} reorder={reorder} />
+          </div>
+        )}
+      </ReorderableRows>
+    )
+    layRows()
+    const hold = () => {
+      const handle = screen.getByRole('button', { name: 'Reorder Alpha' })
+      fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 20 })
+      fireEvent.pointerMove(handle, { clientY: 120 })
+      expect(document.querySelector('.reorder-ghost')).not.toBeNull()
+    }
+    hold()
+    // A browser fires this at the document when the element holding the capture has gone.
+    fireEvent.lostPointerCapture(document, { pointerId: 1 })
+    expect(document.querySelector('.reorder-ghost')).toBeNull()
+    expect(document.body.style.getPropertyValue('--drag-gap')).toBe('')
+    hold()
+    unmount()
+    expect(document.querySelector('.reorder-ghost')).toBeNull()
+  })
+
   test('Escape drops the row where it was', () => {
     const { onReorder } = renderRows()
     layRows()
