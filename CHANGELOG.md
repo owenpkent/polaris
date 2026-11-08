@@ -38,9 +38,9 @@ No migration.
   window until all of it shows, over its trigger if it must, and on a phone it never covers the
   tab bar. Only content taller than the window scrolls.
 - An HTTP error response never carries the text of a caught value that is not an `Error`: the
-  GitHub status, the recurrence preview, and the backup check send a fixed string for one, and the
-  server log keeps the value. The regex engine's test oracle is left out of CodeQL analysis,
-  whose deliberate patterns it flagged.
+  GitHub status, the recurrence preview, and the backup check send a fixed string in its place.
+  The regex engine's test oracle is left out of CodeQL analysis, whose deliberate patterns it
+  flagged.
 
 ## 2.7.0 (2026-11-04)
 
