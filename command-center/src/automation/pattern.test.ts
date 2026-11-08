@@ -11,9 +11,9 @@ const AGREEMENT: [string, string[]][] = [
   ['a|b|c', ['a', 'c', 'd', '']],
   ['^(ab|cd)+$', ['abcd', 'abcdab', 'abc', '']],
   // The next three are catastrophic-backtracking shapes on purpose: the engine under test must agree with RegExp on them.
-  ['^(a|aa)+$', ['aaaa', 'aaaaa!', 'a']], // codeql[js/redos] the engine under test is linear; RegExp only sees these short inputs
-  ['(a+)+b', ['aaab', 'aaa', 'b']], // codeql[js/redos] same
-  ['(a*)*b', ['b', 'aaab', 'aaa']], // codeql[js/redos] same
+  ['^(a|aa)+$', ['aaaa', 'aaaaa!', 'a']],
+  ['(a+)+b', ['aaab', 'aaa', 'b']],
+  ['(a*)*b', ['b', 'aaab', 'aaa']],
   ['x*', ['', 'xxx', 'y']],
   ['^x*$', ['', 'xxx', 'y', 'xxy']],
   ['^x+$', ['', 'x', 'xxx', 'xy']],
@@ -44,7 +44,7 @@ const AGREEMENT: [string, string[]][] = [
   ['[]', ['a', '']],
   ['^[^]$', ['a', '\n', 'ab']],
   // Inside a class, \b is a backspace (not a word boundary), and the first input holds one on purpose.
-  ['[\\b]', ['a\bb', 'ab']], // codeql[js/useless-regexp-character-escape] a backspace is the point
+  ['[\\b]',['a\bb', 'ab']],
   ['\\.', ['a.b', 'ab']],
   ['\\(\\)', ['()', '(']],
   ['\\/', ['a/b', 'ab']],
