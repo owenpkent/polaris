@@ -10,7 +10,7 @@ import {
 import { buildDigest, builtinViews, previewOccurrences, runRules, runView, validateRuleDefinition } from '../automation/index.ts';
 import { ORDER_BY_VALUES, PRIORITY_VALUES, SOURCE_TYPE_VALUES, TASK_STATUS_VALUES, resolveProject, resolveSectionWrite } from '../mcp/shared.ts';
 import { importTasks } from '../importer/taskImport.ts';
-import { HttpError, sendJson, sendNoContent } from './errors.ts';
+import { HttpError, errorMessage, sendJson, sendNoContent } from './errors.ts';
 import { registerBackupRoutes } from './backup-routes.ts';
 import { registerGithubRoutes } from './github-routes.ts';
 import { registerIdentityRoute } from './identity.ts';
@@ -344,7 +344,7 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     try {
       dates = previewOccurrences(rule, from, app.today(), count);
     } catch (e) {
-      throw new ValidationError(e instanceof Error ? e.message : String(e));
+      throw new ValidationError(errorMessage(e));
     }
     sendJson(ctx.res, 200, { dates });
   });

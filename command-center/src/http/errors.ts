@@ -14,6 +14,15 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * The message of a caught value for a response body: an Error's message, or a fixed string for
+ * anything else. Never String(e), which for an Error is "Name: message" and is what a scanner
+ * treats as the exception itself, stack and all, reaching the client.
+ */
+export function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : 'unknown error';
+}
+
 export function errorToPayload(e: unknown): { status: number; code: string; message: string } {
   if (e instanceof HttpError) return { status: e.status, code: e.code, message: e.message };
   if (e instanceof NotFoundError) return { status: 404, code: 'NotFoundError', message: e.message };
