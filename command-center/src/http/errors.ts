@@ -1,5 +1,7 @@
 // Error envelope shared by every /api and /mcp response: { error: { code, message } }. Never
-// includes a stack trace, and never an unknown error's message (it is logged, not sent).
+// includes a stack trace, and never an unknown error's message (it is logged, not sent). A handler
+// that reports a caught value itself goes through errorMessage, so a value that is not an Error is
+// sent as a fixed string, never as String(e).
 import type { ServerResponse } from 'node:http';
 import { NotFoundError, ValidationError } from '../core/index.ts';
 

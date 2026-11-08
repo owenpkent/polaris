@@ -5,6 +5,6 @@ paths-ignore:
   # The regex engine's test oracle. It holds catastrophic-backtracking patterns and a backspace
   # written as [\b] on purpose: the bounded engine under test must agree with RegExp on exactly
   # those shapes, and RegExp only ever sees the short fixed inputs in the file. CodeQL flags them
-  # as redos and as a useless escape, and a suppression comment cannot reach them, because CodeQL
-  # places a term inside a string pattern one line below the string it is in.
+  # as redos and as a useless escape. The default query suite this workflow runs has no
+  # alert-suppression queries, so a comment in the file cannot dismiss them; the file is left out.
   - command-center/src/automation/pattern.test.ts
