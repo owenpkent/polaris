@@ -12,9 +12,10 @@
 //
 // The language is the everyday subset of JavaScript syntax: literals and escapes, `.`, character
 // classes, `\d \w \s` and their negations, `\b \B ^ $`, groups (capturing or not), alternation,
-// and the quantifiers `* + ? {n} {n,} {n,m}` with an optional lazy suffix. Backreferences,
-// lookaround, and flags are not supported, and a pattern that uses them is refused at validation
-// with a message that says so. The result is a boolean, so greedy and lazy match the same way.
+// and the quantifiers `* + ? {n} {n,} {n,m}` with an optional lazy suffix. A count is read with
+// any number of digits, as RegExp reads it ({0006} is {6}), and a count above 100 is refused.
+// Backreferences, lookaround, and flags are not supported, and a pattern that uses them is refused
+// at validation with a message that says so. The result is a boolean, so greedy and lazy match the same way.
 // Where a pattern is accepted, `test` agrees with `new RegExp(pattern).test(input)`.
 
 export class PatternError extends Error {}
