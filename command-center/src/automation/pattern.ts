@@ -146,8 +146,11 @@ class Parser {
   }
 
   #braces(): { min: number; max: number | null } | undefined {
-    const rest = this.#cps.slice(this.#pos, this.#pos + 12).map((cp) => String.fromCharCode(cp)).join('');
-    const m = /^\{(\d{1,3})(?:(,)(\d{0,3}))?\}/.exec(rest);
+    // Any number of digits, as RegExp reads them: {0006} is {6}, and {1000} is a count to refuse.
+    const close = this.#cps.indexOf(0x7d, this.#pos);
+    if (close < 0) return undefined;
+    const rest = this.#cps.slice(this.#pos, close + 1).map((cp) => String.fromCharCode(cp)).join('');
+    const m = /^\{(\d+)(?:(,)(\d*))?\}/.exec(rest);
     if (!m) return undefined;
     const min = Number(m[1]);
     const max = m[2] === undefined ? min : m[3] === '' ? null : Number(m[3]);
