@@ -551,12 +551,42 @@ describe('Assign to AI', () => {
     expect(screen.getByText(/agent scribe task\.updated/)).toBeTruthy()
   })
 
+  // A task with no comments shows an Add a comment row; the box opens from it.
+  async function openCommentBox() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' }))
+    const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    return box
+  }
+
+  test('a task with no comments shows only the Add a comment row, and an empty box closes again', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    await screen.findByRole('button', { name: 'Add a comment' })
+    expect(screen.queryByText('Comments')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Add a comment' })).toBeNull()
+
+    const box = await openCommentBox()
+    expect(screen.getByText('Comments')).toBeTruthy()
+    act(() => { box.blur() })
+    expect(screen.queryByRole('textbox', { name: 'Add a comment' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add a comment' })).toBeTruthy()
+  })
+
+  test('a task with comments shows them and the box, with no row to open it', async () => {
+    api.getTask.mockResolvedValue({ ...detail(TASK, []), comments: [{ id: 'c1', body: 'Looked at it', createdAt: '2026-11-01T10:00:00Z' }] })
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    expect(await screen.findByText('Looked at it')).toBeTruthy()
+    expect(screen.getByRole('textbox', { name: 'Add a comment' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Add a comment' })).toBeNull()
+  })
+
   describe('the comment box saves as the Add task row does', () => {
     async function openBox(props = {}) {
       api.getTask.mockResolvedValue(detail(TASK, []))
       api.addComment.mockResolvedValue({})
       const utils = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} {...props} />)
-      const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+      const box = await openCommentBox()
       act(() => { box.focus() })
       fireEvent.change(box, { target: { value: 'Worth a look' } })
       return { box, ...utils }
@@ -603,7 +633,7 @@ describe('Assign to AI', () => {
       const { box, rerender } = await openBox()
       act(() => { box.blur() })
       rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
-      await waitFor(() => expect(screen.getByRole('textbox', { name: 'Add a comment' }).value).toBe(''))
+      expect((await openCommentBox()).value).toBe('')
       expect(api.addComment).not.toHaveBeenCalled()
     })
 
@@ -617,7 +647,7 @@ describe('Assign to AI', () => {
         api.addComment.mockReturnValue(save.promise)
         api.updateTask.mockResolvedValue({})
         const { rerender } = render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
-        const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+        const box = await openCommentBox()
         act(() => { box.focus() })
         fireEvent.change(box, { target: { value: 'Worth a look' } })
         fireEvent.pointerDown(document.body)
@@ -647,7 +677,7 @@ describe('Assign to AI', () => {
       test('the comment box on the second task is free while the first save is out, and after it', async () => {
         const save = deferred()
         await leaveForSecondTask(save)
-        const box = screen.getByRole('textbox', { name: 'Add a comment' })
+        const box = await openCommentBox()
         expect(box.readOnly).toBe(false)
         expect(box.getAttribute('aria-busy')).toBeNull()
 
@@ -670,7 +700,7 @@ describe('Assign to AI', () => {
 
         expect(await screen.findByText('Could not add your comment to the task you just left: Worth a look')).toBeTruthy()
         expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('Second notes')
-        expect(screen.getByRole('textbox', { name: 'Add a comment' }).readOnly).toBe(false)
+        expect((await openCommentBox()).readOnly).toBe(false)
       })
     })
   })
@@ -1131,6 +1161,32 @@ describe('the subtasks header and Add subtask', () => {
     expect(await screen.findByRole('checkbox', { name: 'Complete Tickets' })).toBeTruthy()
     expect(screen.getByRole('textbox', { name: 'Subtask name' }).value).toBe('')
     expect(onChanged).toHaveBeenCalled()
+  })
+
+  test('the panel scrolls the name box into view on opening and after each subtask is added', async () => {
+    const scrolled = []
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (options) { scrolled.push({ el: this, options }) }
+    try {
+      api.getTask.mockResolvedValueOnce(detail(TASK, []))
+      api.createTask.mockResolvedValue({ task: { id: 't_s3', title: 'Tickets', parentId: 't_1', status: 'open' } })
+      api.getTask.mockResolvedValue({ ...detail(TASK, []), subtasks: [{ id: 't_s3', title: 'Tickets', status: 'open' }] })
+      render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+
+      fireEvent.click(await screen.findByText('Add subtask'))
+      const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+      await waitFor(() => expect(scrolled.some((s) => s.el === box)).toBe(true))
+      expect(scrolled.find((s) => s.el === box).options).toEqual({ block: 'nearest' })
+      const before = scrolled.length
+
+      fireEvent.change(box, { target: { value: 'Tickets' } })
+      await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }) })
+      await screen.findByRole('checkbox', { name: 'Complete Tickets' })
+      await waitFor(() => expect(scrolled.slice(before).some((s) => s.el === box)).toBe(true))
+    } finally {
+      if (original) Element.prototype.scrollIntoView = original
+      else delete Element.prototype.scrollIntoView
+    }
   })
 
   test('Esc closes the name box and leaves the panel open', async () => {

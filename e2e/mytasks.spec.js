@@ -93,6 +93,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await openTask(page, title)
     const panel = page.getByRole('dialog', { name: 'Task details' })
+    // A task with no comments shows a row that opens the box.
+    await panel.getByRole('button', { name: 'Add a comment' }).click()
     const comment = panel.getByRole('textbox', { name: 'Add a comment' })
     await comment.fill('Saved by the click away')
     await panel.getByText('Comments', { exact: true }).click()
