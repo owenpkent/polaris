@@ -10,7 +10,11 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.view.MotionEvent;
+import android.os.SystemClock;
 
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.rule.GrantPermissionRule;
@@ -228,6 +232,119 @@ public class AppEndToEndTest {
         app.click("checkbox", "Remind me on the day a task is due");
         waitForPending(title, false);
         assertEquals(0, app.pendingNotifications().length());
+    }
+
+    // The soft keyboard must not cover the Add subtask box while a list is typed. The task has
+    // enough subtasks that the box sits low in the panel; the box is opened with a real touch so
+    // the keyboard comes up, then four subtasks are typed with Enter, and after each the box has
+    // to lie inside the visible area, by the page's visual viewport and by the window's IME inset.
+    @Test
+    public void subtaskBoxStaysAboveTheKeyboardWhileTyping() throws Exception {
+        connect();
+        String title = "Keyboard subtasks " + System.currentTimeMillis();
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:" + WebAppDriver.quote(title) + "})}).then(r=>r.json()).then(t=>{const id=t.id||(t.task&&t.task.id);"
+            + "return Promise.all(Array.from({length:14},(_,i)=>fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:'Existing step '+(i+1),parentId:id})}))).then(rs=>rs.map(r=>r.status).join(','));})";
+        String statuses = app.evalAsync(create, 30000);
+        assertTrue("Subtask create failed: " + statuses, statuses.replace("\"", "").matches("2\\d\\d(,2\\d\\d){13}"));
+
+        app.eval("location.reload();null");
+        app.waitFor("the reload", "document.readyState==='complete'&&window.Capacitor&&document.body.innerText.length>0", LOAD_MS);
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        app.waitFor("the No due date group", "__pt.find('button','No due date')||__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        if (!app.truthy("__pt.find('button'," + WebAppDriver.quote(title) + ")")) app.click("button", "No due date");
+        app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        app.click("button", "Open " + title);
+        app.waitFor("the task panel with its subtasks", "__pt.find('dialog','Task details')&&document.body.innerText.includes('Existing step 14')", LOAD_MS);
+
+        // The Add subtask row at the end of the list, scrolled into view and then touched.
+        String row = "Array.from(document.querySelectorAll('[role=dialog] button')).filter(b=>b.textContent.trim()==='Add subtask').pop()";
+        app.waitFor("the Add subtask row", row, 10000);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
+        waitForKeyboard(true);
+
+        for (int i = 1; i <= 4; i++) {
+            InstrumentationRegistry.getInstrumentation().sendStringSync("step" + i);
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
+            app.waitFor("subtask " + i + " to be added", "document.body.innerText.toLowerCase().includes('step" + i + "')&&document.body.innerText.includes('0 / " + (14 + i) + "')", 15000);
+            WebAppDriver.sleep(800);
+            assertBoxAboveKeyboard(i);
+        }
+    }
+
+    private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
+
+    // A real touch at the middle of an element, injected as the system would, so focus and the
+    // soft keyboard behave as they do for the owner.
+    private void tapElement(String elementExpression) {
+        String[] r = rect(elementExpression);
+        int[] origin = webViewOrigin();
+        float x = origin[0] + (Float.parseFloat(r[0]) + Float.parseFloat(r[2])) / 2f * Float.parseFloat(r[4]);
+        float y = origin[1] + (Float.parseFloat(r[1]) + Float.parseFloat(r[3])) / 2f * Float.parseFloat(r[4]);
+        long down = SystemClock.uptimeMillis();
+        android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+        inst.sendPointerSync(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0));
+        inst.sendPointerSync(MotionEvent.obtain(down, down + 80, MotionEvent.ACTION_UP, x, y, 0));
+    }
+
+    // left, top, right, bottom in CSS px, then the device pixel ratio.
+    private String[] rect(String elementExpression) {
+        String json = app.eval("(()=>{const r=(" + elementExpression + ").getBoundingClientRect();return [r.left,r.top,r.right,r.bottom,window.devicePixelRatio].join(',')})()");
+        return json.replace("\"", "").split(",");
+    }
+
+    private int[] webViewOrigin() {
+        int[] xy = new int[2];
+        scenario.onActivity(a -> ((com.getcapacitor.BridgeActivity) a).getBridge().getWebView().getLocationOnScreen(xy));
+        return xy;
+    }
+
+    private int[] imeAndScreen() {
+        int[] out = new int[3];
+        scenario.onActivity(a -> {
+            android.view.View decor = a.getWindow().getDecorView();
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(decor);
+            boolean visible = insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
+            out[0] = visible ? 1 : 0;
+            out[1] = visible ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
+            out[2] = decor.getHeight();
+        });
+        return out;
+    }
+
+    private void waitForKeyboard(boolean expected) {
+        long end = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < end) {
+            if ((imeAndScreen()[0] == 1) == expected) return;
+            WebAppDriver.sleep(250);
+        }
+        throw new AssertionError("The soft keyboard never " + (expected ? "appeared" : "went away") + " after a real tap on the subtask box.");
+    }
+
+    private void assertBoxAboveKeyboard(int step) {
+        assertTrue("The keyboard went away after subtask " + step, imeAndScreen()[0] == 1);
+        int[] ime = imeAndScreen();
+        String[] r = rect(BOX);
+        float dpr = Float.parseFloat(r[4]);
+        float top = Float.parseFloat(r[1]);
+        float bottom = Float.parseFloat(r[3]);
+        float vvBottom = Float.parseFloat(app.eval("window.visualViewport.offsetTop+window.visualViewport.height"));
+        int[] origin = webViewOrigin();
+        float imeTopCss = (ime[2] - ime[1] - origin[1]) / dpr;
+        String report = "after subtask " + step + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
+            + vvBottom + "; IME top " + imeTopCss + " (inset " + ime[1] + " px of " + ime[2] + ", dpr " + dpr + ")";
+        android.util.Log.i("KeyboardTest", report);
+        assertTrue("Box above the visual viewport bottom, " + report, bottom <= vvBottom + 1);
+        assertTrue("Box above the keyboard, " + report, bottom <= imeTopCss + 1);
+        assertTrue("Box below the top of the page, " + report, top >= 0);
     }
 
     private JSONArray waitForPending(String title, boolean expected) throws Exception {
