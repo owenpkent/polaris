@@ -480,12 +480,13 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const commentInputRef = useRef(null)
   const commentButtonRef = useRef(null)
-  // A click elsewhere adds what is in the comment box on the release, as the list's Add task does,
-  // so the new comment does not move what was pressed before the click lands (pointerPress.js).
-  const commentPress = usePointerPress(Boolean(commentDraft))
   // A task with no comments shows only a quiet Add a comment row, so the Comments section does
   // not sit under Notes as a second empty text box. The row opens the box; leaving it empty closes it.
   const [commentBoxOpen, setCommentBoxOpen] = useState(false)
+  // A click elsewhere adds what is in the comment box on the release, as the list's Add task does,
+  // so the new comment does not move what was pressed before the click lands (pointerPress.js).
+  // An open empty box closes on the release for the same reason, so it listens then too.
+  const commentPress = usePointerPress(Boolean(commentDraft) || commentBoxOpen)
   useEffect(() => { setCommentDraft(''); setCommentBusy(false); setCommentBoxOpen(false) }, [taskId])
   const [actionNotice, setActionNotice] = useState(null)
   const [skipBusy, setSkipBusy] = useState(false)
@@ -924,7 +925,13 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // or on its Comment button, which adds it itself. Leaving by keyboard keeps the draft.
   function handleCommentBlur(e) {
     if (!commentBusy && !commentDraft.trim() && (data?.comments || []).length === 0) {
-      setCommentBoxOpen(false)
+      // Closing shrinks the panel, which would move what a press below the box is on before its
+      // release lands, so a held press closes it on the release. Leaving by keyboard closes it now.
+      const close = () => {
+        if (document.activeElement !== commentInputRef.current) setCommentBoxOpen(false)
+      }
+      if (commentPress.current.held) afterRelease(close)
+      else close()
       return
     }
     if (commentBusy || !commentDraft.trim() || e.relatedTarget === commentButtonRef.current) return

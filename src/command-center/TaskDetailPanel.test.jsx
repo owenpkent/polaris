@@ -573,6 +573,20 @@ describe('Assign to AI', () => {
     expect(screen.getByRole('button', { name: 'Add a comment' })).toBeTruthy()
   })
 
+  test('a press elsewhere closes an empty comment box on its release, not on the press', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)
+    const box = await openCommentBox()
+
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    // Still open while the pointer is held, so what was pressed does not move under it.
+    expect(screen.getByRole('textbox', { name: 'Add a comment' })).toBeTruthy()
+    act(() => { fireEvent.pointerUp(document.body) })
+    expect(screen.queryByRole('textbox', { name: 'Add a comment' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add a comment' })).toBeTruthy()
+  })
+
   test('a task with comments shows them and the box, with no row to open it', async () => {
     api.getTask.mockResolvedValue({ ...detail(TASK, []), comments: [{ id: 'c1', body: 'Looked at it', createdAt: '2026-11-01T10:00:00Z' }] })
     render(<TaskDetailPanel taskId="t_1" onClose={() => {}} />)

@@ -250,8 +250,9 @@ public class AppEndToEndTest {
         String statuses = app.evalAsync(create, 30000);
         assertTrue("Subtask create failed: " + statuses, statuses.replace("\"", "").matches("2\\d\\d(,2\\d\\d){13}"));
 
-        app.eval("location.reload();null");
-        app.waitFor("the reload", "document.readyState==='complete'&&window.Capacitor&&document.body.innerText.length>0", LOAD_MS);
+        // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+        app.eval("window.__ptOld=true;location.reload();null");
+        app.waitFor("the reload", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&__pt.find('button','Open navigation')", LOAD_MS);
         app.click("button", "Open navigation");
         app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
         app.click("button", "My tasks");
