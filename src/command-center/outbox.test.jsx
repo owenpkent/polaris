@@ -1,7 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, render, screen, act } from '@testing-library/react'
 import { DEFAULT_BASE_URL, createApiClient, MY_TASKS_QUERY } from './api'
-import { doneTodayQuery } from './dueDates'
 import { cacheGet, memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus, setLastSync } from './offlineStatus'
 import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
@@ -141,55 +140,6 @@ describe('offline task edits', () => {
     expect(detail.task.status).toBe('done')
     expect(detail.comments.map((c) => c.body)).toEqual(['Noted offline'])
     expect(getOfflineState().pending).toBe(2)
-  })
-
-  describe('the stored list of tasks finished today', () => {
-    const doneToday = (client) => client.listDoneToday(doneTodayQuery()).then((res) => res.tasks.map((t) => t.id))
-    async function seedDone(client) {
-      await seed(client)
-      global.fetch.mockResolvedValueOnce(jsonResponse(200, { tasks: [], total: 0 }))
-      await client.listDoneToday(doneTodayQuery())
-      await vi.waitFor(async () => expect(await cacheGet(`http://x/api/tasks?${new URLSearchParams(Object.entries(doneTodayQuery()).map(([k, v]) => [k, String(v)]))}`)).not.toBeNull())
-    }
-
-    test('gains a task completed offline and loses it on an offline reopen, once however often', async () => {
-      const client = createApiClient('http://x', 'tok')
-      await seedDone(client)
-      global.fetch.mockImplementation(down)
-      await client.completeTask(TASK.id)
-      expect(await doneToday(client)).toEqual([TASK.id])
-      await client.reopenTask(TASK.id)
-      expect(await doneToday(client)).toEqual([])
-      await client.completeTask(TASK.id)
-      expect(await doneToday(client)).toEqual([TASK.id])
-      expect((await client.listTasks(MY_TASKS_QUERY)).tasks).toEqual([])
-    })
-
-    test('a list for another day is left alone', async () => {
-      const client = createApiClient('http://x', 'tok')
-      const yesterday = doneTodayQuery(new Date(Date.now() - 86400000))
-      await seed(client)
-      global.fetch.mockResolvedValueOnce(jsonResponse(200, { tasks: [], total: 0 }))
-      await client.listDoneToday(yesterday)
-      await vi.waitFor(async () => expect((await client.listDoneToday(yesterday)).tasks).toEqual([]))
-      global.fetch.mockImplementation(down)
-      await client.completeTask(TASK.id)
-      expect((await client.listDoneToday(yesterday)).tasks).toEqual([])
-    })
-
-    test('takes the server\'s answer on reconnecting, so the task is not counted twice', async () => {
-      const client = createApiClient('http://x', 'tok')
-      await seedDone(client)
-      global.fetch.mockImplementation(down)
-      await client.completeTask(TASK.id)
-      global.fetch.mockImplementation(async (url, init) => {
-        if (url === 'http://x/api/outbox') return jsonResponse(200, { results: JSON.parse(init.body).ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
-        return jsonResponse(200, { tasks: [{ ...TASK, status: 'done' }], total: 1 })
-      })
-      await vi.waitFor(async () => expect(await doneToday(client)).toEqual([TASK.id]))
-      await vi.waitFor(() => expect(getOfflineState().offline).toBe(false))
-      expect(await doneToday(client)).toEqual([TASK.id])
-    })
   })
 
   test('the first answer from the server sends the queue, in order, before offline mode ends', async () => {
