@@ -76,7 +76,13 @@ jobs:
           # No window, no sound, no animations: the tests drive the page, not the screen.
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: npm run test:android
+          # A cold emulator on a shared runner is slow enough for Android to show "System UI isn't
+          # responding" and the like, and a real touch the tests inject is then refused because
+          # the dialog, not the app, is in front. hide_error_dialogs keeps them from showing;
+          # tapElement in AppEndToEndTest closes any that do and tries the touch again.
+          script: |
+            adb shell settings put global hide_error_dialogs 1
+            npm run test:android
       - name: Keep the test reports from a failed run
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
