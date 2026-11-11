@@ -7,6 +7,8 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 No migration.
 
+- In the Android app, the navigation drawer keeps its Settings row above the system's
+  navigation bar instead of drawing it under the buttons or the gesture bar.
 - The Today group on My tasks shows the same plain count as every other group again: "n left",
   "m done", and "All clear" are gone, and an empty Today is hidden like any other empty group.
 - In the task panel, the Add subtask box scrolls into view as each subtask is added, so a long

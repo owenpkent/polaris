@@ -134,7 +134,10 @@ export default function NavDrawer({
           left: 0,
           bottom: 0,
           width: 280,
+          // The Android app runs edge to edge, so the drawer's last row (Settings) would sit under
+          // the system's navigation bar without the bottom inset (0 in a browser).
           paddingTop: 'var(--safe-top)',
+          paddingBottom: 'var(--safe-bottom)',
           background: 'var(--bg2)',
           borderRight: '1px solid var(--bd)',
           boxShadow: 'var(--shadow-pop)',
