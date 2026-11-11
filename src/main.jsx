@@ -4,6 +4,7 @@ import App from './App.jsx'
 import './index.css'
 import { isNativeApp } from './command-center/nativeApp'
 import { watchKeyboard } from './keyboard'
+import { watchForNewBuild } from './newBuild'
 
 // Hides the phone's tab bar while the on-screen keyboard is open (src/keyboard.js).
 watchKeyboard()
@@ -18,6 +19,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // under the Vite dev server it would cache modules that are meant to hot reload. The Android app
 // ships the shell inside the app, so it has nothing for a service worker to keep.
 if (import.meta.env.PROD && !isNativeApp() && 'serviceWorker' in navigator) {
+  // A tab left in the background reloads itself onto a new build (src/newBuild.js). The Android
+  // app bundles its build and updates as an APK, so it has nothing to pick up this way.
+  watchForNewBuild()
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then(() => navigator.serviceWorker.ready)
