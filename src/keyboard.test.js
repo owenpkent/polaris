@@ -1,12 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { SHOW_DELAY_MS, isTextEntry, keyboardLooksOpen, watchKeyboard } from './keyboard'
+import { KEYBOARD_MIN_PX, SHOW_DELAY_MS, isTextEntry, keyboardLooksOpen, visibleHeight, watchKeyboard } from './keyboard'
 
-// jsdom has no visualViewport, so each test puts in one it can resize, and a 900px tall screen.
+// jsdom has no visualViewport, so each test puts in one it can resize and zoom.
 let viewport
 let stop
 
-function resizeViewport(height) {
+function resizeViewport(height, scale = 1) {
   viewport.height = height
+  viewport.scale = scale
   viewport.dispatchEvent(new Event('resize'))
 }
 
@@ -21,8 +22,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   viewport = new EventTarget()
   viewport.height = 860
+  viewport.scale = 1
   Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
-  Object.defineProperty(window.screen, 'height', { configurable: true, value: 900 })
 })
 
 afterEach(() => {
@@ -54,26 +55,31 @@ describe('isTextEntry', () => {
 })
 
 describe('keyboardLooksOpen', () => {
-  test('needs both a focused text field and a viewport under three quarters of the screen', () => {
+  test('needs both a focused text field and a drop of a keyboard height from the baseline', () => {
     const input = field('<input>')
     input.focus()
-    expect(keyboardLooksOpen()).toBe(false)
+    expect(keyboardLooksOpen(860)).toBe(false)
+    viewport.height = 860 - KEYBOARD_MIN_PX + 1
+    expect(keyboardLooksOpen(860)).toBe(false)
     viewport.height = 500
-    expect(keyboardLooksOpen()).toBe(true)
+    expect(keyboardLooksOpen(860)).toBe(true)
     input.blur()
-    expect(keyboardLooksOpen()).toBe(false)
+    expect(keyboardLooksOpen(860)).toBe(false)
   })
 
-  test('a short window with nothing focused, as in split screen, is not a keyboard', () => {
-    field('<input>')
-    viewport.height = 400
-    expect(keyboardLooksOpen()).toBe(false)
+  test('pinch zoom is taken out of the height', () => {
+    viewport.height = 430
+    viewport.scale = 2
+    expect(visibleHeight()).toBe(860)
+    field('<input>').focus()
+    expect(keyboardLooksOpen(860)).toBe(false)
   })
 
   test('without visualViewport it never reports open', () => {
     delete window.visualViewport
     field('<input>').focus()
-    expect(keyboardLooksOpen()).toBe(false)
+    expect(visibleHeight()).toBe(null)
+    expect(keyboardLooksOpen(860)).toBe(false)
   })
 })
 
@@ -89,6 +95,31 @@ describe('watchKeyboard', () => {
     resizeViewport(860)
     expect(isOpen()).toBe(true)
     vi.advanceTimersByTime(SHOW_DELAY_MS)
+    expect(isOpen()).toBe(false)
+  })
+
+  test('a window that is short to begin with is not a keyboard when a field is focused', () => {
+    resizeViewport(400)
+    stop = watchKeyboard()
+    field('<input>').focus()
+    resizeViewport(400)
+    vi.advanceTimersByTime(SHOW_DELAY_MS)
+    expect(isOpen()).toBe(false)
+  })
+
+  test('a window made short before a field is focused is not a keyboard either', () => {
+    stop = watchKeyboard()
+    resizeViewport(400)
+    field('<input>').focus()
+    vi.advanceTimersByTime(SHOW_DELAY_MS)
+    expect(isOpen()).toBe(false)
+  })
+
+  test('zooming in with a field focused is not a keyboard', () => {
+    stop = watchKeyboard()
+    field('<input>').focus()
+    resizeViewport(430, 2)
+    resizeViewport(215, 4)
     expect(isOpen()).toBe(false)
   })
 
@@ -114,6 +145,16 @@ describe('watchKeyboard', () => {
     resizeViewport(860)
     vi.advanceTimersByTime(SHOW_DELAY_MS)
     expect(isOpen()).toBe(false)
+  })
+
+  test('the keyboard is still caught after the address bar has come and gone', () => {
+    stop = watchKeyboard()
+    resizeViewport(804)
+    resizeViewport(860)
+    const input = field('<input>')
+    input.focus()
+    resizeViewport(520)
+    expect(isOpen()).toBe(true)
   })
 
   test('stopping clears the mark', () => {

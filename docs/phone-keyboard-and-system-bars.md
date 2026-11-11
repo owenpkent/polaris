@@ -76,11 +76,19 @@ keyboard directly, so it counts as open when both of these hold:
 
 - A text field has focus (a text-like `<input>`, a `<textarea>`, or an editable region; not a
   checkbox, a date picker, or a read-only field).
-- The visual viewport is under three quarters of the screen's height.
+- The visible height has dropped by at least 150px (a phone keyboard is 250px and more; an
+  address bar coming and going is about 56px) below what it was with no field focused. The height
+  is the visual viewport's times its pinch zoom, so zooming in does not count.
 
 Either test alone gets it wrong. Focus alone would hide the bar for a hardware keyboard, or after
 the keyboard is put away with Back while the field keeps focus. A short viewport alone would hide
-it in split screen. The bar hides at once, and comes back 200ms after the keyboard closes, so
+it in split screen or a small desktop window, which is why the test is a drop from the height
+before the field was focused, not a fraction of the screen: a window that is short to begin with
+never drops. A first version compared with three quarters of the screen's height and hid the bar
+in a short window and on a zoomed page (review of PR #159). The height to measure from is taken
+again whenever no field has focus and the bar is showing, and when the window's width changes
+(the phone turned), but not on a blur while the bar is hidden, which is usually focus moving to
+the next field with the keyboard still up. The bar hides at once, and comes back 200ms after the keyboard closes, so
 moving between fields does not flash it. The unit tests are in src/keyboard.test.js, and
 `tabBarStepsAsideWhileTheKeyboardIsOpen` in the Android app's AppEndToEndTest checks it with a real
 keyboard.
