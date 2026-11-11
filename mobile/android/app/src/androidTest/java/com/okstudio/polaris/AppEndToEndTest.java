@@ -281,6 +281,40 @@ public class AppEndToEndTest {
         }
     }
 
+    // The tab bar and the New task button step aside while the soft keyboard is open
+    // (src/keyboard.js), and come back once it is put away with Back, the field still focused.
+    @Test
+    public void tabBarStepsAsideWhileTheKeyboardIsOpen() throws Exception {
+        connect();
+        // A task of its own, so the list has a group with an Add task row on a fresh database.
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:'Keyboard tab bar " + System.currentTimeMillis() + "'})}).then(r=>String(r.status))";
+        assertTrue("Task create failed", app.evalAsync(create, 15000).replace("\"", "").startsWith("2"));
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        app.waitFor("the No due date group", "__pt.find('button','No due date')", LOAD_MS);
+        if (!app.truthy("__pt.find('button','Add task')")) app.click("button", "No due date");
+        String nav = "document.querySelector('nav[aria-label=\"Primary\"]')";
+        String navShown = nav + "&&getComputedStyle(" + nav + ").display!=='none'";
+        app.waitFor("the tab bar", navShown, LOAD_MS);
+
+        String row = "__pt.find('button','Add task')";
+        app.waitFor("an Add task row", row, LOAD_MS);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        app.waitFor("the new task box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='New task name'", 10000);
+        waitForKeyboard(true);
+        app.waitFor("the tab bar to step aside", "document.documentElement.dataset.keyboard==='open'&&!(" + navShown + ")", 10000);
+
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+        waitForKeyboard(false);
+        app.waitFor("the tab bar to come back", "document.documentElement.dataset.keyboard!=='open'&&(" + navShown + ")", 10000);
+    }
+
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
     // A real touch at the middle of an element, injected as the system would, so focus and the
