@@ -2184,6 +2184,12 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     cursor: pointer;
   }
   .fab:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
+  /* While the on-screen keyboard is open (src/keyboard.js), the tab bar and the New task button
+     would ride on top of it, so they step aside, and the Add task row being typed in only keeps a
+     small gap above the keyboard. */
+  html[data-keyboard='open'] .bottom-nav,
+  html[data-keyboard='open'] .fab { display: none; }
+  html[data-keyboard='open'] .inline-add-row { scroll-margin-bottom: 16px; }
 }
 
 /* Completed toast (src/UndoToast.jsx). Centred near the bottom on a desktop; under 640px it sits

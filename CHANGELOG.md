@@ -7,6 +7,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 No migration.
 
+- On a phone, the tab bar and the New task button step aside while the on-screen keyboard is
+  open, instead of riding on top of it, and come back when it closes
+  (docs/phone-keyboard-and-system-bars.md).
 - The Today group on My tasks shows the same plain count as every other group again: "n left",
   "m done", and "All clear" are gone, and an empty Today is hidden like any other empty group.
 - In the task panel, the Add subtask box scrolls into view as each subtask is added, so a long

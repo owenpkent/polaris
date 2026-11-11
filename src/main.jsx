@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
 import { isNativeApp } from './command-center/nativeApp'
+import { watchKeyboard } from './keyboard'
+
+// Hides the phone's tab bar while the on-screen keyboard is open (src/keyboard.js).
+watchKeyboard()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
