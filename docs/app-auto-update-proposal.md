@@ -4,7 +4,7 @@ Status: built 2026-11-04 (feat/app-auto-update), as described here.
 
 ## Where things stand
 
-A release carries a signed APK (docs/releases.md step 8), and the App update card on Settings, inside the app only, asks GitHub's public releases API for the newest release when the owner presses its button and offers that APK as a browser download (src/command-center/appUpdate.js, AppUpdateSettings.jsx). Nothing checks on its own, nothing downloads, and the install is a trip through the browser's download list.
+A release carries a signed APK (docs/releases.md step 9), and the App update card on Settings, inside the app only, asks GitHub's public releases API for the newest release when the owner presses its button and offers that APK as a browser download (src/command-center/appUpdate.js, AppUpdateSettings.jsx). Nothing checks on its own, nothing downloads, and the install is a trip through the browser's download list.
 
 Android does not let an app that was sideloaded replace itself without the owner: only a device-owner app or an app store can. What it allows is for the app to fetch the new APK and hand it to the system installer, which shows one confirmation sheet. That tap is the floor, and this change takes the app down to it.
 

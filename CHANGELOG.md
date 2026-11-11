@@ -3,6 +3,57 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No migration.
+
+- The Today group on My tasks shows the same plain count as every other group again: "n left",
+  "m done", and "All clear" are gone, and an empty Today is hidden like any other empty group.
+- In the task panel, the Add subtask box scrolls into view as each subtask is added, so a long
+  list can be typed without it sliding out of sight.
+- In the task panel, Save as checklist is a quiet text button, and a task with no comments shows
+  one Add a comment row instead of an empty Comments section. The row opens the comment box, and
+  leaving it empty closes it again.
+
+## 2.8.0 (2026-11-08)
+
+No migration.
+
+- Search from the top bar. The Search button, or the `/` key, opens a dialog over whichever view
+  is showing and lists the open, in progress, waiting, and done tasks whose title or notes match,
+  the ones still to do first. Choosing a result opens that task's panel on My tasks. Inbox items
+  are left out. With the server out of reach, the stored copy of My tasks is searched instead,
+  and the dialog says that only open tasks were searched.
+- Completing a task on My tasks or the Board shows a "Completed <task>" toast with an Undo button
+  for about six seconds. Undo reopens the task, also while offline. If the reopen fails, the
+  toast says so and offers Retry and Dismiss, and stays until one is chosen.
+- My tasks and the Board briefly tint the task you just added, moved, or edited, where it now is,
+  and scroll it into view if it left the screen. Changes from another device or an agent do not
+  flash.
+- The Today group on My tasks shows its progress: "n left", then "m done" once a task due today is
+  finished, and "All clear" with a check when nothing is left. A Today left empty by finishing
+  everything stays on the page for the day. `GET /api/tasks` gains the read-only
+  `completedAfter` and `completedBefore` filters.
+- The custom Repeats editor opens with the rule in words and its next dates, shows Every and the
+  weekdays, and puts Counts from and Ends behind a More options button that names their values.
+  Spacing across the dashboard now comes from shared tokens (`--space-*`, `--gap-*`), with rules
+  for them and a UI review checklist in CONTRIBUTING.md.
+- Comments save on click-away, as the Add task row does: a click elsewhere adds the comment, Enter
+  adds it and keeps focus, Tab keeps the draft, Esc drops it. Notes typed in a panel closed with
+  Esc are saved too. A task added from the Add task row stays just above the row, in typed order,
+  until the row closes.
+- More contrast, in both themes: disabled controls are drawn flat and outlined instead of faded,
+  form fields are white in the light theme, unticked checkboxes and radios show against the dark
+  theme, and chips, badges, secondary text, comment cards, and the empty progress track meet the
+  contrast rules in CONTRIBUTING.md, which carry the new numbers.
+- Menus show whole when they can: a popover too tall for the side it opens on slides along the
+  window until all of it shows, over its trigger if it must, and on a phone it never covers the
+  tab bar. Only content taller than the window scrolls.
+- An HTTP error response never carries the text of a caught value that is not an `Error`: the
+  GitHub status, the recurrence preview, and the backup check send a fixed string in its place.
+  The regex engine's test oracle is left out of CodeQL analysis, whose deliberate patterns it
+  flagged.
+
 ## 2.7.0 (2026-11-04)
 
 No migration.

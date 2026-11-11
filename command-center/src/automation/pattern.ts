@@ -12,9 +12,10 @@
 //
 // The language is the everyday subset of JavaScript syntax: literals and escapes, `.`, character
 // classes, `\d \w \s` and their negations, `\b \B ^ $`, groups (capturing or not), alternation,
-// and the quantifiers `* + ? {n} {n,} {n,m}` with an optional lazy suffix. Backreferences,
-// lookaround, and flags are not supported, and a pattern that uses them is refused at validation
-// with a message that says so. The result is a boolean, so greedy and lazy match the same way.
+// and the quantifiers `* + ? {n} {n,} {n,m}` with an optional lazy suffix. A count is read with
+// any number of digits, as RegExp reads it ({0006} is {6}), and a count above 100 is refused.
+// Backreferences, lookaround, and flags are not supported, and a pattern that uses them is refused
+// at validation with a message that says so. The result is a boolean, so greedy and lazy match the same way.
 // Where a pattern is accepted, `test` agrees with `new RegExp(pattern).test(input)`.
 
 export class PatternError extends Error {}
@@ -146,8 +147,11 @@ class Parser {
   }
 
   #braces(): { min: number; max: number | null } | undefined {
-    const rest = this.#cps.slice(this.#pos, this.#pos + 12).map((cp) => String.fromCharCode(cp)).join('');
-    const m = /^\{(\d{1,3})(?:(,)(\d{0,3}))?\}/.exec(rest);
+    // Any number of digits, as RegExp reads them: {0006} is {6}, and {1000} is a count to refuse.
+    const close = this.#cps.indexOf(0x7d, this.#pos);
+    if (close < 0) return undefined;
+    const rest = this.#cps.slice(this.#pos, close + 1).map((cp) => String.fromCharCode(cp)).join('');
+    const m = /^\{(\d+)(?:(,)(\d*))?\}/.exec(rest);
     if (!m) return undefined;
     const min = Number(m[1]);
     const max = m[2] === undefined ? min : m[3] === '' ? null : Number(m[3]);

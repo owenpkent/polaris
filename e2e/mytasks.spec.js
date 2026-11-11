@@ -93,6 +93,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await openTask(page, title)
     const panel = page.getByRole('dialog', { name: 'Task details' })
+    // A task with no comments shows a row that opens the box.
+    await panel.getByRole('button', { name: 'Add a comment' }).click()
     const comment = panel.getByRole('textbox', { name: 'Add a comment' })
     await comment.fill('Saved by the click away')
     await panel.getByText('Comments', { exact: true }).click()
@@ -107,6 +109,30 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(panel).toHaveCount(0)
     await openTask(page, title)
     await expect(panel.getByRole('textbox', { name: 'Notes' })).toHaveValue('Notes saved the same way')
+  })
+
+  // The open empty comment box closes when it is left, which shrinks the panel. It waits for the
+  // release, so a press on a control below it still lands where it was pressed. A real press and
+  // release, at the height where closing it on the press moved Start a thread from under the pointer.
+  test('leaving an empty comment box by a press below it still clicks what was pressed', async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 1000 })
+    const title = await createTask(request, testInfo, 'empty comment press')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('button', { name: 'Add a comment' }).click()
+    await expect(panel.getByRole('textbox', { name: 'Add a comment' })).toBeFocused()
+
+    const start = panel.getByRole('button', { name: 'Start a thread' })
+    await start.scrollIntoViewIfNeeded()
+    const box = await start.boundingBox()
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.up()
+
+    await expect(panel.getByText('No posts yet.')).toBeVisible()
+    await expect(panel.getByRole('textbox', { name: 'Add a comment' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: 'Add a comment' })).toBeVisible()
   })
 
   // A task with open subtasks shows their count after its name, as Asana's list does, and the

@@ -22,6 +22,37 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+// Refuses a create the way Windows does while another process is deleting the file.
+function refusedThen(times, code = 'EPERM') {
+  let left = times
+  return vi.fn((...args) => {
+    if (left > 0) {
+      left -= 1
+      throw Object.assign(new Error('refused'), { code })
+    }
+    writeFileSync(...args)
+  })
+}
+
+describe('a create refused while the lock changes hands', () => {
+  test.each(['EPERM', 'EACCES', 'EBUSY'])('%s is tried again, and the lock is taken', async (code) => {
+    const createFile = refusedThen(2, code)
+    const lock = await take({ createFile })
+    expect(createFile).toHaveBeenCalledTimes(3)
+    expect(readLock(path)?.token).toBe(lock.token)
+  })
+
+  test('one that goes on being refused is thrown, not waited on for ever', async () => {
+    await expect(take({ createFile: refusedThen(Infinity), refusedMs: 20 })).rejects.toThrow(/refused/)
+  })
+
+  test('another error is thrown at once', async () => {
+    const createFile = refusedThen(1, 'ENOSPC')
+    await expect(take({ createFile })).rejects.toThrow(/refused/)
+    expect(createFile).toHaveBeenCalledTimes(1)
+  })
+})
+
 async function take(opts = {}) {
   const lock = await acquireSuiteLock({ path, log: () => {}, ...fast, ...opts })
   held.push(lock)
@@ -185,6 +216,19 @@ describe('the reclaim mutex', () => {
     const old = new Date(Date.now() - 60_000)
     utimesSync(reclaimPath(path), old, old)
     expect(removeLockIf(path, () => true)).toBe(true)
+  })
+
+  test('a mutex create refused while the file is being deleted is tried again', () => {
+    writeHeld({ pid: DEAD })
+    const createFile = refusedThen(2)
+    expect(removeLockIf(path, () => true, { createFile })).toBe(true)
+    expect(createFile).toHaveBeenCalledTimes(3)
+    expect(existsSync(path)).toBe(false)
+  })
+
+  test('a mutex create that goes on being refused is thrown', () => {
+    writeHeld({ pid: DEAD })
+    expect(() => removeLockIf(path, () => true, { createFile: refusedThen(Infinity), refusedMs: 20 })).toThrow(/refused/)
   })
 
   test('four processes contending over an abandoned lock never hold it at once', async () => {

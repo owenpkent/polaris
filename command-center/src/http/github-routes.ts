@@ -26,7 +26,7 @@ import { OAuthStateStore } from '../ingest/github/oauthState.ts';
 import { getRepoSettings, setRepoSettings } from '../ingest/github/repoSettings.ts';
 import { setRepoTracked } from '../ingest/github/trackRepo.ts';
 import type { SecretStore } from '../ingest/secrets.ts';
-import { HttpError, sendJson } from './errors.ts';
+import { HttpError, errorMessage, sendJson } from './errors.ts';
 import { parseBody } from './schemas.ts';
 import type { Router } from './router.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -116,7 +116,7 @@ export function registerGithubRoutes(router: Router, app: App, opts: HttpServerO
           manageUrl: i.html_url,
         }));
       } catch (e) {
-        result.error = e instanceof Error ? e.message : String(e);
+        result.error = errorMessage(e);
         result.installations = [];
       }
     }

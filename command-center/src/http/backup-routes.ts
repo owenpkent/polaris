@@ -11,7 +11,7 @@ import { MIGRATIONS } from '../core/schema.ts';
 import { BACKUP_PASSPHRASE_KEY, DEFAULT_BACKUP_KEEP, backupDir, datedBackupNames, inspectBackup, newestBackup, soundnessProblems } from '../daemon/backup.ts';
 import { BackupDecryptError, ENCRYPTED_SUFFIX, MIN_PASSPHRASE_LENGTH, isEncryptedBackup, passphraseProblem } from '../daemon/backupCrypto.ts';
 import { defaultSecretStore } from '../ingest/secrets.ts';
-import { HttpError, sendJson } from './errors.ts';
+import { HttpError, errorMessage, sendJson } from './errors.ts';
 import type { Router } from './router.ts';
 import { parseBody } from './schemas.ts';
 import type { HttpServerOptions } from './types.ts';
@@ -88,7 +88,7 @@ export function registerBackupRoutes(router: Router, app: App, opts: HttpServerO
     } catch (e) {
       const message = e instanceof BackupDecryptError || (e instanceof Error && /no passphrase was given/.test(e.message))
         ? 'The passphrase stored on this server does not open this backup. It was made under another passphrase: check it with `cc backup check`, which can ask for that one.'
-        : `cannot be opened (${e instanceof Error ? e.message : String(e)})`;
+        : `cannot be opened (${errorMessage(e)})`;
       sendJson(ctx.res, 200, { checked: true, ok: false, name, encrypted, problems: [message] });
     }
   });

@@ -1024,8 +1024,6 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .mytasks-section-header .icon-btn { height: var(--row-head); }
 .mytasks-section-title { font-size: 15px; font-weight: 650; color: var(--t1); letter-spacing: -0.005em; }
 .mytasks-section-count { margin-left: var(--space-2); font-size: 13px; color: var(--t3); overflow-wrap: anywhere; }
-/* The Today header's progress: "n left", "m done", and "All clear" with a quiet check. No bar. */
-.mytasks-all-clear { display: inline-flex; align-items: center; gap: var(--space-1); margin-left: var(--space-2); font-size: 13px; color: var(--green); overflow-wrap: anywhere; }
 .mytasks-add-row {
   display: flex;
   align-items: center;

@@ -6,7 +6,7 @@
 // Exit 0 when the tag verifies, 1 when it does not, with the reason an install would log.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { realExec } from '../command-center/src/update/exec.ts';
 import { git } from '../command-center/src/update/git.ts';
 import { committedSignersPath, parseAllowedSigners, x509PinnedKeys } from '../command-center/src/update/signers.ts';

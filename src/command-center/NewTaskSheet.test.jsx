@@ -155,7 +155,7 @@ describe('NewTaskSheet', () => {
 
   test('Done in the date step brings back the day and the repeat that followed it', async () => {
     const { onCreate } = renderSheet()
-    const { today, tomorrow } = getDueBounds()
+    const { tomorrow } = getDueBounds()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
     fireEvent.click(screen.getByRole('button', { name: 'Today' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })

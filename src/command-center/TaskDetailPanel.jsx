@@ -454,6 +454,14 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const subtaskPress = usePointerPress(addingSubtask)
   const addSubtaskRowRef = useRef(null)
   useEffect(() => { setAddingSubtask(false); setSubtaskDraft(''); setSubtaskBusy(false) }, [taskId])
+  // Each added subtask pushes the box down a row, so the panel scrolls to keep it in view while
+  // a list is typed (and when it opens below the fold).
+  const subtaskCount = data?.subtasks?.length ?? 0
+  useEffect(() => {
+    if (!addingSubtask) return
+    const frame = requestAnimationFrame(() => subtaskInputRef.current?.scrollIntoView?.({ block: 'nearest' }))
+    return () => cancelAnimationFrame(frame)
+  }, [addingSubtask, subtaskCount])
   // Which opening of the panel this render belongs to: the count goes up each time the panel
   // moves to another task. A request made under an earlier task (a load, or a subtask create)
   // checks it before writing anything, so its answer never lands in the task now shown.
@@ -472,10 +480,14 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   const [commentBusy, setCommentBusy] = useState(false)
   const commentInputRef = useRef(null)
   const commentButtonRef = useRef(null)
+  // A task with no comments shows only a quiet Add a comment row, so the Comments section does
+  // not sit under Notes as a second empty text box. The row opens the box; leaving it empty closes it.
+  const [commentBoxOpen, setCommentBoxOpen] = useState(false)
   // A click elsewhere adds what is in the comment box on the release, as the list's Add task does,
   // so the new comment does not move what was pressed before the click lands (pointerPress.js).
-  const commentPress = usePointerPress(Boolean(commentDraft))
-  useEffect(() => { setCommentDraft(''); setCommentBusy(false) }, [taskId])
+  // An open empty box closes on the release for the same reason, so it listens then too.
+  const commentPress = usePointerPress(Boolean(commentDraft) || commentBoxOpen)
+  useEffect(() => { setCommentDraft(''); setCommentBusy(false); setCommentBoxOpen(false) }, [taskId])
   const [actionNotice, setActionNotice] = useState(null)
   const [skipBusy, setSkipBusy] = useState(false)
   const [restoring, setRestoring] = useState(null)
@@ -912,6 +924,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // A click elsewhere adds what was typed, on the release and unless the click is back in the box
   // or on its Comment button, which adds it itself. Leaving by keyboard keeps the draft.
   function handleCommentBlur(e) {
+    if (!commentBusy && !commentDraft.trim() && (data?.comments || []).length === 0) {
+      // Closing shrinks the panel, which would move what a press below the box is on before its
+      // release lands, so a held press closes it on the release. Leaving by keyboard closes it now.
+      const close = () => {
+        if (document.activeElement !== commentInputRef.current) setCommentBoxOpen(false)
+      }
+      if (commentPress.current.held) afterRelease(close)
+      else close()
+      return
+    }
     if (commentBusy || !commentDraft.trim() || e.relatedTarget === commentButtonRef.current) return
     if (!commentPress.current.clicking) return
     const addOnLeave = (release) => {
@@ -1443,10 +1465,12 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               </button>
             ))}
             {subtasks.length > 0 && !data.task.untrustedText && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                {/* A quiet text button: an occasional action, so it sits below the list without
+                    competing with the subtasks or Add subtask. */}
                 <button
                   type="button"
-                  className="btn"
+                  className="btn-ghost"
                   onClick={handleSaveAsChecklist}
                   disabled={offline || local || checklistBusy}
                 >
@@ -1606,11 +1630,22 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
             )}
           </div>
 
+          {(data.comments || []).length === 0 && !commentBoxOpen ? (
+            <button
+              type="button"
+              className="subtask-add-row"
+              style={{ marginTop: 'auto' }}
+              onClick={() => {
+                setCommentBoxOpen(true)
+                requestAnimationFrame(() => commentInputRef.current?.focus())
+              }}
+            >
+              <Plus size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+              <span>Add a comment</span>
+            </button>
+          ) : (<>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={sectionHeading}>Comments</div>
-            {(data.comments || []).length === 0 && (
-              <div style={{ fontSize: 13, color: 'var(--t2)' }}>No comments yet.</div>
-            )}
             {(data.comments || []).map((c) => (
               <div key={c.id} style={{ background: 'var(--bg-inset)', border: '1px solid var(--bd-section)', borderRadius: 8, padding: '10px 12px' }}>
                 <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 4 }}>
@@ -1657,6 +1692,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               {commentBusy ? 'Adding…' : 'Comment'}
             </button>
           </div>
+          </>)}
 
           <ThreadSection task={data.task} refreshKey={loadSeq} onOpenTask={onOpenTask} />
         </>

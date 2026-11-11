@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { ServerResponse } from 'node:http';
 import { NotFoundError, ValidationError } from '../core/index.ts';
-import { errorToPayload, HttpError, sendError, sendJson, sendNoContent } from './errors.ts';
+import { errorMessage, errorToPayload, HttpError, sendError, sendJson, sendNoContent } from './errors.ts';
 import { listenForFetch } from './test-support.ts';
 
 test('HttpError carries the status, code, and message it was built with', () => {
@@ -12,6 +12,13 @@ test('HttpError carries the status, code, and message it was built with', () => 
   assert.equal(e.code, 'Conflict');
   assert.equal(e.message, 'already running');
   assert.ok(e instanceof Error);
+});
+
+test('errorMessage gives an Error its message and anything else a fixed string', () => {
+  assert.equal(errorMessage(new Error('boom')), 'boom');
+  assert.equal(errorMessage('a plain string'), 'unknown error');
+  assert.equal(errorMessage(undefined), 'unknown error');
+  assert.equal(errorMessage({ some: 'object' }), 'unknown error');
 });
 
 test('errorToPayload maps HttpError through unchanged', () => {

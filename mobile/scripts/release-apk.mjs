@@ -183,7 +183,7 @@ if (options.upload) {
   if (git(['status', '--porcelain']).text.trim()) fail('The checkout has changes: upload only from a clean checkout of the release tag.')
   const tags = git(['tag', '--points-at', 'HEAD']).text.split(/\r?\n/).map((t) => t.trim())
   if (!tags.includes(tag)) fail(`HEAD is not ${tag}: check the tag out first (git checkout ${tag}) so the APK is built from the release.`)
-  if (output('gh', ['release', 'view', tag], { cwd: ROOT }).status !== 0) fail(`There is no GitHub release for ${tag} yet: make it first (docs/releases.md, step 7).`)
+  if (output('gh', ['release', 'view', tag], { cwd: ROOT }).status !== 0) fail(`There is no GitHub release for ${tag} yet: make it first (docs/releases.md, step 8).`)
   run('gh', ['release', 'upload', tag, out, '--clobber'], { cwd: ROOT })
   console.log(`Attached ${name} to the ${tag} release. The App update card in Settings offers it.`)
 }

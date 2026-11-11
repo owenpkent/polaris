@@ -118,6 +118,24 @@ test('unsupported syntax is refused with a message that names it', () => {
   }
 });
 
+// Fuzz crash on 2026-11-09 (target pattern): a brace count of four digits was read as literal text.
+test('a repeat count may have leading zeros or more than three digits, as RegExp reads it', () => {
+  const agree: [string, string[]][] = [
+    ['((|(|))+){0006}', ['', '{0006}']],
+    ['^a{0003}$', ['aaa', 'aa', 'a{0003}']],
+    ['^a{0002,0003}$', ['aa', 'aaaa']],
+    ['^a{0001,}$', ['a', '']],
+  ];
+  for (const [pattern, inputs] of agree) {
+    for (const input of inputs) {
+      assert.equal(compilePattern(pattern).test(input), new RegExp(pattern).test(input), `/${pattern}/ against ${JSON.stringify(input)}`);
+    }
+  }
+  for (const pattern of ['a{1000}', 'a{1,1000}', 'a{99999999999999999999}']) {
+    assert.throws(() => compilePattern(pattern), /above 100/, `expected /${pattern}/ to be refused`);
+  }
+});
+
 test('nested repeat counts cannot expand the pattern without limit', () => {
   assert.throws(() => compilePattern('((a{100}){100}){100}'), /too complex/);
   assert.doesNotThrow(() => compilePattern('(a{10}){10}'));
