@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import ThreadSection from './ThreadSection'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
 
@@ -40,6 +40,7 @@ beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset()
   api.getThreadPosts.mockResolvedValue({ thread: { ...THREAD, id: 'th_2', taskId: 't_2' }, posts: [] })
   resetOfflineStatus()
+  localStorage.clear()
 })
 
 afterEach(() => {
@@ -444,5 +445,104 @@ describe("the owner's judgement", () => {
     expect(screen.getByRole('switch', { name: 'Hide authors from agents' }).disabled).toBe(true)
     expect(screen.getByRole('spinbutton', { name: 'Daily cap per agent' }).disabled).toBe(true)
     expect(screen.getByText('Offline. Posting needs the server.')).toBeTruthy()
+  })
+})
+
+describe('the post draft', () => {
+  const OTHER = { id: 't_2', title: 'Another task', status: 'open', untrustedText: false }
+  const OTHER_THREAD = { ...THREAD, id: 'th_2', taskId: 't_2' }
+  const KEY = 'polaris.threadDraft.t_1'
+
+  function serveThreads() {
+    api.getThread.mockImplementation(async (id) => (
+      id === 't_2' ? { thread: OTHER_THREAD, posts: [] } : { thread: THREAD, posts: [] }
+    ))
+  }
+  const box = () => screen.getByRole('textbox', { name: 'New post' })
+
+  test('survives the panel closing and opening again on the same task', async () => {
+    serveThreads()
+    const first = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'Half a thought' } })
+    first.unmount()
+
+    render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    expect(box().value).toBe('Half a thought')
+    expect(api.addPost).not.toHaveBeenCalled()
+  })
+
+  test('shows the other task its own draft, and the first one again when the panel returns', async () => {
+    serveThreads()
+    const view = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'For task one' } })
+
+    view.rerender(<ThreadSection task={OTHER} />)
+    await waitFor(() => expect(api.getThread).toHaveBeenCalledWith('t_2'))
+    await screen.findByText('No posts yet.')
+    expect(box().value).toBe('')
+    fireEvent.change(box(), { target: { value: 'For task two' } })
+
+    view.rerender(<ThreadSection task={TASK} />)
+    await waitFor(() => expect(box().value).toBe('For task one'))
+    view.rerender(<ThreadSection task={OTHER} />)
+    await waitFor(() => expect(box().value).toBe('For task two'))
+    expect(api.addPost).not.toHaveBeenCalled()
+  })
+
+  test('is cleared by a successful post, and kept when the post fails', async () => {
+    serveThreads()
+    api.addPost.mockRejectedValueOnce(new Error('Request failed (500)'))
+    api.addPost.mockResolvedValue({ post: post('p_9', 'claim', 'Sent') })
+    render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'Sent' } })
+    expect(localStorage.getItem(KEY)).toContain('Sent')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await screen.findByRole('alert')
+    expect(localStorage.getItem(KEY)).toContain('Sent')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(box().value).toBe(''))
+    expect(localStorage.getItem(KEY)).toBeNull()
+  })
+
+  // Review on #166: the panel closed while a post was out and reopened on the same task, with a
+  // newer draft typed in it. The old request finishing must not clear that newer draft.
+  test('a post that finishes after the panel was reopened leaves the newer draft alone', async () => {
+    serveThreads()
+    let finish
+    api.addPost.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const first = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'Sent first' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(api.addPost).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    const second = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'New unsent draft' } })
+    await act(async () => { finish({ post: post('p_9', 'claim', 'Sent first') }) })
+    expect(box().value).toBe('New unsent draft')
+    expect(localStorage.getItem(KEY)).toContain('New unsent draft')
+    second.unmount()
+
+    render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    expect(box().value).toBe('New unsent draft')
+  })
+
+  test('is dropped from storage when the box is emptied', async () => {
+    serveThreads()
+    render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'x' } })
+    expect(localStorage.getItem(KEY)).not.toBeNull()
+    fireEvent.change(box(), { target: { value: '' } })
+    expect(localStorage.getItem(KEY)).toBeNull()
   })
 })

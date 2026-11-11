@@ -1,6 +1,6 @@
-import { describe, test, expect, vi, afterEach } from 'vitest'
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import { useRef, useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DueDateMenu from './DueDateMenu'
 import { getDueBounds } from './dueDates'
 
@@ -45,7 +45,11 @@ describe('it opens straight onto the month', () => {
     expect(within(dialog).queryByRole('menu')).toBeNull()
     expect(within(dialog).queryAllByRole('menuitem')).toEqual([])
     const quick = within(dialog).getByRole('group', { name: 'Quick dates' })
-    expect(within(quick).getAllByRole('button').map((b) => b.textContent)).toEqual(['Today', 'Tomorrow', 'Next Monday', 'No date'])
+    const buttons = within(quick).getAllByRole('button')
+    expect(buttons.map((b) => b.firstChild.textContent)).toEqual(['Today', 'Tomorrow', 'Next Monday', 'No date'])
+    // Each date's weekday or day beside it, shown on a desktop and left out of the name.
+    expect(buttons.map((b) => Boolean(b.querySelector('.due-quick-hint[aria-hidden="true"]')))).toEqual([true, true, true, false])
+    expect(within(quick).getByRole('button', { name: 'Today' })).toBe(buttons[0])
     expect(within(dialog).getByRole('grid', { name: 'Due date, October 2026' })).toBeTruthy()
     expect(screen.queryByLabelText('Date')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Set date/ })).toBeNull()
@@ -220,6 +224,68 @@ describe('the time', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Due' }))
     expect(screen.queryByLabelText('Time')).toBeNull()
     expect(screen.getByRole('button', { name: 'Add time' })).toBeTruthy()
+  })
+
+  test('a click outside the picker saves a time typed and not yet saved', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '16:45' } })
+    fireEvent.mouseDown(document.body)
+    expect(picker()).toBeNull()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('2026-10-08T16:45')
+  })
+
+  test('a click outside saves a new time on a task with no date on today, and a cleared one as the day alone', () => {
+    const first = renderMenu(null)
+    fireEvent.click(screen.getByRole('button', { name: 'Add time' }))
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '08:15' } })
+    fireEvent.mouseDown(document.body)
+    expect(first.onChange).toHaveBeenCalledWith(`${DUE_BOUNDS.today}T08:15`)
+    cleanup()
+    const second = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '' } })
+    fireEvent.mouseDown(document.body)
+    expect(second.onChange).toHaveBeenCalledWith('2026-10-08')
+  })
+
+  test('a click outside saves nothing when the time is unchanged, half typed, or the box was never opened', () => {
+    const { onChange } = renderMenu('2026-10-08T09:30')
+    fireEvent.mouseDown(document.body)
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Due' }))
+    const time = screen.getByLabelText('Time')
+    Object.defineProperty(time, 'validity', { configurable: true, value: { badInput: true, valid: false } })
+    fireEvent.change(time, { target: { value: '' } })
+    fireEvent.mouseDown(document.body)
+    expect(onChange).not.toHaveBeenCalled()
+    cleanup()
+    const plain = renderMenu('2026-10-08')
+    fireEvent.mouseDown(document.body)
+    expect(plain.onChange).not.toHaveBeenCalled()
+  })
+
+  test('Done closes the picker, saves a time typed, and puts focus back on the trigger', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '07:05' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(picker()).toBeNull()
+    expect(onChange).toHaveBeenCalledWith('2026-10-08T07:05')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Due' }))
+  })
+
+  test('Done with nothing changed saves nothing', () => {
+    const { onChange, picker } = renderMenu('2026-10-08')
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(picker()).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('a day picked after typing a time saves once, not again on close', () => {
+    const { onChange } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '16:45' } })
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('2026-10-09T16:45')
   })
 
   // Chromium reports '' for a time box with a segment cleared (validity.badInput), the same as an
@@ -521,5 +587,104 @@ describe('the browser menu inside the picker', () => {
     }
     expect(fire(screen.getByLabelText('Time'))).toBe(false)
     expect(fire(day('Today'))).toBe(true)
+  })
+})
+
+// Review on #166: turning the phone while a time is being typed swapped the sheet for the popover,
+// which unmounted the picker and saved the time before Esc could drop it.
+describe('turning the phone across the breakpoint while the picker is open', () => {
+  let restore
+  let setPhone
+  beforeEach(() => {
+    const original = window.matchMedia
+    let matches = true
+    const listeners = new Set()
+    window.matchMedia = (query) => ({
+      get matches() { return query === '(max-width: 640px)' ? matches : false },
+      media: query,
+      addEventListener: (_type, fn) => listeners.add(fn),
+      removeEventListener: (_type, fn) => listeners.delete(fn),
+    })
+    setPhone = (next) => { matches = next; act(() => { for (const fn of listeners) fn() }) }
+    restore = () => { window.matchMedia = original }
+  })
+  afterEach(() => restore())
+
+  test('keeps the sheet and the typed time, saves nothing, and Esc still drops the time', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '16:45' } })
+    setPhone(false)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(document.querySelector('.due-sheet')).not.toBeNull()
+    expect(screen.getByLabelText('Time').value).toBe('16:45')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(picker()).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('the next opening takes the form the new width calls for', () => {
+    renderMenu('2026-10-08')
+    setPhone(false)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Due' }))
+    expect(screen.getByRole('dialog', { name: 'Due date' })).toBeTruthy()
+    expect(document.querySelector('.due-sheet')).toBeNull()
+  })
+})
+
+describe('on a phone it is a sheet from the bottom edge', () => {
+  let restore
+  beforeEach(() => {
+    const original = window.matchMedia
+    window.matchMedia = (query) => ({ matches: query === '(max-width: 640px)', media: query, addEventListener() {}, removeEventListener() {} })
+    restore = () => { window.matchMedia = original }
+  })
+  afterEach(() => restore())
+
+  const sheet = () => document.querySelector('.due-sheet')
+  const backdrop = () => document.querySelector('.sheet-backdrop')
+
+  test('the picker opens in a modal sheet over a backdrop, with focus on the task day', async () => {
+    renderMenu('2026-10-08')
+    const dialog = screen.getByRole('dialog', { name: 'Due date' })
+    expect(sheet().contains(dialog)).toBe(true)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(backdrop()).not.toBeNull()
+    await waitFor(() => expect(document.activeElement).toBe(day('Thursday, October 8, 2026')))
+  })
+
+  test('a tap on the backdrop closes it, saves a time typed, and puts focus back on the trigger', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '18:00' } })
+    fireEvent.click(backdrop())
+    expect(picker()).toBeNull()
+    expect(onChange).toHaveBeenCalledWith('2026-10-08T18:00')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Due' }))
+  })
+
+  test('Escape closes it without saving the time typed', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '18:00' } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(picker()).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('a day picked saves and closes, and a click in the sheet does not reach the row behind it', () => {
+    const onRowClick = vi.fn()
+    const onChange = vi.fn()
+    render(<div onClick={onRowClick}><Harness value="2026-10-08" onChange={onChange} /></div>)
+    fireEvent.click(day('Friday, October 9, 2026'))
+    expect(onChange).toHaveBeenCalledWith('2026-10-09')
+    expect(sheet()).toBeNull()
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+
+  test('Tab from the last control goes back to the first', () => {
+    renderMenu('2026-10-08')
+    const done = screen.getByRole('button', { name: 'Done' })
+    done.focus()
+    fireEvent.keyDown(document.activeElement, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Today' }))
   })
 })

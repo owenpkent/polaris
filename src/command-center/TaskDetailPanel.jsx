@@ -438,6 +438,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // Notes grow with their text too, so the box has no frame or scroll bar of its own at rest.
   const notesRef = useFitToText(form?.notes)
   const notesId = useId()
+  const leaveRef = useRef(null)
   // The header row draws its bottom line only once the panel has scrolled under it.
   const [scrolled, setScrolled] = useState(false)
   // Add subtask: the name box at the end of the list, open after the header's + or the
@@ -516,6 +517,19 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   // The form values as last loaded from the server, used to tell which fields
   // the user has edited but not saved yet.
   const serverFormRef = useRef(null)
+
+  // What the repeat builder held on the last render, for the effect below to read when the panel
+  // closes or moves to another task. It is null once Save or Cancel has dealt with the draft.
+  const repeatLeaveRef = useRef({ draft: null, saved: '', api, onChanged })
+  repeatLeaveRef.current = { draft: repeatDraft, saved: serverFormRef.current?.recurrence || '', api, onChanged }
+  // Leaving the panel (any way out, or another task opening) saves a builder rule the way its Save
+  // button would. A draft the builder cannot make yet is null, and one equal to the saved rule is
+  // not sent again.
+  useEffect(() => () => {
+    const { draft, saved, api: leaveApi, onChanged: leaveChanged } = repeatLeaveRef.current
+    if (!draft || draft === saved) return
+    leaveApi.updateTask(taskId, { recurrence: draft }).then(() => leaveChanged?.()).catch(() => {})
+  }, [taskId])
 
   // Focus-trap plumbing (same approach as NavDrawer): the panel element,
   // whatever had focus before it opened (mount == open here, since the
@@ -618,13 +632,16 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
   useEffect(() => {
     function onKeyDown(e) {
       if (e.key !== 'Escape') return
-      // Closing takes the notes box away with no blur, so it is left first and saves what it holds.
-      if (document.activeElement?.id === notesId) document.activeElement.blur()
+      // Closing takes the focused field away with no blur, so it is left first and saves what it
+      // holds, as a click outside would. The two drafts that save only on a click are added by hand.
+      const active = document.activeElement
+      if (active && panelRef.current?.contains(active)) active.blur()
+      leaveRef.current?.()
       onClose()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, notesId])
+  }, [onClose])
 
   // Tab/Shift+Tab focus trap while the panel is mounted (mirrors NavDrawer's).
   useEffect(() => {
@@ -944,6 +961,13 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     }
     if (commentPress.current.held) afterRelease(addOnLeave)
     else addOnLeave()
+  }
+
+  // What Esc on the panel saves beyond the blur: the subtask and comment boxes add their text only
+  // on a click away, so leaving by keyboard would drop it. Read by the window listener above.
+  leaveRef.current = () => {
+    if (addingSubtask && subtaskDraft.trim()) handleAddSubtask()
+    if (commentDraft.trim()) handleAddComment()
   }
 
   const done = data?.task?.status === 'done'
