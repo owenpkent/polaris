@@ -284,16 +284,55 @@ public class AppEndToEndTest {
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
     // A real touch at the middle of an element, injected as the system would, so focus and the
-    // soft keyboard behave as they do for the owner.
+    // soft keyboard behave as they do for the owner. The injection only reaches the app's own
+    // windows: when a system window is on top (on a slow CI emulator, an "isn't responding"
+    // dialog or the notification shade), Android refuses it with "Targeted input event injection
+    // ... was not directed at a window owned by" the app. So system dialogs are closed first, and a
+    // refused touch is tried again after closing them, up to TAP_ATTEMPTS times, naming the window
+    // that was in the way if it never gets through.
+    private static final int TAP_ATTEMPTS = 3;
+
     private void tapElement(String elementExpression) {
-        String[] r = rect(elementExpression);
-        int[] origin = webViewOrigin();
-        float x = origin[0] + (Float.parseFloat(r[0]) + Float.parseFloat(r[2])) / 2f * Float.parseFloat(r[4]);
-        float y = origin[1] + (Float.parseFloat(r[1]) + Float.parseFloat(r[3])) / 2f * Float.parseFloat(r[4]);
-        long down = SystemClock.uptimeMillis();
-        android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
-        inst.sendPointerSync(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0));
-        inst.sendPointerSync(MotionEvent.obtain(down, down + 80, MotionEvent.ACTION_UP, x, y, 0));
+        RuntimeException refused = null;
+        for (int attempt = 1; attempt <= TAP_ATTEMPTS; attempt++) {
+            closeSystemDialogs();
+            String[] r = rect(elementExpression);
+            int[] origin = webViewOrigin();
+            float x = origin[0] + (Float.parseFloat(r[0]) + Float.parseFloat(r[2])) / 2f * Float.parseFloat(r[4]);
+            float y = origin[1] + (Float.parseFloat(r[1]) + Float.parseFloat(r[3])) / 2f * Float.parseFloat(r[4]);
+            long down = SystemClock.uptimeMillis();
+            android.app.Instrumentation inst = InstrumentationRegistry.getInstrumentation();
+            try {
+                inst.sendPointerSync(MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0));
+                inst.sendPointerSync(MotionEvent.obtain(down, down + 80, MotionEvent.ACTION_UP, x, y, 0));
+                return;
+            } catch (SecurityException | IllegalArgumentException e) {
+                refused = e;
+                WebAppDriver.sleep(1000);
+            }
+        }
+        throw new AssertionError("The touch was refused " + TAP_ATTEMPTS + " times; window in front: " + focusedWindows(), refused);
+    }
+
+    private static String focusedWindows() {
+        StringBuilder out = new StringBuilder();
+        try {
+            for (String line : shell("dumpsys window displays").split("\n")) {
+                if (line.contains("mCurrentFocus") || line.contains("mFocusedApp")) out.append(line.trim()).append("; ");
+            }
+        } catch (Exception e) {
+            return "(could not read: " + e.getMessage() + ")";
+        }
+        return out.length() > 0 ? out.toString() : "(none reported)";
+    }
+
+    // As the shell user, which may close system dialogs where the app may not.
+    private static void closeSystemDialogs() {
+        try {
+            shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS");
+        } catch (Exception e) {
+            // Nothing to close, or the broadcast was refused: the touch is tried anyway.
+        }
     }
 
     // left, top, right, bottom in CSS px, then the device pixel ratio.
