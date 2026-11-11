@@ -164,6 +164,25 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await page.keyboard.press('Escape')
   })
 
+  // A held row, its copy over the list, and the gap the rows open for it, at every width.
+  test('My tasks with a row held', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'held row')
+    await openView(page)
+    const handle = page.getByRole('button', { name: `Reorder ${title}` })
+    await handle.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    const from = await handle.boundingBox()
+    const x = from.x + from.width / 2
+    await page.mouse.move(x, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(x, from.y + from.height * 2, { steps: 6 })
+    const row = page.locator('[data-task-id]').filter({ has: handle })
+    await expect(row).toHaveClass(/is-dragging/)
+    expect([...(await clippedContent(page)), ...(await danglingLines(page))]).toEqual([])
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect(row).not.toHaveClass(/is-dragging/)
+  })
+
   // A row dropped into Next 7 days opens the date picker on it, at every width.
   test('My tasks with the date picker open on a row dropped into a range', async ({ page, request }, testInfo) => {
     const day = new Date()

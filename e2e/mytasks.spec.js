@@ -438,7 +438,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect.poll(() => reorderOrder(page, 'reorder-keys')).toEqual([`Open ${first}`, `Open ${second}`])
   })
 
-  test('under the manual sort dragging a handle drops the row where the line shows', async ({ page, request }, testInfo) => {
+  test('under the manual sort dragging a handle drops the row where the gap opens', async ({ page, request }, testInfo) => {
     const first = await createTask(request, testInfo, 'reorder-drag', { position: endPosition() })
     const second = await createTask(request, testInfo, 'reorder-drag', { position: endPosition() })
     await openView(page)
@@ -457,6 +457,44 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.mouse.up()
     await expect.poll(() => reorderOrder(page, 'reorder-drag')).toEqual([`Open ${second}`, `Open ${first}`])
     await expect(page.getByRole('menu')).toHaveCount(0)
+  })
+
+  // The rows part where the held row would land, which moves what the pointer is over. Measured
+  // as it stands, the pointer would chase the gap it opened, and the mark would flicker or jump.
+  test('under the manual sort the gap a held row opens stays put under a still pointer', async ({ page, request }, testInfo) => {
+    const held = await createTask(request, testInfo, 'reorder-gap', { position: endPosition() })
+    const middle = await createTask(request, testInfo, 'reorder-gap', { position: endPosition() })
+    const last = await createTask(request, testInfo, 'reorder-gap', { position: endPosition() })
+    await openView(page)
+    await manualSort(page)
+    await rowEl(page, middle).evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    const from = await page.getByRole('button', { name: `Reorder ${held}` }).boundingBox()
+    const x = from.x + from.width / 2
+    // Where the last row sits with no gap open: the pointer positions below are measured from here.
+    const rest = await rowEl(page, last).boundingBox()
+    const gapOpened = (row, side) => expect.poll(() => row.evaluate((el, s) => parseFloat(getComputedStyle(el)[s]), side)).toBeGreaterThan(30)
+    await page.mouse.move(x, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(x, from.y + from.height + 4, { steps: 4 })
+
+    // Under the last row of the group: its bottom edge moves with the gap.
+    await page.mouse.move(x, rest.y + rest.height - 6, { steps: 6 })
+    await expect(rowEl(page, last)).toHaveClass(/is-drop-after/)
+    await gapOpened(rowEl(page, last), 'marginBottom')
+    await page.mouse.move(x, rest.y + rest.height - 5)
+    await expect(rowEl(page, last)).toHaveClass(/is-drop-after/)
+
+    // Over a row, which moves down out from under the pointer: the pointer is now in the gap.
+    await page.mouse.move(x, rest.y + 6, { steps: 4 })
+    await expect(rowEl(page, last)).toHaveClass(/is-drop-before/)
+    await gapOpened(rowEl(page, last), 'marginTop')
+    await page.mouse.move(x, rest.y + 7)
+    await expect(rowEl(page, last)).toHaveClass(/is-drop-before/)
+
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+    await expect(rowEl(page, held)).not.toHaveClass(/is-dragging/)
+    await expect.poll(() => reorderOrder(page, 'reorder-gap')).toEqual([`Open ${held}`, `Open ${middle}`, `Open ${last}`])
   })
 
   // Under the manual sort with the default grouping, a row can leave its day: the group it lands

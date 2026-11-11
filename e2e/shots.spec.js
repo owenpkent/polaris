@@ -117,6 +117,24 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'manual')
   })
 
+  // A row held: its copy follows the pointer, it stays behind faded, and the rows part where it
+  // would land.
+  test('mytasks: holding a row', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'held row')
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Reorder ${title}` }) })
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    const from = await page.getByRole('button', { name: `Reorder ${title}` }).boundingBox()
+    const x = from.x + from.width / 2
+    await page.mouse.move(x, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(x, from.y + from.height * 2, { steps: 6 })
+    await expect(row).toHaveClass(/is-dragging/)
+    await shot(page, testInfo, 'mytasks', 'holding-row')
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+  })
+
   // The menu a right-click opens on a row.
   test('mytasks: context menu', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'context menu')

@@ -97,8 +97,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         title={due.text || undefined}
       >
         {phone && due.text ? (
-          // The day and the time each stay whole, and the time takes a second line when the
-          // column is too narrow for both.
+          // The day and the time each stay whole, the time on its own line under the day.
           <span
             className={due.time ? 'due-chip has-time' : 'due-chip'}
             style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
