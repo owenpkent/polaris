@@ -76,12 +76,30 @@ function buildUrl(baseUrl, path, query) {
   return url
 }
 
+// Writes sent and not yet answered. A background tab reloads itself onto a new build only when
+// none is out (newBuild.js): a write in flight is not in the outbox, which takes it only once the
+// network has failed it, so a reload then would lose it and whatever the page shows of its fate.
+let writesInFlight = 0
+export function writesPending() {
+  return writesInFlight > 0
+}
+
 // `offline` marks a task write that outbox.js can queue: { kind, taskId, opId, body }.
 // `replay: false` is for the connection test: it may be aimed at a server that is not the
 // connection yet, so it must not send anything.
 // `local` is a device with no saved connection: nothing is fetched, and task writes are queued
 // for whichever server it connects to first (outbox.js, LOCAL_ORIGIN).
-async function request(baseUrl, token, path, { method = 'GET', body, query, offline, replay = true, local = false } = {}) {
+async function request(baseUrl, token, path, options = {}) {
+  if ((options.method || 'GET') === 'GET') return send(baseUrl, token, path, options)
+  writesInFlight += 1
+  try {
+    return await send(baseUrl, token, path, options)
+  } finally {
+    writesInFlight -= 1
+  }
+}
+
+async function send(baseUrl, token, path, { method = 'GET', body, query, offline, replay = true, local = false } = {}) {
   const url = buildUrl(baseUrl, path, query)
   const trimmedBase = connectionOrigin(baseUrl)
   // A text search is typed a letter at a time: keeping each one would fill the copy with noise.

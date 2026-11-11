@@ -7,11 +7,13 @@
 // nothing on the server has to change. The check goes to the network only: a server that cannot
 // be reached, or a proxy's gateway error, is no answer, and the tab is left as it is.
 //
-// The reload waits while anything could be lost: an open dialog or panel, or a text field holding
-// text. Edits queued offline are kept in IndexedDB by outbox.js and survive a reload, and the view
+// The reload waits while anything could be lost: an open dialog or panel, a text field holding
+// text, or a write still out (writesPending in api.js) or a control still marked aria-busy while
+// the page takes in its answer, such as a new task's name box between Enter and the save. Edits queued offline are kept in IndexedDB by outbox.js and survive a reload, and the view
 // is in the URL (?view=), so the tab comes back where it was.
 
 import { isTextEntry } from './keyboard'
+import { writesPending } from './command-center/api'
 
 export const CHECK_INTERVAL_MS = 5 * 60 * 1000
 // Remembers the build this tab last reloaded for, so a server that keeps naming a build the tab
@@ -43,6 +45,7 @@ export function currentEntry(doc = document) {
 // Whether a reload now could throw away something the owner is in the middle of.
 export function busy(doc = document) {
   if (doc.querySelector('[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog[open]')) return true
+  if (writesPending() || doc.querySelector('[aria-busy="true"]')) return true
   for (const el of doc.querySelectorAll('input, textarea, [contenteditable=""], [contenteditable="true"]')) {
     if (!isTextEntry(el)) continue
     if (el.isContentEditable ? el.textContent.trim() : el.value) return true

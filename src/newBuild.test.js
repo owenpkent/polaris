@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { CHECK_INTERVAL_MS, busy, currentEntry, entryFromHtml, watchForNewBuild } from './newBuild'
+import { createApiClient } from './command-center/api'
+import { memoryBackend, setCacheBackend } from './command-center/offlineCache'
+import { setOutboxBackend } from './command-center/outbox'
+import { resetOfflineStatus } from './command-center/offlineStatus'
 
 const page = (entry) => `<!DOCTYPE html><html><head><script>var x = 1</script>
 <script type="module" crossorigin src="${entry}"></script></head><body></body></html>`
@@ -68,6 +72,12 @@ describe('busy', () => {
     expect(busy()).toBe(true)
     document.body.innerHTML = '<input type="checkbox" value="on">'
     expect(busy()).toBe(false)
+    // A name box between Enter and the save: read-only, so not a field being typed in, but its
+    // text is not saved yet (review on #165).
+    document.body.innerHTML = '<input readonly aria-busy="true" value="Buy milk">'
+    expect(busy()).toBe(true)
+    document.body.innerHTML = '<input aria-busy="false" value="">'
+    expect(busy()).toBe(false)
   })
 })
 
@@ -117,6 +127,33 @@ describe('watchForNewBuild', () => {
     document.body.innerHTML = ''
     await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
     expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  // Review on #165: a write still out is not in the outbox yet, so a reload then would lose it.
+  test('a write still out holds the reload until it is answered', async () => {
+    setCacheBackend(memoryBackend())
+    setOutboxBackend(memoryBackend())
+    resetOfflineStatus()
+    let answer
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(() => new Promise((resolve) => { answer = resolve }))
+    try {
+      const api = createApiClient('http://127.0.0.1:8788', 'token')
+      const saved = api.createTask({ title: 'Buy milk' })
+      const reload = vi.fn()
+      stop = watchForNewBuild({ fetchImpl: serving('/assets/index-NEW.js'), reload })
+      setHidden(true)
+      await settle()
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+      expect(reload).not.toHaveBeenCalled()
+
+      answer({ ok: true, status: 201, text: async () => JSON.stringify({ task: { id: 't1', title: 'Buy milk' } }) })
+      await saved
+      await vi.advanceTimersByTimeAsync(CHECK_INTERVAL_MS)
+      expect(reload).toHaveBeenCalledTimes(1)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   test('showing the tab stops the checks', async () => {

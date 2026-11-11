@@ -378,6 +378,7 @@ function LaneAddTask({ section, onCreate }) {
           }
         }}
         readOnly={busy}
+        aria-busy={busy || undefined}
         placeholder="Write a task name"
         aria-label={`New task in ${section.name}`}
       />
