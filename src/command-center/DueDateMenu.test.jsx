@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
 import { useRef, useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import DueDateMenu from './DueDateMenu'
 import { getDueBounds } from './dueDates'
 
@@ -587,6 +587,48 @@ describe('the browser menu inside the picker', () => {
     }
     expect(fire(screen.getByLabelText('Time'))).toBe(false)
     expect(fire(day('Today'))).toBe(true)
+  })
+})
+
+// Review on #166: turning the phone while a time is being typed swapped the sheet for the popover,
+// which unmounted the picker and saved the time before Esc could drop it.
+describe('turning the phone across the breakpoint while the picker is open', () => {
+  let restore
+  let setPhone
+  beforeEach(() => {
+    const original = window.matchMedia
+    let matches = true
+    const listeners = new Set()
+    window.matchMedia = (query) => ({
+      get matches() { return query === '(max-width: 640px)' ? matches : false },
+      media: query,
+      addEventListener: (_type, fn) => listeners.add(fn),
+      removeEventListener: (_type, fn) => listeners.delete(fn),
+    })
+    setPhone = (next) => { matches = next; act(() => { for (const fn of listeners) fn() }) }
+    restore = () => { window.matchMedia = original }
+  })
+  afterEach(() => restore())
+
+  test('keeps the sheet and the typed time, saves nothing, and Esc still drops the time', () => {
+    const { onChange, picker } = renderMenu('2026-10-08T09:30')
+    fireEvent.change(screen.getByLabelText('Time'), { target: { value: '16:45' } })
+    setPhone(false)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(document.querySelector('.due-sheet')).not.toBeNull()
+    expect(screen.getByLabelText('Time').value).toBe('16:45')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(picker()).toBeNull()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test('the next opening takes the form the new width calls for', () => {
+    renderMenu('2026-10-08')
+    setPhone(false)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Due' }))
+    expect(screen.getByRole('dialog', { name: 'Due date' })).toBeTruthy()
+    expect(document.querySelector('.due-sheet')).toBeNull()
   })
 })
 

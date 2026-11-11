@@ -77,6 +77,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   // state below. `seededRef` is the share the form was last started from.
   const keptRef = useRef(false)
   const seededRef = useRef(seed)
+  // Numbers each fresh draft. The date step's picks go back only to the draft they were made for:
+  // a share that arrives while the step is open starts a new draft, and the step closing as it
+  // does must not put the old draft's date and repeat on the share (review on #166).
+  const draftRef = useRef(0)
 
   // Each time it opens the form is the draft that was kept, else a fresh one; a new share replaces
   // a kept draft, since it is input the owner just sent. The title is focused either way.
@@ -87,6 +91,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     seededRef.current = seed
     keptRef.current = false
     if (fresh) {
+      draftRef.current += 1
       setTitle(initialRef.current?.title || '')
       setDueAt(null)
       setRecurrence('')
@@ -176,6 +181,13 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setStep('form')
   }
 
+  function keepPicksFor(forDraft) {
+    return (value, draft) => {
+      if (draftRef.current !== forDraft) return
+      keepPicks(value, draft)
+    }
+  }
+
   function keepPicks(value, draft) {
     setDueAt(value)
     setRecurrence(draft.recurrence)
@@ -242,7 +254,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
               </button>
             </div>
             <p className="sheet-draft-title">{title.trim()}</p>
-            <AddDuePanel dueAt={dueAt} onPick={pickDate} onLeave={keepPicks} recurrence={recurrence} customRepeat={customRepeat} api={api} submitLabel="Done" />
+            <AddDuePanel dueAt={dueAt} onPick={pickDate} onLeave={keepPicksFor(draftRef.current)} recurrence={recurrence} customRepeat={customRepeat} api={api} submitLabel="Done" />
             <div className="sheet-actions">
               <button type="button" className="btn" onClick={closeDateStep}>Back</button>
             </div>

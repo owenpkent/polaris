@@ -185,13 +185,14 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
     setBox(next)
     writeThreadDraft(taskId, next)
   }
-  // Clears one task's stored draft after a send. The task may have changed while the request was
-  // in flight, so the stored copy is cleared for the task it was sent to and the box only if it
-  // still shows that task.
-  function clearBox(forTaskId, patch) {
+  // Clears one field of a task's draft after a send, but only while it still holds the text that
+  // was sent. The panel may have moved to another task while the request was out, or been closed
+  // and reopened on the same task with a newer draft typed in it (a separate instance of this
+  // component): that newer text is not what was sent, so it stays, in storage and on screen.
+  function clearBox(forTaskId, field, sent) {
     const stored = readThreadDraft(forTaskId)
-    writeThreadDraft(forTaskId, { ...stored, ...patch })
-    setBox((current) => (current.taskId === forTaskId ? { ...current, ...patch } : current))
+    if (stored[field] === sent) writeThreadDraft(forTaskId, { ...stored, [field]: '' })
+    setBox((current) => (current.taskId === forTaskId && current[field] === sent ? { ...current, [field]: '' } : current))
   }
   const setType = (value) => changeBox({ type: value })
   const setDraft = (value) => changeBox({ body: value })
@@ -282,8 +283,9 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
     // The thread on screen may still be the previous task's for a moment after the panel moves on.
     if (!body || !thread || (thread.taskId && thread.taskId !== taskId)) return
     const sentTo = taskId
+    const sent = draft
     const ok = await run(() => api.addPost(thread.id, { type, body }), 'Could not post.')
-    if (ok) clearBox(sentTo, { body: '' })
+    if (ok) clearBox(sentTo, 'body', sent)
   }
 
   const handleStatus = (post, status) => run(() => api.setPostStatus(post.id, status), 'Could not change that post.')
@@ -296,10 +298,11 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
     const title = forkTitle.trim()
     if (!title) return
     const forkedFrom = taskId
+    const sent = forkTitle
     const ok = await run(() => api.forkThread(thread.id, title), 'Could not fork the thread.')
     if (ok) {
       setForkOpen(false)
-      clearBox(forkedFrom, { fork: '' })
+      clearBox(forkedFrom, 'fork', sent)
     }
   }
 

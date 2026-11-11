@@ -2516,6 +2516,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   .due-pop > .due-pop-time { grid-area: time; }
   .due-pop > .due-pop-foot { grid-area: foot; flex-direction: column; align-items: stretch; }
   .due-pop-foot > .due-pop-repeat { flex: 0 0 auto; display: flex; flex-direction: column; }
+  /* A sheet opened on a phone stays a sheet when the phone is turned past the breakpoint
+     (DueDateMenu.jsx), centred as .sheet is here, and as wide as the two columns. */
+  .sheet.due-sheet { width: auto; max-width: calc(100vw - 32px); }
+  .due-sheet .due-pop { width: auto; }
+  .due-sheet .due-pop > .cal { align-self: auto; width: auto; }
 }
 
 /* A month to pick from (MonthCalendar.jsx). Days touch, so seven 44px days fit at 320px, and

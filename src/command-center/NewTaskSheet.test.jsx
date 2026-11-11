@@ -378,6 +378,28 @@ describe('NewTaskSheet', () => {
       expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('true')
     })
 
+    // Review on #166: a share arriving while the date step is open must not take the old draft's
+    // date and repeat with it when the step closes.
+    test('a share that arrives in the date step starts clean, without the picks made there', async () => {
+      const utils = renderSheet()
+      const { tomorrow } = getDueBounds()
+      fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Call the vet' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+      fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+      fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+      const share = { title: 'Great read', notes: 'worth a look', sourceUrl: 'https://example.com/a' }
+      utils.rerender(<NewTaskSheet open onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} initial={share} seed={1} />)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+      expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('true')
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      await waitFor(() => expect(utils.onCreate).toHaveBeenCalledTimes(1))
+      const payload = utils.onCreate.mock.calls[0][0]
+      expect(payload.title).toBe('Great read')
+      expect(payload.sourceUrl).toBe('https://example.com/a')
+      expect(payload.dueAt ?? null).toBeNull()
+      expect(payload.recurrence ?? null).toBeNull()
+    })
+
     test('closing from the date step keeps the picks made there', () => {
       const utils = renderSheet()
       const { tomorrow } = getDueBounds()

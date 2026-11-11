@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import ThreadSection from './ThreadSection'
 import { markOffline, resetOfflineStatus } from './offlineStatus'
 
@@ -508,6 +508,32 @@ describe('the post draft', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Post' }))
     await waitFor(() => expect(box().value).toBe(''))
     expect(localStorage.getItem(KEY)).toBeNull()
+  })
+
+  // Review on #166: the panel closed while a post was out and reopened on the same task, with a
+  // newer draft typed in it. The old request finishing must not clear that newer draft.
+  test('a post that finishes after the panel was reopened leaves the newer draft alone', async () => {
+    serveThreads()
+    let finish
+    api.addPost.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const first = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'Sent first' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Post' }))
+    await waitFor(() => expect(api.addPost).toHaveBeenCalledTimes(1))
+    first.unmount()
+
+    const second = render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    fireEvent.change(box(), { target: { value: 'New unsent draft' } })
+    await act(async () => { finish({ post: post('p_9', 'claim', 'Sent first') }) })
+    expect(box().value).toBe('New unsent draft')
+    expect(localStorage.getItem(KEY)).toContain('New unsent draft')
+    second.unmount()
+
+    render(<ThreadSection task={TASK} />)
+    await screen.findByText('No posts yet.')
+    expect(box().value).toBe('New unsent draft')
   })
 
   test('is dropped from storage when the box is emptied', async () => {

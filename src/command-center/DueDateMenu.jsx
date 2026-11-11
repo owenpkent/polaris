@@ -49,8 +49,16 @@ function popGutter() {
 // On a phone it rises from the bottom edge as a sheet over a dimmed page (DueSheet), rather than
 // floating over the field it came from; a tap on the page above it closes it, as a click outside
 // the popover does. Done closes it in both.
+//
+// An opening keeps the form it opened in. Turning the phone across the breakpoint would otherwise
+// swap the sheet for the popover, which unmounts the picker: that unmount would read as leaving and
+// save a time the owner could still have dropped with Esc (review on #166). Both forms lay out at
+// any width (index.css), and the next opening takes the form the width calls for.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label, recurrence = null, onRecurrenceChange, api, startDay = null }) {
-  const phone = usePhoneWidth()
+  const phoneWidth = usePhoneWidth()
+  const shownAsSheet = useRef(phoneWidth)
+  if (!open) shownAsSheet.current = phoneWidth
+  const phone = open ? shownAsSheet.current : phoneWidth
   const picker = (
     <DuePicker
       anchorRef={anchorRef}
