@@ -4,9 +4,8 @@
 // time the owner comes back. A visible tab is never reloaded under the owner.
 //
 // The build is named by the hashed entry script in index.html (/assets/index-<hash>.js), so
-// nothing on the server has to change. The page is fetched through the service worker, which goes
-// to the network first and answers with the stored copy when the server cannot be reached; the
-// stored copy is the build this tab is running, so a stopped daemon never looks like a new build.
+// nothing on the server has to change. The check goes to the network only: a server that cannot
+// be reached, or a proxy's gateway error, is no answer, and the tab is left as it is.
 //
 // The reload waits while anything could be lost: an open dialog or panel, or a text field holding
 // text. Edits queued offline are kept in IndexedDB by outbox.js and survive a reload, and the view
@@ -51,8 +50,13 @@ export function busy(doc = document) {
   return false
 }
 
+// The service worker sends this straight to the network and never stores it (public/sw.js,
+// BUILD_PROBE_PARAM), so the stored offline page stays the one whose scripts are stored with it.
+// A worker from before that rule would store it under this URL, not '/', which is just as safe.
+export const BUILD_PROBE_URL = '/?cc-build-probe=1'
+
 async function servedEntry(fetchImpl) {
-  const response = await fetchImpl('/', { cache: 'no-store', credentials: 'same-origin' })
+  const response = await fetchImpl(BUILD_PROBE_URL, { cache: 'no-store', credentials: 'same-origin' })
   if (!response.ok) return null
   return entryFromHtml(await response.text())
 }
