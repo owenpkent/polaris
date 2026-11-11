@@ -3,6 +3,7 @@ import { X, Calendar } from 'lucide-react'
 import { dueDateOnly, dueTimeOnly, formatTime, getDueBounds, withDueDate } from './dueDates'
 import { oneLine, useFitToText } from './useFitToText'
 import AddDuePanel, { nextMondayIso } from './AddDuePanel'
+import { clearNewTaskDraft, readNewTaskDraft, writeNewTaskDraft } from './newTaskDraft'
 import { RepeatPicker } from './RepeatBuilder'
 import { followDate } from './recurrenceRules'
 
@@ -37,8 +38,9 @@ function linkLabel(url) {
 //
 // A task is created only by Create, never by closing the sheet. The backdrop, the X, and Esc keep the draft (title, notes, date, repeat, project): the
 // sheet stays mounted while closed, and the next opening shows it again. Cancel throws the draft
-// away, a Create that goes through clears it, and a new share (`seed`) replaces it. The draft lives
-// in memory only. `onCreate` receives the create
+// away, a Create that goes through clears it, and a new share (`seed`) replaces it. The draft is kept in
+// sessionStorage too (newTaskDraft.js), so a reload of the tab, such as the background update
+// onto a new build (newBuild.js), keeps it as well. `onCreate` receives the create
 // payload and may throw. When it resolves the sheet closes itself through `onClose`. Each opening
 // is numbered, and a create that finishes after the sheet was closed and opened again leaves the
 // new draft alone: it neither closes it nor puts the old request's error or busy state on it.
@@ -75,8 +77,13 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   // Set when the sheet was dismissed (backdrop, X, Esc) rather than finished or cancelled, so the
   // next opening keeps the draft. The sheet stays mounted while closed, so the draft is simply the
   // state below. `seededRef` is the share the form was last started from.
-  const keptRef = useRef(false)
+  // A draft stored before a reload counts as kept, so the first opening after it restores it.
+  const keptRef = useRef(null)
+  if (keptRef.current === null) keptRef.current = Boolean(readNewTaskDraft())
   const seededRef = useRef(seed)
+  // Set by a dismissal that keeps the draft, while the state below is that draft: only then is it
+  // written to storage. A draft restored after a reload is in storage only until the sheet opens.
+  const keepingRef = useRef(false)
   // Numbers each fresh draft. The date step's picks go back only to the draft they were made for:
   // a share that arrives while the step is open starts a new draft, and the step closing as it
   // does must not put the old draft's date and repeat on the share (review on #166).
@@ -90,7 +97,20 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     const fresh = !keptRef.current || seed !== seededRef.current
     seededRef.current = seed
     keptRef.current = false
+    keepingRef.current = false
+    // After a reload the state is empty and the stored copy is the draft.
+    const stored = fresh ? null : readNewTaskDraft()
+    if (stored) {
+      setTitle(stored.title)
+      setDueAt(stored.dueAt)
+      setRecurrence(stored.recurrence)
+      setCustomRepeat(stored.customRepeat)
+      setProjectId(stored.projectId)
+      setNotes(stored.notes)
+      setSourceUrl(stored.sourceUrl)
+    }
     if (fresh) {
+      clearNewTaskDraft()
       draftRef.current += 1
       setTitle(initialRef.current?.title || '')
       setDueAt(null)
@@ -105,6 +125,13 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setError(null)
     titleRef.current?.focus()
   }, [open, seed])
+
+  // While the sheet is closed with a kept draft, the stored copy follows it: the date step's picks
+  // land just after the close, as its panel unmounts.
+  useEffect(() => {
+    if (open || !keepingRef.current) return
+    writeNewTaskDraft({ title, notes, dueAt, recurrence, customRepeat, projectId, sourceUrl })
+  }, [open, title, notes, dueAt, recurrence, customRepeat, projectId, sourceUrl])
 
   useEffect(() => {
     if (wasOpenRef.current && !open) openButtonRef?.current?.focus()
@@ -199,6 +226,13 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   // the draft, so nothing is kept then.
   function dismiss() {
     keptRef.current = !busy
+    keepingRef.current = !busy
+    onClose()
+  }
+
+  // Cancel throws the draft away, the stored copy with it.
+  function cancel() {
+    clearNewTaskDraft()
     onClose()
   }
 
@@ -226,7 +260,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     const opening = openingRef.current
     try {
       await onCreate(payload)
-      if (opening === openingRef.current) onClose()
+      if (opening === openingRef.current) {
+        clearNewTaskDraft()
+        onClose()
+      }
     } catch (err) {
       if (opening !== openingRef.current) return
       setError(err.message || 'Could not add task.')
@@ -347,7 +384,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         {error && <p className="sheet-error" role="alert">{error}</p>}
 
         <div className="sheet-actions">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="btn" onClick={cancel} disabled={busy}>Cancel</button>
           <button type="submit" ref={createRef} className="btn btn-primary" disabled={busy || !title.trim()}>Create</button>
         </div>
         </>
