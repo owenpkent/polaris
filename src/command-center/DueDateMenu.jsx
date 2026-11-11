@@ -218,10 +218,13 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
   draftRef.current = { time, timePartial, day, showTime }
   useEffect(() => {
     closedRef.current = false
+    // On the window's capture phase, which runs before the document's: Popover and DueSheet close
+    // on Esc from the document, and a real key press unmounts the picker right there, before a
+    // listener of its own on the document would have run (review on #166).
     function onKeyDown(e) { if (e.key === 'Escape') closedRef.current = true }
-    document.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keydown', onKeyDown, true)
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keydown', onKeyDown, true)
       if (closedRef.current) return
       const draft = draftRef.current
       if (!draft.showTime || draft.timePartial || draft.time === taskTime) return

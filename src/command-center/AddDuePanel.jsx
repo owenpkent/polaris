@@ -82,10 +82,12 @@ export default function AddDuePanel({ dueAt, onPick, onLeave, recurrence: recurr
   draftRef.current = { day, time, recurrence, customRepeat }
   useEffect(() => {
     closedRef.current = false
+    // On the window's capture phase, ahead of the Popover's Esc handler on the document, which
+    // unmounts the panel before a later listener could mark the Esc (as in DueDateMenu.jsx).
     function onKeyDown(e) { if (e.key === 'Escape') closedRef.current = true }
-    document.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keydown', onKeyDown, true)
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keydown', onKeyDown, true)
       if (closedRef.current || !onLeaveRef.current) return
       const d = draftRef.current
       // A time with no day counts from today, as a time typed in the due date picker does.
