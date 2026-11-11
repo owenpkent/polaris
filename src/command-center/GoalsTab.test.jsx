@@ -8,7 +8,8 @@ const api = {}
 let connected = true
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected, api }) }))
-vi.mock('./useEvents', () => ({ useEventRefresh: () => {} }))
+let poll = () => {}
+vi.mock('./useEvents', () => ({ useEventRefresh: (fn) => { poll = fn } }))
 
 const progress = { mode: 'tasks', done: 0, total: 0, percent: null, openTasks: 0 }
 const serverGoal = (over = {}) => ({
@@ -133,6 +134,112 @@ describe('GoalsTab', () => {
     api.listGoals.mockRejectedValue(new Error('Could not reach the Command Center server.'))
     render(<GoalsTab />)
     await screen.findByText('Could not reach the Command Center server.')
+  })
+})
+
+describe('GoalDetails leaving an edit', () => {
+  const open = async (over = {}) => {
+    const goal = serverGoal({ progressMode: 'manual', currentValue: 1, targetValue: 10, ...over })
+    api.listGoals.mockResolvedValue({ goals: [goal], total: 1, vision: '' })
+    api.getGoal.mockResolvedValue({ goal, linkedProjects: [], linkedTasks: [], openTasks: [] })
+    render(<GoalsTab />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details for Existing goal' }))
+    return screen.findByLabelText('Status note')
+  }
+  const serverNow = async (over) => {
+    const goal = serverGoal({ progressMode: 'manual', currentValue: 1, targetValue: 10, ...over })
+    api.listGoals.mockResolvedValue({ goals: [goal], total: 1, vision: '' })
+    await act(async () => { await poll() })
+  }
+
+  test('blur saves the note once, and Save note afterwards sends nothing more', async () => {
+    const note = await open()
+    fireEvent.change(note, { target: { value: 'On track' } })
+    fireEvent.blur(note)
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledTimes(1))
+    expect(api.updateGoal).toHaveBeenCalledWith('g1', { statusNote: 'On track' })
+    fireEvent.blur(note)
+    expect(api.updateGoal).toHaveBeenCalledTimes(1)
+  })
+
+  test('a note whose save fails stays unsaved, so the next leave tries again', async () => {
+    const note = await open()
+    api.updateGoal.mockRejectedValueOnce(new Error('Server said no'))
+    fireEvent.change(note, { target: { value: 'On track' } })
+    fireEvent.blur(note)
+    expect(await screen.findByText('Server said no')).toBeTruthy()
+    fireEvent.blur(note)
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledTimes(2))
+    expect(api.updateGoal).toHaveBeenLastCalledWith('g1', { statusNote: 'On track' })
+  })
+
+  test('moving from the note to its own Save button does not save on the blur', async () => {
+    const note = await open()
+    fireEvent.change(note, { target: { value: 'Draft' } })
+    fireEvent.blur(note, { relatedTarget: screen.getByRole('button', { name: 'Save note' }) })
+    expect(api.updateGoal).not.toHaveBeenCalled()
+  })
+
+  test('blur saves a rename once', async () => {
+    await open()
+    const title = screen.getByLabelText('Goal title')
+    fireEvent.change(title, { target: { value: 'Renamed goal' } })
+    fireEvent.blur(title)
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledTimes(1))
+    expect(api.updateGoal).toHaveBeenCalledWith('g1', { title: 'Renamed goal' })
+  })
+
+  test('blur saves the current and target values once', async () => {
+    await open()
+    const target = screen.getByLabelText('Target')
+    fireEvent.change(target, { target: { value: '25' } })
+    fireEvent.blur(target)
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledTimes(1))
+    expect(api.updateGoal).toHaveBeenCalledWith('g1', { targetValue: 25 })
+    const current = screen.getByLabelText('Current')
+    fireEvent.change(current, { target: { value: '4' } })
+    fireEvent.blur(current)
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledTimes(2))
+    expect(api.updateGoal).toHaveBeenLastCalledWith('g1', { currentValue: 4 })
+  })
+
+  test('collapsing the card with an unsaved note saves it', async () => {
+    const note = await open()
+    fireEvent.change(note, { target: { value: 'Unsaved words' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Hide details for Existing goal' }))
+    await waitFor(() => expect(api.updateGoal).toHaveBeenCalledWith('g1', { statusNote: 'Unsaved words' }))
+    expect(api.updateGoal).toHaveBeenCalledTimes(1)
+  })
+
+  test('collapsing with nothing changed saves nothing', async () => {
+    await open()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide details for Existing goal' }))
+    expect(api.updateGoal).not.toHaveBeenCalled()
+  })
+
+  test('a poll does not overwrite a dirty field but updates a clean one', async () => {
+    const note = await open()
+    fireEvent.change(note, { target: { value: 'Typing now' } })
+    await serverNow({ statusNote: 'From elsewhere', targetValue: 50 })
+    expect(screen.getByLabelText('Status note').value).toBe('Typing now')
+    await waitFor(() => expect(screen.getByLabelText('Target').value).toBe('50'))
+  })
+
+  test('Esc puts a field back to its saved value', async () => {
+    const note = await open({ statusNote: 'Saved note' })
+    fireEvent.change(note, { target: { value: 'Changed' } })
+    fireEvent.keyDown(note, { key: 'Escape' })
+    expect(note.value).toBe('Saved note')
+  })
+
+  test('leaving does not save while offline', async () => {
+    const note = await open()
+    fireEvent.change(note, { target: { value: 'Offline words' } })
+    act(() => markOffline())
+    fireEvent.blur(note)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide details for Existing goal' }))
+    expect(api.updateGoal).not.toHaveBeenCalled()
+    resetOfflineStatus()
   })
 })
 

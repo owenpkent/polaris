@@ -13,7 +13,9 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // button sits in the Due date column, as a task row has them (`dueColumn`; with that column hidden
 // the button follows the name). It opens "When is it due?" (AddDuePanel.jsx) under itself, on
 // the group's date, with Repeats under the month: Add task there calls onSubmit(title, { dueAt,
-// recurrence }), and the next row starts on the group's date again. Esc there goes back to the title, dropping what was picked; Esc in the title, or
+// recurrence }), and the next row starts on the group's date again. Esc there goes back to the
+// title, dropping what was picked; a click outside it keeps the picks on the row without adding the
+// task, and a click that also leaves the row adds it with them. Esc in the title, or
 // leaving it empty, closes the row with nothing saved. A click elsewhere with a title in it adds
 // the task on the row's date, as Enter does, and closes the row once it is saved; leaving it by
 // keyboard keeps the draft. A create that fails keeps the title and what Add task handed over
@@ -34,6 +36,10 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // On a phone the picker spans the screen with no margin, so seven 44px days fit at 320px; on a
   // desktop it opens under the due date button and keeps 8px off the window's edge (`phone`).
   const mounted = useRef(true)
+  // The row's date and repeat as the latest render or the picker's last leave left them, read by
+  // the click-away add, which can run before a state update from the picker closing has rendered.
+  const picksRef = useRef(null)
+  picksRef.current = { dueAt, recurrence, customRepeat }
   const dueText = formatDueCell(dueAt, getDueBounds()).text || 'Due date'
   // Counts the tasks saved from this row. Each one pushes the row down, so it is kept on screen.
   const [saved, setSaved] = useState(0)
@@ -71,7 +77,19 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   function addOnLeave(release) {
     const row = rowRef.current
     if (!mounted.current || cancelled.current || row?.contains(release?.target) || row?.contains(document.activeElement)) return
-    commit(dueAt, { recurrence, customRepeat }, { leave: true })
+    const picks = picksRef.current
+    commit(picks.dueAt, { recurrence: picks.recurrence, customRepeat: picks.customRepeat }, { leave: true })
+  }
+
+  // The picker closed any way but Esc or Add task (a click outside it): the picks stay on the row.
+  // Closing it adds nothing; a click away that also leaves the row adds through addOnLeave, which
+  // reads them from picksRef.
+  function keepPicks(picked, draft) {
+    picksRef.current = { dueAt: picked, recurrence: draft.recurrence, customRepeat: draft.customRepeat }
+    if (!mounted.current) return
+    setDueAt(picked)
+    setRecurrence(draft.recurrence)
+    setCustomRepeat(draft.customRepeat)
   }
 
   function handleBlur(e) {
@@ -207,7 +225,7 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       {error && <span className="inline-add-error" style={{ gridColumn: handleColumn ? '3 / -1' : '2 / -1' }}>{error}</span>}
       <Popover anchorRef={dueAnchorRef} open={picking} onClose={() => setPicking(false)} minWidth={320} maxWidth={768} gutter={phone ? 0 : 8} preferFit focusSelector="[data-cal-focus]">
         <div role="dialog" aria-label={`Due date for ${title.trim()}`} className="add-due-pop">
-          <AddDuePanel dueAt={dueAt} onPick={commit} recurrence={recurrence} customRepeat={customRepeat} api={api} />
+          <AddDuePanel dueAt={dueAt} onPick={commit} onLeave={keepPicks} recurrence={recurrence} customRepeat={customRepeat} api={api} />
         </div>
       </Popover>
     </div>

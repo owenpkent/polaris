@@ -1419,3 +1419,120 @@ describe('the subtasks header and Add subtask', () => {
     expect(screen.queryByRole('button', { name: 'Add subtask' })).toBeNull()
   })
 })
+
+// Esc closes the panel, so it leaves whatever field has focus: the edit is saved as a click outside
+// would save it (CONTRIBUTING.md, "Leaving an edit").
+describe('Esc on the panel saves the edit in progress', () => {
+  function pressEsc(el) {
+    act(() => { el.focus() })
+    act(() => { fireEvent.keyDown(el, { key: 'Escape' }) })
+  }
+
+  test('the title', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: TASK })
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    const title = await screen.findByRole('textbox', { name: 'Task title' })
+    fireEvent.change(title, { target: { value: 'Renamed' } })
+    pressEsc(title)
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { title: 'Renamed' }))
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  test('the assignee', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: TASK })
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    const box = await screen.findByRole('textbox', { name: 'Assignee' })
+    fireEvent.change(box, { target: { value: 'reviewer' } })
+    pressEsc(box)
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { assignee: 'reviewer' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  test('the recurrence text', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: TASK })
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'More details' }))
+    const box = await screen.findByRole('textbox', { name: 'Recurrence' })
+    fireEvent.change(box, { target: { value: 'FREQ=DAILY' } })
+    pressEsc(box)
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: 'FREQ=DAILY' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  test('a comment', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.addComment.mockResolvedValue({})
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' }))
+    const box = await screen.findByRole('textbox', { name: 'Add a comment' })
+    fireEvent.change(box, { target: { value: 'Looks right' } })
+    pressEsc(box)
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledWith('t_1', 'Looks right'))
+    expect(api.addComment).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  test('a subtask typed in the panel-level box is added, though the box own Esc discards', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({})
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    fireEvent.click(await screen.findByText('Add subtask'))
+    const box = await screen.findByRole('textbox', { name: 'Subtask name' })
+    fireEvent.change(box, { target: { value: 'Tickets' } })
+    // Esc with focus elsewhere in the panel closes it and adds what the open box holds.
+    const title = screen.getByRole('textbox', { name: 'Task title' })
+    pressEsc(title)
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' }))
+    expect(onClose).toHaveBeenCalled()
+  })
+})
+
+describe('the custom repeat builder when the panel is left', () => {
+  async function openBuilder(onClose = () => {}) {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.updateTask.mockResolvedValue({ task: TASK })
+    const view = render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Repeat, never' }))
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Custom' }))
+    await screen.findByRole('group', { name: 'Custom repeat' })
+    return view
+  }
+
+  test('closing the panel saves the draft as Save would', async () => {
+    const { unmount } = await openBuilder()
+    unmount()
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(null)}` }))
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+  })
+
+  test('opening another task saves the draft on the task it was made for', async () => {
+    const { rerender } = await openBuilder()
+    rerender(<TaskDetailPanel taskId="t_2" onClose={() => {}} />)
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t_1', { recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(null)}` }))
+    expect(api.updateTask).not.toHaveBeenCalledWith('t_2', expect.anything())
+  })
+
+  test('Cancel still discards it', async () => {
+    const { unmount } = await openBuilder()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    unmount()
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+
+  test('Save is not repeated on the way out', async () => {
+    const { unmount } = await openBuilder()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledTimes(1))
+    unmount()
+    expect(api.updateTask).toHaveBeenCalledTimes(1)
+  })
+})

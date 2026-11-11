@@ -234,11 +234,85 @@ function GoalDetails({ goal, api, projects, onUpdate, onChanged, onAddSub, onDel
   // while the 10s poll refreshes underneath it, and a goal can change from the CLI or from Claude
   // Code over MCP. Without this the fields kept the values they had at mount, the Save buttons
   // un-disabled themselves because the draft no longer matched the new value, and one click wrote
-  // the stale text back over the newer one. VisionCard already does the same thing.
-  useEffect(() => { setTitle(goal.title) }, [goal.title])
-  useEffect(() => { setNote(goal.statusNote || '') }, [goal.statusNote])
-  useEffect(() => { setCurrent(goal.currentValue ?? '') }, [goal.currentValue])
-  useEffect(() => { setTarget(goal.targetValue ?? '') }, [goal.targetValue])
+  // the stale text back over the newer one. A field that holds an unsaved edit is left alone, so a
+  // poll never overwrites what the owner is typing (see "Leaving an edit" in CONTRIBUTING.md).
+  //
+  // draft holds the latest typed values and saved the last value loaded or saved for each field,
+  // both as refs so that blur and unmount handlers see current values. A field is dirty when its
+  // draft differs from saved.
+  const draft = useRef({})
+  const saved = useRef({})
+  const latest = useRef({})
+  draft.current = { title, note, current, target }
+  latest.current = { goal, onUpdate, offline }
+  const follow = (field, value, set) => {
+    const clean = !(field in saved.current) || String(draft.current[field]) === String(saved.current[field])
+    saved.current[field] = value
+    if (clean) set(value)
+  }
+  useEffect(() => { follow('title', goal.title, setTitle) }, [goal.title])
+  useEffect(() => { follow('note', goal.statusNote || '', setNote) }, [goal.statusNote])
+  useEffect(() => { follow('current', goal.currentValue ?? '', setCurrent) }, [goal.currentValue])
+  useEffect(() => { follow('target', goal.targetValue ?? '', setTarget) }, [goal.targetValue])
+
+  // Saves the named fields exactly as their buttons do, once: a value equal to the saved one is not
+  // sent again, and a value the button would refuse saves nothing and goes back to the saved one.
+  const saveFields = (fields) => {
+    const { goal: g, onUpdate: update, offline: off } = latest.current
+    if (off) return
+    const patch = {}
+    // The saved values the patch replaces: a save that fails puts them back, so the field reads as
+    // unsaved again and the next leave or button tries once more.
+    const before = {}
+    for (const field of fields) {
+      const value = draft.current[field]
+      before[field] = saved.current[field]
+      // The number fields hold a number from the server and a string once typed in.
+      if (String(value) === String(saved.current[field])) continue
+      if (field === 'title') {
+        if (!value.trim()) { setTitle(saved.current.title); continue }
+        if (value.trim() === saved.current.title) continue
+        patch.title = value.trim()
+        saved.current.title = value.trim()
+        setTitle(value.trim())
+      } else if (field === 'note') {
+        patch.statusNote = value
+        saved.current.note = value
+      } else {
+        const key = field === 'current' ? 'currentValue' : 'targetValue'
+        if (value !== '' && !Number.isFinite(Number(value))) {
+          if (field === 'current') setCurrent(saved.current.current); else setTarget(saved.current.target)
+          continue
+        }
+        patch[key] = value === '' ? null : Number(value)
+        saved.current[field] = value
+      }
+    }
+    if (Object.keys(patch).length === 0) return
+    // Only the fields this save marked saved, and only while no poll has loaded a newer value.
+    const after = {}
+    for (const field of fields) if (saved.current[field] !== before[field]) after[field] = saved.current[field]
+    Promise.resolve(update(g, patch)).then((ok) => {
+      if (ok !== false) return
+      for (const field of Object.keys(after)) if (saved.current[field] === after[field]) saved.current[field] = before[field]
+    })
+  }
+
+  // A blur that moves focus inside the same control group (a field to its own Save button) is not
+  // leaving, and the button saves anyway.
+  const leave = (fields) => (e) => {
+    if (e.currentTarget.contains(e.relatedTarget)) return
+    saveFields(fields)
+  }
+  // Esc puts the field back to its saved value.
+  const revertOnEsc = (field, set) => (e) => {
+    if (e.key !== 'Escape') return
+    e.stopPropagation()
+    set(saved.current[field])
+  }
+
+  // Collapsing the card or opening another goal unmounts this, which saves what is still unsaved.
+  useEffect(() => () => saveFields(['title', 'note', 'current', 'target']), [])
 
   const load = useCallback(async () => {
     try {
@@ -271,30 +345,30 @@ function GoalDetails({ goal, api, projects, onUpdate, onChanged, onAddSub, onDel
 
       <div className="field" style={{ marginBottom: 0 }}>
         <label htmlFor={`goal-title-${goal.id}`}>Goal title</label>
-        <div className="goal-inline">
-          <input id={`goal-title-${goal.id}`} value={title} onChange={(e) => setTitle(e.target.value)} style={{ minHeight: 44, padding: '0 12px' }} />
-          <button type="button" className="btn" disabled={!title.trim() || title.trim() === goal.title || offline} onClick={() => onUpdate(goal, { title: title.trim() })}>Rename</button>
+        <div className="goal-inline" onBlur={leave(['title'])}>
+          <input id={`goal-title-${goal.id}`} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={revertOnEsc('title', setTitle)} style={{ minHeight: 44, padding: '0 12px' }} />
+          <button type="button" className="btn" disabled={!title.trim() || title.trim() === goal.title || offline} onClick={() => saveFields(['title'])}>Rename</button>
         </div>
       </div>
 
-      <div className="field" style={{ marginBottom: 0 }}>
+      <div className="field" style={{ marginBottom: 0 }} onBlur={leave(['note'])}>
         <label htmlFor={`goal-note-${goal.id}`}>Status note</label>
-        <textarea id={`goal-note-${goal.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="One line on why it is on track, at risk, or off track" style={{ padding: '10px 12px' }} />
+        <textarea id={`goal-note-${goal.id}`} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={revertOnEsc('note', setNote)} rows={2} placeholder="One line on why it is on track, at risk, or off track" style={{ padding: '10px 12px' }} />
         <div>
-          <button type="button" className="btn" disabled={note === (goal.statusNote || '') || offline} onClick={() => onUpdate(goal, { statusNote: note })}>Save note</button>
+          <button type="button" className="btn" disabled={note === (goal.statusNote || '') || offline} onClick={() => saveFields(['note'])}>Save note</button>
         </div>
       </div>
 
       {manual && (
-        <div>
+        <div onBlur={leave(['current', 'target'])}>
           <div className="goal-manual-fields">
             <div className="field" style={{ marginBottom: 0 }}>
               <label htmlFor={`goal-current-${goal.id}`}>Current{goal.unit ? ` (${goal.unit})` : ''}</label>
-              <input id={`goal-current-${goal.id}`} type="number" inputMode="decimal" value={current} onChange={(e) => setCurrent(e.target.value)} style={{ minHeight: 44, padding: '0 12px' }} />
+              <input id={`goal-current-${goal.id}`} type="number" inputMode="decimal" value={current} onChange={(e) => setCurrent(e.target.value)} onKeyDown={revertOnEsc('current', setCurrent)} style={{ minHeight: 44, padding: '0 12px' }} />
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
               <label htmlFor={`goal-target-${goal.id}`}>Target</label>
-              <input id={`goal-target-${goal.id}`} type="number" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} style={{ minHeight: 44, padding: '0 12px' }} />
+              <input id={`goal-target-${goal.id}`} type="number" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} onKeyDown={revertOnEsc('target', setTarget)} style={{ minHeight: 44, padding: '0 12px' }} />
             </div>
           </div>
           <button
@@ -302,10 +376,7 @@ function GoalDetails({ goal, api, projects, onUpdate, onChanged, onAddSub, onDel
             className="btn"
             style={{ marginTop: 8 }}
             disabled={offline}
-            onClick={() => onUpdate(goal, {
-              currentValue: current === '' ? null : Number(current),
-              targetValue: target === '' ? null : Number(target),
-            })}
+            onClick={() => saveFields(['current', 'target'])}
           >
             Save progress
           </button>
@@ -515,8 +586,10 @@ export default function GoalsTab() {
     try {
       await api.updateGoal(goal.id, patch)
       await fetchGoals()
+      return true
     } catch (err) {
       setError(err.message || 'That change did not save.')
+      return false
     }
   }, [api, fetchGoals])
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { ErrorBanner, formatDate } from './shared'
 import { useOffline } from './offlineStatus'
+import { readThreadDraft, writeThreadDraft } from './threadDraft'
 
 // A task's thread (docs/agent-threads-proposal.md): typed posts that the owner and the agents
 // connected over MCP write about one hard problem. Polaris stores and shows them. The judgement
@@ -168,10 +169,33 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [objectionsOnly, setObjectionsOnly] = useState(false)
-  const [type, setType] = useState('claim')
-  const [draft, setDraft] = useState('')
+  const taskId = task?.id
+  // The post box (text, kind) and the fork title belong to one task. When the panel moves to
+  // another task the box is reloaded from that task's own stored draft during render, so a stale
+  // draft is never on screen and one click on Post cannot send it into the wrong thread.
+  const [box, setBox] = useState(() => ({ taskId, ...readThreadDraft(taskId) }))
   const [forkOpen, setForkOpen] = useState(false)
-  const [forkTitle, setForkTitle] = useState('')
+  if (box.taskId !== taskId) {
+    setBox({ taskId, ...readThreadDraft(taskId) })
+    setForkOpen(false)
+  }
+  const { body: draft, type, fork: forkTitle } = box
+  function changeBox(patch) {
+    const next = { ...box, ...patch }
+    setBox(next)
+    writeThreadDraft(taskId, next)
+  }
+  // Clears one task's stored draft after a send. The task may have changed while the request was
+  // in flight, so the stored copy is cleared for the task it was sent to and the box only if it
+  // still shows that task.
+  function clearBox(forTaskId, patch) {
+    const stored = readThreadDraft(forTaskId)
+    writeThreadDraft(forTaskId, { ...stored, ...patch })
+    setBox((current) => (current.taskId === forTaskId ? { ...current, ...patch } : current))
+  }
+  const setType = (value) => changeBox({ type: value })
+  const setDraft = (value) => changeBox({ body: value })
+  const setForkTitle = (value) => changeBox({ fork: value })
   // The cap field as typed. The thread's value lands here on a load unless the owner is in the
   // field or has changed it since the server last spoke: a poll must never eat a half-typed number.
   const [cap, setCap] = useState('')
@@ -185,7 +209,6 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   const bodyId = useId()
   const forkId = useId()
   const capId = useId()
-  const taskId = task?.id
   const readOnly = Boolean(task?.untrustedText)
 
   const load = useCallback(async () => {
@@ -256,9 +279,11 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
 
   async function handlePost() {
     const body = draft.trim()
-    if (!body || !thread) return
+    // The thread on screen may still be the previous task's for a moment after the panel moves on.
+    if (!body || !thread || (thread.taskId && thread.taskId !== taskId)) return
+    const sentTo = taskId
     const ok = await run(() => api.addPost(thread.id, { type, body }), 'Could not post.')
-    if (ok) setDraft('')
+    if (ok) clearBox(sentTo, { body: '' })
   }
 
   const handleStatus = (post, status) => run(() => api.setPostStatus(post.id, status), 'Could not change that post.')
@@ -270,10 +295,11 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   async function handleFork() {
     const title = forkTitle.trim()
     if (!title) return
+    const forkedFrom = taskId
     const ok = await run(() => api.forkThread(thread.id, title), 'Could not fork the thread.')
     if (ok) {
       setForkOpen(false)
-      setForkTitle('')
+      clearBox(forkedFrom, { fork: '' })
     }
   }
 

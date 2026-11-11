@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Clock, Repeat } from 'lucide-react'
-import { Popover } from './Menu'
+import { createPortal } from 'react-dom'
+import { ChevronLeft, ChevronRight, Clock, Repeat, X } from 'lucide-react'
+import { Popover, inTextField } from './Menu'
+import { BREAKPOINT_QUERIES } from './columnsState'
 import MonthCalendar from './MonthCalendar'
 import { nextMondayIso } from './AddDuePanel'
 import { RepeatPicker, useRecurrencePreview } from './RepeatBuilder'
@@ -25,7 +27,8 @@ function popGutter() {
 //
 // A time is optional: Add time opens a time box (shown filled when the task has a time). A new day
 // keeps the time in the box, the task's or one just typed; Enter in the box saves it on the task's
-// day, or today when there is none. Remove time on a task with a time saves the day alone.
+// day, or today when there is none, and so does leaving the picker any way but Esc (a click
+// outside it, say). Remove time on a task with a time saves the day alone.
 //
 // With `onRecurrenceChange`, a Repeat button sits under Add time. Repeats (RepeatPicker in
 // RepeatBuilder.jsx, as Asana has it) is a second view of the picker in place of the month, so
@@ -42,27 +45,115 @@ function popGutter() {
 // whether it was made in Custom: moving one occurrence leaves the schedule alone. A rule the
 // builder cannot show (a raw RRULE with BYMONTH, say) is named and left to the task panel's
 // Recurrence box.
+//
+// On a phone it rises from the bottom edge as a sheet over a dimmed page (DueSheet), rather than
+// floating over the field it came from; a tap on the page above it closes it, as a click outside
+// the popover does. Done closes it in both.
 export default function DueDateMenu({ anchorRef, open, onClose, value, dueBounds, onChange, label, recurrence = null, onRecurrenceChange, api, startDay = null }) {
+  const phone = usePhoneWidth()
+  const picker = (
+    <DuePicker
+      anchorRef={anchorRef}
+      onClose={onClose}
+      value={value}
+      dueBounds={dueBounds}
+      onChange={onChange}
+      label={label}
+      recurrence={recurrence}
+      onRecurrenceChange={onRecurrenceChange}
+      api={api}
+      startDay={startDay}
+      modal={phone}
+    />
+  )
+  if (phone) return <DueSheet anchorRef={anchorRef} open={open} onClose={onClose}>{picker}</DueSheet>
   return (
     <Popover anchorRef={anchorRef} open={open} onClose={onClose} minWidth={200} maxWidth={540} gutter={popGutter()} focusSelector="[data-cal-focus]" preferFit>
-      <DuePicker
-        anchorRef={anchorRef}
-        onClose={onClose}
-        value={value}
-        dueBounds={dueBounds}
-        onChange={onChange}
-        label={label}
-        recurrence={recurrence}
-        onRecurrenceChange={onRecurrenceChange}
-        api={api}
-        startDay={startDay}
-      />
+      {picker}
     </Popover>
   )
 }
 
-// Mounted each time the popover opens, so a time typed and not saved is gone the next time.
-function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recurrence, onRecurrenceChange, api, startDay }) {
+function usePhoneWidth() {
+  const query = BREAKPOINT_QUERIES.phone
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && Boolean(window.matchMedia?.(query).matches))
+  useEffect(() => {
+    const mq = window.matchMedia?.(query)
+    if (!mq) return undefined
+    const update = () => setPhone(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [query])
+  return phone
+}
+
+const SHEET_FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+// The phone's sheet: portalled to <body> over a backdrop, marked data-popover so the task panel's
+// focus trap (TaskDetailPanel.jsx) leaves focus in it alone. Esc and a tap on the backdrop close it
+// and put focus back on the trigger; Tab stays inside it. Clicks are stopped at the portal, since
+// React bubbles them through the component tree to a row's own click handler (as in Popover).
+function DueSheet({ anchorRef, open, onClose, children }) {
+  const sheetRef = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  useEffect(() => {
+    if (!open) return undefined
+    const id = requestAnimationFrame(() => {
+      const sheet = sheetRef.current
+      if (!sheet || sheet.contains(document.activeElement)) return
+      sheet.querySelector('[data-cal-focus]')?.focus()
+    })
+    function onKeyDown(e) {
+      const sheet = sheetRef.current
+      if (!sheet) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onCloseRef.current()
+        anchorRef.current?.focus()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const focusables = Array.from(sheet.querySelectorAll(SHEET_FOCUSABLE))
+      if (focusables.length === 0) return
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      const inside = sheet.contains(active)
+      if (e.shiftKey ? (active === first || !inside) : (active === last || !inside)) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      cancelAnimationFrame(id)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [open, anchorRef])
+
+  if (!open) return null
+  return createPortal(
+    <div data-popover="" onClick={(e) => e.stopPropagation()} onContextMenu={(e) => { if (!inTextField(e.target)) e.preventDefault() }}>
+      <div
+        className="sheet-backdrop"
+        aria-hidden="true"
+        onClick={() => {
+          onCloseRef.current()
+          anchorRef.current?.focus()
+        }}
+      />
+      <div ref={sheetRef} className="sheet due-sheet">{children}</div>
+    </div>,
+    document.body,
+  )
+}
+
+// Mounted each time the picker opens, so a time typed and not saved is gone the next time.
+function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recurrence, onRecurrenceChange, api, startDay, modal = false }) {
   const uid = useId()
   // The day and the rule are kept here as well as on the task: a repeat chosen on a task with no
   // date gives it today at once, and the picker shows that before the task is loaded again.
@@ -111,7 +202,30 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     ;(showTime ? timeRef : addTimeRef).current?.focus()
   }, [showTime])
 
+  // A time typed in the box is saved when the picker is left some other way than Esc: a click
+  // outside it, a second tap on the field, the panel closing. Enter, a day, or a quick date saves
+  // it at once and closes; Esc leaves the task as it was. A half-typed time saves nothing.
+  const closedRef = useRef(false)
+  const draftRef = useRef(null)
+  draftRef.current = { time, timePartial, day, showTime }
+  useEffect(() => {
+    closedRef.current = false
+    function onKeyDown(e) { if (e.key === 'Escape') closedRef.current = true }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      if (closedRef.current) return
+      const draft = draftRef.current
+      if (!draft.showTime || draft.timePartial || draft.time === taskTime) return
+      if (!draft.time && !draft.day) return
+      const next = joinDue(draft.day || dueBounds.today, draft.time)
+      if (next !== savedDue.current) onChange(next)
+    }
+    // Mount and unmount only: the draft is read through draftRef.
+  }, [])
+
   function commit(next, nextRule) {
+    closedRef.current = true
     onClose()
     anchorRef.current?.focus()
     if (nextRule !== undefined) onChange(next, nextRule)
@@ -218,25 +332,33 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     )
   }
 
+  // Done closes the picker; leaving it saves a time typed in the box (the effect above).
+  function done() {
+    onClose()
+    anchorRef.current?.focus()
+  }
+
+  const monday = nextMondayIso()
   const chips = [
-    { key: 'today', label: 'Today', value: dueBounds.today },
-    { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow },
-    { key: 'monday', label: 'Next Monday', value: nextMondayIso() },
-    { key: 'none', label: 'No date', value: null },
+    { key: 'today', label: 'Today', value: dueBounds.today, hint: weekdayOf(dueBounds.today) },
+    { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow, hint: weekdayOf(dueBounds.tomorrow) },
+    { key: 'monday', label: 'Next Monday', value: monday, hint: monthDayOf(monday) },
+    { key: 'none', label: 'No date', value: null, hint: null },
   ]
 
   return (
-    <div role="dialog" aria-label={label} className="due-pop">
-      <div className="sheet-chips" role="group" aria-label="Quick dates">
+    <div role="dialog" aria-label={label} aria-modal={modal || undefined} className="due-pop">
+      <div className="due-quick" role="group" aria-label="Quick dates">
         {chips.map((chip) => (
           <button
             key={chip.key}
             type="button"
-            className="sheet-chip"
+            className="due-quick-btn"
             aria-pressed={day === chip.value}
             onClick={() => (chip.value ? pick(chip.value) : commit(null))}
           >
-            {chip.label}
+            <span>{chip.label}</span>
+            {chip.hint && <span className="due-quick-hint" aria-hidden="true">{chip.hint}</span>}
           </button>
         ))}
       </div>
@@ -245,35 +367,55 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
         {showTime ? (
           <>
             <label className="due-pop-time-field">
-              <span>Time</span>
+              <span className="sr-only">Time</span>
               <input ref={timeRef} type="time" value={time} onChange={changeTime} onKeyDown={onTimeKeyDown} />
             </label>
-            <button type="button" className="btn" onClick={removeTime}>Remove time</button>
+            <button type="button" className="icon-btn" aria-label="Remove time" title="Remove time" onClick={removeTime}>
+              <X size={18} aria-hidden="true" />
+            </button>
           </>
         ) : (
-          <button type="button" ref={addTimeRef} className="btn" onClick={addTime}>
+          <button type="button" ref={addTimeRef} className="btn due-pop-wide" onClick={addTime}>
             <Clock size={16} aria-hidden="true" />
             Add time
           </button>
         )}
       </div>
-      {onRecurrenceChange && (
-        unreadable ? (
-          <p className="due-pop-repeat repeat-note">{`Repeats ${repeatLabel(rule)}. Change it under More details in the task panel.`}</p>
-        ) : (
-          <div className="due-pop-repeat">
-            <button type="button" ref={addRepeatRef} className={rule ? 'btn due-pop-repeat-open' : 'btn'} onClick={openRepeat}>
-              <Repeat size={16} aria-hidden="true" />
-              {rule ? (
-                <>
-                  <span className="due-pop-repeat-text">{`Repeats ${repeatLabel(rule)}`}</span>
-                  <ChevronRight size={16} aria-hidden="true" />
-                </>
-              ) : 'Repeat'}
-            </button>
-          </div>
-        )
-      )}
+      <div className="due-pop-foot">
+        {onRecurrenceChange && (
+          unreadable ? (
+            <p className="due-pop-repeat repeat-note">{`Repeats ${repeatLabel(rule)}. Change it under More details in the task panel.`}</p>
+          ) : (
+            <div className="due-pop-repeat">
+              <button type="button" ref={addRepeatRef} className="btn due-pop-wide due-pop-repeat-open" onClick={openRepeat}>
+                <Repeat size={16} aria-hidden="true" />
+                {rule ? (
+                  <>
+                    <span className="due-pop-repeat-text">{`Repeats ${repeatLabel(rule)}`}</span>
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </>
+                ) : <span className="due-pop-repeat-text">Repeat</span>}
+              </button>
+            </div>
+          )
+        )}
+        <button type="button" className="btn btn-primary due-pop-done" onClick={done}>Done</button>
+      </div>
     </div>
   )
+}
+
+function isoToDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// The quick dates' second line on a desktop: the weekday for Today and Tomorrow, the date for
+// Next Monday, in the browser's locale.
+function weekdayOf(iso) {
+  return isoToDate(iso).toLocaleDateString(undefined, { weekday: 'short' })
+}
+
+function monthDayOf(iso) {
+  return isoToDate(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
