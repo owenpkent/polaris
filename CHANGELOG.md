@@ -7,6 +7,8 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 No migration.
 
+- In the Android app, the navigation drawer keeps its Settings row above the system's
+  navigation bar instead of drawing it under the buttons or the gesture bar.
 - On a phone, the tab bar and the New task button step aside while the on-screen keyboard is
   open, instead of riding on top of it, and come back when it closes
   (docs/phone-keyboard-and-system-bars.md).
