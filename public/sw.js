@@ -20,6 +20,9 @@ function isShellRequest(request, url) {
   return !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/mcp')
 }
 
+// The query src/newBuild.js marks its build check with (BUILD_PROBE_URL there).
+const BUILD_PROBE_PARAM = 'cc-build-probe'
+
 // A proxy in front of a stopped daemon (tailscale serve) answers for it with one of these. For
 // opening the dashboard they mean the same as no answer at all, as they do in api.js.
 const GATEWAY_STATUSES = [502, 503, 504]
@@ -76,6 +79,14 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (!isShellRequest(event.request, url)) return
+
+  // src/newBuild.js asking which build the server serves now. Network only and never stored: the
+  // stored '/' must stay the page whose scripts are stored with it, and a page naming a build
+  // whose scripts were never fetched opens blank when the server is away.
+  if (url.pathname === '/' && url.searchParams.has(BUILD_PROBE_PARAM)) {
+    event.respondWith(fetch(event.request))
+    return
+  }
 
   // Every page load is the one index.html whatever ?view= it carries, so keep a single copy.
   // Network first, so a new build is picked up the moment the server is reachable.

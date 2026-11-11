@@ -1,6 +1,7 @@
-import { describe, test, expect, beforeEach } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { watchForNewBuild } from './newBuild'
 
 // public/sw.js is a plain worker script, so it is run here against a stand-in for the worker
 // globals: `self` collects its listeners, `caches` is one in-memory cache, and `fetch` is the
@@ -20,7 +21,11 @@ let listeners
 function load() {
   stored = new Map()
   listeners = {}
-  const keyOf = (req) => new URL(typeof req === 'string' ? req : req.url, ORIGIN).pathname
+  // Keyed by path and query, as a real Cache is.
+  const keyOf = (req) => {
+    const url = new URL(typeof req === 'string' ? req : req.url, ORIGIN)
+    return url.pathname + url.search
+  }
   const cache = {
     put: async (req, res) => { stored.set(keyOf(req), res) },
     match: async (req) => stored.get(keyOf(req)),
@@ -82,6 +87,75 @@ describe('service worker: opening the dashboard', () => {
     await navigateTo('/')
     network = async () => response(500, 'server error')
     expect((await navigateTo('/')).status).toBe(500)
+  })
+})
+
+// The tab's build check (src/newBuild.js) run through this worker, so the two are tested together.
+describe('service worker: the build check of a background tab', () => {
+  const html = (entry) => `<script type="module" crossorigin src="${entry}"></script>`
+  const page = (entry) => ({ ...response(200, html(entry)), text: async () => html(entry) })
+  let hidden = false
+  let stop
+
+  // A page's own fetch, which is not a navigation, sent through the worker's fetch handler.
+  function pageFetch(path) {
+    let answer
+    listeners.fetch({
+      request: { url: `${ORIGIN}${path}`, method: 'GET', mode: 'cors' },
+      respondWith: (p) => { answer = p },
+    })
+    return answer
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    hidden = false
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+    const script = document.createElement('script')
+    script.type = 'module'
+    script.src = '/assets/index-A.js'
+    document.head.appendChild(script)
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    stop?.()
+    stop = undefined
+    document.head.innerHTML = ''
+    document.body.innerHTML = ''
+    delete document.hidden
+    vi.useRealTimers()
+  })
+
+  test('a new build seen while a draft holds the reload does not replace the stored page', async () => {
+    // Build A is open and stored, scripts and all.
+    network = async () => page('/assets/index-A.js')
+    await navigateTo('/')
+    stored.set('/assets/index-A.js', response(200, 'build A'))
+
+    // The server moves to build B while the owner has a draft open, then the tab is hidden.
+    document.body.innerHTML = '<textarea>half a note</textarea>'
+    network = async () => page('/assets/index-B.js')
+    const reload = vi.fn()
+    stop = watchForNewBuild({ fetchImpl: (url) => pageFetch(url), reload })
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reload).not.toHaveBeenCalled()
+
+    // The daemon goes away before the reload. Opening the dashboard gets build A, whose scripts
+    // are stored, not B's page, whose scripts never were.
+    network = async () => response(502, 'gateway error page')
+    expect((await navigateTo('/')).body).toBe(html('/assets/index-A.js'))
+    expect(stored.has('/assets/index-B.js')).toBe(false)
+  })
+
+  test('the check is never answered from the stored page', async () => {
+    network = async () => page('/assets/index-A.js')
+    await navigateTo('/')
+    network = async () => { throw new TypeError('Failed to fetch') }
+    await expect(pageFetch('/?cc-build-probe=1')).rejects.toThrow('Failed to fetch')
+    expect([...stored.keys()]).toEqual(['/'])
   })
 })
 

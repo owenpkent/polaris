@@ -17,6 +17,7 @@ function weekdayName(iso) {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 9, 21, 10, 0, 0))
+  sessionStorage.clear()
 })
 
 afterEach(() => {
@@ -398,6 +399,60 @@ describe('NewTaskSheet', () => {
       expect(payload.sourceUrl).toBe('https://example.com/a')
       expect(payload.dueAt ?? null).toBeNull()
       expect(payload.recurrence ?? null).toBeNull()
+    })
+
+    // Review on #165: a background tab reloads itself onto a new build, and a draft kept only in the
+    // sheet's state was lost with the page. A reload is the sheet unmounting and mounting again.
+    describe('across a reload of the tab', () => {
+      // The sheet closed as the app closes it after onClose, then the page reloaded.
+      function reload(utils, open = true) {
+        utils.rerender(<NewTaskSheet open={false} onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} />)
+        utils.unmount()
+        return renderSheet({ open })
+      }
+
+      test('a draft closed with the X comes back on the first opening after the reload', () => {
+        const utils = renderSheet()
+        fillDraft()
+        fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+        const after = reload(utils, false)
+        // Mounting closed does not write the empty state over the stored draft.
+        expect(sessionStorage.getItem('polaris.newTaskDraft')).toContain('Call the vet')
+        reopen(after)
+        expectDraft()
+        expect(after.onCreate).not.toHaveBeenCalled()
+      })
+
+      test('the picks from a date step closed with the X come back too', () => {
+        const utils = renderSheet()
+        const { tomorrow } = getDueBounds()
+        fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Call the vet' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+        fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+        fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+        reload(utils)
+        expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Call the vet')
+        expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+      })
+
+      test('Cancel and Create let it go, so the reload opens empty', async () => {
+        let utils = renderSheet()
+        fillDraft()
+        fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+        reopen(utils)
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+        utils = reload(utils)
+        expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('')
+
+        fillDraft()
+        fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+        reopen(utils)
+        fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+        await waitFor(() => expect(utils.onClose).toHaveBeenCalled())
+        expect(sessionStorage.getItem('polaris.newTaskDraft')).toBeNull()
+        reload(utils)
+        expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('')
+      })
     })
 
     test('closing from the date step keeps the picks made there', () => {
