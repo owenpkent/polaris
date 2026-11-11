@@ -3,10 +3,17 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.9.0 (2026-11-10)
 
 No migration.
 
+- On My tasks, a row held by its handle under Sort: Manual lifts out: a raised copy follows the
+  pointer, the row fades in place, and the rows part around a dashed gap where it will land. A
+  hairline divides the columns after the name again, so the eye can run down a column. On a
+  phone every due chip is one size, with the day over the time when it has one. The add-due
+  popover goes side by side from 640px, so a scrollbar no longer drops it to the taller layout.
+- A rule's `matches` pattern reads a repeat count of any length as JavaScript's RegExp does
+  (`{0006}` is six), and a count above 100 written with more digits is refused like any other.
 - In the Android app, the navigation drawer keeps its Settings row above the system's
   navigation bar instead of drawing it under the buttons or the gesture bar.
 - On a phone, the tab bar and the New task button step aside while the on-screen keyboard is
