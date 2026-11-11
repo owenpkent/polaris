@@ -16,7 +16,7 @@ import InlineTaskInput from './InlineTaskInput'
 import NewTaskSheet from './NewTaskSheet'
 import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
-import { getDueBounds, doneTodayQuery, countDoneToday, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
+import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
 import DueDateMenu from './DueDateMenu'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
 import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
@@ -82,7 +82,6 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // Local mode (no connection yet) works from this device's copy, like offline.
   const usable = connected || local
   const [tasks, setTasks] = useState([])
-  const [doneTasks, setDoneTasks] = useState([]) // tasks finished today, for the Today group's "done"
   const [projects, setProjects] = useState([])
   const [goals, setGoals] = useState([])
   const [goalsLoaded, setGoalsLoaded] = useState(false)
@@ -178,16 +177,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     const isCurrent = beginRequest()
     setError(null)
     try {
-      // The done-today count is a nicety: if it cannot be read, the list still loads and the
-      // count stays as it was.
-      const [res, done] = await Promise.all([
-        api.listTasks(MY_TASKS_QUERY),
-        Promise.resolve().then(() => api.listDoneToday(doneTodayQuery())).catch(() => null),
-      ])
-      if (isCurrent()) {
-        setTasks(withPendingPositions(res.tasks || []))
-        if (done) setDoneTasks(done.tasks || [])
-      }
+      const res = await api.listTasks(MY_TASKS_QUERY)
+      if (isCurrent()) setTasks(withPendingPositions(res.tasks || []))
     } catch (err) {
       if (isCurrent()) setError(err.message || 'Could not load tasks.')
     } finally {
@@ -575,9 +566,6 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     ? tasks.map((t) => (t.id === pendingMove.task.id ? { ...t, dueAt: pendingMove.dueAt, position: pendingMove.plan.updates.find((u) => u.id === t.id)?.position ?? t.position } : t))
     : tasks
   const filteredTasks = applyFilters(shownTasks, view.filters, goalWork, states)
-  // Through the same filters as the list, so "left" and "done" count the same tasks. Ready and
-  // Blocked hold only unfinished tasks, so with one of them chosen nothing counts as done.
-  const doneToday = countDoneToday(applyFilters(doneTasks, view.filters, goalWork, states), dueBounds)
   const allSorted = sortTasks(filteredTasks, view.sort, projectNameById)
   // The tasks added from the open row come out of the sort and go just above it, in the order they
   // were typed, even a task dated for another group. A row hidden by a change of grouping holds nothing.
@@ -615,10 +603,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       // An empty group is hidden, except the one a new task is being typed into: the toolbar's Add
       // task opens the inline row in Today, which owns that row and must be on the page to show it.
       // Under the manual sort a row can be dropped into any day group, so the empty ones show
-      // while a row is held, as drop targets (not a closed one, which takes no drop). Today also
-      // stays once something due today is finished, since that is when it says All clear.
+      // while a row is held, as drop targets (not a closed one, which takes no drop).
       crossGroup = reorderable
-      const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed) || (g.id === 'today' && doneToday > 0))
+      const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed))
       scopeGroups = GROUP_ORDER.map((g) => ({ id: g.id, label: g.label, tasks: groups[g.id], closed: Boolean(g.closed) }))
       groupRowsRef.current = groups
       content = shown.map((g) => {
@@ -634,7 +621,6 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             onToggleCollapse={() => toggleGroup('due', g.id)}
             {...commonRowProps}
             addRow={addRow}
-            progress={g.id === 'today' ? { done: doneToday } : null}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
             onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}
             onSubmitInlineAdd={submitInlineAdd}

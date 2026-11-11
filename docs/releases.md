@@ -58,9 +58,10 @@ Releases are batched: one is cut when there is something worth installing, not f
 
 1. CI is green on the commit on `main` that becomes the release.
 2. The Tests run for that push to `main` passed, all twelve UI test parts included (`gh run list --workflow test.yml --branch main`). That run tests the commit as merged, so no local `npm run test:ui` is needed.
-3. The version is bumped in `package.json`, `command-center/package.json`, and `mobile/package.json` (with its lockfile), to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). The Android app takes its versionName and versionCode from mobile/package.json, so it carries the release version without a separate edit. Nothing after the patch: a prerelease or build suffix is not a version and never installs.
-4. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
-5. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most). With the certificate, that is `scripts\sign-release.ps1` as above. With the SSH key:
+3. Changes to how the dashboard looks or behaves are checked in the Android app on an emulator too (mobile/README.md, Testing): the soft keyboard, the safe-area insets, and phone widths act differently in the app's WebView than in a browser. Where a check can be a test, it goes in `AppEndToEndTest`, so CI repeats it on every pull request that touches the dashboard.
+4. The version is bumped in `package.json`, `command-center/package.json`, and `mobile/package.json` (with its lockfile), to the same `MAJOR.MINOR.PATCH` (command-center/src/version.test.ts fails when they differ). The Android app takes its versionName and versionCode from mobile/package.json, so it carries the release version without a separate edit. Nothing after the patch: a prerelease or build suffix is not a version and never installs.
+5. CHANGELOG.md has an entry for the version, naming any migration in `command-center/src/core/schema.ts` so an install's owner knows a snapshot is taken (with the daemon stopped, right before the new code first runs) and what a rollback restores.
+6. Tag and sign, with the notes as the tag message. The message is what `cc update` shows as the release notes and the dashboard's update panel carries (control characters stripped, 4000 characters at most). With the certificate, that is `scripts\sign-release.ps1` as above. With the SSH key:
 
    ```sh
    git tag -s v2.1.0 -m "Release 2.1.0
@@ -70,9 +71,9 @@ Releases are batched: one is cut when there is something worth installing, not f
 
    git asks for the key's passphrase in the terminal, so the tag is made from a terminal, not from a tool or script that has none. Keep the notes in a file and pass `-F notes.txt` instead of `-m`, so a failed attempt (a wrong passphrase) costs only a retry; git's message that the notes were left in `.git/TAG_EDITMSG` is not true when they were given with `-m` or `-F`.
 
-6. Push the tag: `git push origin v2.1.0`. Installs find it with a credential-free `git fetch --tags`.
-7. Make a GitHub release for the tag with the same notes, for people reading the repository. Installs never read it: the signature on the tag is what they trust, and GitHub's own signing (the web-flow key on merge commits) proves nothing to them.
-8. Build the Android app, signed with the same certificate, and attach it to that release: `npm run release:apk -- --upload` from a clean checkout of the tag (mobile/README.md, "Release build"). The App update card in the app's Settings offers the APK of the newest release, and Android installs it only over an app signed with the same key.
+7. Push the tag: `git push origin v2.1.0`. Installs find it with a credential-free `git fetch --tags`.
+8. Make a GitHub release for the tag with the same notes, for people reading the repository. Installs never read it: the signature on the tag is what they trust, and GitHub's own signing (the web-flow key on merge commits) proves nothing to them.
+9. Build the Android app, signed with the same certificate, and attach it to that release: `npm run release:apk -- --upload` from a clean checkout of the tag (mobile/README.md, "Release build"). The App update card in the app's Settings offers the APK of the newest release, and Android installs it only over an app signed with the same key.
 
 An install then updates with `cc update --release` (or names the version with `cc update --to v2.1.0`), after `cc update --check` has shown what it would do.
 

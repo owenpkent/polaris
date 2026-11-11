@@ -187,8 +187,6 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     updateProject: (ref, patch) => call(`/api/projects/${encodeURIComponent(ref)}`, { method: 'PATCH', body: patch }),
 
     listTasks: (query) => call('/api/tasks', { query }),
-    // The tasks finished today (doneTodayQuery in dueDates.js), for the Today group's progress.
-    listDoneToday: (query) => call('/api/tasks', { query }),
     getTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}`),
     // The task writes carry an `offline` description, so they are queued when the server is away.
     // A create or a comment is not safe to apply twice, so it names itself on the first attempt

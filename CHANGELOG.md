@@ -3,6 +3,18 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+No migration.
+
+- The Today group on My tasks shows the same plain count as every other group again: "n left",
+  "m done", and "All clear" are gone, and an empty Today is hidden like any other empty group.
+- In the task panel, the Add subtask box scrolls into view as each subtask is added, so a long
+  list can be typed without it sliding out of sight.
+- In the task panel, Save as checklist is a quiet text button, and a task with no comments shows
+  one Add a comment row instead of an empty Comments section. The row opens the comment box, and
+  leaving it empty closes it again.
+
 ## 2.8.0 (2026-11-08)
 
 No migration.
