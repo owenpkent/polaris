@@ -132,9 +132,9 @@ describe('NewTaskSheet', () => {
     expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Walk')
   })
 
-  // The date step's day and the repeat it moves are one draft: Back drops both, rather than
+  // The date step's day and the repeat it moves are one draft: Esc drops both, rather than
   // keeping tomorrow's weekday on a task still due today (review on #75).
-  test('Back from the date step drops a repeat moved by a day picked there', async () => {
+  test('Esc in the date step drops a repeat moved by a day picked there', async () => {
     const { onCreate } = renderSheet()
     const { today, tomorrow } = getDueBounds()
     fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
@@ -143,7 +143,7 @@ describe('NewTaskSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
     fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
     expect(screen.getByRole('button', { name: weekdayName(tomorrow) }).getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
     // Reopened, the step starts again from the form's date and repeat.
     fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
     expect(document.querySelector(`[data-date="${today}"]`).getAttribute('aria-pressed')).toBe('true')
@@ -151,6 +151,22 @@ describe('NewTaskSheet', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: today, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(today)}` }))
+  })
+
+  // Back is leaving the picker, so it keeps the picks, as a click outside does on the desktop.
+  test('Back from the date step keeps the day and the repeat that followed it', async () => {
+    const { onCreate } = renderSheet()
+    const { tomorrow } = getDueBounds()
+    fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Bins out' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'weekly' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+    fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+    expect(onCreate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith({ title: 'Bins out', dueAt: tomorrow, recurrence: `FREQ=WEEKLY;BYDAY=${weekdayOf(tomorrow)}` }))
   })
 
   test('Done in the date step brings back the day and the repeat that followed it', async () => {
@@ -292,6 +308,109 @@ describe('NewTaskSheet', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     fireEvent.click(container.querySelector('.sheet-backdrop'))
     expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  // The sheet creates a task only by Create, so leaving it keeps the draft (CONTRIBUTING.md,
+  // "Leaving an edit"). It stays mounted while closed, as in MyTasksTab.
+  describe('a kept draft', () => {
+    function fillDraft() {
+      fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Call the vet' } })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Notes' }), { target: { value: 'ask about teeth' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+      fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+    }
+
+    function reopen(utils, props) {
+      const sheet = (open) => <NewTaskSheet open={open} onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} {...props} />
+      utils.rerender(sheet(false))
+      utils.rerender(sheet(true))
+    }
+
+    function expectDraft() {
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Call the vet')
+      expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('ask about teeth')
+      expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+      expect(screen.getByRole('combobox', { name: 'Repeats' }).value).toBe('daily')
+    }
+
+    test.each([
+      ['the backdrop', (utils) => fireEvent.click(utils.container.querySelector('.sheet-backdrop'))],
+      ['the X', () => fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))],
+      ['Esc', () => fireEvent.keyDown(document, { key: 'Escape' })],
+    ])('closing with %s keeps it for the next opening, and creates nothing', (_name, close) => {
+      const utils = renderSheet()
+      fillDraft()
+      close(utils)
+      expect(utils.onClose).toHaveBeenCalledTimes(1)
+      expect(utils.onCreate).not.toHaveBeenCalled()
+      reopen(utils)
+      expectDraft()
+    })
+
+    test('Cancel throws it away', () => {
+      const utils = renderSheet()
+      fillDraft()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      reopen(utils)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('')
+      expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('')
+      expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('true')
+    })
+
+    test('Create clears it', async () => {
+      const utils = renderSheet()
+      fillDraft()
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      await waitFor(() => expect(utils.onClose).toHaveBeenCalledTimes(1))
+      reopen(utils)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('')
+    })
+
+    test('a share replaces it', () => {
+      const utils = renderSheet()
+      fillDraft()
+      fireEvent.click(utils.container.querySelector('.sheet-backdrop'))
+      const share = { title: 'Great read', notes: 'worth a look', sourceUrl: 'https://example.com/a' }
+      utils.rerender(<NewTaskSheet open={false} onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} initial={share} seed={1} />)
+      utils.rerender(<NewTaskSheet open onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} initial={share} seed={1} />)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+      expect(screen.getByRole('textbox', { name: 'Notes' }).value).toBe('worth a look')
+      expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('true')
+    })
+
+    // Review on #166: a share arriving while the date step is open must not take the old draft's
+    // date and repeat with it when the step closes.
+    test('a share that arrives in the date step starts clean, without the picks made there', async () => {
+      const utils = renderSheet()
+      const { tomorrow } = getDueBounds()
+      fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Call the vet' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+      fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+      fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+      const share = { title: 'Great read', notes: 'worth a look', sourceUrl: 'https://example.com/a' }
+      utils.rerender(<NewTaskSheet open onClose={utils.onClose} onCreate={utils.onCreate} projects={PROJECTS} initial={share} seed={1} />)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Great read')
+      expect(screen.getByRole('button', { name: 'No date' }).getAttribute('aria-pressed')).toBe('true')
+      fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+      await waitFor(() => expect(utils.onCreate).toHaveBeenCalledTimes(1))
+      const payload = utils.onCreate.mock.calls[0][0]
+      expect(payload.title).toBe('Great read')
+      expect(payload.sourceUrl).toBe('https://example.com/a')
+      expect(payload.dueAt ?? null).toBeNull()
+      expect(payload.recurrence ?? null).toBeNull()
+    })
+
+    test('closing from the date step keeps the picks made there', () => {
+      const utils = renderSheet()
+      const { tomorrow } = getDueBounds()
+      fireEvent.change(screen.getByRole('textbox', { name: 'New task name' }), { target: { value: 'Call the vet' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Pick a date' }))
+      fireEvent.click(document.querySelector(`[data-date="${tomorrow}"]`))
+      fireEvent.click(screen.getByRole('button', { name: 'Close new task' }))
+      reopen(utils)
+      expect(screen.getByRole('textbox', { name: 'New task name' }).value).toBe('Call the vet')
+      expect(screen.getByRole('button', { name: 'Tomorrow' }).getAttribute('aria-pressed')).toBe('true')
+    })
   })
 
   test('closing returns focus to the button that opened it', () => {

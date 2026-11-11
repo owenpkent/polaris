@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { ErrorBanner, formatDate } from './shared'
 import { useOffline } from './offlineStatus'
+import { readThreadDraft, writeThreadDraft } from './threadDraft'
 
 // A task's thread (docs/agent-threads-proposal.md): typed posts that the owner and the agents
 // connected over MCP write about one hard problem. Polaris stores and shows them. The judgement
@@ -168,10 +169,34 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [objectionsOnly, setObjectionsOnly] = useState(false)
-  const [type, setType] = useState('claim')
-  const [draft, setDraft] = useState('')
+  const taskId = task?.id
+  // The post box (text, kind) and the fork title belong to one task. When the panel moves to
+  // another task the box is reloaded from that task's own stored draft during render, so a stale
+  // draft is never on screen and one click on Post cannot send it into the wrong thread.
+  const [box, setBox] = useState(() => ({ taskId, ...readThreadDraft(taskId) }))
   const [forkOpen, setForkOpen] = useState(false)
-  const [forkTitle, setForkTitle] = useState('')
+  if (box.taskId !== taskId) {
+    setBox({ taskId, ...readThreadDraft(taskId) })
+    setForkOpen(false)
+  }
+  const { body: draft, type, fork: forkTitle } = box
+  function changeBox(patch) {
+    const next = { ...box, ...patch }
+    setBox(next)
+    writeThreadDraft(taskId, next)
+  }
+  // Clears one field of a task's draft after a send, but only while it still holds the text that
+  // was sent. The panel may have moved to another task while the request was out, or been closed
+  // and reopened on the same task with a newer draft typed in it (a separate instance of this
+  // component): that newer text is not what was sent, so it stays, in storage and on screen.
+  function clearBox(forTaskId, field, sent) {
+    const stored = readThreadDraft(forTaskId)
+    if (stored[field] === sent) writeThreadDraft(forTaskId, { ...stored, [field]: '' })
+    setBox((current) => (current.taskId === forTaskId && current[field] === sent ? { ...current, [field]: '' } : current))
+  }
+  const setType = (value) => changeBox({ type: value })
+  const setDraft = (value) => changeBox({ body: value })
+  const setForkTitle = (value) => changeBox({ fork: value })
   // The cap field as typed. The thread's value lands here on a load unless the owner is in the
   // field or has changed it since the server last spoke: a poll must never eat a half-typed number.
   const [cap, setCap] = useState('')
@@ -185,7 +210,6 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   const bodyId = useId()
   const forkId = useId()
   const capId = useId()
-  const taskId = task?.id
   const readOnly = Boolean(task?.untrustedText)
 
   const load = useCallback(async () => {
@@ -256,9 +280,12 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
 
   async function handlePost() {
     const body = draft.trim()
-    if (!body || !thread) return
+    // The thread on screen may still be the previous task's for a moment after the panel moves on.
+    if (!body || !thread || (thread.taskId && thread.taskId !== taskId)) return
+    const sentTo = taskId
+    const sent = draft
     const ok = await run(() => api.addPost(thread.id, { type, body }), 'Could not post.')
-    if (ok) setDraft('')
+    if (ok) clearBox(sentTo, 'body', sent)
   }
 
   const handleStatus = (post, status) => run(() => api.setPostStatus(post.id, status), 'Could not change that post.')
@@ -270,10 +297,12 @@ export default function ThreadSection({ task, refreshKey = 0, onOpenTask }) {
   async function handleFork() {
     const title = forkTitle.trim()
     if (!title) return
+    const forkedFrom = taskId
+    const sent = forkTitle
     const ok = await run(() => api.forkThread(thread.id, title), 'Could not fork the thread.')
     if (ok) {
       setForkOpen(false)
-      setForkTitle('')
+      clearBox(forkedFrom, 'fork', sent)
     }
   }
 

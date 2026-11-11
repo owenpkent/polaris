@@ -902,7 +902,8 @@ test.describe('the top bar under a status bar', { tag: ['@flow'] }, () => {
 
   // A menu is placed by script (Popover in Menu.jsx), which has to read the inset as well: the
   // date picker of a row low on the screen opens upward, and slid up behind the phone's clock.
-  // The window is made short so the picker has to go as high as it is allowed to.
+  // On a phone the picker is a sheet from the bottom edge (DueDateMenu.jsx), whose height leaves
+  // the inset clear. The window is made short so the picker has to go as high as it is allowed to.
   test('a date picker that opens upward stops below the inset', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'picker under status bar')
     await page.setViewportSize({ width: page.viewportSize().width, height: 560 })
