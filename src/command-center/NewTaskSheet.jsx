@@ -3,6 +3,7 @@ import { X, Calendar } from 'lucide-react'
 import { dueDateOnly, dueTimeOnly, formatTime, getDueBounds, withDueDate } from './dueDates'
 import { oneLine, useFitToText } from './useFitToText'
 import AddDuePanel, { nextMondayIso } from './AddDuePanel'
+import { clearNewTaskDraft, readNewTaskDraft, writeNewTaskDraft } from './newTaskDraft'
 import { RepeatPicker } from './RepeatBuilder'
 import { followDate } from './recurrenceRules'
 
@@ -31,8 +32,15 @@ function linkLabel(url) {
 // date picked from chips or the calendar, a repeat rule, project, and notes. Enter in the title
 // opens "When is it due?" (AddDuePanel.jsx) in place of the form, as the desktop's inline row does;
 // Done there sets the date, and the repeat made with it, and comes back to the form with Create
-// focused, and Esc or Back comes back without changing either. Esc on the form closes it, Tab
-// stays inside, and focus goes back to the button that opened it. `onCreate` receives the create
+// focused. Back keeps what was picked, as leaving a picker does (CONTRIBUTING.md, "Leaving an
+// edit"); Esc there comes back without changing either. Esc on the form closes it, Tab
+// stays inside, and focus goes back to the button that opened it.
+//
+// A task is created only by Create, never by closing the sheet. The backdrop, the X, and Esc keep the draft (title, notes, date, repeat, project): the
+// sheet stays mounted while closed, and the next opening shows it again. Cancel throws the draft
+// away, a Create that goes through clears it, and a new share (`seed`) replaces it. The draft is kept in
+// sessionStorage too (newTaskDraft.js), so a reload of the tab, such as the background update
+// onto a new build (newBuild.js), keeps it as well. `onCreate` receives the create
 // payload and may throw. When it resolves the sheet closes itself through `onClose`. Each opening
 // is numbered, and a create that finishes after the sheet was closed and opened again leaves the
 // new draft alone: it neither closes it nor puts the old request's error or busy state on it.
@@ -66,22 +74,64 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
   // focusing it.
   const attachTitle = useFitToText(title, titleRef)
 
-  // A fresh form each time it opens or is reseeded, with the title focused.
+  // Set when the sheet was dismissed (backdrop, X, Esc) rather than finished or cancelled, so the
+  // next opening keeps the draft. The sheet stays mounted while closed, so the draft is simply the
+  // state below. `seededRef` is the share the form was last started from.
+  // A draft stored before a reload counts as kept, so the first opening after it restores it.
+  const keptRef = useRef(null)
+  if (keptRef.current === null) keptRef.current = Boolean(readNewTaskDraft())
+  const seededRef = useRef(seed)
+  // Set by a dismissal that keeps the draft, while the state below is that draft: only then is it
+  // written to storage. A draft restored after a reload is in storage only until the sheet opens.
+  const keepingRef = useRef(false)
+  // Numbers each fresh draft. The date step's picks go back only to the draft they were made for:
+  // a share that arrives while the step is open starts a new draft, and the step closing as it
+  // does must not put the old draft's date and repeat on the share (review on #166).
+  const draftRef = useRef(0)
+
+  // Each time it opens the form is the draft that was kept, else a fresh one; a new share replaces
+  // a kept draft, since it is input the owner just sent. The title is focused either way.
   useEffect(() => {
     if (!open) return
     openingRef.current += 1
-    setTitle(initialRef.current?.title || '')
-    setDueAt(null)
-    setRecurrence('')
-    setCustomRepeat(false)
+    const fresh = !keptRef.current || seed !== seededRef.current
+    seededRef.current = seed
+    keptRef.current = false
+    keepingRef.current = false
+    // After a reload the state is empty and the stored copy is the draft.
+    const stored = fresh ? null : readNewTaskDraft()
+    if (stored) {
+      setTitle(stored.title)
+      setDueAt(stored.dueAt)
+      setRecurrence(stored.recurrence)
+      setCustomRepeat(stored.customRepeat)
+      setProjectId(stored.projectId)
+      setNotes(stored.notes)
+      setSourceUrl(stored.sourceUrl)
+    }
+    if (fresh) {
+      clearNewTaskDraft()
+      draftRef.current += 1
+      setTitle(initialRef.current?.title || '')
+      setDueAt(null)
+      setRecurrence('')
+      setCustomRepeat(false)
+      setProjectId('')
+      setNotes(initialRef.current?.notes || '')
+      setSourceUrl(initialRef.current?.sourceUrl || null)
+    }
     setStep('form')
-    setProjectId('')
-    setNotes(initialRef.current?.notes || '')
-    setSourceUrl(initialRef.current?.sourceUrl || null)
     setBusy(false)
     setError(null)
     titleRef.current?.focus()
   }, [open, seed])
+
+  // While the sheet is closed with a kept draft, the stored copy follows it: the date step's picks
+  // land just after the close, as its panel unmounts.
+  useEffect(() => {
+    if (open || !keepingRef.current) return
+    writeNewTaskDraft({ title, notes, dueAt, recurrence, customRepeat, projectId, sourceUrl })
+  }, [open, title, notes, dueAt, recurrence, customRepeat, projectId, sourceUrl])
 
   useEffect(() => {
     if (wasOpenRef.current && !open) openButtonRef?.current?.focus()
@@ -94,7 +144,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
       if (e.key === 'Escape') {
         e.preventDefault()
         if (step === 'date') closeDateStep()
-        else onClose()
+        else dismiss()
         return
       }
       if (e.key !== 'Tab' || !containerRef.current) return
@@ -116,7 +166,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose, step])
+  }, [open, onClose, step, busy])
 
   // The date step opens on the day already picked (or today), focused, so Enter keeps it.
   useEffect(() => {
@@ -152,9 +202,38 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     setDueAt(withDueDate(dueAt, value))
   }
 
-  // Back, or Esc: the date and the repeat stay as they were.
+  // Back, or Esc, leaves the date step. The panel calls keepPicks as it unmounts for any way out
+  // but Esc, so Back keeps what was picked and Esc leaves the date and the repeat as they were.
   function closeDateStep() {
     setStep('form')
+  }
+
+  function keepPicksFor(forDraft) {
+    return (value, draft) => {
+      if (draftRef.current !== forDraft) return
+      keepPicks(value, draft)
+    }
+  }
+
+  function keepPicks(value, draft) {
+    setDueAt(value)
+    setRecurrence(draft.recurrence)
+    setCustomRepeat(draft.customRepeat)
+  }
+
+  // The backdrop, the X, and Esc close the sheet without creating anything and keep the draft for
+  // the next opening; only Cancel, and a Create that went through, let it go. A create in flight has
+  // the draft, so nothing is kept then.
+  function dismiss() {
+    keptRef.current = !busy
+    keepingRef.current = !busy
+    onClose()
+  }
+
+  // Cancel throws the draft away, the stored copy with it.
+  function cancel() {
+    clearNewTaskDraft()
+    onClose()
   }
 
   if (!open) return null
@@ -181,7 +260,10 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
     const opening = openingRef.current
     try {
       await onCreate(payload)
-      if (opening === openingRef.current) onClose()
+      if (opening === openingRef.current) {
+        clearNewTaskDraft()
+        onClose()
+      }
     } catch (err) {
       if (opening !== openingRef.current) return
       setError(err.message || 'Could not add task.')
@@ -191,7 +273,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
 
   return (
     <>
-      <div className="sheet-backdrop" onClick={onClose} />
+      <div className="sheet-backdrop" onClick={dismiss} />
       <form
         ref={containerRef}
         role="dialog"
@@ -204,12 +286,12 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
           <>
             <div className="sheet-header">
               <h2 className="sheet-title">New task</h2>
-              <button type="button" className="icon-btn" aria-label="Close new task" onClick={onClose} style={{ color: 'var(--t1)' }}>
+              <button type="button" className="icon-btn" aria-label="Close new task" onClick={dismiss} style={{ color: 'var(--t1)' }}>
                 <X size={20} aria-hidden="true" />
               </button>
             </div>
             <p className="sheet-draft-title">{title.trim()}</p>
-            <AddDuePanel dueAt={dueAt} onPick={pickDate} recurrence={recurrence} customRepeat={customRepeat} api={api} submitLabel="Done" />
+            <AddDuePanel dueAt={dueAt} onPick={pickDate} onLeave={keepPicksFor(draftRef.current)} recurrence={recurrence} customRepeat={customRepeat} api={api} submitLabel="Done" />
             <div className="sheet-actions">
               <button type="button" className="btn" onClick={closeDateStep}>Back</button>
             </div>
@@ -218,7 +300,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         <>
         <div className="sheet-header">
           <h2 className="sheet-title">New task</h2>
-          <button type="button" className="icon-btn" aria-label="Close new task" onClick={onClose} style={{ color: 'var(--t1)' }}>
+          <button type="button" className="icon-btn" aria-label="Close new task" onClick={dismiss} style={{ color: 'var(--t1)' }}>
             <X size={20} aria-hidden="true" />
           </button>
         </div>
@@ -302,7 +384,7 @@ export default function NewTaskSheet({ open, onClose, onCreate, projects = [], o
         {error && <p className="sheet-error" role="alert">{error}</p>}
 
         <div className="sheet-actions">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="btn" onClick={cancel} disabled={busy}>Cancel</button>
           <button type="submit" ref={createRef} className="btn btn-primary" disabled={busy || !title.trim()}>Create</button>
         </div>
         </>

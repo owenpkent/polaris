@@ -264,6 +264,47 @@ describe('InlineTaskInput', () => {
     expect(onCancel).not.toHaveBeenCalled()
   })
 
+  // Leaving the picker is not Esc: a click outside it keeps the picks on the row, adds nothing,
+  // and the next add uses them (CONTRIBUTING.md, "Leaving an edit").
+  test('a click outside the picker keeps the day and repeat picked, and the next add uses them', async () => {
+    const { input, onSubmit } = setup()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Repeats' }), { target: { value: 'daily' } })
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /^Due date: / })).toBeTruthy()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().tomorrow, recurrence: 'daily' }))
+  })
+
+  test('a click outside the picker that also leaves the row adds the task once with the picks', async () => {
+    const { input, onSubmit, onCancel } = setup()
+    input.focus()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    input.focus()
+    fireEvent.pointerDown(document.body)
+    input.blur()
+    fireEvent.pointerUp(document.body)
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: getDueBounds().tomorrow, recurrence: null })
+  })
+
+  test('Escape in the picker drops the picks', async () => {
+    const { input, onSubmit } = setup()
+    await openPicker(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Buy milk', { dueAt: null, recurrence: null }))
+  })
+
   test('Escape in the title cancels', () => {
     const { input, onCancel } = setup()
     fireEvent.keyDown(input, { key: 'Escape' })

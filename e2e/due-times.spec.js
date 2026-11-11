@@ -111,6 +111,58 @@ test.describe('due times', { tag: ['@flow'] }, () => {
     await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toBe(`${later}T16:45`)
   })
 
+  // Leaving the picker saves a typed time and Esc drops it (CONTRIBUTING.md, "Leaving an edit").
+  // A real key press, not a dispatched event: the popover closes on it from the document, and the
+  // picker has to see the Esc before it is unmounted there (review on #166).
+  test('Esc drops a time typed in the menu, and a click outside saves it', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'due time esc')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    const menu = page.getByRole('dialog', { name: 'Due date', exact: true })
+    const field = panel.getByRole('button', { name: /^Due date, / })
+
+    // 09:30 today, saved by Enter.
+    await field.click()
+    await menu.getByRole('button', { name: 'Add time' }).click()
+    await menu.getByLabel('Time', { exact: true }).fill('09:30')
+    await menu.getByLabel('Time', { exact: true }).press('Enter')
+    await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toMatch(/T09:30$/)
+    const day = (await taskByTitle(request, title)).dueAt.slice(0, 10)
+
+    await field.click()
+    await menu.getByLabel('Time', { exact: true }).fill('16:45')
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    await expect(field).toHaveAccessibleName(/9:30\sAM$/)
+    expect((await taskByTitle(request, title)).dueAt).toBe(`${day}T09:30`)
+
+    await field.click()
+    await menu.getByLabel('Time', { exact: true }).fill('16:45')
+    // Above the picker on a phone (the sheet's backdrop), beside it on a desktop (the panel title).
+    const box = await panel.getByRole('textbox', { name: 'Task title' }).boundingBox()
+    await page.mouse.click(box.x + 8, box.y + box.height / 2)
+    await expect(menu).toBeHidden()
+    await expect(field).toHaveAccessibleName(/4:45\sPM$/)
+    await expect.poll(async () => (await taskByTitle(request, title)).dueAt).toBe(`${day}T16:45`)
+  })
+
+  test('Esc in "When is it due?" drops the day picked there', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline add row and its popover are the desktop form')
+    const title = `UI test due esc add ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    await page.getByRole('textbox', { name: 'New task name' }).fill(title)
+    const due = page.getByRole('button', { name: /^Due date(: .+)?$/ })
+    const before = await due.getAttribute('aria-label')
+    await due.click()
+    const scope = page.getByRole('dialog', { name: `Due date for ${title}` })
+    await scope.getByRole('button', { name: 'Next Monday', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(scope).toBeHidden()
+    await expect(due).toHaveAttribute('aria-label', before)
+  })
+
   test('a new task gets a time from Add time in "When is it due?"', async ({ page, request }, testInfo) => {
     const title = `UI test due time add ${testInfo.project.name}`
     await openView(page)

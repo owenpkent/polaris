@@ -31,7 +31,13 @@ export function nextMondayIso(now = new Date()) {
 // A time is optional: Add time opens a time box, and the submit carries it ('YYYY-MM-DDTHH:MM', floating local time). Enter in the time box submits, on
 // the selected date or today when there is none. Remove time drops it again. `dueAt` may already
 // carry a time (the sheet's date step reopened), which the box then starts on.
-export default function AddDuePanel({ dueAt, onPick, recurrence: recurrenceStart = '', customRepeat: customStart = false, api, headingId, submitLabel = 'Add task' }) {
+//
+// Leaving the panel any way but Esc or the submit (a click outside the popover, the sheet's Back)
+// keeps the picks, as leaving a picker does (CONTRIBUTING.md, "Leaving an edit"): `onLeave` gets
+// the same arguments as `onPick` as the panel unmounts, and the caller keeps them without adding
+// anything. Esc leaves the picks unsaved and calls nothing. A half-typed time is not taken; the
+// last whole one stays.
+export default function AddDuePanel({ dueAt, onPick, onLeave, recurrence: recurrenceStart = '', customRepeat: customStart = false, api, headingId, submitLabel = 'Add task' }) {
   const uid = useId()
   const bounds = getDueBounds()
   const [day, setDay] = useState(() => dueDateOnly(dueAt))
@@ -67,7 +73,34 @@ export default function AddDuePanel({ dueAt, onPick, recurrence: recurrenceStart
     return () => observer.disconnect()
   }, [])
 
-  const submit = (date) => onPick(date ? joinDue(date, time) : null, { recurrence, customRepeat })
+  // Set by Esc and by a submit, so the unmount that follows hands nothing to `onLeave`. The latest
+  // picks are read through draftRef, since the cleanup below runs once, on unmount.
+  const closedRef = useRef(false)
+  const draftRef = useRef(null)
+  const onLeaveRef = useRef(onLeave)
+  onLeaveRef.current = onLeave
+  draftRef.current = { day, time, recurrence, customRepeat }
+  useEffect(() => {
+    closedRef.current = false
+    // On the window's capture phase, ahead of the Popover's Esc handler on the document, which
+    // unmounts the panel before a later listener could mark the Esc (as in DueDateMenu.jsx).
+    function onKeyDown(e) { if (e.key === 'Escape') closedRef.current = true }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      if (closedRef.current || !onLeaveRef.current) return
+      const d = draftRef.current
+      // A time with no day counts from today, as a time typed in the due date picker does.
+      const date = d.day || (d.time ? bounds.today : null)
+      onLeaveRef.current(date ? joinDue(date, d.time) : null, { recurrence: d.recurrence, customRepeat: d.customRepeat })
+    }
+    // Mount and unmount only: the draft is read through draftRef.
+  }, [])
+
+  const submit = (date) => {
+    closedRef.current = true
+    onPick(date ? joinDue(date, time) : null, { recurrence, customRepeat })
+  }
   function select(date) {
     if (recurrence && !customRepeat && date && date !== day) setRecurrence(followDate(recurrence, day || bounds.today, date))
     setDay(date)

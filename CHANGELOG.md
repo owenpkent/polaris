@@ -3,10 +3,29 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## 2.9.0 (2026-11-10)
+## 2.9.0 (2026-11-11)
 
 No migration.
 
+- Leaving an edit saves it, across the dashboard: a click outside, Done, closing the panel, or
+  opening another item saves what was typed or picked, and only Esc in a picker drops it
+  (CONTRIBUTING.md, "Leaving an edit"). A time typed in the due date picker used to be saved only
+  by Enter. Esc that closes the task panel now saves the title, assignee, recurrence, comment, and
+  subtask being typed, not only the notes, and a custom repeat finished in the builder is saved
+  when the panel closes or another task opens. "When is it due?" keeps a day or repeat picked there
+  when you click outside it. On Goals, a title, status note, or number saves when you leave the
+  field, Esc puts the field back, and the refresh never overwrites one you are typing in.
+- A thread post is still sent only by Post, but the post box keeps an unsent post per task on the
+  device, and it never shows in another task's box. On a phone, closing the New task sheet with
+  the backdrop, the X, or Esc keeps the draft for the next opening; Cancel throws it away.
+- The due date picker has a Done button. On a desktop its quick dates are a list beside the month,
+  each with its weekday or date, and Remove time is a cross beside the time box. On a phone it
+  rises from the bottom edge as a sheet over a dimmed page instead of covering the field it came
+  from.
+- A tab left open in the background reloads itself onto a new build once the server serves one,
+  so it is current when you come back. It waits while a dialog or panel is open, a field holds
+  text, or a save is still on its way, and a visible tab is never reloaded under you. A New task
+  draft kept on closing the sheet survives the reload.
 - On My tasks, a row held by its handle under Sort: Manual lifts out: a raised copy follows the
   pointer, the row fades in place, and the rows part around a dashed gap where it will land. A
   hairline divides the columns after the name again, so the eye can run down a column. On a

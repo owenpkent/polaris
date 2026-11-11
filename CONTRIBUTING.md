@@ -36,6 +36,18 @@ Never run experiments against `command-center/data/`. Set `CC_DB` to a temp file
 - Dashboard data refreshes by polling `/api/events` (`src/command-center/useEvents.js`). A new view that shows server data calls `useEventRefresh`.
 - No em dashes in docs or UI text.
 
+### Leaving an edit
+
+The owner works pointer-first and closes things by clicking elsewhere, so nothing typed or picked is lost by leaving it. A value being edited in a picker, a field, or the task panel follows one rule:
+
+- **Leaving saves.** A click or tap outside, Done, closing the panel or sheet, or opening another item saves the edit as Enter would. Saving happens once: a value already saved by Enter or a pick is not sent again on the way out.
+- **Esc in a picker discards.** Esc on a popover, menu, or sheet that holds a choice (the due date picker, "When is it due?", the repeat builder) closes it and leaves the item as it was. It is the only way out that drops an edit. Esc that closes the task panel is leaving the panel, so the panel's fields save as they do on a click outside.
+- **Half-done saves nothing.** A partly typed value (a time with a segment empty, a repeat rule the builder cannot make yet) is not saved, and the value the item had stays.
+- **When leaving cannot write, the draft is kept.** Some writes have to be meant: a thread post is sent only by Post, and the phone's new task sheet creates a task only by Create. Leaving them keeps the draft for that item, and it is there again on the next open. A draft belongs to its own task and never shows in another one's box.
+- **A refresh never overwrites a field being edited.** Polled data (`useEventRefresh`) updates a field only when it holds no unsaved edit.
+
+Forms with explicit Save and Cancel buttons (the Inbox accept form, the checklist, project, and rule editors, the backup passphrase) are the exception: Cancel and Esc discard there, and leaving does not submit.
+
 ### Offline (`src/command-center/offline*.js`, `outbox.js`)
 
 The dashboard has to keep working when the server cannot be reached, so a new view or control has three things to get right:

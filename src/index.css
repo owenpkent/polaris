@@ -2443,37 +2443,84 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   padding: 12px var(--due-pad);
 }
 .due-pop > :not(.cal) { margin-inline: calc(12px - var(--due-pad)); }
-/* Add time, or the time box and Remove time, which wrap onto two lines when they do not fit. */
-.due-pop-time { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.due-pop-time-field { display: flex; align-items: center; gap: 10px; flex: 1 1 160px; min-width: 0; font-size: 0.875rem; color: var(--t2); }
+/* The quick dates: pills that wrap on a phone, as the new task sheet has them; a list with each
+   date's weekday or day beside it on a desktop (below). */
+.due-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.due-quick-btn {
+  min-height: var(--target);
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid var(--bd-strong);
+  background: var(--raised);
+  box-shadow: var(--shadow-btn);
+  color: var(--t1);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.due-quick-btn[aria-pressed='true'] { background: var(--blue); border-color: var(--blue); color: var(--on-accent); font-weight: 600; }
+.due-quick-hint { display: none; }
+/* The time box and an icon Remove time beside it, or Add time. */
+.due-pop-time { display: flex; align-items: center; gap: 8px; }
+.due-pop-time-field { display: flex; flex: 1 1 auto; min-width: 0; }
 .due-pop-time-field input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 0.9rem; }
-/* Repeat under Add time, or the rule it opens with its text wrapping beside the icons. Repeats
+.due-pop-wide { width: 100%; justify-content: flex-start; padding-inline: 0.75rem; }
+/* Repeat, or the rule it opens with its text wrapping beside the icons, then Done. On a phone they
+   share a row; on a desktop they stack at the foot of the column beside the month. Repeats
    (RepeatPicker in RepeatBuilder.jsx) is the picker's second view, in place of the month, at the
    same width, with Back above it. */
 .due-pop .due-pop-repeat { margin-bottom: 0; }
-.due-pop-repeat-open { width: 100%; justify-content: flex-start; padding-inline: 0.75rem; }
+.due-pop-foot { display: flex; align-items: center; gap: 8px; }
+.due-pop-foot > .due-pop-repeat { flex: 1 1 0; min-width: 0; margin: 0; }
+.due-pop-done { flex: 0 0 auto; min-width: 88px; }
 .due-pop-repeat-open > svg { flex: 0 0 auto; }
 .due-pop-repeat-text { flex: 1 1 0; min-width: 0; text-align: start; overflow-wrap: anywhere; }
 .due-pop-back { align-self: flex-start; }
-/* Above the breakpoint the quick dates, the time, and Repeat go in a column beside the month, so
-   the picker is no taller than the month and fits under a row in the middle of the list. */
+/* The phone's sheet (DueSheet in DueDateMenu.jsx): the picker fills it, centred, with the month at
+   its 308px and the safe area under it. */
+.sheet.due-sheet { padding: 4px 0 env(safe-area-inset-bottom, 0px); max-height: calc(100vh - 56px - var(--safe-top, 0px)); }
+.due-sheet .due-pop { width: min(420px, 100%); margin: 0 auto; }
+.due-sheet .due-pop > .cal { align-self: center; width: 308px; max-width: 100%; }
+/* Above the breakpoint the quick dates, the time, Repeat, and Done go in a column beside the
+   month, so the picker is little taller than the month and fits under a row in the list. */
 @media (min-width: 641px) {
   .due-pop {
     display: grid;
-    grid-template-columns: 160px 308px;
+    grid-template-columns: 184px 308px;
     grid-template-rows: auto 1fr auto auto;
-    grid-template-areas: 'chips cal' '. cal' 'time cal' 'repeat cal';
+    grid-template-areas: 'chips cal' '. cal' 'time cal' 'foot cal';
     column-gap: 16px;
     row-gap: 12px;
     width: auto;
   }
-  .due-pop.due-pop-repeat-view { display: flex; width: calc(160px + 16px + 308px + 2 * var(--due-pad)); }
-  .due-pop > .sheet-chips { grid-area: chips; flex-direction: column; align-items: stretch; }
+  .due-pop.due-pop-repeat-view { display: flex; width: calc(184px + 16px + 308px + 2 * var(--due-pad)); }
+  .due-pop > .due-quick { grid-area: chips; flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  .due-quick-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 0.75rem;
+    border: none;
+    border-radius: var(--radius);
+    background: transparent;
+    box-shadow: none;
+    text-align: start;
+  }
+  .due-quick-btn:hover { background: var(--bg-hover); }
+  .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); color: var(--blue); }
+  .due-quick-btn:focus-visible { outline-offset: -2px; }
+  .due-quick-hint { display: inline; flex: 0 0 auto; font-size: 0.8rem; font-weight: 400; color: var(--t2); }
+  .due-quick-btn[aria-pressed='true'] .due-quick-hint { color: var(--blue); }
   .due-pop > .cal { grid-area: cal; }
-  .due-pop > .due-pop-repeat { grid-area: repeat; min-width: 0; display: flex; flex-direction: column; }
-  .due-pop > .due-pop-time { grid-area: time; flex-direction: column; align-items: stretch; }
-  .due-pop-time > * { flex: 0 0 auto; }
-  .due-pop-time-field { flex-direction: column; align-items: stretch; gap: 4px; }
+  .due-pop > .due-pop-time { grid-area: time; }
+  .due-pop > .due-pop-foot { grid-area: foot; flex-direction: column; align-items: stretch; }
+  .due-pop-foot > .due-pop-repeat { flex: 0 0 auto; display: flex; flex-direction: column; }
+  /* A sheet opened on a phone stays a sheet when the phone is turned past the breakpoint
+     (DueDateMenu.jsx), centred as .sheet is here, and as wide as the two columns. */
+  .sheet.due-sheet { width: auto; max-width: calc(100vw - 32px); }
+  .due-sheet .due-pop { width: auto; }
+  .due-sheet .due-pop > .cal { align-self: auto; width: auto; }
 }
 
 /* A month to pick from (MonthCalendar.jsx). Days touch, so seven 44px days fit at 320px, and
