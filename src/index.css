@@ -31,6 +31,8 @@
   /* The status bar's height inside the Android app, where the page runs edge to edge
      (mobile/README.md); 0 in a browser. The top bar and everything stuck under it add it. */
   --safe-top: env(safe-area-inset-top, 0px);
+  /* The navigation bar's height there, which the drawer (src/NavDrawer.jsx) adds under its last row. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   color-scheme: dark;
 
   /* Each layer is a small step lighter than the one below it (1.05-1.1:1),
