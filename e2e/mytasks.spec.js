@@ -519,8 +519,14 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
 
   // The store puts a new task first; one added from the list's own row stays where it was typed,
   // at the end of its group, when the row closes and after a reload.
-  test('a task added from the row stays at the end of its group when the row closes', async ({ page }, testInfo) => {
+  // A subtask due today is also a row of its own in Today, after its parent: a new task goes after it too.
+  test('a task added from the row stays at the end of its group when the row closes', async ({ page, request }, testInfo) => {
     test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const parent = await createTask(request, testInfo, 'added last parent', { position: endPosition() })
+    const tasks = await (await request.get('/api/tasks', { headers: { Authorization: `Bearer ${TOKEN}` } })).json()
+    const parentId = tasks.tasks.find((t) => t.title === parent).id
+    // Well after its parent in the one order, as a subtask added later is.
+    await createTask(request, testInfo, 'added last subtask', { parentId, position: endPosition() + 100 })
     const title = `UI test added last ${testInfo.project.name}`
     await openView(page)
     await manualSort(page)

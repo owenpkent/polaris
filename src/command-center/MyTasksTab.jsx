@@ -342,10 +342,11 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // reloading, then leaves it where it was (reorder.js, positionAfter). Other sorts place it.
   const endPositionFor = useCallback((fields) => {
     if (!reorderable) return undefined
+    // Every task the list groups counts, subtasks included: a subtask is also a row of its own in
+    // its group, so a new task placed before one would move above it once the row closes.
     const bounds = getDueBounds()
-    const top = tasks.filter((t) => !t.parentId)
     const group = groupIdFor(fields, view.group, bounds)
-    return positionAfter(top.filter((t) => groupIdFor(t, view.group, bounds) === group), top)
+    return positionAfter(tasks.filter((t) => groupIdFor(t, view.group, bounds) === group), tasks)
   }, [reorderable, tasks, view.group])
 
   // The new task is held above the row (heldIds) only if this opening of the row is still the one.
