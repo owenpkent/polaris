@@ -517,6 +517,43 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 })
   }
 
+  // The store puts a new task first; one added from the list's own row stays where it was typed,
+  // at the end of its group, when the row closes and after a reload.
+  // A subtask due today is also a row of its own in Today, after its parent: a new task goes after it too.
+  test('a task added from the row stays at the end of its group when the row closes', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const auth = { Authorization: `Bearer ${TOKEN}` }
+    const parent = await createTask(request, testInfo, 'added last parent', { position: endPosition() })
+    const listed = async () => (await (await request.get('/api/tasks', { headers: auth })).json()).tasks
+    const parentId = (await listed()).find((t) => t.title === parent).id
+    // Well after its parent in the one order, as a subtask added later is. The numbers come from
+    // the shared counter, so the tasks later tests number last still end their groups.
+    for (let i = 0; i < 9; i++) endPosition()
+    const sub = await createTask(request, testInfo, 'added last subtask', { parentId, position: endPosition() })
+    const title = `UI test added last ${testInfo.project.name}`
+    try {
+      await openView(page)
+      await manualSort(page)
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      const input = page.getByRole('textbox', { name: 'New task name' })
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(rowEl(page, title)).toBeVisible()
+      await input.press('Escape')
+      const lastInToday = page.locator('[data-reorder-group="today"] [data-task-id]').last()
+      await expect(lastInToday).toContainText(title)
+      await openView(page)
+      await expect(lastInToday).toContainText(title)
+    } finally {
+      // The added task took the number after the subtask's: the counter skips it, and all three
+      // are completed, so they leave Today to the tests that follow in this worker.
+      endPosition()
+      for (const t of await listed()) {
+        if ([parent, sub, title].includes(t.title)) await request.post(`/api/tasks/${t.id}/complete`, { headers: auth })
+      }
+    }
+  })
+
   test('under the manual sort dragging a row onto Tomorrow sets its date and puts it at the top', async ({ page, request }, testInfo) => {
     // At the end of Today, just above Tomorrow's header (a new task goes first): from the top of
     // a long Today on a phone the drag would scroll the page and land under the header.

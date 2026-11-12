@@ -219,12 +219,16 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     createTask: async (payload) => {
       const ident = { opId: newOpId(), deviceId: deviceId() }
       const taskId = newTaskId()
-      const position = await nextCachedPosition({ subtask: Boolean(payload?.parentId) })
+      // A caller's own number wins (My tasks puts a task it adds at the end of its group); otherwise
+      // the next one first in the stored copy, as the server would.
+      const own = typeof payload?.position === 'number' && Number.isFinite(payload.position)
+      const position = own ? payload.position : await nextCachedPosition({ subtask: Boolean(payload?.parentId) })
+      const { position: _ignored, ...rest } = payload || {}
       const send = (body) => call('/api/tasks', { method: 'POST', body: { ...body, ...ident, id: taskId }, offline: { kind: 'create_task', taskId, opId: ident.opId, body } })
       try {
-        return await send(position === undefined ? payload : { ...payload, position })
+        return await send(position === undefined ? rest : { ...rest, position })
       } catch (err) {
-        if (position !== undefined && refusesPosition(err)) return send(payload)
+        if (position !== undefined && refusesPosition(err)) return send(rest)
         throw err
       }
     },
