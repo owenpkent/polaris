@@ -23,8 +23,8 @@ describe('COLUMN_DEFS', () => {
     expect(COLUMN_DEFS.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 
-  test('assignee is the only column that starts hidden', () => {
-    expect(COLUMN_DEFS.filter((c) => c.defaultHidden).map((c) => c.id)).toEqual(['assignee'])
+  test('assignee and source are the columns that start hidden', () => {
+    expect(COLUMN_DEFS.filter((c) => c.defaultHidden).map((c) => c.id)).toEqual(['assignee', 'source'])
   })
 
   test('has unique ids', () => {
@@ -164,6 +164,24 @@ describe('useColumnsState', () => {
     expect(result.current.widths.due).toBe(200)
     expect(result.current.widths.name).toBe(440)
     expect(result.current.hidden.priority).toBe(true)
+    expect(result.current.hidden.project).toBe(false)
+  })
+
+  // Source became hidden by default after devices had saved their columns with it shown.
+  test('a state saved before Source was hidden by default hides it once, and saves that', () => {
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify({ widths: {}, hidden: { source: false, priority: true } }))
+    const { result } = renderHook(() => useColumnsState())
+    expect(result.current.hidden.source).toBe(true)
+    expect(result.current.hidden.priority).toBe(true)
+    expect(JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY)).sourceDefault).toBe(true)
+  })
+
+  test('Source shown again after that stays shown', () => {
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify({ widths: {}, hidden: {} }))
+    const first = renderHook(() => useColumnsState())
+    act(() => first.result.current.setHidden('source', false))
+    first.unmount()
+    const { result } = renderHook(() => useColumnsState())
     expect(result.current.hidden.source).toBe(false)
   })
 

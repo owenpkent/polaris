@@ -53,14 +53,19 @@
   --bg-active: color-mix(in srgb, var(--t1) 9%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 3%, var(--bg2)); /* alternate list rows on bg2 */
   --bg-selected: color-mix(in srgb, var(--blue) 16%, var(--bg2));
-  /* Lines, measured on --bg: a row hairline 2.1:1, a surface edge 2.4:1, and the rule under a
-     group header (--bd-section) 3.3:1, so a group reads as its own block at a glance. */
+  /* Lines, measured on --bg: a row hairline 2.1:1 (also the rule under a My tasks group header,
+     which the band and the gap above it set apart), a surface edge 2.4:1, and a section edge
+     (--bd-section) 3.3:1. */
   --bd: color-mix(in srgb, var(--t1) 24%, transparent);
   --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
   --bd-section: color-mix(in srgb, var(--t1) 38%, transparent);
+  /* The line between My tasks columns: half a row hairline, so it guides the eye down a column
+     without boxing every cell, and names and dates stand out over the grid. */
+  --bd-column: color-mix(in srgb, var(--t1) 12%, transparent);
   /* The resting band behind a My tasks group header: a surface, not a state layer, so it is
-     opaque and the hover wash still reads on top of it. */
-  --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
+     opaque and the hover wash still reads on top of it. Light, so the group's name leads rather
+     than its band. */
+  --bg-section: color-mix(in srgb, var(--t1) 3%, var(--bg));
   --bd-strong: #8d95a3; /* 5.3 / 4.3 */
 
   --t1: #f3f5f8; /* 14.8 / 11.9 on --bg / --bg3 */
@@ -183,11 +188,12 @@
   --bg-hover: color-mix(in srgb, var(--t1) 4.5%, transparent);
   --bg-active: color-mix(in srgb, var(--t1) 8%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 2.5%, var(--bg2)); /* alternate list rows on bg2 */
-  /* Lines on --bg: a row hairline 1.7:1, a surface edge 1.85:1, a group header's rule 2.55:1. */
+  /* Lines on --bg: a row hairline 1.7:1, a surface edge 1.85:1, a section edge 2.55:1. */
   --bd: color-mix(in srgb, var(--t1) 24%, transparent);
   --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
   --bd-section: color-mix(in srgb, var(--t1) 40%, transparent);
-  --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
+  --bd-column: color-mix(in srgb, var(--t1) 12%, transparent);
+  --bg-section: color-mix(in srgb, var(--t1) 3%, var(--bg));
   --bd-strong: #6f7887; /* 4.1 / 4.5, and 3.3 on bg-inset under bg-active */
 
   --t1: #12151b; /* 16.8 / 18.3 */
@@ -948,7 +954,7 @@ kbd { color: var(--t1); }
   background: var(--bg);
 }
 .mytasks-colhead > :nth-child(n+3),
-.mytasks-row > :nth-child(n+3) { padding-left: 12px; border-left: 1px solid var(--bd); }
+.mytasks-row > :nth-child(n+3) { padding-left: 12px; border-left: 1px solid var(--bd-column); }
 /* Dates, counts, and anything else with digits in the list line up in columns. */
 .mytasks-grid, .mytasks-section-count, .board-card-foot, .board-lane-count { font-variant-numeric: tabular-nums; }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
@@ -1015,12 +1021,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   gap: 2px;
   min-height: var(--row-head);
   padding-right: 12px;
-  border-bottom: 1px solid var(--bd-section);
+  border-bottom: 1px solid var(--bd);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: var(--bg-section);
 }
-/* Collapsed, a group is its header alone; the band and the rule keep the groups apart. */
-.mytasks-section-header.is-collapsed { border-bottom-color: var(--bd); }
 /* A row dragged over an empty or collapsed group drops at its top: the header takes the mark. */
 .mytasks-section-header.is-drop-target { background: var(--blue-soft); box-shadow: inset 0 -2px 0 var(--blue); }
 .mytasks-section-header .icon-btn { height: var(--row-head); }
@@ -2591,7 +2595,7 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
    to hand it to the name box, so it draws no ring. */
 .inline-add-row:focus { outline: none; }
 .inline-add { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 12px; }
-.inline-add-due-cell { grid-column: 3; align-self: stretch; display: flex; align-items: center; min-width: 0; padding: 0 8px 0 12px; border-left: 1px solid var(--bd); }
+.inline-add-due-cell { grid-column: 3; align-self: stretch; display: flex; align-items: center; min-width: 0; padding: 0 8px 0 12px; border-left: 1px solid var(--bd-column); }
 .inline-add-due-anchor { display: flex; min-width: 0; max-width: 100%; }
 .inline-add-due-cell > .inline-add-due-anchor { flex: 1 1 auto; }
 .inline-add-due-anchor:focus { outline: none; }
