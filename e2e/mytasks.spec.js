@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone, createTask, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
+import { openView, isPhone, createTask, clippedContent, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
 import { TOKEN } from './global-setup.js'
 
 const row = (page, title) => page.getByRole('button', { name: `Open ${title}`, exact: true })
@@ -788,7 +788,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the phone tier shows only Name and Due date')
+    test.skip(isPhone(testInfo), 'the phone tier shows only the name, with the due date under it')
     const title = await createTask(request, testInfo, 'priority')
     await openView(page)
     await page.getByRole('button', { name: `Change priority for ${title}` }).click()
@@ -798,7 +798,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Change priority for ${title}` })).toHaveText('Urgent')
   })
 
-  test('the phone tier has no column header and hides Columns: its two columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
+  test('the phone tier has no column header and hides Columns: its columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     await openView(page)
     for (const name of ['Name column menu', 'Due date column menu', 'Priority column menu']) {
@@ -806,6 +806,86 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     }
     await expect(page.getByRole('button', { name: 'Columns' })).toBeHidden()
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
+  })
+
+  test('on a phone a long name wraps whole and the due date sits under it, in the same row', async ({ page, request }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
+    await openView(page)
+    const rowBox = rowEl(page, title)
+    await expect(rowBox).toBeVisible()
+    expect(await clippedContent(page, rowBox)).toEqual([])
+    const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
+    const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
+    const whole = await rowBox.boundingBox()
+    // The name wraps (more than one line tall), and the date starts below its last line.
+    expect(rename.height).toBeGreaterThan(40)
+    expect(due.y).toBeGreaterThanOrEqual(rename.y + rename.height - 1)
+    // Same row, with the date's left edge on the name's, and a 44px target.
+    expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
+    expect(Math.abs(due.x - rename.x)).toBeLessThanOrEqual(6)
+    expect(due.height).toBeGreaterThanOrEqual(44)
+  })
+})
+
+// At every phone width, 320px included: the narrowest is where a squeezed date column shows first.
+test.describe('My tasks date buttons on a phone', { tag: ['@flow', '@all-widths'] }, () => {
+  // The date button is as wide as its label, but never under the row's height, so "Fri" is not a
+  // 40px target.
+  test('on a phone every due date button is at least 44px wide, whatever its label says', async ({ page, request }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    const local = (offset) => {
+      const d = new Date()
+      d.setDate(d.getDate() + offset)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    // Every weekday label a week out can take (two to seven days ahead), so the narrowest is among them.
+    const weekdays = []
+    for (let offset = 2; offset <= 7; offset++) weekdays.push(await createTask(request, testInfo, `weekday ${offset}`, { dueAt: local(offset) }))
+    const today = await createTask(request, testInfo, 'today', { dueAt: local(0) })
+    const timed = await createTask(request, testInfo, 'timed', { dueAt: `${local(0)}T09:30` })
+    await openView(page)
+    for (const title of [...weekdays, today, timed]) {
+      const button = page.getByRole('button', { name: `Change due date for ${title}` })
+      await expect(button).toBeVisible()
+      expect(await smallTargets(page, `button[aria-label="Change due date for ${title}"]`)).toEqual([])
+      // Which weekday labels fall in the next week depends on the day, and "Fri" is the narrow
+      // one, so the floor itself is checked too: the row's height in Comfortable density.
+      expect(await button.evaluate((el) => getComputedStyle(el).minWidth)).toBe('44px')
+    }
+  })
+
+  // The group's own Add task row is the inline row a phone shows (the toolbar and the floating
+  // button open the sheet). Its date button keeps a column of its own, so a long date never
+  // squeezes the name box and the button never shrinks to its words.
+  test('on a phone the Add task row in a group keeps its date button and its name box usable', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    await openView(page)
+    await page.locator('section', { has: page.getByRole('button', { name: 'Collapse Today' }) }).getByRole('button', { name: 'Add task' }).click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill('UI test phone inline grid')
+    const dateButton = page.getByRole('button', { name: /^Due date(: .+)?$/ })
+    const measure = async () => {
+      const date = await dateButton.boundingBox()
+      const name = await input.boundingBox()
+      expect(date.width).toBeGreaterThanOrEqual(44)
+      expect(date.height).toBeGreaterThanOrEqual(44)
+      expect(name.width).toBeGreaterThanOrEqual(44)
+      expect(date.x + date.width).toBeLessThanOrEqual(page.viewportSize().width + 1)
+    }
+    await measure()
+    // Pick tomorrow with a time, then leave the picker with a click outside it. The picker covers
+    // the name on a phone, so the corner of the screen stands in for a click back in the name: the
+    // picks stay on the row either way (Esc would discard them).
+    await dateButton.click()
+    const due = page.getByRole('dialog', { name: 'Due date for UI test phone inline grid' })
+    await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await due.getByRole('button', { name: 'Add time' }).click()
+    await due.getByLabel('Time').fill('23:59')
+    await page.mouse.click(2, 2)
+    await expect(due).toHaveCount(0)
+    await expect(dateButton).toContainText('Tomorrow')
+    await measure()
   })
 })
 

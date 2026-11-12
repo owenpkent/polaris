@@ -839,3 +839,36 @@ describe('MyTasksTab Today group', () => {
     expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
   })
 })
+
+describe('MyTasksTab due date picker across the breakpoint', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  test('an open picker keeps its unsaved time when the viewport crosses 640px, and nothing is written', async () => {
+    const media = stubMatchMedia(390)
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({ sort: { field: 'due', dir: 'asc' }, group: 'none', filters: {} }))
+    const d = new Date()
+    d.setDate(d.getDate() + 2)
+    const dueAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    api.listTasks.mockResolvedValue({ tasks: [
+      { id: 't1', title: 'Pay rent', projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null },
+    ] })
+    api.updateTask = vi.fn().mockResolvedValue({ task: { id: 't1' } })
+    render(<MyTasksTab />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Change due date for Pay rent' }))
+    const dialog = screen.getByRole('dialog', { name: 'Due date for Pay rent' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add time' }))
+    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '09:30' } })
+
+    // The date is one cell in one place for both tiers, so turning the phone does not unmount the
+    // picker, which would save what was typed as though the owner had left it.
+    media.resize(844)
+    expect(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).toBeTruthy()
+    expect(within(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).getByLabelText('Time').value).toBe('09:30')
+    media.resize(390)
+    expect(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).toBeTruthy()
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+})

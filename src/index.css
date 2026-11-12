@@ -1104,9 +1104,9 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   }
 }
 /* On a phone the name cell is a small grid: the name and the panel button share the first line,
-   the name wrapping (two lines at most) and the button keeping its 44px at the right, and Waiting
-   and the count go on a line of their own under the name. So a row is as tall as its name and
-   never carries an empty band with a lone button in it, and the button never leaves the cell. A
+   the name wrapping to as many lines as it needs and the button keeping its 44px at the right,
+   and Waiting and the count go on a line of their own under the name. So a row is as tall as its
+   name and never carries an empty band with a lone button in it, and the button never leaves the cell. A
    cell too narrow for even 44px of name beside the button stacks instead: name, then its
    followers, then the button at the right. */
 @media (max-width: 640px) {
@@ -1123,8 +1123,29 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     .mytasks-name-grid > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
   }
 }
-/* The column header, stuck under the top bar. A phone has no column header: its two columns are
-   fixed, and Sort lives in the toolbar. */
+/* On a phone the due date is the same cell that is the Due date column above 640px (one instance,
+   so an open picker survives a turn across the breakpoint), placed on a second grid row under the
+   name, in the name's column, its left edge on the name's. The check and the reorder handle span
+   both rows, so they stay centred on the whole row. The generic column rules (a rule line and
+   padding from the third cell on, stretch) do not apply to it. */
+@media (max-width: 640px) {
+  .mytasks-row > :not(.mytasks-name):not(.due-cell) { grid-row: 1 / span 2; }
+  .mytasks-row > .mytasks-name { grid-row: 1; }
+  .mytasks-grid.mytasks-row > .due-cell {
+    grid-row: 2;
+    grid-column: -2 / -1;
+    justify-self: start;
+    align-self: start;
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border-left: none;
+  }
+  /* A subtask row under the manual sort has no handle, so its name spans two columns: so does its date. */
+  .mytasks-reorderable .mytasks-row.is-nested > .due-cell { grid-column: 2 / span 2; }
+}
+/* The column header, stuck under the top bar. A phone has no column header: its columns are
+   fixed (the check and the name, with the date under it), and Sort lives in the toolbar. */
 .mytasks-colhead-sticky { position: sticky; top: calc(56px + var(--safe-top)); z-index: 10; background: var(--bg); }
 @media (max-width: 640px) {
   .mytasks-colhead-sticky { display: none; }
@@ -2271,13 +2292,13 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 
 /* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
-   the chip only adds its soft background. Every chip fills the column, text at its left, so the
-   chips in a list are one size and line up instead of each fitting its own word. */
+   the chip only adds its soft background. It sits on its own line under the task name, as wide as
+   its text, its left edge on the name's. */
 .due-chip {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  width: 100%;
+  max-width: 100%;
   height: 32px;
   padding: 0 12px;
   border-radius: 10px;
@@ -2299,6 +2320,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   line-height: 1.2;
   overflow: visible;
 }
+/* A task with no date: a quiet prompt, no fill, so it reads as a place to tap rather than a date. */
+.due-chip.is-empty { background: transparent; color: var(--t3); font-weight: 500; padding: 0; }
 .due-chip.has-time > span { white-space: nowrap; }
 .due-chip.has-time > span + span { font-size: 12px; font-weight: 500; }
 
