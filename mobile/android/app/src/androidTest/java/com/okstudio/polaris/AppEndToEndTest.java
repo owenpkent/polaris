@@ -315,6 +315,116 @@ public class AppEndToEndTest {
         app.waitFor("the tab bar to come back", "document.documentElement.dataset.keyboard!=='open'&&(" + navShown + ")", 10000);
     }
 
+    // Creates a task due today through the API, from the page as the dashboard does, then reloads
+    // and opens My tasks so the row is on screen. Returns nothing: the row is found by its title.
+    private void seedTaskDueTodayAndOpenMyTasks(String title) {
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:" + WebAppDriver.quote(title) + ",dueAt:(d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'))(new Date())})})"
+            + ".then(r=>String(r.status))";
+        assertTrue("Task create failed", app.evalAsync(create, 15000).replace("\"", "").startsWith("2"));
+        // The old page is marked so the wait cannot pass before the reload brings the new task in.
+        app.eval("window.__ptOld=true;location.reload();null");
+        app.waitFor("the reload", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&__pt.find('button','Open navigation')", LOAD_MS);
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote("Change due date for " + title) + ")", LOAD_MS);
+    }
+
+    // On a phone the due date sits under the task name, not in a column. A long name must wrap in
+    // full, the date button must start on the name's left edge on a line below it, and it must be a
+    // real 44px touch target that a finger opens the picker with.
+    @Test
+    public void phoneRowPutsTheDateUnderAWrappedName() throws Exception {
+        connect();
+        String title = "Phone row " + System.currentTimeMillis()
+            + " with a deliberately long name that has to wrap over several lines on a narrow screen without being cut";
+        seedTaskDueTodayAndOpenMyTasks(title);
+
+        String name = "__pt.find('button'," + WebAppDriver.quote("Rename " + title) + ")";
+        String date = "__pt.find('button'," + WebAppDriver.quote("Change due date for " + title) + ")";
+        String nameText = name + ".querySelector('span')";
+        app.eval(date + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+
+        // Nothing cut: the whole title is in the button, and it is not wider than its box.
+        assertTrue("Name text is not the full title", app.truthy(nameText + ".textContent==="
+            + WebAppDriver.quote(title)));
+        assertTrue("Name button is cut off horizontally", app.truthy(name + ".scrollWidth<=" + name + ".clientWidth+1"));
+        assertTrue("Name does not wrap onto several lines", app.truthy(nameText + ".getBoundingClientRect().height>"
+            + "1.5*parseFloat(getComputedStyle(" + nameText + ").lineHeight)"));
+
+        String[] n = rect(nameText);
+        String[] d = rect(date);
+        String report = "name text " + String.join(",", n) + "; date button " + String.join(",", d);
+        android.util.Log.i("PhoneRowTest", report);
+        assertTrue("Date button is not below the name text, " + report, Float.parseFloat(d[1]) >= Float.parseFloat(n[3]) - 1);
+        assertTrue("Date button's left is not on the name's left, " + report,
+            Math.abs(Float.parseFloat(d[0]) - Float.parseFloat(n[0])) <= 2);
+        assertTrue("Date button is under 44px wide, " + report, Float.parseFloat(d[2]) - Float.parseFloat(d[0]) >= 43.5f);
+        assertTrue("Date button is under 44px tall, " + report, Float.parseFloat(d[3]) - Float.parseFloat(d[1]) >= 43.5f);
+
+        // A real finger opens the picker, which on a phone is a sheet named for the task.
+        tapElement(date);
+        app.waitFor("the date picker", "__pt.find('dialog'," + WebAppDriver.quote("Due date for " + title) + ")", 10000);
+        // Esc closes it without saving, as it does for a keyboard user.
+        app.eval("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));null");
+        app.waitFor("the date picker to close", "!__pt.find('dialog'," + WebAppDriver.quote("Due date for " + title) + ")", 10000);
+    }
+
+    // Choosing No date from a Today row moves the task to the No due date group, and the toast that
+    // says so must be fully on screen above the tab bar (the app's insets differ from a browser's),
+    // must not be covered by the floating New task button, and must not take focus. View then
+    // scrolls to the task and focuses its Open button.
+    @Test
+    public void moveToastSitsAboveTheTabBarAndViewFindsTheTask() throws Exception {
+        connect();
+        String title = "Move toast " + System.currentTimeMillis();
+        seedTaskDueTodayAndOpenMyTasks(title);
+
+        String date = "__pt.find('button'," + WebAppDriver.quote("Change due date for " + title) + ")";
+        app.eval(date + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(date);
+        app.waitFor("the date picker", "__pt.find('dialog'," + WebAppDriver.quote("Due date for " + title) + ")", 10000);
+        app.click("button", "No date");
+
+        String where = "No due date";
+        String view = "__pt.find('button'," + WebAppDriver.quote("View " + title + " in " + where) + ")";
+        String undo = "__pt.find('button'," + WebAppDriver.quote("Undo moving " + title + " to " + where) + ")";
+        app.waitFor("the move toast", view + "&&" + undo, 15000);
+        assertTrue("The toast does not say where the task went", app.truthy("document.querySelector('.undo-toast').textContent.includes("
+            + WebAppDriver.quote("Moved " + title + " to " + where) + ")"));
+
+        String nav = "document.querySelector('nav[aria-label=\"Primary\"]')";
+        // The toast lasts six seconds, so everything is measured in one page call.
+        String measure = "(()=>{const vv=window.visualViewport;const navTop=" + nav + ".getBoundingClientRect().top;"
+            + "const out=[];for(const b of [" + view + "," + undo + "]){const r=b.getBoundingClientRect();"
+            + "const hit=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);"
+            + "out.push([r.left>=vv.offsetLeft-0.5,r.right<=vv.offsetLeft+vv.width+0.5,r.top>=vv.offsetTop-0.5,r.bottom<=vv.offsetTop+vv.height+0.5,"
+            + "r.bottom<=navTop+0.5,hit===b||b.contains(hit)].join(':')+'@'+[r.left,r.top,r.right,r.bottom].join(','));}"
+            + "out.push('navTop='+navTop+';vvH='+(vv.offsetTop+vv.height));"
+            + "out.push('focusInToast='+Boolean(document.activeElement&&document.activeElement.closest('.undo-toast-region')));"
+            + "return out.join('|')})()";
+        String result = app.eval(measure).replace("\"", "");
+        android.util.Log.i("MoveToastTest", result);
+        String[] parts = result.split("\\|");
+        for (int i = 0; i < 2; i++) {
+            String label = i == 0 ? "View" : "Undo";
+            assertTrue(label + " is not inside the viewport, above the tab bar and uncovered: " + result,
+                parts[i].startsWith("true:true:true:true:true:true@"));
+        }
+        assertTrue("Focus moved into the toast: " + result, parts[3].equals("focusInToast=false"));
+
+        // Pressing View scrolls to the task and focuses its Open button, which is on screen.
+        app.click("button", "View " + title + " in " + where);
+        String open = "__pt.find('button'," + WebAppDriver.quote("Open " + title) + ")";
+        app.waitFor("Open to be focused", "document.activeElement===" + open, 10000);
+        assertTrue("Open button is outside the viewport", app.truthy("(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()"));
+    }
+
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
     // A real touch at the middle of an element, injected as the system would, so focus and the
