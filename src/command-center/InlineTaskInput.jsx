@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Calendar } from 'lucide-react'
 import { Popover } from './Menu'
 import AddDuePanel from './AddDuePanel'
 import { formatDueCell, getDueBounds } from './dueDates'
@@ -40,7 +39,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // the click-away add, which can run before a state update from the picker closing has rendered.
   const picksRef = useRef(null)
   picksRef.current = { dueAt, recurrence, customRepeat }
-  const dueText = formatDueCell(dueAt, getDueBounds()).text || 'Due date'
+  const dueCell = formatDueCell(dueAt, getDueBounds())
+  const dueText = dueCell.text || 'Due date'
   // Counts the tasks saved from this row. Each one pushes the row down, so it is kept on screen.
   const [saved, setSaved] = useState(0)
 
@@ -159,8 +159,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   }
 
   // Asana's due date cell on its new row: the date and repeat are set here before the task is
-  // added. It needs a title first, as Add task does. It sits in the Due date column, under the
-  // dates of the rows below; with that column hidden it follows the name.
+  // added. It needs a title first, as Add task does. It sits in the Due date column, drawn as the
+  // rows' own date cells are, its text in line with theirs; with that column hidden it follows the name.
   const dueButton = (
     <span
       ref={dueAnchorRef}
@@ -172,15 +172,16 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     >
       <button
         type="button"
-        className="btn inline-add-due"
+        className="inline-add-due"
         disabled={busy || !title.trim()}
         aria-haspopup="dialog"
         aria-expanded={picking}
         aria-label={dueAt ? `Due date: ${dueText}` : 'Due date'}
+        // Coloured as the row's date will be once it is added; disabled draws its own grey.
+        style={busy || !title.trim() ? undefined : { color: dueCell.color || 'var(--t2)' }}
         onClick={() => setPicking(true)}
       >
-        <Calendar size={16} aria-hidden="true" />
-        <span>{dueText}</span>
+        {dueText}
       </button>
     </span>
   )
