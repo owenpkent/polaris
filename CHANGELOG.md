@@ -7,8 +7,10 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 No migration.
 
-- Nothing scrolls to a task you just added or moved. A task sent to another day, group, or Board
-  lane is tinted where it lands, and the list stays where you were working. The toast at the foot
+- Nothing scrolls to a task you just moved, or to one added from the list's own Add task row. A
+  task sent to another day, group, or Board lane is tinted where it lands, and the list stays
+  where you were working. (The phone's New task sheet still scrolls to the task it made, so a task
+  saved out of sight does not look lost.) The toast at the foot
   of the screen says where it went, "Moved <task> to Tomorrow", with View, which opens the group,
   scrolls to the task, and puts focus on it, and Undo, which puts it back. It is a polite status
   message and takes no focus. Drags and arrow-key moves show no toast, since you watch the row go.
