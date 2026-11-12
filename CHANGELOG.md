@@ -3,6 +3,34 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## 2.10.0 (2026-11-12)
+
+No migration.
+
+- Nothing scrolls to a task you just added or moved. A task sent to another day, group, or Board
+  lane is tinted where it lands, and the list stays where you were working. The toast at the foot
+  of the screen says where it went, "Moved <task> to Tomorrow", with View, which opens the group,
+  scrolls to the task, and puts focus on it, and Undo, which puts it back. It is a polite status
+  message and takes no focus. Drags and arrow-key moves show no toast, since you watch the row go.
+- A task added from a group's Add task row, or from the phone's New task sheet, stays where it was
+  typed, at the end of its group, instead of jumping to the top when the row closes or the list
+  reloads. Tasks created by agents, imports, and the API still go first.
+- Text stays in line when an edit opens: the new task row types its name where the names above it
+  start and shows its date as a row's date cell does, renaming in place keeps the words where they
+  were, and a new Board card is typed after an empty circle, in line with the card titles.
+  e2e/alignment.spec.js measures each of these.
+- The due date picker's Add time and Repeat are rows of the quick dates' list, and a picked or
+  hovered row is a band inside its 44px target. "When is it due?" for a new task uses the same list,
+  with each date's weekday or day beside it.
+- Right-click the My tasks column header, or press Shift+F10 or the ContextMenu key from a control
+  in it, to show or hide columns, the same list as the toolbar's Columns button.
+- On a phone, a task's name has the whole width and wraps in full, and its due date sits on a line
+  under it; a task with no date shows a quiet Add date there. The open date picker survives a turn
+  across the 640px breakpoint without saving a half-typed time.
+- The desktop table is quieter: Source starts hidden (where a task came from is in its panel; a
+  device that saved its columns hides it once, and the Columns menu brings it back), the lines
+  between columns are softer, and group header bands are lighter.
+
 ## 2.9.0 (2026-11-11)
 
 No migration.
