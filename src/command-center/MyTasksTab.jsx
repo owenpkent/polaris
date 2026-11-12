@@ -172,6 +172,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable }),
     [visibleColumns, columns.widths, phone, reorderable]
   )
+  // The Add task row keeps its date button in a column of its own on a phone, which the task
+  // rows no longer have.
+  const inlineGridTemplate = useMemo(
+    () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable, inline: true }),
+    [visibleColumns, columns.widths, phone, reorderable]
+  )
 
   const beginRequest = useRequestGuard()
   // The positions of moves whose writes are still on their way (handleReorder), laid over every
@@ -715,6 +721,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             collapsed={isCollapsed('due', g.id)}
             onToggleCollapse={() => toggleGroup('due', g.id)}
             {...commonRowProps}
+            inlineGridTemplate={inlineGridTemplate}
             addRow={addRow}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
             onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}
@@ -825,7 +832,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               {inlineAdd?.groupId === null && (
                 <>
                   {heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
-                  <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                  <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={inlineGridTemplate} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
                 </>
               )}
             </div>

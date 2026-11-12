@@ -138,7 +138,11 @@ describe('buildGridTemplate', () => {
 
   test('returns the fixed phone template regardless of columns or widths', () => {
     const template = buildGridTemplate(COLUMN_DEFS, widths, { phone: true })
-    expect(template).toBe('44px minmax(0, 1fr) 120px')
+    expect(template).toBe('44px minmax(0, 1fr)')
+  })
+
+  test('the phone Add task row keeps a column for its date button', () => {
+    expect(buildGridTemplate(COLUMN_DEFS, widths, { phone: true, inline: true })).toBe('44px minmax(0, 1fr) 120px')
   })
 
   test('treats a missing options argument as non-phone', () => {
@@ -407,7 +411,8 @@ describe('buildGridTemplate with the reorder handle', () => {
   test('adds a second 44px track before the columns, on the desktop and on the phone', () => {
     const nameCol = COLUMN_DEFS.find((c) => c.id === 'name')
     expect(buildGridTemplate([nameCol], { name: 300 }, { handle: true })).toBe('44px 44px minmax(116px, 300px) minmax(0, 1fr)')
-    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true })).toBe('44px 44px minmax(0, 1fr) 112px')
-    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: false })).toBe('44px minmax(0, 1fr) 120px')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true })).toBe('44px 44px minmax(0, 1fr)')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true, inline: true })).toBe('44px 44px minmax(0, 1fr) 112px')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: false })).toBe('44px minmax(0, 1fr)')
   })
 })

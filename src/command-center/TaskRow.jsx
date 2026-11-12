@@ -44,7 +44,7 @@ const cellStyle = {
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
 // is the row-tall click target (44px, or 32px under Compact density).
-function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu' }) {
+function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu', fit = false }) {
   return (
     <button
       type="button"
@@ -59,7 +59,11 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
       style={{
         ...cellStyle,
         display: 'block',
-        width: '100%',
+        // `fit`: the phone's due date under the name, which is as wide as its chip and no wider.
+        width: fit ? 'auto' : '100%',
+        maxWidth: '100%',
+        // A short label ("Fri") must not shrink the target below the row's height (44px, 32px compact).
+        minWidth: fit ? 'var(--row)' : undefined,
         height: '100%',
         minHeight: 'var(--row)',
         textAlign: 'left',
@@ -86,8 +90,9 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const repeat = repeatLabel(task.recurrence)
 
   return (
-    <div style={{ position: 'relative', minWidth: 0 }}>
+    <div className="due-cell" style={{ position: 'relative', minWidth: 0 }}>
       <CellButton
+        fit={phone}
         innerRef={btnRef}
         ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
         hasPopup="dialog"
@@ -108,6 +113,10 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
               </>
             ) : due.text}
           </span>
+        ) : phone ? (
+          // A task with no date still needs a way to set one, and there is no column to tap now:
+          // a quiet "Add date" with no fill, so a list of dateless tasks is not a list of chips.
+          <span className="due-chip is-empty">Add date</span>
         ) : (
           due.text
         )}
@@ -409,13 +418,8 @@ export default function TaskRow({
         fontSize: '0.9375rem',
         color: done ? 'var(--t2)' : 'var(--t1)',
         textDecoration: done ? 'line-through' : 'none',
-        overflow: 'hidden',
-        // Two lines at most; the full name is the button's accessible name and the panel's title.
-        // No padding here: inside an overflow-hidden line clamp, padding lets the top of the
-        // third line show through. The button pads instead (.mytasks-title under 640px).
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
+        // The name wraps to as many lines as it needs and is never shortened; the button pads
+        // it (.mytasks-title under 640px).
       }
     : {
         ...cellStyle,
@@ -498,6 +502,9 @@ export default function TaskRow({
         </span>
       </span>
 
+      {/* One instance in one place for both tiers: it is the Due date column above 640px and, by
+          CSS (.due-cell), a line under the name on a phone. Moving it in the tree instead would
+          unmount an open picker when a phone turns across the breakpoint and run its save on leave. */}
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
