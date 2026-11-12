@@ -101,3 +101,38 @@ test.describe('Task context menu', { tag: ['@flow'] }, () => {
     await expect(cardIn('Doing')).toBeVisible()
   })
 })
+
+// The column header's right-click menu is the toolbar's Columns list. The phone tier has no header.
+test.describe('Column header context menu', { tag: ['@flow'] }, () => {
+  test('right-click on the header shows or hides columns, and stays open for the next', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('phone'), 'the phone tier has no column header')
+    await openView(page)
+    await page.getByRole('button', { name: 'Due date column menu' }).click({ button: 'right' })
+    const menu = page.getByRole('menu', { name: 'Show or hide columns' })
+    await expect(menu).toBeVisible()
+    // Not the column's own menu: a right-click is the columns list wherever it lands.
+    await expect(page.getByRole('menu', { name: 'Due date column menu' })).toHaveCount(0)
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Project' })).toBeChecked()
+    await menu.getByRole('menuitemcheckbox', { name: 'Project' }).click()
+    await expect(page.getByRole('button', { name: 'Project column menu' })).toHaveCount(0)
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Project' })).not.toBeChecked()
+    await menu.getByRole('menuitemcheckbox', { name: 'Project' }).click()
+    await expect(page.getByRole('button', { name: 'Project column menu' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+  })
+
+  test('Shift+F10 from a control in the header opens it, and Esc returns focus', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('phone'), 'the phone tier has no column header')
+    await openView(page)
+    const handle = page.getByRole('separator', { name: 'Resize Name column' })
+    await handle.focus()
+    await page.keyboard.press('Shift+F10')
+    const menu = page.getByRole('menu', { name: 'Show or hide columns' })
+    await expect(menu).toBeVisible()
+    await expect(menu.getByRole('menuitemcheckbox').first()).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(handle).toBeFocused()
+  })
+})

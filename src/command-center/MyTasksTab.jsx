@@ -18,7 +18,8 @@ import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
 import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
 import DueDateMenu from './DueDateMenu'
-import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
+import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate, columnMenuItems } from './columnsState'
+import { useTaskContextMenu } from './TaskContextMenu'
 import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
 import { planInsert } from './reorder'
@@ -128,6 +129,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
+  // A right-click on the column header (or Shift+F10 or the ContextMenu key from a control in it)
+  // opens the same Show or hide columns list as the toolbar's Columns button, at the pointer.
+  const { handlers: colheadMenuHandlers, menu: colheadMenu } = useTaskContextMenu({
+    getItems: () => columnMenuItems(columns.hidden, columns.setHidden),
+    label: 'Show or hide columns',
+  })
   const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
   const { view, setSort, setGroup, toggleFilter, clearFilters, resetSort } = useViewState()
 
@@ -699,7 +706,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
         <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="mytasks-colhead-sticky">
-            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
+            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }} {...colheadMenuHandlers}>
               {reorderable && <div />}
               <div />
               {visibleColumns.map((col) => (
@@ -715,6 +722,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
                 />
               ))}
             </div>
+            {colheadMenu}
           </div>
 
           {listLoading ? (

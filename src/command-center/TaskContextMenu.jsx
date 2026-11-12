@@ -77,7 +77,8 @@ export function taskMenuItems({ task, dueBounds, pending, onOpen, onToggleComple
 }
 
 // Handlers for a row or card and the menu to render beside it (never inside it, so the menu's own
-// events do not reach the row). `getItems` builds the items when the menu opens. The menu opens at
+// events do not reach the row). Nothing in it is about tasks: My tasks' column header uses it too,
+// for its Show or hide columns list. `getItems` builds the items when the menu opens. The menu opens at
 // the pointer for a right-click, and under the row for the keyboard; Esc returns focus to where it
 // was.
 export function useTaskContextMenu({ getItems, label }) {
