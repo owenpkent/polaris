@@ -18,10 +18,11 @@ import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
 import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
 import DueDateMenu from './DueDateMenu'
-import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
+import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate, columnMenuItems } from './columnsState'
+import { useTaskContextMenu } from './TaskContextMenu'
 import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
-import { planInsert } from './reorder'
+import { planInsert, positionAfter } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
 import { markChanged } from './useJustChanged'
 
@@ -128,6 +129,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
+  // A right-click on the column header (or Shift+F10 or the ContextMenu key from a control in it)
+  // opens the same Show or hide columns list as the toolbar's Columns button, at the pointer.
+  const { handlers: colheadMenuHandlers, menu: colheadMenu } = useTaskContextMenu({
+    getItems: () => columnMenuItems(columns.hidden, columns.setHidden),
+    label: 'Show or hide columns',
+  })
   const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
   const { view, setSort, setGroup, toggleFilter, clearFilters, resetSort } = useViewState()
 
@@ -330,18 +337,32 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // The inline row (InlineTaskInput.jsx) hands over the group's date, or the date and repeat
   // picked in its "When is it due?" step. The row stays open for the next task, as Asana's does;
   // Esc or leaving it empty closes it, and a click elsewhere adds what was typed and closes it.
+  // Under the manual sort a task added here goes last in the group it will show in, where it was
+  // typed, rather than first, where the store puts a new task: closing the row, or the list
+  // reloading, then leaves it where it was (reorder.js, positionAfter). Other sorts place it.
+  const endPositionFor = useCallback((fields) => {
+    if (!reorderable) return undefined
+    // Every task the list groups counts, subtasks included: a subtask is also a row of its own in
+    // its group, so a new task placed before one would move above it once the row closes.
+    const bounds = getDueBounds()
+    const group = groupIdFor(fields, view.group, bounds)
+    return positionAfter(tasks.filter((t) => groupIdFor(t, view.group, bounds) === group), tasks)
+  }, [reorderable, tasks, view.group])
+
   // The new task is held above the row (heldIds) only if this opening of the row is still the one.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
     if (dueAt) payload.dueAt = dueAt
     if (recurrence) payload.recurrence = recurrence
+    const position = endPositionFor({ dueAt, projectId: null, priority: 'none' })
+    if (position !== undefined) payload.position = position
     const created = await api.createTask(payload)
     const id = created?.task?.id
     markChanged(id)
     const seq = inlineAdd?.seq
     if (id) setInlineAdd((cur) => (cur && cur.seq === seq ? { ...cur, heldIds: [...cur.heldIds, id] } : cur))
     await fetchTasks()
-  }, [api, fetchTasks, inlineAdd])
+  }, [api, fetchTasks, inlineAdd, endPositionFor])
 
   // The sheet closes itself once this resolves, and only if it is still the opening that sent
   // the request (NewTaskSheet.jsx), so a slow create never closes a newer draft.
@@ -349,7 +370,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // new task's group is expanded before the list reloads, and the row is scrolled to once it is
   // there: a task saved out of sight looks like a task not saved.
   const [revealTaskId, setRevealTaskId] = useState(null)
-  const submitSheet = useCallback(async (payload) => {
+  const submitSheet = useCallback(async (fields) => {
+    const position = endPositionFor({ dueAt: null, projectId: null, priority: 'none', ...fields })
+    const payload = position === undefined ? fields : { ...fields, position }
     const { task } = await api.createTask(payload)
     if (task) {
       const groupId = groupIdFor(task, view.group, getDueBounds())
@@ -358,7 +381,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     markChanged(task?.id)
     await fetchTasks()
     if (task) setRevealTaskId(task.id)
-  }, [api, fetchTasks, ensureExpanded, view.group])
+  }, [api, fetchTasks, ensureExpanded, view.group, endPositionFor])
 
   useEffect(() => {
     if (!revealTaskId || loading) return
@@ -699,7 +722,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
         <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="mytasks-colhead-sticky">
-            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
+            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }} {...colheadMenuHandlers}>
               {reorderable && <div />}
               <div />
               {visibleColumns.map((col) => (
@@ -715,6 +738,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
                 />
               ))}
             </div>
+            {colheadMenu}
           </div>
 
           {listLoading ? (

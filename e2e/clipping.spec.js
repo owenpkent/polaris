@@ -445,7 +445,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       const pop = el.closest('[data-popover]')
       const box = pop.getBoundingClientRect()
       const inside = (node) => { const r = node.getBoundingClientRect(); return r.left >= box.left - 0.5 && r.right <= box.right + 0.5 }
-      const today = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Today')
+      const today = [...el.querySelectorAll('button')].find((b) => b.firstChild?.textContent.trim() === 'Today')
       return { scrollLeft: pop.scrollLeft, heading: inside(el.querySelector('h3')), today: inside(today) }
     })).toEqual({ scrollLeft: 0, heading: true, today: true })
     expect(await smallTargets(due, 'button, select')).toEqual([])

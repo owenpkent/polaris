@@ -11,6 +11,25 @@ export function nextMondayIso(now = new Date()) {
   return localIso(addDays(now, days))
 }
 
+function isoToDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// The quick dates both date pickers offer (this one and DueDateMenu.jsx), each with the hint a
+// desktop shows beside it: the weekday for Today and Tomorrow, the date for Next Monday, in the
+// browser's locale.
+export function quickDates(bounds) {
+  const monday = nextMondayIso()
+  const weekday = (iso) => isoToDate(iso).toLocaleDateString(undefined, { weekday: 'short' })
+  return [
+    { key: 'today', label: 'Today', value: bounds.today, hint: weekday(bounds.today) },
+    { key: 'tomorrow', label: 'Tomorrow', value: bounds.tomorrow, hint: weekday(bounds.tomorrow) },
+    { key: 'monday', label: 'Next Monday', value: monday, hint: isoToDate(monday).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) },
+    { key: 'none', label: 'No date', value: null, hint: null },
+  ]
+}
+
 // "When is it due?", shown once a new task's title is in (InlineTaskInput.jsx on a desktop, the
 // sheet's date step in NewTaskSheet.jsx on a phone), laid out as Asana's date picker is: the month,
 // then Repeats under it, with the next dates of the repeat tinted on the month. Picking a quick date
@@ -110,19 +129,16 @@ export default function AddDuePanel({ dueAt, onPick, onLeave, recurrence: recurr
     if (!next) setTime('')
     setShowTime(next)
   }
-  const chips = [
-    { key: 'today', label: 'Today', value: bounds.today },
-    { key: 'tomorrow', label: 'Tomorrow', value: bounds.tomorrow },
-    { key: 'monday', label: 'Next Monday', value: nextMondayIso() },
-    { key: 'none', label: 'No date', value: null },
-  ]
+  const chips = quickDates(bounds)
   return (
     <div ref={rootRef} className="add-due">
       <h3 id={headingId} className="add-due-title">When is it due?</h3>
-      <div className="sheet-chips add-due-chips" role="group" aria-label="Quick dates">
+      {/* Pills on a phone, a list with each date's hint on a desktop, as the due date picker has them. */}
+      <div className="due-quick add-due-chips" role="group" aria-label="Quick dates">
         {chips.map((chip) => (
-          <button key={chip.key} type="button" className="sheet-chip" aria-pressed={day === chip.value} onClick={() => select(chip.value)}>
-            {chip.label}
+          <button key={chip.key} type="button" className="due-quick-btn" aria-pressed={day === chip.value} onClick={() => select(chip.value)}>
+            <span>{chip.label}</span>
+            {chip.hint && <span className="due-quick-hint" aria-hidden="true">{chip.hint}</span>}
           </button>
         ))}
       </div>
@@ -153,7 +169,7 @@ export default function AddDuePanel({ dueAt, onPick, onLeave, recurrence: recurr
               <button type="button" className="btn" onClick={() => toggleTime(false)}>Remove time</button>
             </>
           ) : (
-            <button type="button" ref={addTimeRef} className="btn" onClick={() => toggleTime(true)}>
+            <button type="button" ref={addTimeRef} className="btn add-due-add-time" onClick={() => toggleTime(true)}>
               <Clock size={16} aria-hidden="true" />
               Add time
             </button>

@@ -1066,11 +1066,14 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   cursor: text;
 }
 .mytasks-title:hover:not(:disabled) { background: var(--bg-hover); }
+/* Its box is where the name's hover tint is (.mytasks-title: 4px out), so the words stay put
+   when the name turns into a box to type in. */
 .mytasks-title-input {
   flex: 1 1 auto;
   min-width: 0;
   height: calc(var(--row) - 8px);
-  padding: 0 8px;
+  margin-left: -5px;
+  padding: 0 4px;
   background: var(--bg);
   color: var(--t1);
   border: 1px solid var(--blue);
@@ -1496,20 +1499,28 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   transition: background 0.12s, color 0.12s;
 }
 .board-add-task:hover { background: var(--bg-hover); color: var(--t1); }
-.board-card.board-add-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+/* The new card is laid out as a card is: the empty circle in the check's column, and the name
+   typed bare where a card's title starts (4px into the face, .board-card-open), on the circle's
+   line. The error and the buttons go under the name. */
+.board-card.board-add-card { row-gap: 8px; padding-bottom: 10px; }
 .board-card.board-add-card:hover { background: var(--bg2); box-shadow: var(--shadow-1); }
+.board-add-check { grid-column: 1; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
 .board-add-title {
-  flex-shrink: 0;
+  grid-column: 2 / -1;
   width: 100%;
   min-height: var(--target);
-  padding: 11px 12px;
+  padding: 12px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
   font-size: 14px;
   line-height: 20px;
   resize: none;
   overflow: hidden;
 }
-.board-add-error { font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
-.board-add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.board-add-error { grid-column: 2 / -1; padding: 0 4px; font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
+.board-add-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 4px; }
 
 /* Board at phone width: a lane is sized to the viewport minus the page's two
    16px gutters (app-main-full's phone padding), the strip's own gap, and a
@@ -2368,7 +2379,13 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     row-gap: 12px;
   }
   .add-due-pop .add-due-title { grid-area: title; }
-  .add-due-pop .add-due-chips { grid-area: chips; flex-direction: column; align-items: stretch; align-self: start; }
+  /* The rows' words start under the heading and Repeats: each row is pulled left by its 4px edge
+     and 0.75rem padding, so only its highlight reaches past them. */
+  .add-due-pop .add-due-chips { grid-area: chips; flex-direction: column; flex-wrap: nowrap; align-items: stretch; align-self: start; gap: 2px; margin-left: calc(-0.75rem - 4px); }
+  .add-due-pop .add-due-add-time { margin-left: calc(-0.75rem - 4px); }
+  /* Add time reads as a row of the quick dates' list, as it does in the due date picker. */
+  .add-due-pop .add-due-add-time { border: 4px solid transparent; background: transparent; background-clip: padding-box; box-shadow: none; padding-inline: 0.75rem; font-weight: 400; font-size: 14px; }
+  .add-due-pop .add-due-add-time:hover:not(:disabled) { background: var(--bg-hover); border-color: transparent; }
   .add-due-pop .add-due > .cal { grid-area: cal; }
   .add-due-pop .add-due-repeat { grid-area: repeat; }
   .add-due-pop .add-due-foot { grid-area: foot; }
@@ -2385,7 +2402,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     grid-template-rows: auto auto 1fr auto;
   }
   .add-due-pop .add-due-foot { align-self: end; }
-  .add-due-pop .add-due-chips { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  /* Two dates to a line, so the list is no taller than the pills were. */
+  .add-due-pop .add-due-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }
@@ -2507,6 +2525,14 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     box-shadow: none;
     text-align: start;
   }
+  /* Add time and Repeat read as rows of the same list: no box, the icon where the dates' words
+     start, and a line above them. The line takes the place of the gap, so nothing moves. */
+  .due-pop > .due-pop-time { border-top: 1px solid var(--bd); padding-top: 11px; }
+  .due-pop .due-pop-wide { font-weight: 400; font-size: 14px; background: transparent; box-shadow: none; }
+  /* Each row keeps its 44px target, but its highlight is drawn 4px in from top and bottom, so a
+     picked or hovered row is a band in the list rather than a block. */
+  .due-quick-btn, .due-pop .due-pop-wide { border: 4px solid transparent; background-clip: padding-box; }
+  .due-pop .due-pop-wide:hover:not(:disabled) { background: var(--bg-hover); border-color: transparent; }
   .due-quick-btn:hover { background: var(--bg-hover); }
   .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); color: var(--blue); }
   .due-quick-btn:focus-visible { outline-offset: -2px; }
@@ -2565,25 +2591,53 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
    to hand it to the name box, so it draws no ring. */
 .inline-add-row:focus { outline: none; }
 .inline-add { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 12px; }
-.inline-add-due-cell { grid-column: 3; display: flex; align-items: center; min-width: 0; padding-right: 8px; }
+.inline-add-due-cell { grid-column: 3; align-self: stretch; display: flex; align-items: center; min-width: 0; padding: 0 8px 0 12px; border-left: 1px solid var(--bd); }
 .inline-add-due-anchor { display: flex; min-width: 0; max-width: 100%; }
+.inline-add-due-cell > .inline-add-due-anchor { flex: 1 1 auto; }
 .inline-add-due-anchor:focus { outline: none; }
 /* Under the row's cells, from the Name column on: our own words wrap, never cut short. */
 .inline-add-error { grid-column: 2 / -1; padding: 0 12px 8px 0; font-size: 0.8rem; color: var(--red); overflow-wrap: anywhere; }
+/* Bare text, so the typed name starts where the names above it do. The row takes the press for it
+   (InlineTaskInput.jsx), and its ring is drawn 4px out from the text: clear of the check circle,
+   and inside the row, so nothing clips it. */
 .inline-add-title {
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--target);
-  padding: 0 0.75rem;
-  border: 1px solid var(--bd-strong);
-  border-radius: var(--radius);
-  background: var(--bg2);
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
   color: var(--t1);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
-/* A long date and time wraps inside the Due date column rather than overflowing it. */
-.inline-add-due { flex: 0 1 auto; gap: 6px; min-width: 0; max-width: 100%; padding-left: 0.75rem; padding-right: 0.75rem; text-align: left; }
+.inline-add-row .inline-add-title:focus-visible { outline-offset: 4px; border-radius: 2px; }
+/* Drawn as a row's Due date cell is (CellButton in TaskRow.jsx): bare text in the date's colour,
+   starting where the dates below it start, the whole cell its target. A long date and time wraps
+   inside the column rather than overflowing it. */
+.inline-add-due {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--row);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.inline-add-due:disabled { color: var(--t-disabled); }
+/* With the Due date column hidden the date follows the name, where its target is its own: never
+   narrower than 44px, with room either side of the words so they do not touch the name or its
+   focus ring. The two share the Name column: the name box keeps at least half of it, and a long
+   date and time wraps in the rest rather than squeezing the name away when Name is narrowed. */
+.inline-add > .inline-add-title { min-width: 50%; }
+.inline-add > .inline-add-due-anchor { flex: 0 1 auto; min-width: var(--target); }
+.inline-add > .inline-add-due-anchor > .inline-add-due { min-width: var(--target); padding: 0 8px; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: var(--space-1) 0 var(--space-3); padding: var(--pad-panel); border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }

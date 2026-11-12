@@ -187,12 +187,12 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
   const classes = ['board-card']
   if (menuOpen) classes.push('is-menu-open')
   if (completing) classes.push('is-completing')
-  const { changed, ref: cardRef } = useJustChanged(task.id)
+  const changed = useJustChanged(task.id)
   if (changed) classes.push('just-changed')
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={cardRef} className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
+      <div className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
         <CardCheck
           task={task}
           pending={pending}
@@ -361,6 +361,11 @@ function LaneAddTask({ section, onCreate }) {
 
   return (
     <div ref={formRef} className="board-card board-add-card" onBlur={handleBlur}>
+      {/* The empty circle a card has, so the name is typed where the card's title will be. A press
+          on it keeps focus in the name rather than leaving the card. */}
+      <span aria-hidden="true" className="board-add-check" onMouseDown={(e) => e.preventDefault()}>
+        <span className="task-check-circle" />
+      </span>
       <textarea
         ref={fitRef}
         rows={1}

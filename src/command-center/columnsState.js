@@ -55,6 +55,19 @@ function clampWidth(col, width) {
 }
 
 // Widths and hidden-state for every column, persisted to localStorage.
+// "Show or hide columns": a tick for each column that can be hidden, which stays open while the
+// owner ticks several. The toolbar's Columns button and a right-click on the column header
+// (MyTasksTab.jsx) open the same list.
+export function columnMenuItems(hidden, setHidden) {
+  return COLUMN_DEFS.filter((c) => c.canHide).map((c) => ({
+    key: c.id,
+    label: c.label,
+    checked: !hidden[c.id],
+    keepOpen: true,
+    onSelect: () => setHidden(c.id, !hidden[c.id]),
+  }))
+}
+
 export function useColumnsState() {
   const [state, setState] = useState(() => {
     const base = defaultState()

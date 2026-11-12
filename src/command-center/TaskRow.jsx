@@ -358,7 +358,7 @@ export default function TaskRow({
   // ends it at once.
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
-  const { changed, ref: rowRef } = useJustChanged(task.id)
+  const changed = useJustChanged(task.id)
 
   const check = (
     <button
@@ -441,7 +441,6 @@ export default function TaskRow({
   return (
     <>
     <div
-      ref={rowRef}
       {...menuHandlers}
       className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${changed ? ' just-changed' : ''}${rowClass}`}
       data-task-id={depth === 0 ? task.id : undefined}
