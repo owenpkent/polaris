@@ -2631,6 +2631,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   overflow-wrap: anywhere;
 }
 .inline-add-due:disabled { color: var(--t-disabled); }
+/* With the Due date column hidden the date follows the name, where its target is its own: never
+   narrower than 44px, never pressed narrower by a long name, and with room either side of the
+   words so they do not touch the name or its focus ring. */
+.inline-add > .inline-add-due-anchor { flex: 0 0 auto; }
+.inline-add > .inline-add-due-anchor > .inline-add-due { min-width: var(--target); padding: 0 8px; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: var(--space-1) 0 var(--space-3); padding: var(--pad-panel); border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }

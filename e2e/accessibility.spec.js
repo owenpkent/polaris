@@ -91,6 +91,27 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     expect(await smallTargets(await openNavigation(page, testInfo))).toEqual([])
   })
 
+  // The new task row's date is bare text, so with the Due date column hidden, where it follows the
+  // name, its target is its own and must not shrink to the width of a short date.
+  test('the new task row, with and without the Due date column', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('phone'), 'the inline Add task row is a desktop control')
+    await openView(page)
+    for (const hidden of [false, true]) {
+      if (hidden) {
+        await page.getByRole('button', { name: 'Columns', exact: true }).click()
+        await page.getByRole('menu', { name: 'Show or hide columns' }).getByRole('menuitemcheckbox', { name: 'Due date' }).click()
+        await page.keyboard.press('Escape')
+      }
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      const input = page.getByRole('textbox', { name: 'New task name' })
+      // A name long enough to press on the date beside it.
+      await input.fill(hidden ? 'A new task with a name long enough to fill the row and press on the date beside it' : 'Short')
+      await expect(page.getByRole('button', { name: 'Due date: Today' })).toBeVisible()
+      expect(await smallTargets(page.locator('main'), 'button[aria-label^="Due date"]'), hidden ? 'Due date column hidden' : 'Due date column shown').toEqual([])
+      await input.press('Escape')
+    }
+  })
+
   test('inbox Accept and Reject, and the accept form buttons', async ({ page }) => {
     await openView(page, 'inbox')
     expect(await smallTargets(page.locator('main'), 'button')).toEqual([])
