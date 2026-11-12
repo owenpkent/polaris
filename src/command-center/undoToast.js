@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
 
-// The "Completed <task>" toast (UndoToast.jsx). The list and the board call showCompleted after a
-// task is completed; a newer call replaces the one on screen. The undo callback is the caller's
+// The toast near the foot of the screen (UndoToast.jsx): "Completed <task>", which the list and the
+// board show after a task is completed, or "Moved <task> to <where>" (showMoved). A newer toast
+// replaces the one on screen. The undo callback is the caller's
 // own reopen path, so nothing here talks to the server. It rejects when the reopen fails, and this
 // store, not the tab, keeps that failure: the tab may be gone by then. A failure stays beside the
 // current toast and never replaces it, since a reopen can fail after another task was completed.
@@ -16,7 +17,30 @@ function set(next) {
 }
 
 export function showCompleted(title, undo) {
-  set([...toasts.filter((t) => t.failed), { id: nextId++, title: title || 'task', undo, failed: false }])
+  show({ kind: 'completed', title: title || 'task', undo })
+}
+
+// "Moved <task> to <where>", after the owner's own change sends a task to another group or lane,
+// which nothing scrolls to (useJustChanged.js). `view` shows the task where it went and `undo`
+// puts it back; both are the tab's own, so the tab clears its move toasts when it goes
+// (dismissMoved), and a toast never acts on a list that is not there.
+export function showMoved({ title, where, undo, view }) {
+  show({ kind: 'moved', title: title || 'task', where, undo, view })
+}
+
+function show(toast) {
+  set([...toasts.filter((t) => t.failed), { ...toast, id: nextId++, failed: false }])
+}
+
+// View: the toast goes, and the tab shows the task.
+export function runView(toast) {
+  dismissToast(toast.id)
+  toast.view?.()
+}
+
+export function dismissMoved() {
+  const gone = (t) => t.kind === 'moved' && !t.failed
+  if (toasts.some(gone)) set(toasts.filter((t) => !gone(t)))
 }
 
 // Undo, or Retry after a failed one: the toast goes at once, and a failure comes back on its own.

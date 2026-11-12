@@ -775,6 +775,23 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
     await expectNothingCutOff(page)
   })
 
+  // The move toast carries two buttons, View and Undo, beside a long title and where it went.
+  test('a move toast with a long title fits, View and Undo whole', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 120, y: 10 } })
+    await page.getByRole('menu', { name: `Actions for ${title}` }).getByRole('menuitem', { name: 'No due date' }).click()
+    const undo = page.getByRole('button', { name: `Undo moving ${title} to No due date` })
+    await expect(undo).toBeVisible()
+    await undo.hover() // holds the toast's timer
+    const toast = page.getByRole('status').filter({ has: undo })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    await expect(page.getByRole('button', { name: `View ${title} in No due date` })).toBeInViewport({ ratio: 1 })
+    await expect(undo).toBeInViewport({ ratio: 1 })
+  })
+
   test('a stack of failed Undos stays on screen, and every Retry and Dismiss can be reached', async ({ page, request }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const failing = []

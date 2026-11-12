@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import UndoToast, { TOAST_MS } from './UndoToast'
-import { resetUndoToast, showCompleted } from './command-center/undoToast'
+import { dismissMoved, resetUndoToast, showCompleted, showMoved } from './command-center/undoToast'
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -176,5 +176,50 @@ describe('UndoToast', () => {
     act(() => showCompleted('<img src=x onerror=alert(1)>', () => {}))
     expect(document.querySelector('.undo-toast img')).toBeNull()
     expect(screen.getByRole('status').textContent).toContain('<img src=x onerror=alert(1)>')
+  })
+})
+
+describe('UndoToast for a move', () => {
+  const moved = (over = {}) => showMoved({ title: 'Pay rent', where: 'Tomorrow', view: () => {}, undo: () => {}, ...over })
+
+  test('says where the task went, politely, with View and Undo, and moves no focus', () => {
+    render(<UndoToast />)
+    act(() => moved())
+    expect(screen.getByRole('status').textContent).toContain('Moved Pay rent to Tomorrow')
+    expect(screen.getByRole('button', { name: 'View Pay rent in Tomorrow' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Undo moving Pay rent to Tomorrow' })).toBeTruthy()
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  test('View runs the view callback once and removes the toast', () => {
+    const view = vi.fn()
+    render(<UndoToast />)
+    act(() => moved({ view }))
+    fireEvent.click(screen.getByRole('button', { name: 'View Pay rent in Tomorrow' }))
+    expect(view).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: /^View / })).toBeNull()
+  })
+
+  test('a failed Undo says it could not move the task back, with Retry and Dismiss', async () => {
+    const undo = vi.fn().mockRejectedValueOnce(new Error('down'))
+    render(<UndoToast />)
+    act(() => moved({ undo }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo moving Pay rent to Tomorrow' })) })
+    expect(screen.getByRole('status').textContent).toContain('Could not move back Pay rent')
+    expect(screen.getByRole('button', { name: 'Retry moving Pay rent back' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Dismiss, Pay rent stays in Tomorrow' })).toBeTruthy()
+  })
+
+  test('the tab going clears its move toast but keeps a failure and a completion', async () => {
+    render(<UndoToast />)
+    act(() => moved({ title: 'A', undo: vi.fn().mockRejectedValueOnce(new Error('down')) }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo moving A to Tomorrow' })) })
+    act(() => moved({ title: 'B' }))
+    act(() => dismissMoved())
+    expect(screen.queryByRole('button', { name: 'View B in Tomorrow' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Retry moving A back' })).toBeTruthy()
+    act(() => showCompleted('C', () => {}))
+    act(() => dismissMoved())
+    expect(screen.getByRole('button', { name: 'Undo completing C' })).toBeTruthy()
   })
 })

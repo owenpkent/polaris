@@ -6,7 +6,7 @@ import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
-import { showCompleted } from './undoToast'
+import { showCompleted, showMoved, dismissMoved } from './undoToast'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { markChanged, useJustChanged } from './useJustChanged'
 import { oneLine, useFitToText } from './useFitToText'
@@ -553,8 +553,12 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   // section" one -- this mirrors what the board already shows.
   const destinations = useMemo(() => columns.map((c) => c.section), [columns])
 
+  // A move from the card's Move menu or its right-click menu says where the card went, with View
+  // and Undo, since the lanes do not scroll after it (useJustChanged.js).
   const handleMove = useCallback(async (task, sectionId) => {
     const prevBoard = board
+    const from = task.sectionId || null
+    const pid = projectRef
     markChanged(task.id)
     // Optimistic move within the local board state.
     setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, sectionId } : t)) } : b))
@@ -567,8 +571,56 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     } catch (err) {
       setBoard(prevBoard)
       setError(err.message || 'Could not move that task.')
+      return
     }
-  }, [api, board])
+    // A board left while the move was on its way publishes nothing: its View would act on a
+    // board that is gone.
+    if ((sectionId || null) === from || !liveRef.current) return
+    const where = destinations.find((s) => (s.id === NO_SECTION ? null : s.id) === (sectionId || null))?.name || 'No section'
+    showMoved({
+      title: task.title,
+      where,
+      view: () => setViewCardId(task.id),
+      // Rejects on a failure, so the toast can offer Retry.
+      undo: async () => {
+        markChanged(task.id)
+        setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, sectionId: from } : t)) } : b))
+        try {
+          await api.moveTask(task.id, { section: from })
+        } finally {
+          await refreshIfShown(pid).catch(() => {})
+        }
+      },
+    })
+  }, [api, board, destinations, projectRef, refreshIfShown])
+
+  // View in the move toast: the card is scrolled to in its lane, tinted, and focused, since the
+  // owner asked to go there. A card the lane does not show (a completed one, with the lane's done
+  // cards folded away) opens in the panel instead.
+  const [viewCardId, setViewCardId] = useState(null)
+  useEffect(() => {
+    if (!viewCardId) return
+    const card = document.querySelector(`[data-task-id="${viewCardId}"]`)
+    // jsdom has no scrollIntoView.
+    if (card) {
+      card.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+      card.querySelector('.board-card-open')?.focus({ preventScroll: true })
+      markChanged(viewCardId)
+    } else {
+      setDetailTaskId(viewCardId)
+    }
+    setViewCardId(null)
+  }, [viewCardId])
+
+  // A move toast acts on this board, so it goes with it, and none is published after it has gone.
+  const liveRef = useRef(true)
+  useEffect(() => {
+    liveRef.current = true
+    return () => {
+      liveRef.current = false
+      dismissMoved()
+    }
+  }, [])
 
   // The list's completion (MyTasksTab.jsx): flip the card at once, keep a completed card in its
   // place while the check celebrates, then refetch, which files it under the lane's done toggle.
