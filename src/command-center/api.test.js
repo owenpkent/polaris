@@ -273,6 +273,8 @@ describe('createApiClient: every endpoint method', () => {
     ['getTask', (c) => c.getTask('t1'), '/api/tasks/t1', 'GET', undefined],
     // A create carries the number after the last task in the copy (1 when the copy is empty).
     ['createTask', (c) => c.createTask({ title: 'New' }), '/api/tasks', 'POST', { title: 'New', position: 1 }],
+    // A caller's own number wins: My tasks puts a task it adds at the end of its group.
+    ['createTask (own position)', (c) => c.createTask({ title: 'New', position: 7.5 }), '/api/tasks', 'POST', { title: 'New', position: 7.5 }],
     ['updateTask', (c) => c.updateTask('t1', { title: 'Upd' }), '/api/tasks/t1', 'PATCH', { title: 'Upd' }],
     ['completeTask', (c) => c.completeTask('t1'), '/api/tasks/t1/complete', 'POST', undefined],
     ['reopenTask', (c) => c.reopenTask('t1'), '/api/tasks/t1/reopen', 'POST', undefined],

@@ -517,6 +517,25 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 })
   }
 
+  // The store puts a new task first; one added from the list's own row stays where it was typed,
+  // at the end of its group, when the row closes and after a reload.
+  test('a task added from the row stays at the end of its group when the row closes', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test added last ${testInfo.project.name}`
+    await openView(page)
+    await manualSort(page)
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await input.press('Enter')
+    await expect(rowEl(page, title)).toBeVisible()
+    await input.press('Escape')
+    const lastInToday = page.locator('[data-reorder-group="today"] [data-task-id]').last()
+    await expect(lastInToday).toContainText(title)
+    await openView(page)
+    await expect(lastInToday).toContainText(title)
+  })
+
   test('under the manual sort dragging a row onto Tomorrow sets its date and puts it at the top', async ({ page, request }, testInfo) => {
     // At the end of Today, just above Tomorrow's header (a new task goes first): from the top of
     // a long Today on a phone the drag would scroll the page and land under the header.
