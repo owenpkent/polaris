@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone, createTask, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
+import { openView, isPhone, createTask, clippedContent, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
 import { TOKEN } from './global-setup.js'
 
 const row = (page, title) => page.getByRole('button', { name: `Open ${title}`, exact: true })
@@ -751,7 +751,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the phone tier shows only Name and Due date')
+    test.skip(isPhone(testInfo), 'the phone tier shows only the name, with the due date under it')
     const title = await createTask(request, testInfo, 'priority')
     await openView(page)
     await page.getByRole('button', { name: `Change priority for ${title}` }).click()
@@ -761,7 +761,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Change priority for ${title}` })).toHaveText('Urgent')
   })
 
-  test('the phone tier has no column header and hides Columns: its two columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
+  test('the phone tier has no column header and hides Columns: its columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     await openView(page)
     for (const name of ['Name column menu', 'Due date column menu', 'Priority column menu']) {
@@ -769,6 +769,25 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     }
     await expect(page.getByRole('button', { name: 'Columns' })).toBeHidden()
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
+  })
+
+  test('on a phone a long name wraps whole and the due date sits under it, in the same row', async ({ page, request }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
+    await openView(page)
+    const rowBox = rowEl(page, title)
+    await expect(rowBox).toBeVisible()
+    expect(await clippedContent(page, rowBox)).toEqual([])
+    const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
+    const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
+    const whole = await rowBox.boundingBox()
+    // The name wraps (more than one line tall), and the date starts below its last line.
+    expect(rename.height).toBeGreaterThan(40)
+    expect(due.y).toBeGreaterThanOrEqual(rename.y + rename.height - 1)
+    // Same row, with the date's left edge on the name's, and a 44px target.
+    expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
+    expect(Math.abs(due.x - rename.x)).toBeLessThanOrEqual(6)
+    expect(due.height).toBeGreaterThanOrEqual(44)
   })
 })
 
