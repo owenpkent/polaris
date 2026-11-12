@@ -3,7 +3,7 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 2.9.0 (2026-11-11)
 
 No migration.
 
@@ -22,6 +22,17 @@ No migration.
   each with its weekday or date, and Remove time is a cross beside the time box. On a phone it
   rises from the bottom edge as a sheet over a dimmed page instead of covering the field it came
   from.
+- A tab left open in the background reloads itself onto a new build once the server serves one,
+  so it is current when you come back. It waits while a dialog or panel is open, a field holds
+  text, or a save is still on its way, and a visible tab is never reloaded under you. A New task
+  draft kept on closing the sheet survives the reload.
+- On My tasks, a row held by its handle under Sort: Manual lifts out: a raised copy follows the
+  pointer, the row fades in place, and the rows part around a dashed gap where it will land. A
+  hairline divides the columns after the name again, so the eye can run down a column. On a
+  phone every due chip is one size, with the day over the time when it has one. The add-due
+  popover goes side by side from 640px, so a scrollbar no longer drops it to the taller layout.
+- A rule's `matches` pattern reads a repeat count of any length as JavaScript's RegExp does
+  (`{0006}` is six), and a count above 100 written with more digits is refused like any other.
 - In the Android app, the navigation drawer keeps its Settings row above the system's
   navigation bar instead of drawing it under the buttons or the gesture bar.
 - On a phone, the tab bar and the New task button step aside while the on-screen keyboard is
