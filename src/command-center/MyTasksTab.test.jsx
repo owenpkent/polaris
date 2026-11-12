@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import MyTasksTab from './MyTasksTab'
 import { BREAKPOINT_QUERIES } from './columnsState'
 import { getDueBounds } from './dueDates'
+import UndoToast from '../UndoToast'
+import { resetUndoToast } from './undoToast'
 
 const api = {}
 let connected = true
@@ -837,5 +839,41 @@ describe('MyTasksTab Today group', () => {
     render(<MyTasksTab />)
     await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
     expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+  })
+})
+
+describe('MyTasksTab move toast', () => {
+  async function moveSoloToNoDate() {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    api.listTasks.mockResolvedValue({ tasks: [{ id: 's', title: 'Solo', status: 'open', priority: 'none', dueAt: bounds.today, projectId: null }] })
+    let finish
+    api.updateTask = vi.fn(() => new Promise((resolve) => { finish = () => resolve({ task: {} }) }))
+    const view = render(<MyTasksTab />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change due date for Solo' }))
+    const pop = await screen.findByRole('dialog', { name: 'Due date for Solo' })
+    fireEvent.click(within(pop).getByRole('button', { name: 'No date' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('s', { dueAt: null }))
+    return { view, finish: () => finish() }
+  }
+
+  afterEach(() => resetUndoToast())
+
+  test('a move that lands while the list is shown says where the task went', async () => {
+    const { finish } = await moveSoloToNoDate()
+    render(<UndoToast />)
+    await act(async () => { finish() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View Solo in No due date' })).toBeTruthy())
+  })
+
+  // The owner left My tasks while the write was on its way: a toast then would offer a View that
+  // acts on a list that is gone.
+  test('a move that lands after the list has gone publishes no toast', async () => {
+    const { view, finish } = await moveSoloToNoDate()
+    view.unmount()
+    render(<UndoToast />)
+    await act(async () => { finish() })
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: /^View Solo/ })).toBeNull()
   })
 })

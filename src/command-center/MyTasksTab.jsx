@@ -448,7 +448,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       return
     }
     const where = from !== null && from !== to ? groupLabelFor(to, view.group, projectNameById) : null
-    if (!where) return
+    // A list left while the write was on its way publishes nothing: its View would act on a list
+    // that is gone.
+    if (!where || !liveRef.current) return
     // Undo writes back the fields the edit changed, as they were; it rejects on a failure, so the
     // toast can say so and offer Retry.
     const before = Object.fromEntries(Object.keys(patch).map((key) => [key, task[key] ?? null]))
@@ -488,8 +490,15 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     setViewTaskId(null)
   }, [viewTaskId, loading])
 
-  // A move toast acts on this list, so it goes with it.
-  useEffect(() => () => dismissMoved(), [])
+  // A move toast acts on this list, so it goes with it, and none is published after it has gone.
+  const liveRef = useRef(true)
+  useEffect(() => {
+    liveRef.current = true
+    return () => {
+      liveRef.current = false
+      dismissMoved()
+    }
+  }, [])
 
   // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
   // position, shown at once, and its moves are sent one after another. Moves queue behind each

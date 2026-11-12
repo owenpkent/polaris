@@ -573,7 +573,9 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
       setError(err.message || 'Could not move that task.')
       return
     }
-    if ((sectionId || null) === from) return
+    // A board left while the move was on its way publishes nothing: its View would act on a
+    // board that is gone.
+    if ((sectionId || null) === from || !liveRef.current) return
     const where = destinations.find((s) => (s.id === NO_SECTION ? null : s.id) === (sectionId || null))?.name || 'No section'
     showMoved({
       title: task.title,
@@ -593,20 +595,32 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   }, [api, board, destinations, projectRef, refreshIfShown])
 
   // View in the move toast: the card is scrolled to in its lane, tinted, and focused, since the
-  // owner asked to go there.
+  // owner asked to go there. A card the lane does not show (a completed one, with the lane's done
+  // cards folded away) opens in the panel instead.
   const [viewCardId, setViewCardId] = useState(null)
   useEffect(() => {
     if (!viewCardId) return
     const card = document.querySelector(`[data-task-id="${viewCardId}"]`)
     // jsdom has no scrollIntoView.
-    card?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
-    card?.querySelector('.board-card-open')?.focus({ preventScroll: true })
-    if (card) markChanged(viewCardId)
+    if (card) {
+      card.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+      card.querySelector('.board-card-open')?.focus({ preventScroll: true })
+      markChanged(viewCardId)
+    } else {
+      setDetailTaskId(viewCardId)
+    }
     setViewCardId(null)
   }, [viewCardId])
 
-  // A move toast acts on this board, so it goes with it.
-  useEffect(() => () => dismissMoved(), [])
+  // A move toast acts on this board, so it goes with it, and none is published after it has gone.
+  const liveRef = useRef(true)
+  useEffect(() => {
+    liveRef.current = true
+    return () => {
+      liveRef.current = false
+      dismissMoved()
+    }
+  }, [])
 
   // The list's completion (MyTasksTab.jsx): flip the card at once, keep a completed card in its
   // place while the check celebrates, then refetch, which files it under the lane's done toggle.

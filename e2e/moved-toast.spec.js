@@ -47,6 +47,21 @@ test.describe('the toast after a move', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: /^View / })).toHaveCount(0)
   })
 
+  // A done card moved into a lane whose done cards are folded away is not on the board to go to,
+  // so View opens it in the panel.
+  test('View on a done card that lands folded away opens it in the panel', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'moved done card', { project: 'ui-test-project', section: 'Backlog', dueAt: null, status: 'done' })
+    await openView(page, 'board')
+    const backlog = page.getByRole('region', { name: 'Backlog', exact: true })
+    await backlog.getByRole('button', { name: /^Show \d+ done$/ }).click()
+    await page.getByRole('button', { name: `Move ${title}`, exact: true }).click()
+    await page.getByRole('menu', { name: `Move ${title}` }).getByRole('menuitem', { name: 'Doing' }).click()
+    await page.getByRole('button', { name: `View ${title} in Doing` }).click()
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await expect(panel).toBeVisible()
+    await expect(panel).toContainText(title)
+  })
+
   // At this width the Board shows a lane and part of the next, so the third starts off screen.
   test('a card moved to a lane off to the side says so, and View scrolls to it', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'moved card', { project: 'ui-test-project', section: 'Backlog', dueAt: null })
