@@ -1105,8 +1105,7 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 /* On a phone the name cell is a small grid: the name and the panel button share the first line,
    the name wrapping to as many lines as it needs and the button keeping its 44px at the right,
-   Waiting and the count go on a line of their own under the name, and the due date (.due-cell,
-   which the row puts here on a phone instead of in a column) on a line under that, at the left. So a row is as tall as its
+   and Waiting and the count go on a line of their own under the name. So a row is as tall as its
    name and never carries an empty band with a lone button in it, and the button never leaves the cell. A
    cell too narrow for even 44px of name beside the button stacks instead: name, then its
    followers, then the button at the right. */
@@ -1118,13 +1117,32 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   /* Waiting and the count wrap within the room they have, so neither leaves the cell. */
   .mytasks-name-grid > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; min-width: 0; max-width: 100%; }
   .mytasks-name-grid .subtask-toggle { max-width: 100%; }
-  .mytasks-name-grid > .due-cell { grid-column: 1 / -1; grid-row: 3; justify-self: start; max-width: 100%; }
   /* Measured on the body: the room after a nested row's check and indent. */
   @container (max-width: 100px) {
     .mytasks-name-grid { grid-template-columns: minmax(0, 1fr); }
     .mytasks-name-grid > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
-    .mytasks-name-grid > .due-cell { grid-row: 4; }
   }
+}
+/* On a phone the due date is the same cell that is the Due date column above 640px (one instance,
+   so an open picker survives a turn across the breakpoint), placed on a second grid row under the
+   name, in the name's column, its left edge on the name's. The check and the reorder handle span
+   both rows, so they stay centred on the whole row. The generic column rules (a rule line and
+   padding from the third cell on, stretch) do not apply to it. */
+@media (max-width: 640px) {
+  .mytasks-row > :not(.mytasks-name):not(.due-cell) { grid-row: 1 / span 2; }
+  .mytasks-row > .mytasks-name { grid-row: 1; }
+  .mytasks-grid.mytasks-row > .due-cell {
+    grid-row: 2;
+    grid-column: -2 / -1;
+    justify-self: start;
+    align-self: start;
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border-left: none;
+  }
+  /* A subtask row under the manual sort has no handle, so its name spans two columns: so does its date. */
+  .mytasks-reorderable .mytasks-row.is-nested > .due-cell { grid-column: 2 / span 2; }
 }
 /* The column header, stuck under the top bar. A phone has no column header: its columns are
    fixed (the check and the name, with the date under it), and Sort lives in the toolbar. */

@@ -633,6 +633,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             collapsed={isCollapsed('due', g.id)}
             onToggleCollapse={() => toggleGroup('due', g.id)}
             {...commonRowProps}
+            inlineGridTemplate={inlineGridTemplate}
             addRow={addRow}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
             onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}

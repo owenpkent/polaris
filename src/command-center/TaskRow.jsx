@@ -62,6 +62,8 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
         // `fit`: the phone's due date under the name, which is as wide as its chip and no wider.
         width: fit ? 'auto' : '100%',
         maxWidth: '100%',
+        // A short label ("Fri") must not shrink the target below the row's height (44px, 32px compact).
+        minWidth: fit ? 'var(--row)' : undefined,
         height: '100%',
         minHeight: 'var(--row)',
         textAlign: 'left',
@@ -88,7 +90,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const repeat = repeatLabel(task.recurrence)
 
   return (
-    <div className={phone ? 'due-cell' : undefined} style={{ position: 'relative', minWidth: 0 }}>
+    <div className="due-cell" style={{ position: 'relative', minWidth: 0 }}>
       <CellButton
         fit={phone}
         innerRef={btnRef}
@@ -496,14 +498,14 @@ export default function TaskRow({
           >
             <PanelRightOpen size={16} aria-hidden="true" />
           </button>
-          {/* On a phone the date is part of the name cell, on its own line under the name, so the
-              name has the whole row to wrap in. Above 640px it is the Due date column. */}
-          {phone && columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone api={api} />}
           </span>
         </span>
       </span>
 
-      {!phone && columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={false} api={api} />}
+      {/* One instance in one place for both tiers: it is the Due date column above 640px and, by
+          CSS (.due-cell), a line under the name on a phone. Moving it in the tree instead would
+          unmount an open picker when a phone turns across the breakpoint and run its save on leave. */}
+      {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
       )}

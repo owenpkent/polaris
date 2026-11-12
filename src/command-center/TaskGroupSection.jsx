@@ -27,6 +27,9 @@ export default function TaskGroupSection({
   projectOptions,
   visibleColumns,
   gridTemplateColumns,
+  // The Add task row's own template: on a phone it keeps a column for its date button, which a
+  // task row no longer has. Without one the button becomes an implicit auto column and shrinks.
+  inlineGridTemplate = gridTemplateColumns,
   phone,
   pendingIds,
   openTaskId,
@@ -93,7 +96,7 @@ export default function TaskGroupSection({
           </ReorderableRows>
 
           {inlineAdd && (
-            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+            <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={inlineGridTemplate} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
           {addRow && !inlineAdd && (
