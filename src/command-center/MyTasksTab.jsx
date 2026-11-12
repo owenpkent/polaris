@@ -9,7 +9,7 @@ import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
 import { TaskTree, indexSubtasks } from './TaskRow'
 import { completeExitDelay } from './CompleteBurst'
-import { showCompleted } from './undoToast'
+import { showCompleted, showMoved, dismissMoved } from './undoToast'
 import TaskListToolbar from './TaskListToolbar'
 import ColumnHeader from './ColumnHeader'
 import InlineTaskInput from './InlineTaskInput'
@@ -20,7 +20,7 @@ import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, with
 import DueDateMenu from './DueDateMenu'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate, columnMenuItems } from './columnsState'
 import { useTaskContextMenu } from './TaskContextMenu'
-import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
+import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, projectGroupLabel, priorityGroupLabel, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
 import { planInsert } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
@@ -70,6 +70,18 @@ function groupIdFor(task, mode, dueBounds) {
   if (mode === 'project') return projectGroupId(task)
   if (mode === 'priority') return priorityGroupId(task)
   return null
+}
+
+// What the group a task is in is called, for the toast that says where a moved task went.
+function groupLabelFor(groupId, mode, projectNameById) {
+  if (mode === 'due') return GROUP_ORDER.find((g) => g.id === groupId)?.label ?? null
+  if (mode === 'project') return projectGroupLabel(groupId, projectNameById)
+  if (mode === 'priority') return priorityGroupLabel(groupId)
+  return null
+}
+
+function reducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
 // `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
@@ -415,9 +427,17 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // Due date/Project/Priority quick edits from a TaskRow's inline dropdowns:
   // optimistic update, roll back and surface the error banner on failure,
   // then refetch either way (mirrors handleToggleComplete above).
+  // An edit that sends a task to another group (a new day, project, or priority, by the grouping
+  // shown) says so in the toast, with View and Undo, since nothing scrolls after it: the owner
+  // stays where they were working (useJustChanged.js). A subtask stays under its parent, so it
+  // never moves group.
   const handleQuickUpdate = useCallback(async (task, patch) => {
     setActionError(null)
     markChanged(task.id)
+    const bounds = getDueBounds()
+    const moved = { ...task, ...patch }
+    const from = task.parentId ? null : groupIdFor(task, view.group, bounds)
+    const to = from === null ? null : groupIdFor(moved, view.group, bounds)
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)))
     try {
       await api.updateTask(task.id, patch)
@@ -425,8 +445,51 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } catch (err) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)))
       setActionError(err.message || 'Could not update that task.')
+      return
     }
-  }, [api, fetchTasks])
+    const where = from !== null && from !== to ? groupLabelFor(to, view.group, projectNameById) : null
+    if (!where) return
+    // Undo writes back the fields the edit changed, as they were; it rejects on a failure, so the
+    // toast can say so and offer Retry.
+    const before = Object.fromEntries(Object.keys(patch).map((key) => [key, task[key] ?? null]))
+    showMoved({
+      title: task.title,
+      where,
+      view: () => {
+        ensureExpanded(view.group, to)
+        setViewTaskId(task.id)
+      },
+      undo: async () => {
+        markChanged(task.id)
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...before } : t)))
+        try {
+          await api.updateTask(task.id, before)
+        } finally {
+          await fetchTasks().catch(() => {})
+        }
+      },
+    })
+  }, [api, fetchTasks, view.group, projectNameById, ensureExpanded])
+
+  // View in the move toast: the task's group opens, the row is scrolled to and tinted, and focus
+  // goes to it, since the owner asked to go there. A task the filters now hide opens in the panel.
+  const [viewTaskId, setViewTaskId] = useState(null)
+  useEffect(() => {
+    if (!viewTaskId || loading) return
+    const row = document.querySelector(`[data-task-id="${viewTaskId}"]`)
+    if (row) {
+      // jsdom has no scrollIntoView.
+      row.scrollIntoView?.({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' })
+      row.querySelector('.mytasks-open')?.focus({ preventScroll: true })
+      markChanged(viewTaskId)
+    } else {
+      setDetailTaskId(viewTaskId)
+    }
+    setViewTaskId(null)
+  }, [viewTaskId, loading])
+
+  // A move toast acts on this list, so it goes with it.
+  useEffect(() => () => dismissMoved(), [])
 
   // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
   // position, shown at once, and its moves are sent one after another. Moves queue behind each

@@ -2254,6 +2254,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .undo-toast.is-failed { flex-wrap: wrap; }
 .undo-toast.is-failed .undo-toast-text { flex: 1 1 100%; padding-top: var(--space-2); }
 .undo-toast-actions { display: flex; gap: var(--gap-inline); margin-left: auto; }
+/* A move's View and Undo sit beside the words while those have about 14rem; in less (a long title,
+   a narrow phone) the buttons go to a line of their own under the words, at the right. */
+.undo-toast.is-moved { flex-wrap: wrap; }
+.undo-toast.is-moved .undo-toast-text { flex: 1 1 14rem; padding-block: var(--space-2); }
 @keyframes undo-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: none; opacity: 1; }

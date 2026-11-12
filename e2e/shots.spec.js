@@ -174,6 +174,19 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await shot(page, testInfo, 'mytasks', 'completed-toast', [], page.getByRole('status').filter({ has: undo }))
   })
 
+  // "Moved <task> to No due date" with View and Undo, after the row's menu sent it to another group.
+  test('mytasks: moved toast', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'toast moved shot')
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 120, y: 10 } })
+    await page.getByRole('menu', { name: `Actions for ${title}` }).getByRole('menuitem', { name: 'No due date' }).click()
+    const undo = page.getByRole('button', { name: `Undo moving ${title} to No due date` })
+    await expect(undo).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'moved-toast', [], page.getByRole('status').filter({ has: undo }))
+  })
+
   test('mytasks: undo failed toast', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'toast failed shot')
     await openView(page)

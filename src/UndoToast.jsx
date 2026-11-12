@@ -1,9 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { dismissToast, runUndo, useUndoToasts } from './command-center/undoToast'
+import { dismissToast, runUndo, runView, useUndoToasts } from './command-center/undoToast'
 
 export const TOAST_MS = 6000
 
-// "Completed <task>" with an Undo button, near the bottom of the screen (undoToast.js). The live
+// What a toast says, and its buttons' names, which carry the title so each is told apart.
+function toastWords({ kind, title, where, failed }) {
+  if (kind === 'moved') {
+    return failed
+      ? { lead: 'Could not move back', tail: '', retry: `Retry moving ${title} back`, dismiss: `Dismiss, ${title} stays in ${where}` }
+      : { lead: 'Moved', tail: `to ${where}`, undo: `Undo moving ${title} to ${where}` }
+  }
+  return failed
+    ? { lead: 'Could not reopen', tail: '', retry: `Retry reopening ${title}`, dismiss: `Dismiss, ${title} stays completed` }
+    : { lead: 'Completed', tail: '', undo: `Undo completing ${title}` }
+}
+
+// "Completed <task>" with an Undo button, or "Moved <task> to <where>" with View and Undo, near
+// the bottom of the screen (undoToast.js). The live
 // region is always mounted so a screen reader announces each new toast; focus is never moved
 // here. The timer restarts for each toast and waits while the pointer is over it or focus is in it.
 // A failed Undo has no timer: it says so, with Retry and Dismiss, until the owner chooses, and it
@@ -36,6 +49,8 @@ function FailureStack({ failures }) {
 
 function Toast({ toast }) {
   const { id, title, failed } = toast
+  const moved = toast.kind === 'moved'
+  const words = toastWords(toast)
   const [held, setHeld] = useState(false)
   const ref = useRef(null)
 
@@ -53,7 +68,7 @@ function Toast({ toast }) {
   return (
     <div
       ref={ref}
-      className={`undo-toast${failed ? ' is-failed' : ''}`}
+      className={`undo-toast${failed ? ' is-failed' : ''}${moved && !failed ? ' is-moved' : ''}`}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => { if (!ref.current?.contains(document.activeElement)) setHeld(false) }}
       onFocus={() => setHeld(true)}
@@ -66,19 +81,28 @@ function Toast({ toast }) {
       }}
     >
       <span className="undo-toast-text">
-        {failed ? 'Could not reopen' : 'Completed'} <span className="undo-toast-title">{title}</span>
+        {words.lead} <span className="undo-toast-title">{title}</span>{words.tail && ` ${words.tail}`}
       </span>
       {failed ? (
         <span className="undo-toast-actions">
-          <button type="button" className="btn undo-toast-btn" aria-label={`Retry reopening ${title}`} onClick={() => runUndo(toast)}>
+          <button type="button" className="btn undo-toast-btn" aria-label={words.retry} onClick={() => runUndo(toast)}>
             Retry
           </button>
-          <button type="button" className="btn undo-toast-btn" aria-label={`Dismiss, ${title} stays completed`} onClick={() => dismissToast(id)}>
+          <button type="button" className="btn undo-toast-btn" aria-label={words.dismiss} onClick={() => dismissToast(id)}>
             Dismiss
           </button>
         </span>
+      ) : moved ? (
+        <span className="undo-toast-actions">
+          <button type="button" className="btn undo-toast-btn" aria-label={`View ${title} in ${toast.where}`} onClick={() => runView(toast)}>
+            View
+          </button>
+          <button type="button" className="btn undo-toast-btn" aria-label={words.undo} onClick={() => runUndo(toast)}>
+            Undo
+          </button>
+        </span>
       ) : (
-        <button type="button" className="btn undo-toast-btn" aria-label={`Undo completing ${title}`} onClick={() => runUndo(toast)}>
+        <button type="button" className="btn undo-toast-btn" aria-label={words.undo} onClick={() => runUndo(toast)}>
           Undo
         </button>
       )}
