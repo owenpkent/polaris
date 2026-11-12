@@ -82,7 +82,8 @@ test.describe('chat panel mockup', { tag: ['@flow'] }, () => {
     await openView(page, 'mytasks', 'chat=mockup&open=1')
     const panelBox = await page.getByRole('dialog', { name: 'Ask Polaris' }).boundingBox()
     const listBox = await page.getByRole('toolbar', { name: 'Tasks' }).boundingBox()
-    const lastHeader = await page.getByRole('button', { name: 'Source column menu' }).boundingBox()
+    // The last column shown, whichever it is (Source starts hidden).
+    const lastHeader = await page.getByRole('button', { name: / column menu$/ }).last().boundingBox()
     expect(listBox.x + listBox.width).toBeLessThanOrEqual(panelBox.x)
     expect(lastHeader.x + lastHeader.width).toBeLessThanOrEqual(panelBox.x)
   })

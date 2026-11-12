@@ -9,13 +9,16 @@ import { useCallback, useEffect, useState } from 'react'
 // Source and Assignee, which aren't sortable) -- it lines up with SORT_FIELDS in viewState.js.
 // Assignee starts hidden (`defaultHidden`): shown by default it would take width from Name on
 // an ordinary window, and the Columns menu turns it on for an owner who hands tasks to agents.
+// Source starts hidden too: where a task came from is in its panel, and the column took width
+// from the name and the date for little. The Columns menu, or a right-click on the header,
+// brings either back.
 export const COLUMN_DEFS = [
   { id: 'name', label: 'Name', minWidth: 160, defaultWidth: 440, canHide: false, sortField: 'name' },
   { id: 'due', label: 'Due date', minWidth: 98, defaultWidth: 140, canHide: true, sortField: 'due' },
   { id: 'project', label: 'Project', minWidth: 90, defaultWidth: 180, canHide: true, sortField: 'project' },
   { id: 'assignee', label: 'Assignee', minWidth: 90, defaultWidth: 150, canHide: true, sortField: null, defaultHidden: true },
   { id: 'priority', label: 'Priority', minWidth: 88, defaultWidth: 110, canHide: true, sortField: 'priority' },
-  { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null },
+  { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null, defaultHidden: true },
 ]
 
 const MAX_WIDTH = 1200
@@ -28,7 +31,7 @@ function defaultState() {
     widths[col.id] = col.defaultWidth
     hidden[col.id] = Boolean(col.defaultHidden)
   }
-  return { widths, hidden }
+  return { widths, hidden, sourceDefault: true }
 }
 
 function loadColumns() {
@@ -73,10 +76,13 @@ export function useColumnsState() {
     const base = defaultState()
     const loaded = loadColumns()
     if (!loaded) return base
-    return {
-      widths: { ...base.widths, ...loaded.widths },
-      hidden: { ...base.hidden, ...loaded.hidden },
-    }
+    const hidden = { ...base.hidden, ...loaded.hidden }
+    // A saved state from before Source was hidden by default (no `sourceDefault`) hides it once,
+    // so the new default reaches a device that had saved its columns. Shown again after that, it stays.
+    if (!loaded.sourceDefault) hidden.source = true
+    const next = { widths: { ...base.widths, ...loaded.widths }, hidden, sourceDefault: true }
+    if (!loaded.sourceDefault) saveColumns(next)
+    return next
   })
 
   const commit = useCallback((updater) => {
