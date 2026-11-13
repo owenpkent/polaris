@@ -352,6 +352,10 @@ public class AppEndToEndTest {
         assertTrue("Name text is not the full title", app.truthy(nameText + ".textContent==="
             + WebAppDriver.quote(title)));
         assertTrue("Name button is cut off horizontally", app.truthy(name + ".scrollWidth<=" + name + ".clientWidth+1"));
+        // A line clamp keeps the whole title in textContent while showing two lines of it, so the
+        // name and its button must also show all of their height.
+        assertTrue("Name text is cut off vertically", app.truthy(nameText + ".scrollHeight<=" + nameText + ".clientHeight+1"));
+        assertTrue("Name button is cut off vertically", app.truthy(name + ".scrollHeight<=" + name + ".clientHeight+1"));
         assertTrue("Name does not wrap onto several lines", app.truthy(nameText + ".getBoundingClientRect().height>"
             + "1.5*parseFloat(getComputedStyle(" + nameText + ").lineHeight)"));
 
