@@ -118,6 +118,7 @@ Live updates:
 
 - **Changes from anywhere show up on their own.** My tasks, Inbox, Board, Goals, Projects, Checklists, Threads, Rules, Digest, and an open task panel check `GET /api/events` every 10 seconds and refetch when the newest event id moves. That covers edits from Claude Code over MCP, the CLI, sync jobs, and other browser tabs, all within about 10 seconds. Polling pauses while the browser tab is hidden and checks again as soon as it is visible.
 - **Your typing is kept.** When the task panel refreshes in the background, a field you have changed but not saved (title, notes, and the rest) keeps your text; only untouched fields take the new values.
+- **A tab left open updates itself.** After an update, a dashboard tab in the background still runs the build it loaded. While it is hidden it asks the server every five minutes which build it serves, and when that has changed it reloads, so it is current when you come back, on the same view. A tab you are looking at is never reloaded. The reload waits while anything could be lost: an open panel or dialog, a field holding text, or a save still on its way. A New task draft closed on the phone is kept through the reload.
 - **Same database only.** The dashboard sees what its server's database sees. The stdio MCP server opens `command-center/data/polaris.db` unless `CC_DB` says otherwise, so MCP writes made while the mockup is open land in the real database and do not appear in the mockup.
 
 Offline:
