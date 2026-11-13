@@ -663,8 +663,13 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Space')
     await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
     await page.keyboard.press('Escape')
-    // Tab goes on to the panel button, and Enter on it opens the task.
+    // Tab goes on to the panel button, and Enter on it opens the task. On a phone the date comes
+    // first, between the name and the panel button, as it does on the screen.
     await page.keyboard.press('Tab')
+    if (isPhone(testInfo)) {
+      await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toBeFocused()
+      await page.keyboard.press('Tab')
+    }
     await expect(open).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(panel).toBeVisible()
