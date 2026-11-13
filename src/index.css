@@ -2562,9 +2562,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   padding: 12px var(--due-pad);
 }
 .due-pop > :not(.cal) { margin-inline: calc(12px - var(--due-pad)); }
-/* The quick dates: pills that wrap on a phone, as the new task sheet has them; a list with each
-   date's weekday or day beside it on a desktop (below). */
-.due-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The quick dates: on a phone, pills of one size two to a line, their words centred, as the new
+   task sheet's date step has them (.add-due-chips), so Today, Tomorrow, Next Monday, and No date
+   are a block of four equal pills rather than four widths that wrap unevenly; on a desktop, a
+   list with each date's weekday or day beside it (below). */
+.due-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .due-quick-btn {
   min-height: var(--target);
   padding: 0 14px;
@@ -2613,7 +2615,7 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     width: auto;
   }
   .due-pop.due-pop-repeat-view { display: flex; width: calc(184px + 16px + 308px + 2 * var(--due-pad)); }
-  .due-pop > .due-quick { grid-area: chips; flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  .due-pop > .due-quick { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; gap: 2px; }
   .due-quick-btn {
     display: flex;
     align-items: center;
