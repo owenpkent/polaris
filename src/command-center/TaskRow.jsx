@@ -59,7 +59,7 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
       style={{
         ...cellStyle,
         display: 'block',
-        // `fit`: the phone's due date under the name, which is as wide as its chip and no wider.
+        // `fit`: the phone's due date beside the name, which is as wide as its chip and no wider.
         width: fit ? 'auto' : '100%',
         maxWidth: '100%',
         // A short label ("Fri") must not shrink the target below the row's height (44px, 32px compact).
@@ -88,6 +88,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const due = formatDueCell(task.dueAt, dueBounds)
   // A repeating task shows a small repeat glyph after its date; the name says how it repeats.
   const repeat = repeatLabel(task.recurrence)
+  const glyph = repeat ? <Repeat size={12} aria-hidden="true" className="repeat-glyph" /> : null
 
   return (
     <div className="due-cell" style={{ position: 'relative', minWidth: 0 }}>
@@ -102,25 +103,31 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         title={due.text || undefined}
       >
         {phone && due.text ? (
-          // The day and the time each stay whole, the time on its own line under the day.
+          // The day and the time each stay whole, the time on its own line under the day. The
+          // repeat glyph is inside the chip, after the day, so every chip in a list is one width
+          // and they line up whether or not a task repeats.
           <span
             className={due.time ? 'due-chip has-time' : 'due-chip'}
             style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
           >
             {due.time ? (
               <>
-                <span>{due.date}</span> <span>{due.time}</span>
+                <span>{due.date}{glyph}</span> <span>{due.time}</span>
               </>
-            ) : due.text}
+            ) : (
+              <>
+                {due.text}{glyph}
+              </>
+            )}
           </span>
         ) : phone ? (
-          // A task with no date still needs a way to set one, and there is no column to tap now:
-          // a quiet "Add date" with no fill, so a list of dateless tasks is not a list of chips.
+          // A task with no date still needs a way to set one: a quiet "Add date" with no fill,
+          // so a list of dateless tasks is not a list of chips.
           <span className="due-chip is-empty">Add date</span>
         ) : (
           due.text
         )}
-        {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
+        {!(phone && due.text) && glyph}
       </CellButton>
       <DueDateMenu
         anchorRef={btnRef}
@@ -442,6 +449,21 @@ export default function TaskRow({
     }),
   })
 
+  // Always shown, so a long name still leaves a target that opens the panel. Above 640px it is the
+  // right end of the name cell. On a phone it is a cell of the row, after the date, so the row
+  // reads name, date, button on one line (.mytasks-open in index.css).
+  const openButton = (
+    <button
+      type="button"
+      className="icon-btn mytasks-open"
+      aria-label={`Open ${task.title}`}
+      title="Open details"
+      onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
+    >
+      <PanelRightOpen size={16} aria-hidden="true" />
+    </button>
+  )
+
   return (
     <>
     <div
@@ -487,25 +509,17 @@ export default function TaskRow({
               )}
             </span>
           )}
-          {/* Always shown, at the right end of the name (on a phone, on the name's first line, with
-              Waiting and the count under it), so a long name still leaves a target that opens the panel. */}
-          <button
-            type="button"
-            className="icon-btn mytasks-open"
-            aria-label={`Open ${task.title}`}
-            title="Open details"
-            onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
-          >
-            <PanelRightOpen size={16} aria-hidden="true" />
-          </button>
+          {!phone && openButton}
           </span>
         </span>
       </span>
 
       {/* One instance in one place for both tiers: it is the Due date column above 640px and, by
-          CSS (.due-cell), a line under the name on a phone. Moving it in the tree instead would
-          unmount an open picker when a phone turns across the breakpoint and run its save on leave. */}
+          CSS (.due-cell), a chip at the right of the name's line on a phone (under the name on a
+          very narrow one). Moving it in the tree instead would unmount an open picker when a phone
+          turns across the breakpoint and run its save on leave. */}
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
+      {phone && openButton}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
       )}
