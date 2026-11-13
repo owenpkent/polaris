@@ -68,7 +68,7 @@ To try the dashboard without touching your real database, run `npm run mockup` f
 
 My tasks:
 
-- **Columns.** Drag the edge of a column header to resize it, or use the header menu (Wider, Narrower, Reset width) so resizing never needs a drag. Double-click an edge to reset. The header menu also sorts by that column and hides it; Columns in the toolbar shows hidden columns again. Widths and hidden columns are saved in the browser. Assignee and Source start hidden; where a task came from is in its panel.
+- **Columns.** Drag the edge of a column header to resize it, or use the header menu (Wider, Narrower, Reset width) so resizing never needs a drag. Double-click an edge to reset. The header menu also sorts by that column (not Assignee or Source, which have no order) and hides it; Columns in the toolbar shows hidden columns again. Widths and hidden columns are saved in the browser. Assignee and Source start hidden; where a task came from is in its panel.
 - **Toolbar.** Filter by readiness (Ready: what could be started now; Blocked: held by an unfinished task), project, goal, priority, source, and assignee (Unassigned, or any name the list holds); sort by due date, priority, project, name, or manual (your own order, below); group by due date, project, priority, or none. Filter, Sort, and Group are popovers, as in Asana: the button names what is applied ("Filter: 2", "Sort: Name" with its direction, "Group: Project") in a chip with an X that clears or resets it, and Clear or Reset sits in the popover. Choices are saved in the browser.
 - **Task menu.** Right-click a My tasks row or a Board card (or press Shift+F10 or the ContextMenu key with focus anywhere on it) for a menu at the pointer, or under the row for the keyboard: Open task, Complete or Reopen, Due (Today, Tomorrow, No due date, keeping any time of day), Priority, and Move to project on a row or Move to a section on a card. The arrow keys move through it and Esc closes it and returns focus. It only calls the row's own quick edits, so it adds no request, and a text field (the name while it is renamed) keeps the browser's menu.
 - **Column menu.** Right-click the My tasks column header (or press Shift+F10 or the ContextMenu key from a control in it) for Show or hide columns at the pointer, the same list as the toolbar's Columns button. It stays open while you tick several.
@@ -116,7 +116,7 @@ Task panel:
 
 Live updates:
 
-- **Changes from anywhere show up on their own.** My tasks, Inbox, Board, Goals, Projects, Checklists, Rules, Digest, and an open task panel check `GET /api/events` every 10 seconds and refetch when the newest event id moves. That covers edits from Claude Code over MCP, the CLI, sync jobs, and other browser tabs, all within about 10 seconds. Polling pauses while the browser tab is hidden and checks again as soon as it is visible.
+- **Changes from anywhere show up on their own.** My tasks, Inbox, Board, Goals, Projects, Checklists, Threads, Rules, Digest, and an open task panel check `GET /api/events` every 10 seconds and refetch when the newest event id moves. That covers edits from Claude Code over MCP, the CLI, sync jobs, and other browser tabs, all within about 10 seconds. Polling pauses while the browser tab is hidden and checks again as soon as it is visible.
 - **Your typing is kept.** When the task panel refreshes in the background, a field you have changed but not saved (title, notes, and the rest) keeps your text; only untouched fields take the new values.
 - **Same database only.** The dashboard sees what its server's database sees. The stdio MCP server opens `command-center/data/polaris.db` unless `CC_DB` says otherwise, so MCP writes made while the mockup is open land in the real database and do not appear in the mockup.
 
@@ -355,7 +355,7 @@ src/
 ## Development
 
 ```powershell
-npm test            # server tests (node:test), about 1,280 of them
+npm test            # server tests (node:test), about 1,480 of them
 npm run typecheck   # tsc --noEmit
 ```
 
