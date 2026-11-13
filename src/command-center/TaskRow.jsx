@@ -9,6 +9,7 @@ import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 import { PRIORITY_OPTIONS, taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
 import { useJustChanged } from './useJustChanged'
+import AddSubtaskRow from './AddSubtaskRow'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
 // medium (the default), so a pill always means a level was chosen.
@@ -546,7 +547,10 @@ export function indexSubtasks(tasks) {
 // A row and, once its subtask count is pressed, its open subtasks as rows under it, as Asana's
 // list shows them. A subtask keeps its own row in its own group as well; the ones shown here are
 // the parent's, in the parent's order. Which rows are open is kept per row and not stored.
-export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, reorder = null, rowClass = '', ...rowProps }) {
+// With `onAddSubtask(parent, title)`, the subtasks shown end with an "Add subtask" row
+// (AddSubtaskRow.jsx), except under an inbox task, which never has subtasks. The server sets no
+// depth limit, so the row is offered wherever the subtasks are shown (depth below MAX_SUBTASK_DEPTH).
+export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, reorder = null, rowClass = '', onAddSubtask, ...rowProps }) {
   const [expanded, setExpanded] = useState(false)
   const children = subtasksByParent?.get(task.id) || []
   const canExpand = children.length > 0 && depth < MAX_SUBTASK_DEPTH
@@ -576,8 +580,18 @@ export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, p
           projectNameById={projectNameById}
           pendingIds={pendingIds}
           openTaskId={openTaskId}
+          onAddSubtask={onAddSubtask}
         />
       ))}
+      {canExpand && expanded && onAddSubtask && task.status !== 'inbox' && (
+        <AddSubtaskRow
+          parent={task}
+          depth={depth + 1}
+          gridTemplateColumns={rowProps.gridTemplateColumns}
+          handleColumn={rowProps.handleColumn}
+          onAdd={onAddSubtask}
+        />
+      )}
     </>
   )
 }

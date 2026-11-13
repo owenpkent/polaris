@@ -131,6 +131,24 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await expectNothingCutOff(page)
   })
 
+  // The Add subtask row after the shown subtasks (AddSubtaskRow.jsx), at rest and with its box
+  // open on a long title: it keeps the subtasks' columns and its line closes.
+  test('the Add subtask row, at rest and open on a long name', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const title = await createTask(request, testInfo, `${WORDY} add subtask parent`)
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title)
+    const res = await request.post('/api/tasks', { headers, data: { title: `${WORDY} only subtask ${testInfo.project.name}`, parentId: parent.id } })
+    expect(res.ok()).toBeTruthy()
+    await openView(page)
+    await page.getByRole('button', { name: `1 open subtask of ${title}`, exact: true }).click()
+    const add = page.getByRole('button', { name: `Add subtask to ${title}`, exact: true })
+    await expect(add).toBeVisible()
+    await expectNothingCutOff(page)
+    await add.click()
+    await page.getByRole('textbox', { name: `New subtask of ${title}`, exact: true }).fill(`A new step${LONG_SUFFIX}${LONG_SUFFIX}`)
+    await expectNothingCutOff(page)
+  })
+
   test('the sort, filter, and group menus', async ({ page }) => {
     await openView(page)
     for (const name of ['Sort', 'Filter', 'Group']) {

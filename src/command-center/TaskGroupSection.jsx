@@ -36,6 +36,7 @@ export default function TaskGroupSection({
   onToggleComplete,
   onOpenTask,
   onQuickUpdate,
+  onAddSubtask,
   addRow,
   inlineAdd,
   onOpenInlineAdd,
@@ -87,6 +88,7 @@ export default function TaskGroupSection({
                 onToggleComplete={onToggleComplete}
                 onOpen={onOpenTask}
                 onQuickUpdate={onQuickUpdate}
+                onAddSubtask={onAddSubtask}
                 api={api}
                 handleColumn={handleColumn}
                 reorder={reorder}

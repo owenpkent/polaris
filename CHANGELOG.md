@@ -3,6 +3,12 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
+  press Enter to add it under that task, as many times as you like, and Esc closes the box. An
+  inbox item still has no subtasks.
+
 ## 2.10.0 (2026-11-12)
 
 No migration.

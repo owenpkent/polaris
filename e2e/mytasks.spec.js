@@ -166,6 +166,36 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(shown).toHaveCount(0)
   })
 
+  // The subtasks shown under a task end with an Add subtask row: Enter adds one and keeps the box
+  // open for the next, and Esc closes it.
+  test('Add subtask after the shown subtasks adds several under the task', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const parentTitle = await createTask(request, testInfo, 'add subtask parent')
+    const parent = (await (await request.get('/api/tasks?limit=1000', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    const existing = `${parentTitle} existing step`
+    expect((await request.post('/api/tasks', { headers, data: { title: existing, parentId: parent.id } })).ok()).toBeTruthy()
+    await openView(page)
+    const add = page.getByRole('button', { name: `Add subtask to ${parentTitle}`, exact: true })
+    await expect(add).toHaveCount(0)
+    const toggle = page.getByRole('button', { name: `1 open subtask of ${parentTitle}`, exact: true })
+    await toggle.click()
+    expect((await add.boundingBox()).height).toBeGreaterThanOrEqual(43.5)
+    await add.click()
+    const box = page.getByRole('textbox', { name: `New subtask of ${parentTitle}`, exact: true })
+    await expect(box).toBeFocused()
+    const added = [`${parentTitle} added one`, `${parentTitle} added two`]
+    for (const title of added) {
+      await box.fill(title)
+      await box.press('Enter')
+      await expect(page.getByRole('button', { name: `Open ${title}`, exact: true })).toBeVisible()
+      await expect(box).toHaveValue('')
+    }
+    await expect(page.getByRole('button', { name: `3 open subtasks of ${parentTitle}`, exact: true })).toHaveAttribute('aria-expanded', 'true')
+    await box.press('Escape')
+    await expect(box).toHaveCount(0)
+    await expect(add).toBeVisible()
+  })
+
   test('Add task asks when it is due, and a repeat and a day picked there are saved', async ({ page, request }, testInfo) => {
     test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
     const title = `UI test repeat add ${testInfo.project.name}`

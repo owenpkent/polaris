@@ -1047,6 +1047,35 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
 
+/* The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx): the Plus sits in a 44px
+   cell where a subtask's check is, and the words start where a subtask's name starts. */
+.add-subtask-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--t2);
+  text-align: left;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.add-subtask-btn:hover { background: var(--bg-hover); color: var(--t1); }
+.add-subtask-plus { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--target); height: var(--row); color: var(--t3); }
+.add-subtask-btn:hover .add-subtask-plus { color: var(--t1); }
+.add-subtask-row > .mytasks-name > .add-subtask-input { min-width: 0; flex: 1 1 auto; }
+.add-subtask-input:focus-visible { outline-offset: 4px; border-radius: 2px; }
+@media (max-width: 640px) {
+  .add-subtask-btn, .add-subtask-input { font-size: 0.9375rem; }
+}
+
 /* A row's name cell (TaskRow.jsx): the name, which is shortened when it must be, then Waiting
    and the subtask count, which never are. A subtask shown under its parent has its check here. */
 .mytasks-name { display: flex; align-items: center; gap: 6px; min-width: 0; container-type: inline-size; }
