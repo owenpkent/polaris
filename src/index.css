@@ -1107,49 +1107,63 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     .mytasks-name-body { flex-wrap: wrap; }
   }
 }
-/* On a phone the name cell is a small grid: the name and the panel button share the first line,
-   the name wrapping to as many lines as it needs and the button keeping its 44px at the right,
-   and Waiting and the count go on a line of their own under the name. So a row is as tall as its
-   name and never carries an empty band with a lone button in it, and the button never leaves the cell. A
-   cell too narrow for even 44px of name beside the button stacks instead: name, then its
-   followers, then the button at the right. */
+/* On a phone the name cell holds the name, which wraps to as many lines as it needs and is never
+   shortened, and under it Waiting and the subtask count on a line of their own. The date and the
+   button that opens the panel are cells of the row (below), not of this cell. */
 @media (max-width: 640px) {
   .mytasks-name-body { display: block; }
-  .mytasks-name-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
-  .mytasks-name-grid > .mytasks-title { grid-column: 1; grid-row: 1; justify-self: start; min-width: min(44px, 100%); }
-  .mytasks-name-grid > .mytasks-open { grid-column: 2; grid-row: 1; margin-left: 0; }
+  .mytasks-name-grid { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+  .mytasks-name-grid > .mytasks-title { justify-self: start; min-width: min(44px, 100%); }
   /* Waiting and the count wrap within the room they have, so neither leaves the cell. */
-  .mytasks-name-grid > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .mytasks-name-grid > .mytasks-name-meta { flex-wrap: wrap; min-width: 0; max-width: 100%; }
   .mytasks-name-grid .subtask-toggle { max-width: 100%; }
-  /* Measured on the body: the room after a nested row's check and indent. */
-  @container (max-width: 100px) {
-    .mytasks-name-grid { grid-template-columns: minmax(0, 1fr); }
-    .mytasks-name-grid > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
-  }
 }
-/* On a phone the due date is the same cell that is the Due date column above 640px (one instance,
-   so an open picker survives a turn across the breakpoint), placed on a second grid row under the
-   name, in the name's column, its left edge on the name's. The check and the reorder handle span
-   both rows, so they stay centred on the whole row. The generic column rules (a rule line and
-   padding from the third cell on, stretch) do not apply to it. */
+/* A phone row is one line where it can be: the name, the date chip at the right of the name's
+   line, as wide as its own words, and the panel button at the edge (columnsState.js builds the
+   tracks). A short name and its date take one row's height; a long name wraps beside the date,
+   which stays on the first line with the button. The date is the same cell that is the Due date
+   column above 640px (one instance, so an open picker survives a turn across the breakpoint).
+   The generic column rules (a rule line and padding from the third cell on, stretch) do not
+   apply to the date or the button. */
 @media (max-width: 640px) {
-  .mytasks-row > :not(.mytasks-name):not(.due-cell) { grid-row: 1 / span 2; }
-  .mytasks-row > .mytasks-name { grid-row: 1; }
   .mytasks-grid.mytasks-row > .due-cell {
-    grid-row: 2;
-    grid-column: -2 / -1;
-    justify-self: start;
+    grid-row: 1;
+    grid-column: -3 / -2;
+    justify-self: end;
     align-self: start;
     display: block;
     max-width: 100%;
-    padding: 0;
+    padding: 0 0 0 8px;
     border-left: none;
+  }
+  .mytasks-grid.mytasks-row > .mytasks-open {
+    grid-row: 1;
+    grid-column: -2 / -1;
+    align-self: start;
+    display: inline-flex;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 1px solid transparent;
+  }
+}
+/* A phone under 380px has too little room for a name beside its date: the date goes on a second
+   grid row under the name, in the name's column, its left edge on the name's, and its own track
+   is empty. The check and the reorder handle span both rows, so they stay centred on the whole
+   row; the panel button stays on the name's line. */
+@media (max-width: 379px) {
+  .mytasks-row > :not(.mytasks-name):not(.due-cell):not(.mytasks-open) { grid-row: 1 / span 2; }
+  .mytasks-row > .mytasks-name { grid-row: 1; }
+  .mytasks-grid.mytasks-row > .due-cell {
+    grid-row: 2;
+    grid-column: -4 / -3;
+    justify-self: start;
+    padding: 0;
   }
   /* A subtask row under the manual sort has no handle, so its name spans two columns: so does its date. */
   .mytasks-reorderable .mytasks-row.is-nested > .due-cell { grid-column: 2 / span 2; }
 }
 /* The column header, stuck under the top bar. A phone has no column header: its columns are
-   fixed (the check and the name, with the date under it), and Sort lives in the toolbar. */
+   fixed (the check, the name, its date, and the panel button), and Sort lives in the toolbar. */
 .mytasks-colhead-sticky { position: sticky; top: calc(56px + var(--safe-top)); z-index: 10; background: var(--bg); }
 @media (max-width: 640px) {
   .mytasks-colhead-sticky { display: none; }
@@ -2300,8 +2314,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 
 /* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
-   the chip only adds its soft background. It sits on its own line under the task name, as wide as
-   its text, its left edge on the name's. */
+   the chip only adds its soft background. It sits at the right of the task name's line, as wide
+   as its text (under the name, its left edge on the name's, on a phone under 380px). */
 .due-chip {
   display: inline-flex;
   align-items: center;
@@ -2328,6 +2342,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   line-height: 1.2;
   overflow: visible;
 }
+/* Compact rows are 32px, and a 32px chip on the name's line would touch the row's lines and the
+   chips above and below it: the chip is shorter, inside the same row-tall target. */
+:root[data-density='compact'] .due-chip { height: 24px; border-radius: 8px; }
+:root[data-density='compact'] .due-chip.has-time { height: auto; min-height: 24px; padding: 1px 12px; line-height: 1.1; }
 /* A task with no date: a quiet prompt, no fill, so it reads as a place to tap rather than a date. */
 .due-chip.is-empty { background: transparent; color: var(--t3); font-weight: 500; padding: 0; }
 .due-chip.has-time > span { white-space: nowrap; }

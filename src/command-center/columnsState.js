@@ -170,7 +170,7 @@ export function useNarrowBreakpoints() {
 // CSS) hiding Priority/Source while the task detail panel is open so Name
 // and Due date have room, and Project too when the window is narrowPanel or
 // less, since the sidebar and the panel then leave the list little width. On the phone tier the column set is fixed to
-// checkbox + Name (the date is under the name) regardless of the saved hidden state or an open
+// checkbox + Name (the date is beside the name, or under it on a very narrow phone) regardless of the saved hidden state or an open
 // panel -- there isn't room for anything else.
 export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOpen, narrowPanel = false }) {
   return COLUMN_DEFS.filter((col) => {
@@ -197,12 +197,14 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 // phone's due column gives up 8px to it, so the Name header (its label and 44px menu) still
 // fits at 320px, where the list is 288px wide.
 //
-// On the phone a task row has no Due date column: the date sits under the name inside the name
-// cell (TaskRow.jsx), so the template is the lead tracks and Name alone. The Add task row
-// (`inline`) is the exception: its date button is still a cell of its own, in a fixed column.
+// On the phone a task row is one line where it can be: the name, then the date as wide as its
+// own chip, then the button that opens the panel (TaskRow.jsx), so the template is the lead
+// tracks, Name taking the rest, and two tracks sized by what is in them. On a phone too narrow
+// for that the date goes under the name by CSS (.due-cell in index.css) and its track is empty.
+// The Add task row (`inline`) keeps its date button in a fixed column.
 export function buildGridTemplate(visibleColumns, widths, { phone, handle = false, inline = false } = {}) {
   const lead = handle ? '44px 44px' : '44px'
-  if (phone) return inline ? `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}` : `${lead} minmax(0, 1fr)`
+  if (phone) return inline ? `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}` : `${lead} minmax(0, 1fr) auto auto`
   // The handle column comes out of Name's minimum, so adding it never makes the narrowest list wider.
   const tracks = visibleColumns.map((col) => `minmax(${col.id === 'name' && handle ? col.minWidth - 44 : col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
   return [lead, ...tracks, 'minmax(0, 1fr)'].join(' ')

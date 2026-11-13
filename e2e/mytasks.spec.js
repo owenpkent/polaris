@@ -788,7 +788,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the phone tier shows only the name, with the due date under it')
+    test.skip(isPhone(testInfo), 'the phone tier shows only the name and its due date')
     const title = await createTask(request, testInfo, 'priority')
     await openView(page)
     await page.getByRole('button', { name: `Change priority for ${title}` }).click()
@@ -808,7 +808,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
   })
 
-  test('on a phone a long name wraps whole and the due date sits under it, in the same row', async ({ page, request }, testInfo) => {
+  test('on a phone a long name wraps whole and the due date sits on its first line, before the panel button', async ({ page, request }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
     await openView(page)
@@ -817,13 +817,18 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(await clippedContent(page, rowBox)).toEqual([])
     const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
     const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
+    const open = await row(page, title).boundingBox()
     const whole = await rowBox.boundingBox()
-    // The name wraps (more than one line tall), and the date starts below its last line.
+    // The name wraps (more than one line tall), and the date is on its first line, to its right.
     expect(rename.height).toBeGreaterThan(40)
-    expect(due.y).toBeGreaterThanOrEqual(rename.y + rename.height - 1)
-    // Same row, with the date's left edge on the name's, and a 44px target.
+    expect(Math.abs(due.y - rename.y)).toBeLessThanOrEqual(6)
+    expect(due.x).toBeGreaterThanOrEqual(rename.x + rename.width - 1)
+    // The panel button follows the date on that line, at the row's right edge.
+    expect(open.x).toBeGreaterThanOrEqual(due.x + due.width - 1)
+    expect(Math.abs(open.y - due.y)).toBeLessThanOrEqual(1)
+    expect(open.x + open.width).toBeLessThanOrEqual(whole.x + whole.width + 1)
+    // Same row, and a 44px target.
     expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
-    expect(Math.abs(due.x - rename.x)).toBeLessThanOrEqual(6)
     expect(due.height).toBeGreaterThanOrEqual(44)
   })
 })
