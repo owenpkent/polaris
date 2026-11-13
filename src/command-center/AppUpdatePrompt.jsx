@@ -6,6 +6,11 @@ import {
   APP_UPDATE_CHANGED_EVENT, APP_UPDATE_PROMPT_EVENT,
 } from './appAutoUpdate'
 
+// Whether a modal dialog other than the prompt itself is on the page.
+function otherModalOpen(own) {
+  return Array.from(document.querySelectorAll('[aria-modal="true"]')).some((el) => el !== own)
+}
+
 function Prompt() {
   const [running, setRunning] = useState(null)
   const [prefs, setPrefs] = useState(readAppUpdatePrefs)
@@ -31,8 +36,20 @@ function Prompt() {
     }
   }, [])
 
+  // Another modal dialog in front (Search, a task panel, a sheet) holds the focus, so the prompt
+  // waits for it to close rather than opening behind it and taking the keyboard away.
+  const [otherModal, setOtherModal] = useState(() => otherModalOpen(null))
+  useEffect(() => {
+    const update = () => setOtherModal(otherModalOpen(dialogRef.current))
+    update()
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-modal', 'role'] })
+    return () => observer.disconnect()
+  }, [])
+
   const ready = prefs.ready
-  const open = Boolean(ready && parseVersion(running) && isNewerVersion(ready.version, running) && state.dismissed !== ready.version)
+  const due = Boolean(ready && parseVersion(running) && isNewerVersion(ready.version, running) && state.dismissed !== ready.version)
+  const open = due && !otherModal
 
   const later = useCallback(() => { laterAppUpdate().catch(() => {}) }, [])
 

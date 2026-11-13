@@ -168,3 +168,32 @@ describe('AppUpdatePrompt', () => {
     expect(n.verifyAppUpdate).not.toHaveBeenCalled()
   })
 })
+
+describe('AppUpdatePrompt with another dialog open', () => {
+  // Stands in for Search, a task panel, or a sheet: a modal dialog already holding the focus.
+  function Search() {
+    return (
+      <div role="dialog" aria-modal="true" aria-label="Search tasks">
+        <input aria-label="Search" autoFocus />
+        <button type="button">Close</button>
+      </div>
+    )
+  }
+
+  test('an update that becomes ready while Search is open waits for it to close', async () => {
+    saveAppUpdatePrefs({ ...readAppUpdatePrefs(), ready: null })
+    const { rerender } = render(<><AppUpdatePrompt /><Search /></>)
+    const field = screen.getByRole('textbox', { name: 'Search' })
+    field.focus()
+    await act(async () => { saveAppUpdatePrefs({ ...readAppUpdatePrefs(), ready: READY }) })
+    await act(async () => {})
+    expect(screen.queryByRole('dialog', { name: 'Update ready' })).toBeNull()
+    // The visible dialog keeps the keyboard: Tab is not taken over by a prompt behind it.
+    fireEvent.keyDown(field, { key: 'Tab' })
+    expect(document.activeElement).toBe(field)
+
+    rerender(<><AppUpdatePrompt /></>)
+    await dialog()
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Install' })))
+  })
+})
