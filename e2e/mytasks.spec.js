@@ -256,6 +256,35 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(input).toHaveValue(draft)
   })
 
+  test('a task already in the list moved down past two just added shows between them', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const existing = await createTask(request, testInfo, 'held among', { position: endPosition() })
+    const first = `UI test held among A ${testInfo.project.name}`
+    const second = `UI test held among B ${testInfo.project.name}`
+    const draft = `UI test held among C ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    for (const title of [first, second]) {
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    }
+    await input.fill(draft)
+    const names = [existing, first, second].map((t) => `Open ${t}`)
+    const order = () => page.getByRole('button', { name: /^Open / }).evaluateAll((els, keep) => els.map((el) => el.getAttribute('aria-label')).filter((n) => keep.includes(n)), names)
+    await expect.poll(order).toEqual([`Open ${existing}`, `Open ${first}`, `Open ${second}`])
+    await page.getByRole('button', { name: `Reorder ${existing}`, exact: true }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${existing}`, `Open ${second}`])
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${second}`, `Open ${existing}`])
+    await expect(input).toHaveValue(draft)
+  })
+
   // As in Asana: the date button beside the name opens the picker, a day only selects, and a plain
   // Weekly follows the day picked after it, with its next dates tinted on the month.
   test('the due date button opens the picker, and Weekly follows the day picked', async ({ page, request }, testInfo) => {

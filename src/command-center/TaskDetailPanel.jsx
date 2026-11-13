@@ -629,7 +629,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     }
   }, [assignee, assignBusy])
 
-  // Leaving the panel by Esc or a click away. Closing takes the focused field away with no blur,
+  // Leaving the panel by Esc, Close, or a click away. Closing takes the focused field away with no blur,
   // so it is left first and saves what it holds. The comment and subtask drafts add themselves
   // only on a click away from their box, so one left by Tab first is added here by hand
   // (leaveRef); a draft already being added is not sent twice (their busy guards).
@@ -1112,7 +1112,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
               <HandoffMenu task={data.task} project={projectInfo?.project || null} onNotice={setActionNotice} />
             </div>
             <span className="task-panel-close">
-              <IconButton ariaLabel="Close task details" onClick={onClose}>
+              <IconButton ariaLabel="Close task details" onClick={leaveAndClose}>
                 <X size={20} aria-hidden="true" />
               </IconButton>
             </span>

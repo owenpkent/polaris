@@ -1590,6 +1590,43 @@ describe('a click outside the panel', () => {
     }
   }
 
+  // Close is a way out too: it saves the same drafts.
+  async function leftByTabThenClosed(open, boxName, value) {
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    await open()
+    const box = await screen.findByRole('textbox', { name: boxName })
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value } })
+    act(() => { screen.getByRole('textbox', { name: 'Task title' }).focus() })
+    fireEvent.click(screen.getByRole('button', { name: 'Close task details' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  }
+
+  test('Close adds a comment draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.addComment.mockResolvedValue({})
+    await leftByTabThenClosed(
+      async () => fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' })),
+      'Add a comment',
+      'Looks right',
+    )
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledWith('t_1', 'Looks right'))
+    expect(api.addComment).toHaveBeenCalledTimes(1)
+  })
+
+  test('Close adds a subtask draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({})
+    await leftByTabThenClosed(
+      async () => fireEvent.click(await screen.findByText('Add subtask')),
+      'Subtask name',
+      'Tickets',
+    )
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' }))
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+  })
+
   test('adds a comment draft left by Tab', async () => {
     api.getTask.mockResolvedValue(detail(TASK, []))
     api.addComment.mockResolvedValue({})
