@@ -10,6 +10,21 @@ carries, because `cc update` snapshots the database before one and a rollback re
   name wraps beside its date. Every date chip is one size, with its words centred and a repeat
   glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
   time is no taller than one without. Under 380px wide the date still goes under the name.
+- The same rule now holds wherever something repeats down a list: it is one size, with its words
+  centred, in one column.
+  - Board cards show the due date as that chip, first in the foot, with the assignee at the foot's
+    right end.
+  - A search result's date is the chip at its right, in the words and colours of My tasks.
+  - The priority pill is as wide as Urgent.
+  - No project is an outlined pill rather than the bare word None.
+  - The subtask count is one width and comes before Waiting, now a quiet pill.
+  - A goal's status button is one width, and its progress bar takes the whole width with its words
+    under it, so every bar starts and ends in the same place.
+- The due date picker:
+  - It marks today with a dot under its number, which stays when today is the day picked.
+  - On a phone its quick dates are four equal pills, two to a line.
+  - On a desktop the quick dates, Add time, and Repeat are buttons again, one size down the
+    column, as they are in the new task's date step.
 
 ## 2.10.0 (2026-11-12)
 
