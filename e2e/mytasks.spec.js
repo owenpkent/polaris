@@ -231,6 +231,31 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(input).toHaveValue(draft)
   })
 
+  test('of two tasks just added, the first moved down by its handle shows under the second', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const first = `UI test held pair A ${testInfo.project.name}`
+    const second = `UI test held pair B ${testInfo.project.name}`
+    const draft = `UI test held pair C ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    for (const title of [first, second]) {
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    }
+    await input.fill(draft)
+    const order = () => page.getByRole('button', { name: /^Open UI test held pair / }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${second}`])
+    await page.getByRole('button', { name: `Reorder ${first}`, exact: true }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${second}`, `Open ${first}`])
+    await expect(input).toHaveValue(draft)
+  })
+
   // As in Asana: the date button beside the name opens the picker, a day only selects, and a plain
   // Weekly follows the day picked after it, with its next dates tinted on the month.
   test('the due date button opens the picker, and Weekly follows the day picked', async ({ page, request }, testInfo) => {

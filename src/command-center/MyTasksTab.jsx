@@ -538,10 +538,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     markChanged(task?.id)
     const next = new Map(plan.updates.map((u) => [u.id, u.position]))
     for (const [id, position] of next) pendingPositions.current.set(id, position)
-    // A task just added and held above the open Add task row (heldIds) goes where it was moved:
-    // it leaves the held rows, which keep their order of creation, and takes its place in the list.
+    // Tasks just added are held above the open Add task row (heldIds), in the order they were
+    // typed. A move that takes in any of them ends the hold for all of them, so every row then
+    // shows by its saved position and the order on screen is the one the move asked for; the
+    // held ones were given end positions in that same order, so the rest stay where they are.
     const moved = (id) => next.has(id) || id === task?.id
-    setInlineAdd((cur) => (cur && cur.heldIds.some(moved) ? { ...cur, heldIds: cur.heldIds.filter((id) => !moved(id)) } : cur))
+    setInlineAdd((cur) => (cur && cur.heldIds.some(moved) ? { ...cur, heldIds: [] } : cur))
     if (patch) pendingPatches.current.set(task.id, { ...pendingPatches.current.get(task.id), ...patch })
     let before = new Map()
     setTasks((prev) => {
