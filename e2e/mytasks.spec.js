@@ -202,6 +202,35 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
   })
 
+  // A held task moved by its handle goes where it was moved, while the Add task row stays open
+  // with the next name typed in it, and a second move goes on from there.
+  test('a task just added and moved up by its handle shows where it was moved, and the draft stays', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test held move ${testInfo.project.name}`
+    const draft = `UI test held draft ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await input.press('Enter')
+    await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    await input.fill(draft)
+    const order = () => page.getByRole('button', { name: /^Open / }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    const indexOf = async () => (await order()).indexOf(`Open ${title}`)
+    const start = await indexOf()
+    expect(start).toBeGreaterThan(1)
+    // Focus moves to the handle by keyboard, which keeps the draft and the row open.
+    await page.getByRole('button', { name: `Reorder ${title}`, exact: true }).focus()
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(indexOf).toBe(start - 1)
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(indexOf).toBe(start - 2)
+    await expect(input).toHaveValue(draft)
+  })
+
   // As in Asana: the date button beside the name opens the picker, a day only selects, and a plain
   // Weekly follows the day picked after it, with its next dates tinted on the month.
   test('the due date button opens the picker, and Weekly follows the day picked', async ({ page, request }, testInfo) => {

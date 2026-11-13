@@ -1567,4 +1567,50 @@ describe('a click outside the panel', () => {
       page.remove()
     }
   })
+
+  // A comment or subtask box left by keyboard keeps its draft (it adds only on a click away from
+  // the box), so the click that closes the panel must add it, as Esc does.
+  async function leftByTabThenClickedAway(open, boxName, value) {
+    const onClose = vi.fn()
+    const page = document.createElement('p')
+    page.textContent = 'Empty space'
+    document.body.appendChild(page)
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+      await open()
+      const box = await screen.findByRole('textbox', { name: boxName })
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value } })
+      act(() => { screen.getByRole('textbox', { name: 'Task title' }).focus() })
+      expect(screen.getByRole('textbox', { name: boxName }).value).toBe(value)
+      pointerClick(page)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      page.remove()
+    }
+  }
+
+  test('adds a comment draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.addComment.mockResolvedValue({})
+    await leftByTabThenClickedAway(
+      async () => fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' })),
+      'Add a comment',
+      'Looks right',
+    )
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledWith('t_1', 'Looks right'))
+    expect(api.addComment).toHaveBeenCalledTimes(1)
+  })
+
+  test('adds a subtask draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({})
+    await leftByTabThenClickedAway(
+      async () => fireEvent.click(await screen.findByText('Add subtask')),
+      'Subtask name',
+      'Tickets',
+    )
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' }))
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+  })
 })

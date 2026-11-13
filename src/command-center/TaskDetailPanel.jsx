@@ -629,25 +629,31 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     }
   }, [assignee, assignBusy])
 
+  // Leaving the panel by Esc or a click away. Closing takes the focused field away with no blur,
+  // so it is left first and saves what it holds. The comment and subtask drafts add themselves
+  // only on a click away from their box, so one left by Tab first is added here by hand
+  // (leaveRef); a draft already being added is not sent twice (their busy guards).
+  const leaveAndClose = useCallback(() => {
+    const active = document.activeElement
+    if (active && panelRef.current?.contains(active)) active.blur()
+    leaveRef.current?.()
+    onClose()
+  }, [onClose])
+
   useEffect(() => {
     function onKeyDown(e) {
       if (e.key !== 'Escape') return
-      // Closing takes the focused field away with no blur, so it is left first and saves what it
-      // holds, as a click outside would. The two drafts that save only on a click are added by hand.
-      const active = document.activeElement
-      if (active && panelRef.current?.contains(active)) active.blur()
-      leaveRef.current?.()
-      onClose()
+      leaveAndClose()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  }, [leaveAndClose])
 
   // A click on empty space outside the panel closes it. The press has to start outside too, so
   // a text selection dragged out of the panel does not. A click on a control, a task row or
   // card (which opens that task instead), or a menu or dialog layered over the page leaves it
-  // open. The press already blurred the field being edited, which saved it, and a draft that
-  // adds on a click away added itself on the release, so nothing is left to save here.
+  // open. It saves what the panel holds as Esc does (leaveAndClose), including a comment or
+  // subtask draft whose box was left by Tab before the click.
   useEffect(() => {
     const KEEP_OPEN = 'button, a[href], input, select, textarea, label, [role="button"], [role="checkbox"], '
       + '[role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"], [contenteditable="true"], '
@@ -658,7 +664,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     function onClick(e) {
       const close = pressedOutside && e.button === 0 && outside(e.target)
       pressedOutside = false
-      if (close) onClose()
+      if (close) leaveAndClose()
     }
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('click', onClick)
@@ -666,7 +672,7 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('click', onClick)
     }
-  }, [onClose])
+  }, [leaveAndClose])
 
   // Tab/Shift+Tab focus trap while the panel is mounted (mirrors NavDrawer's).
   useEffect(() => {
