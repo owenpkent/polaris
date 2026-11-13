@@ -50,9 +50,9 @@ test.describe('text stays in line when an edit opens', { tag: ['@flow'] }, () =>
     expectInLine(await textStart(page.getByRole('button', { name: 'Due date: Today' })), due, 'the new task date')
   })
 
-  // The new task's date step on a desktop: the quick dates and Add time are a list whose words
-  // start under the heading and Repeats, as a list's rows do.
-  test('the new task date step lines its list up under its heading', async ({ page }, testInfo) => {
+  // The new task's date step on a desktop: the quick dates and Add time are buttons whose left
+  // edges are on the heading's, so the column reads as one block under it.
+  test('the new task date step lines its buttons up under its heading', async ({ page }, testInfo) => {
     test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
     await openView(page)
     await page.getByRole('button', { name: 'Add task' }).first().click()
@@ -60,13 +60,11 @@ test.describe('text stays in line when an edit opens', { tag: ['@flow'] }, () =>
     await page.getByRole('button', { name: /^Due date(: .+)?$/ }).click()
     const step = page.getByRole('dialog', { name: 'Due date for Aligned list' })
     const heading = await textStart(step.getByRole('heading', { name: 'When is it due?' }))
-    // Tomorrow and No date are the list's second column, when the popover is wide enough for two.
-    for (const name of ['Today', 'Next Monday']) {
-      expectInLine(await textStart(step.getByRole('button', { name, exact: true })), heading, name, { size: false })
+    // Tomorrow and No date are the second column, when the popover is wide enough for two.
+    for (const name of ['Today', 'Next Monday', 'Add time']) {
+      const box = await step.getByRole('button', { name, exact: true }).boundingBox()
+      expect(Math.abs(Math.round(box.x) - heading.x), `${name} starts at the heading's left edge`).toBeLessThanOrEqual(1)
     }
-    // Add time leads with its clock, which takes the place of the words.
-    const clock = await step.getByRole('button', { name: 'Add time', exact: true }).locator('svg').evaluate((el) => ({ x: Math.round(el.getBoundingClientRect().left) }))
-    expectInLine(clock, heading, 'the Add time clock', { size: false })
   })
 
   test('renaming a task in place keeps its words where they were', async ({ page, request }, testInfo) => {

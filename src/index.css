@@ -2480,13 +2480,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     row-gap: 12px;
   }
   .add-due-pop .add-due-title { grid-area: title; }
-  /* The rows' words start under the heading and Repeats: each row is pulled left by its 4px edge
-     and 0.75rem padding, so only its highlight reaches past them. */
-  .add-due-pop .add-due-chips { grid-area: chips; flex-direction: column; flex-wrap: nowrap; align-items: stretch; align-self: start; gap: 2px; margin-left: calc(-0.75rem - 4px); }
-  .add-due-pop .add-due-add-time { margin-left: calc(-0.75rem - 4px); }
-  /* Add time reads as a row of the quick dates' list, as it does in the due date picker. */
-  .add-due-pop .add-due-add-time { border: 4px solid transparent; background: transparent; background-clip: padding-box; box-shadow: none; padding-inline: 0.75rem; font-weight: 400; font-size: 14px; }
-  .add-due-pop .add-due-add-time:hover:not(:disabled) { background: var(--bg-hover); border-color: transparent; }
+  /* The quick dates are the due date picker's buttons, in a column under the heading, with Add
+     time a button of the same face after them. */
+  .add-due-pop .add-due-chips { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; align-self: start; gap: 6px; }
+  .add-due-pop .add-due-add-time { padding-inline: 0.75rem; font-weight: 400; font-size: 14px; }
   .add-due-pop .add-due > .cal { grid-area: cal; }
   .add-due-pop .add-due-repeat { grid-area: repeat; }
   .add-due-pop .add-due-foot { grid-area: foot; }
@@ -2504,7 +2501,7 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   }
   .add-due-pop .add-due-foot { align-self: end; }
   /* Two dates to a line, so the list is no taller than the pills were. */
-  .add-due-pop .add-due-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+  .add-due-pop .add-due-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }
@@ -2615,30 +2612,23 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     width: auto;
   }
   .due-pop.due-pop-repeat-view { display: flex; width: calc(184px + 16px + 308px + 2 * var(--due-pad)); }
-  .due-pop > .due-quick { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  .due-pop > .due-quick { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; gap: 6px; }
+  /* Each quick date is a button with the raised face every .btn has, one size down the column,
+     its date at the left and its weekday or day at the right. The picked one is blue. */
   .due-quick-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     padding: 0 0.75rem;
-    border: none;
     border-radius: var(--radius);
-    background: transparent;
-    box-shadow: none;
     text-align: start;
   }
-  /* Add time and Repeat read as rows of the same list: no box, the icon where the dates' words
-     start, and a line above them. The line takes the place of the gap, so nothing moves. */
-  .due-pop > .due-pop-time { border-top: 1px solid var(--bd); padding-top: 11px; }
-  .due-pop .due-pop-wide { font-weight: 400; font-size: 14px; background: transparent; box-shadow: none; }
-  /* Each row keeps its 44px target, but its highlight is drawn 4px in from top and bottom, so a
-     picked or hovered row is a band in the list rather than a block. */
-  .due-quick-btn, .due-pop .due-pop-wide { border: 4px solid transparent; background-clip: padding-box; }
-  .due-pop .due-pop-wide:hover:not(:disabled) { background: var(--bg-hover); border-color: transparent; }
-  .due-quick-btn:hover { background: var(--bg-hover); }
-  .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); color: var(--blue); }
-  .due-quick-btn:focus-visible { outline-offset: -2px; }
+  .due-quick-btn:hover { background: var(--raised-hover); border-color: var(--t3); }
+  .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+  .due-quick-btn:focus-visible { outline-offset: 2px; }
+  /* Add time and Repeat are buttons of the same face and size as the dates above them. */
+  .due-pop .due-pop-wide { font-weight: 400; font-size: 14px; }
   .due-quick-hint { display: inline; flex: 0 0 auto; font-size: 0.8rem; font-weight: 400; color: var(--t2); }
   .due-quick-btn[aria-pressed='true'] .due-quick-hint { color: var(--blue); }
   .due-pop > .cal { grid-area: cal; }
@@ -2674,7 +2664,21 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 .cal-day:hover { background: var(--bg-hover); }
 .cal-day:focus-visible { outline-offset: -2px; }
-.cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; box-shadow: inset 0 0 0 1px var(--blue); }
+/* Today: its number in bold blue with a dot under it, and the dot stays (in the picked day's
+   colour) when today is the day picked, so the current day shows whatever is chosen. */
+.cal-day { position: relative; }
+.cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; }
+.cal-day[aria-current='date']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: currentColor;
+}
 .cal-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 /* The next dates of the repeat being set, tinted as Asana tints them (AddDuePanel.jsx). */
