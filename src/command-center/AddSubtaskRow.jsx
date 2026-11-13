@@ -67,20 +67,25 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
     if (!trimmed || busy) return
     setBusy(true)
     setError(null)
+    let closed = false
     try {
       await onAdd(parent, trimmed)
       if (!mounted.current) return
       if (leave && !rowRef.current?.contains(document.activeElement)) {
         close()
+        closed = true
         return
       }
       setTitle('')
     } catch (err) {
       if (!mounted.current) return
       setError(err.message || 'Could not add that subtask.')
+    } finally {
+      // Every settled save ends the busy state, the click-away save that closes the box too:
+      // the row stays mounted, so a box opened again later would otherwise stay read-only.
+      if (mounted.current) setBusy(false)
     }
-    setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    if (!leave && !closed) inputRef.current?.focus()
   }
 
   // Added on the release, before the click it makes lands, unless that click is in the row or

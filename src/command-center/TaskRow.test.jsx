@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import TaskRow, { TaskTree, indexSubtasks } from './TaskRow'
 import { getDueBounds } from './dueDates'
 
@@ -390,6 +390,34 @@ describe('TaskTree Add subtask row', () => {
     expect(addButton().textContent).toBe('Add subtask')
     fireEvent.click(screen.getByRole('button', { name: '1 open subtask of Plan the trip' }))
     expect(addButton()).toBeNull()
+  })
+
+  // A click away saves and closes the box; the row stays mounted, so the box opened again must
+  // take a second subtask (not stay read-only from the first save).
+  test('after a save by clicking away, the box opened again adds another', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    try {
+      const { onAddSubtask, parent } = renderTree()
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'Pack the charger' } })
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Pack the charger'))
+      await waitFor(() => expect(addButton()).toBeTruthy())
+      fireEvent.click(addButton())
+      const next = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      expect(next.readOnly).toBe(false)
+      fireEvent.change(next, { target: { value: 'Print the tickets' } })
+      fireEvent.keyDown(next, { key: 'Enter' })
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Print the tickets'))
+    } finally {
+      outside.remove()
+    }
   })
 
   test('no row under an inbox task', () => {
