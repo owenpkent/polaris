@@ -134,6 +134,8 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   // The Add subtask row after the shown subtasks (AddSubtaskRow.jsx), at rest and with its box
   // open on a long title: it keeps the subtasks' columns and its line closes.
   test('the Add subtask row, at rest and open on a long name', async ({ page, request }, testInfo) => {
+    // Two whole-page scans, each photographing every focus ring: past 30s on the CI runner.
+    test.slow()
     const headers = { Authorization: `Bearer ${TOKEN}` }
     const title = await createTask(request, testInfo, `${WORDY} add subtask parent`)
     const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title)
