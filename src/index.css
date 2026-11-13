@@ -2335,21 +2335,23 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   white-space: nowrap;
 }
 /* With a time the chip is two lines by design, not by wrapping: the day, then the time under it
-   in smaller type, each word whole. */
+   in smaller type, each word whole. Both lines fit the height every chip has, so a chip with a
+   time has the same room above it and under it in its row as one without, and the row is no
+   taller for it. */
 .due-chip.has-time {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  height: auto;
-  min-height: 32px;
-  padding: 4px 12px;
-  line-height: 1.2;
+  padding: 0 12px;
+  line-height: 1.1;
   overflow: visible;
 }
 /* Compact rows are 32px, and a 32px chip on the name's line would touch the row's lines and the
-   chips above and below it: the chip is shorter, inside the same row-tall target. */
+   chips above and below it: the chip is shorter, inside the same row-tall target. With a time it
+   needs both lines, in type one step smaller. */
 :root[data-density='compact'] .due-chip { height: 24px; border-radius: 8px; }
-:root[data-density='compact'] .due-chip.has-time { height: auto; min-height: 24px; padding: 1px 12px; line-height: 1.1; }
+:root[data-density='compact'] .due-chip.has-time { height: 28px; font-size: 13px; }
+:root[data-density='compact'] .due-chip.has-time > span + span { font-size: 11px; }
 /* A task with no date: a quiet prompt, no fill, so it reads as a place to tap rather than a date. */
 .due-chip.is-empty { background: transparent; color: var(--t3); font-weight: 500; padding: 0; }
 .due-chip.has-time > span { white-space: nowrap; }
