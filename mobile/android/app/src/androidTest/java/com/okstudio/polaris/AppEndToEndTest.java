@@ -332,10 +332,11 @@ public class AppEndToEndTest {
         app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote("Change due date for " + title) + ")", LOAD_MS);
     }
 
-    // On a phone the due date sits at the right of the task name's first line, not in a column
-    // (the emulator and the owner's phone are 412 CSS px wide; under 380 it goes under the name).
-    // A long name must wrap in full, the date button must start on the name's first line to the
-    // right of its words, and it must be a real 44px touch target that a finger opens the picker with.
+    // On a phone the due date sits at the right of the task name, not in a column (the emulator
+    // and the owner's phone are 412 CSS px wide; under 380 it goes under the name). A long name
+    // must wrap in full, the date button must be to the right of its words and level with their
+    // middle, so the room above and under it is the same, and it must be a real 44px touch target
+    // that a finger opens the picker with.
     @Test
     public void phoneRowPutsTheDateBesideAWrappedName() throws Exception {
         connect();
@@ -364,8 +365,8 @@ public class AppEndToEndTest {
         String[] d = rect(date);
         String report = "name text " + String.join(",", n) + "; date button " + String.join(",", d);
         android.util.Log.i("PhoneRowTest", report);
-        assertTrue("Date button does not start on the name's first line, " + report,
-            Float.parseFloat(d[1]) <= Float.parseFloat(n[1]) + 1 && Float.parseFloat(d[3]) > Float.parseFloat(n[1]));
+        assertTrue("Date button is not level with the middle of the name, " + report,
+            Math.abs((Float.parseFloat(d[1]) + Float.parseFloat(d[3])) - (Float.parseFloat(n[1]) + Float.parseFloat(n[3]))) <= 4);
         assertTrue("Date button is not to the right of the name text, " + report,
             Float.parseFloat(d[0]) >= Float.parseFloat(n[2]) - 1);
         assertTrue("Date button is under 44px wide, " + report, Float.parseFloat(d[2]) - Float.parseFloat(d[0]) >= 43.5f);

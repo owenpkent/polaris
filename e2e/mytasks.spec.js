@@ -808,7 +808,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
   })
 
-  test('on a phone a long name wraps whole and the due date sits on its first line, before the panel button', async ({ page, request }, testInfo) => {
+  test('on a phone a long name wraps whole and the due date sits beside it at the middle of the row, before the panel button', async ({ page, request }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
     await openView(page)
@@ -819,13 +819,15 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
     const open = await row(page, title).boundingBox()
     const whole = await rowBox.boundingBox()
-    // The name wraps (more than one line tall), and the date is on its first line, to its right.
+    const middle = (box) => box.y + box.height / 2
+    // The name wraps (more than one line tall), and the date is to its right, at the middle of the
+    // row's height, so the room above it and under it is the same.
     expect(rename.height).toBeGreaterThan(40)
-    expect(Math.abs(due.y - rename.y)).toBeLessThanOrEqual(6)
     expect(due.x).toBeGreaterThanOrEqual(rename.x + rename.width - 1)
-    // The panel button follows the date on that line, at the row's right edge.
+    expect(Math.abs(middle(due) - middle(whole))).toBeLessThanOrEqual(1)
+    // The panel button follows the date, level with it, at the row's right edge.
     expect(open.x).toBeGreaterThanOrEqual(due.x + due.width - 1)
-    expect(Math.abs(open.y - due.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(middle(open) - middle(due))).toBeLessThanOrEqual(1)
     expect(open.x + open.width).toBeLessThanOrEqual(whole.x + whole.width + 1)
     // Same row, and a 44px target.
     expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
