@@ -3,6 +3,14 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- On a phone, a task's due date is back on the name's line: the name, then the date chip at its
+  right, then the button that opens the panel, so a short task is one line tall again and a long
+  name wraps beside its date. Every date chip is one size, with its words centred and a repeat
+  glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
+  time is no taller than one without. Under 380px wide the date still goes under the name.
+
 ## 2.10.0 (2026-11-12)
 
 No migration.
