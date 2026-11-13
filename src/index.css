@@ -410,6 +410,9 @@ kbd { color: var(--t1); }
    whose focus rings reach 4px out. */
 .project-chip.is-wrapping { white-space: normal; border-radius: 12px; margin: 6px 0; }
 .project-chip.is-wrapping > span:last-child { overflow: visible; overflow-wrap: anywhere; }
+/* No project, in a list cell: the same pill's outline with no fill and no dot, so the column is
+   one shape on every row while the rows with a project still lead. */
+.project-chip.is-none { background: transparent; box-shadow: inset 0 0 0 1px var(--bd); color: var(--t2); padding-left: 10px; }
 .project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .project-avatar {
   display: inline-flex;
@@ -426,8 +429,9 @@ kbd { color: var(--t1); }
 }
 
 /* Priority in a list cell: a soft pill in the level's colour. None and medium (the default)
-   render nothing, so a pill always means something was set. */
-.priority-pill { font-weight: 600; }
+   render nothing, so a pill always means something was set. Every pill is as wide as Urgent,
+   its word centred, so Low, High, and Urgent line up as a column of one shape. */
+.priority-pill { font-weight: 600; justify-content: center; box-sizing: border-box; min-width: 4.25rem; }
 .priority-pill.is-low { background: var(--neutral-soft); color: var(--t2); }
 .priority-pill.is-high { background: var(--orange-soft); color: var(--orange); }
 .priority-pill.is-urgent { background: var(--red-soft); color: var(--red); }
@@ -1117,6 +1121,9 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   /* Waiting and the count wrap within the room they have, so neither leaves the cell. */
   .mytasks-name-grid > .mytasks-name-meta { flex-wrap: wrap; min-width: 0; max-width: 100%; }
   .mytasks-name-grid .subtask-toggle { max-width: 100%; }
+  /* The count's chip starts on the name's left edge, as Waiting does on a row with no count: its
+     button gives up the 4px it pads the chip with on that side. */
+  .mytasks-name-meta > .subtask-toggle:first-child { margin-left: -4px; }
 }
 /* A phone row is one line where it can be: the name, the date chip at its right, as wide as its
    own words, and the panel button at the edge (columnsState.js builds the tracks). A short name
@@ -1187,10 +1194,16 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   color: var(--t2);
   cursor: pointer;
 }
+/* One width for any count up to 99 (the chevron, the icon, and two digits), its contents
+   centred, so the chip is the same size on every row and Waiting after it starts at the same
+   place. A larger count makes the chip wider, never cut. */
 .subtask-chip {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 58px;
   gap: 3px;
   padding: 2px 6px;
   border-radius: 999px;
@@ -1199,6 +1212,19 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   font-size: 12px;
   line-height: 16px;
   transition: color 0.12s, box-shadow 0.12s;
+}
+.subtask-chip.is-static { min-width: 38px; }
+/* Waiting, after the count: a quiet pill of the count's height, as wide as its word. */
+.waiting-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 14px;
 }
 .subtask-toggle:hover .subtask-chip,
 .subtask-toggle[aria-expanded='true'] .subtask-chip { color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd-strong); }
@@ -1493,7 +1519,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 .board-card-title { min-width: 0; font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
 .board-card-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+/* The foot: the date chip first, so it starts at the same place on every card, and the
+   assignee at the right end. Without a date the assignee still sits at the right. */
 .board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--t2); }
+.board-card-assignee { display: inline-flex; margin-left: auto; }
 .board-card-move {
   width: 44px;
   height: 44px;
@@ -1826,9 +1855,13 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .goal-title-block { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .goal-title { font-size: 16px; font-weight: 600; color: var(--t1); overflow-wrap: break-word; min-width: 0; }
 .goal-period { font-size: 13px; color: var(--t2); white-space: nowrap; }
-.goal-status-btn { font-weight: 600; white-space: nowrap; }
-.goal-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-left: 52px; }
-.goal-progress-text { font-size: 13px; color: var(--t2); white-space: nowrap; }
+/* One width for every status (as wide as Off track and its arrow), the words centred, so the
+   status buttons of a list of goals are one shape and line up. */
+.goal-status-btn { font-weight: 600; white-space: nowrap; justify-content: center; min-width: 8.5rem; }
+/* The bar takes the whole width and the words go under it, so every goal's bar starts and ends
+   in the same place whatever its words say. */
+.goal-progress { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 4px; padding-left: 52px; }
+.goal-progress-text { font-size: 13px; color: var(--t2); }
 .goal-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-left: 52px; }
 .goal-flag { background: var(--yellow-soft); color: var(--yellow); }
 .goal-note { font-size: 14px; color: var(--t2); overflow-wrap: break-word; min-width: 0; }
@@ -1886,7 +1919,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .search-head input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 1rem; }
 .search-status { margin: 0; color: var(--t2); font-size: 0.85rem; overflow-wrap: anywhere; }
 .search-results { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-.search-row { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; overflow-wrap: anywhere; }
+/* A result: its title and the line under it, then its date chip at the right, at the middle of
+   the row, so the dates of a list of results line up as a column. */
+.search-row { gap: 12px; overflow-wrap: anywhere; }
+.search-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-row > .due-chip { flex: 0 0 auto; }
 .search-row-meta { color: var(--t2); font-size: 0.8rem; }
 .goal-open-tasks { margin: 0; padding-left: 18px; color: var(--t1); font-size: 14px; line-height: 1.7; }
 
@@ -1895,8 +1932,6 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   .goal-vision { flex-direction: column; }
   .goal-header { grid-template-columns: 44px minmax(0, 1fr); }
   .goal-header > :last-child { grid-column: 1 / -1; padding-left: 52px; }
-  .goal-progress { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .goal-progress-text { white-space: normal; }
   .goal-details { margin-left: 0; }
   .goal-manual-fields { grid-template-columns: minmax(0, 1fr); }
   .goals-toolbar .btn { flex: 1 1 100%; }
@@ -2316,9 +2351,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   .undo-toast { max-width: 100%; }
 }
 
-/* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
-   the chip only adds its soft background. It sits at the right of the task name, at the middle
-   of the row (under the name, its left edge on the name's, on a phone under 380px). Every chip
+/* Due date chip (DueChip.jsx): a My tasks row on the phone tier, a Board card's foot, and a search
+   result. The colour is the same the desktop text uses; the chip only adds its soft background.
+   On a phone row it sits at the right of the task name, at the middle of the row (under the name,
+   its left edge on the name's, on a phone under 380px). Every chip
    is one size, 88px by 32px, the room "Tomorrow" needs, with its words centred, so the chips in
    a list line up as a column whatever each one says: a day, a day and a time, or a day that
    repeats. Only a date with its year is wider, and it is never cut. */

@@ -6,6 +6,7 @@ import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
+import DueChip from './DueChip'
 import { showCompleted, showMoved, dismissMoved } from './undoToast'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { markChanged, useJustChanged } from './useJustChanged'
@@ -216,16 +217,22 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
               <span className={priority.className}>{priority.label}</span>
             </span>
           )}
+          {/* The date is the chip My tasks shows on a phone, first in the foot, so it starts at
+              the same place on every card; the assignee sits at the foot's right end. A repeating
+              task with no date keeps its glyph where the chip would be. */}
           {hasFoot && (
             <span className="board-card-foot">
+              {due.text ? (
+                <DueChip due={due} repeat={Boolean(repeat)} />
+              ) : (
+                repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />
+              )}
               {task.assignee && (
                 // The initials stand for the name here; the panel spells it out.
-                <span style={{ display: 'inline-flex' }} title={task.assignee}>
+                <span className="board-card-assignee" title={task.assignee}>
                   <Avatar name={task.assignee} size={22} />
                 </span>
               )}
-              {due.text && <span style={{ color: due.color || 'var(--t2)' }}>{due.text}</span>}
-              {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
             </span>
           )}
         </button>
