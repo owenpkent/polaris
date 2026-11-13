@@ -643,6 +643,31 @@ export default function TaskDetailPanel({ taskId, onClose, onChanged, onOpenTask
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
+  // A click on empty space outside the panel closes it. The press has to start outside too, so
+  // a text selection dragged out of the panel does not. A click on a control, a task row or
+  // card (which opens that task instead), or a menu or dialog layered over the page leaves it
+  // open. The press already blurred the field being edited, which saved it, and a draft that
+  // adds on a click away added itself on the release, so nothing is left to save here.
+  useEffect(() => {
+    const KEEP_OPEN = 'button, a[href], input, select, textarea, label, [role="button"], [role="checkbox"], '
+      + '[role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"], [contenteditable="true"], '
+      + '[data-task-id], [data-subtask-id]'
+    const outside = (target) => target instanceof Element && !panelRef.current?.contains(target) && !target.closest(KEEP_OPEN)
+    let pressedOutside = false
+    function onPointerDown(e) { pressedOutside = e.button === 0 && outside(e.target) }
+    function onClick(e) {
+      const close = pressedOutside && e.button === 0 && outside(e.target)
+      pressedOutside = false
+      if (close) onClose()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('click', onClick)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('click', onClick)
+    }
+  }, [onClose])
+
   // Tab/Shift+Tab focus trap while the panel is mounted (mirrors NavDrawer's).
   useEffect(() => {
     function handleKeyDown(e) {

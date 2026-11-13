@@ -25,6 +25,14 @@ carries, because `cc update` snapshots the database before one and a rollback re
   - On a phone its quick dates are four equal pills, two to a line.
   - On a desktop the quick dates, Add time, and Repeat are buttons again, one size down the
     column, as they are in the new task's date step.
+- On a desktop a task's name takes its whole cell in My tasks, so a click anywhere between the
+  check and the panel button renames it, not only a click on its words. The subtask count and
+  Waiting sit at the cell's right end.
+- A click on empty space beside an open task panel closes it, saving what was typed, as Esc does.
+- Opening a task's panel no longer moves or narrows My tasks at any width: the panel covers the
+  list's right side, as it does on Board, and no column is hidden while it is open.
+- Under the manual sort the Add task row shows the grip the rows above it have, and a task just
+  added to the ungrouped list has its reorder handle while the row is still open.
 
 ## 2.10.0 (2026-11-12)
 

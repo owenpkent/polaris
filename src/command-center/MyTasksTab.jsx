@@ -147,7 +147,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     getItems: () => columnMenuItems(columns.hidden, columns.setHidden),
     label: 'Show or hide columns',
   })
-  const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
+  const { narrow900, narrow600, phone } = useNarrowBreakpoints()
   const { view, setSort, setGroup, toggleFilter, clearFilters, resetSort } = useViewState()
 
   const projectNameById = useMemo(() => {
@@ -162,8 +162,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   )
 
   const visibleColumns = useMemo(
-    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, narrowPanel, panelOpen: Boolean(detailTaskId) }),
-    [columns.hidden, narrow900, narrow600, phone, narrowPanel, detailTaskId]
+    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone }),
+    [columns.hidden, narrow900, narrow600, phone]
   )
   // Under the manual sort every row leads with its reorder handle (ReorderHandle.jsx), so the
   // grid, the column header, and the inline add row all take the extra 44px column.
@@ -759,11 +759,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         />
       ))
     } else {
-      // 'none': a flat, ungrouped list.
-      scopeGroups = [{ id: '_all', label: 'the list', tasks: sortedTasks }]
+      // 'none': a flat, ungrouped list. The tasks just added from the row under it end the list,
+      // just above that row, with their handles like every other row.
+      const listTasks = rowShown && inlineAdd.groupId === null ? [...sortedTasks, ...heldTasks] : sortedTasks
+      scopeGroups = [{ id: '_all', label: 'the list', tasks: listTasks }]
       content = (
         <div data-reorder-group="_all">
-          <ReorderableRows groupId="_all" tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
+          <ReorderableRows groupId="_all" tasks={listTasks} enabled={reorderable} onReorder={handleReorder}>
             {(task, reorder, rowClass) => (
               <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
             )}
@@ -775,7 +777,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
   return (
     <div>
-      <div style={{ marginRight: detailTaskId ? 560 : 0 }}>
+      {/* An open task panel covers the list's right side and never moves or narrows the list. */}
+      <div>
         <TaskListToolbar
           onAddTask={handleAddTaskClick}
           projects={projects}
@@ -831,7 +834,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               </ReorderScope>
               {inlineAdd?.groupId === null && (
                 <>
-                  {heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
+                  {view.group !== 'none' && heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
                   <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={inlineGridTemplate} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
                 </>
               )}

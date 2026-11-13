@@ -236,9 +236,10 @@ function caretOffsetAt(container, x, y) {
 
 // A task's name in its row. Clicking the text, or Enter or Space on it, edits the name in place
 // (Asana's list does the same): Enter or a click away saves through `onRename`, Esc puts the old
-// name back, and an empty or unchanged name saves nothing. The rest of the name cell is the row,
-// which opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes
-// where the click was only when that text is the stored title; otherwise it goes to the end.
+// name back, and an empty or unchanged name saves nothing. Above 640px the button fills the name
+// cell up to what follows it, so the whole cell is the target; the panel button ending the cell
+// opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes where the
+// click was only when that text is the stored title; otherwise, or past the words, it goes to the end.
 function TitleCell({ task, nameText, disabled, onRename }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')

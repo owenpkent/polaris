@@ -1536,3 +1536,35 @@ describe('the custom repeat builder when the panel is left', () => {
     expect(api.updateTask).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('a click outside the panel', () => {
+  // A press and a release, as a pointer makes them; fireEvent.click alone has no press.
+  function pointerClick(target) {
+    fireEvent.pointerDown(target, { button: 0 })
+    fireEvent.click(target, { button: 0 })
+  }
+
+  test('on empty space closes it; on a control, a task row, or inside the panel it does not', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    const onClose = vi.fn()
+    const page = document.createElement('div')
+    page.innerHTML = '<p>Empty space</p><button type="button">Filter</button><div data-task-id="t_2"><span>Other task</span></div>'
+    document.body.appendChild(page)
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+      const panel = await screen.findByRole('dialog', { name: 'Task details' })
+      pointerClick(panel)
+      pointerClick(screen.getByText('Filter'))
+      pointerClick(screen.getByText('Other task'))
+      expect(onClose).not.toHaveBeenCalled()
+      // A selection dragged out of the panel starts inside it, so it does not close it either.
+      fireEvent.pointerDown(panel, { button: 0 })
+      fireEvent.click(screen.getByText('Empty space'), { button: 0 })
+      expect(onClose).not.toHaveBeenCalled()
+      pointerClick(screen.getByText('Empty space'))
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      page.remove()
+    }
+  })
+})

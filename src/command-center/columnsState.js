@@ -124,14 +124,12 @@ export const SIDEBAR_WIDTH = 232
 // measured on the list rather than the window. narrowInbox is where the Inbox table, whose
 // Project, Source, and action columns are fixed at 540px, would leave the name under 200px: below
 // it Inbox uses the same stacked cards it shows on a phone (InboxTab.jsx). phone is the single
-// phone breakpoint (640px) the whole dashboard uses for its phone layout tier. narrowPanel is
-// where an open task panel leaves the list too little room for Project as well.
+// phone breakpoint (640px) the whole dashboard uses for its phone layout tier.
 export const BREAKPOINT_QUERIES = {
   narrow900: `(max-width: ${900 + SIDEBAR_WIDTH}px)`,
   narrow600: `(max-width: ${600 + SIDEBAR_WIDTH}px)`,
   narrowInbox: `(max-width: ${800 + SIDEBAR_WIDTH}px)`,
   phone: '(max-width: 640px)',
-  narrowPanel: '(max-width: 1440px)',
 }
 
 const BREAKPOINT_KEYS = Object.keys(BREAKPOINT_QUERIES)
@@ -166,19 +164,17 @@ export function useNarrowBreakpoints() {
 }
 
 // Which columns actually render, combining the user's own hide/show choices
-// with the responsive rules above and (matching the previous mt-panel-open
-// CSS) hiding Priority/Source while the task detail panel is open so Name
-// and Due date have room, and Project too when the window is narrowPanel or
-// less, since the sidebar and the panel then leave the list little width. On the phone tier the column set is fixed to
-// checkbox + Name (the date is beside the name, or under it on a very narrow phone) regardless of the saved hidden state or an open
-// panel -- there isn't room for anything else.
-export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOpen, narrowPanel = false }) {
+// with the responsive rules above. An open task panel changes nothing here: it covers the list's
+// right side and never moves or narrows the list. On the phone tier the column set is fixed to
+// checkbox + Name (the date is beside the name, or under it on a very narrow phone) regardless of
+// the saved hidden state -- there isn't room for anything else.
+export function getVisibleColumns(hidden, { narrow900, narrow600, phone }) {
   return COLUMN_DEFS.filter((col) => {
     if (!col.canHide) return true
     if (phone) return col.id === 'due'
     if (hidden[col.id]) return false
-    if ((narrow900 || panelOpen) && (col.id === 'priority' || col.id === 'source' || col.id === 'assignee')) return false
-    if ((narrow600 || (panelOpen && narrowPanel)) && col.id === 'project') return false
+    if (narrow900 && (col.id === 'priority' || col.id === 'source' || col.id === 'assignee')) return false
+    if (narrow600 && col.id === 'project') return false
     return true
   })
 }

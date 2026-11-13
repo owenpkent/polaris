@@ -1107,6 +1107,9 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 /* A name column too narrow for the name, Waiting, the count, and the panel button side by side
    (a narrow window, or an open panel): what follows the name wraps under it. */
 @media (min-width: 641px) {
+  /* Above 640px the name takes all the room its cell has, so a click anywhere between the check
+     and Waiting, the count, or the panel button edits it, not only a click on its words. */
+  .mytasks-title { flex: 1 1 auto; }
   @container (max-width: 260px) {
     .mytasks-name-body { flex-wrap: wrap; }
   }
@@ -1230,6 +1233,9 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .subtask-toggle[aria-expanded='true'] .subtask-chip { color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd-strong); }
 /* The new row's empty circle, where a row's check is. */
 .inline-add-check { display: flex; align-items: center; justify-content: center; width: var(--target); height: var(--row); }
+/* The grip a row's reorder handle shows, in the same place and colour, so the row being typed
+   reads as the rows above it. It is a drawing, not a control. */
+.inline-add-handle { display: flex; align-items: center; justify-content: center; height: var(--row); color: var(--t3); }
 
 /* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
    done. A tick at rest read as already done. Hovering the button turns the circle green and shows
