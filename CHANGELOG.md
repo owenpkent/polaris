@@ -5,6 +5,11 @@ carries, because `cc update` snapshots the database before one and a rollback re
 
 ## Unreleased
 
+- On a phone, a task's due date is back on the name's line: the name, then the date chip at its
+  right, then the button that opens the panel, so a short task is one line tall again and a long
+  name wraps beside its date. Every date chip is one size, with its words centred and a repeat
+  glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
+  time is no taller than one without. Under 380px wide the date still goes under the name.
 - On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
   press Enter to add it under that task, as many times as you like, and Esc closes the box. An
   inbox item still has no subtasks.

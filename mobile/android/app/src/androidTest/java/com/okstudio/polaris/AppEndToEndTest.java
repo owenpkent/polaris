@@ -332,11 +332,14 @@ public class AppEndToEndTest {
         app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote("Change due date for " + title) + ")", LOAD_MS);
     }
 
-    // On a phone the due date sits under the task name, not in a column. A long name must wrap in
-    // full, the date button must start on the name's left edge on a line below it, and it must be a
-    // real 44px touch target that a finger opens the picker with.
+    // On a phone the due date sits at the right of the task name, not in a column. A long name
+    // must wrap in full, and the date button must be a real 44px touch target that a finger opens
+    // the picker with. Where it goes depends on the WebView's CSS width, which differs between
+    // devices (the owner's phone is 412px, the CI emulator under 380px): from 380px up it is to
+    // the right of the name's words and level with their middle, so the room above and under it
+    // is the same; under 380px it goes under the name, starting at the name's left edge.
     @Test
-    public void phoneRowPutsTheDateUnderAWrappedName() throws Exception {
+    public void phoneRowPutsTheDateBesideOrUnderAWrappedName() throws Exception {
         connect();
         String title = "Phone row " + System.currentTimeMillis()
             + " with a deliberately long name that has to wrap over several lines on a narrow screen without being cut";
@@ -362,10 +365,20 @@ public class AppEndToEndTest {
         String[] n = rect(nameText);
         String[] d = rect(date);
         String report = "name text " + String.join(",", n) + "; date button " + String.join(",", d);
+        boolean under = app.truthy("window.innerWidth<380");
+        report += under ? " (under 380px: date under the name)" : " (380px or wider: date beside the name)";
         android.util.Log.i("PhoneRowTest", report);
-        assertTrue("Date button is not below the name text, " + report, Float.parseFloat(d[1]) >= Float.parseFloat(n[3]) - 1);
-        assertTrue("Date button's left is not on the name's left, " + report,
-            Math.abs(Float.parseFloat(d[0]) - Float.parseFloat(n[0])) <= 2);
+        if (under) {
+            assertTrue("Date button is not under the name text, " + report,
+                Float.parseFloat(d[1]) >= Float.parseFloat(n[3]) - 1);
+            assertTrue("Date button does not start at the name's left edge, " + report,
+                Math.abs(Float.parseFloat(d[0]) - Float.parseFloat(n[0])) <= 4);
+        } else {
+            assertTrue("Date button is not level with the middle of the name, " + report,
+                Math.abs((Float.parseFloat(d[1]) + Float.parseFloat(d[3])) - (Float.parseFloat(n[1]) + Float.parseFloat(n[3]))) <= 4);
+            assertTrue("Date button is not to the right of the name text, " + report,
+                Float.parseFloat(d[0]) >= Float.parseFloat(n[2]) - 1);
+        }
         assertTrue("Date button is under 44px wide, " + report, Float.parseFloat(d[2]) - Float.parseFloat(d[0]) >= 43.5f);
         assertTrue("Date button is under 44px tall, " + report, Float.parseFloat(d[3]) - Float.parseFloat(d[1]) >= 43.5f);
 

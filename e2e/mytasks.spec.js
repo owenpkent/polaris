@@ -693,8 +693,13 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Space')
     await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
     await page.keyboard.press('Escape')
-    // Tab goes on to the panel button, and Enter on it opens the task.
+    // Tab goes on to the panel button, and Enter on it opens the task. On a phone the date comes
+    // first, between the name and the panel button, as it does on the screen.
     await page.keyboard.press('Tab')
+    if (isPhone(testInfo)) {
+      await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toBeFocused()
+      await page.keyboard.press('Tab')
+    }
     await expect(open).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(panel).toBeVisible()
@@ -818,7 +823,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the phone tier shows only the name, with the due date under it')
+    test.skip(isPhone(testInfo), 'the phone tier shows only the name and its due date')
     const title = await createTask(request, testInfo, 'priority')
     await openView(page)
     await page.getByRole('button', { name: `Change priority for ${title}` }).click()
@@ -838,7 +843,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
   })
 
-  test('on a phone a long name wraps whole and the due date sits under it, in the same row', async ({ page, request }, testInfo) => {
+  test('on a phone a long name wraps whole and the due date sits beside it at the middle of the row, before the panel button', async ({ page, request }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
     await openView(page)
@@ -847,13 +852,20 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     expect(await clippedContent(page, rowBox)).toEqual([])
     const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
     const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
+    const open = await row(page, title).boundingBox()
     const whole = await rowBox.boundingBox()
-    // The name wraps (more than one line tall), and the date starts below its last line.
+    const middle = (box) => box.y + box.height / 2
+    // The name wraps (more than one line tall), and the date is to its right, at the middle of the
+    // row's height, so the room above it and under it is the same.
     expect(rename.height).toBeGreaterThan(40)
-    expect(due.y).toBeGreaterThanOrEqual(rename.y + rename.height - 1)
-    // Same row, with the date's left edge on the name's, and a 44px target.
+    expect(due.x).toBeGreaterThanOrEqual(rename.x + rename.width - 1)
+    expect(Math.abs(middle(due) - middle(whole))).toBeLessThanOrEqual(1)
+    // The panel button follows the date, level with it, at the row's right edge.
+    expect(open.x).toBeGreaterThanOrEqual(due.x + due.width - 1)
+    expect(Math.abs(middle(open) - middle(due))).toBeLessThanOrEqual(1)
+    expect(open.x + open.width).toBeLessThanOrEqual(whole.x + whole.width + 1)
+    // Same row, and a 44px target.
     expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
-    expect(Math.abs(due.x - rename.x)).toBeLessThanOrEqual(6)
     expect(due.height).toBeGreaterThanOrEqual(44)
   })
 })
