@@ -88,6 +88,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const due = formatDueCell(task.dueAt, dueBounds)
   // A repeating task shows a small repeat glyph after its date; the name says how it repeats.
   const repeat = repeatLabel(task.recurrence)
+  const glyph = repeat ? <Repeat size={12} aria-hidden="true" className="repeat-glyph" /> : null
 
   return (
     <div className="due-cell" style={{ position: 'relative', minWidth: 0 }}>
@@ -102,16 +103,22 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         title={due.text || undefined}
       >
         {phone && due.text ? (
-          // The day and the time each stay whole, the time on its own line under the day.
+          // The day and the time each stay whole, the time on its own line under the day. The
+          // repeat glyph is inside the chip, after the day, so every chip in a list is one width
+          // and they line up whether or not a task repeats.
           <span
             className={due.time ? 'due-chip has-time' : 'due-chip'}
             style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
           >
             {due.time ? (
               <>
-                <span>{due.date}</span> <span>{due.time}</span>
+                <span>{due.date}{glyph}</span> <span>{due.time}</span>
               </>
-            ) : due.text}
+            ) : (
+              <>
+                {due.text}{glyph}
+              </>
+            )}
           </span>
         ) : phone ? (
           // A task with no date still needs a way to set one: a quiet "Add date" with no fill,
@@ -120,7 +127,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         ) : (
           due.text
         )}
-        {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
+        {!(phone && due.text) && glyph}
       </CellButton>
       <DueDateMenu
         anchorRef={btnRef}
