@@ -726,10 +726,11 @@ export async function clippedContent(page, scope = page.locator('body')) {
 // scrolled to the middle of the screen, focused as from the keyboard, and photographed with its
 // ring and with the ring made transparent; along each straight side of the ring, the share of positions where nothing
 // changed is the share of the ring that is hidden. Returns one line per side hidden by more than
-// a tenth, and puts focus and scrolling back as they were. The control is measured after the
-// page has settled from the scroll and again after both photos: a control that moved between
-// them (a toast still easing in, a list reflowing under a fixed bar) would be read where it no
-// longer is, its top and bottom bands missing the ring, so that pair is taken again.
+// a tenth, and puts focus and scrolling back as they were. The control is measured before the
+// photos and again after them: a control that moved in between (a toast still easing in, a list
+// reflowing under a fixed bar) would be read where it no longer is, its top and bottom bands
+// missing the ring, so that pair is taken again. The second measure rides on the call that puts
+// the ring back, so a control that holds still costs no extra round trip.
 export async function hiddenFocusRings(page, scope = page.locator('body'), selector = 'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"], [role="radio"], [tabindex="0"]') {
   // A key press makes the next programmatic focus count as keyboard focus (:focus-visible).
   await page.keyboard.press('Shift')
@@ -746,12 +747,8 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
   const controls = await layer.evaluateHandle((root, sel) => [...root.querySelectorAll(sel)], selector)
   const count = await controls.evaluate((list) => list.length)
   const out = []
-  const rectOf = (i) => controls.evaluate((list, i) => {
-    const r = list[i].getBoundingClientRect()
-    return [r.left, r.top, r.right, r.bottom]
-  }, i)
   for (let i = 0, tries = 0; i < count; i++) {
-    const ring = await controls.evaluate(async (list, i) => {
+    const ring = await controls.evaluate((list, i) => {
       const el = list[i]
       for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
         const s = getComputedStyle(n)
@@ -760,8 +757,6 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
       if (el.disabled || el.getAttribute('aria-hidden') === 'true') return null
       el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
       el.focus({ preventScroll: true })
-      // Two frames, so what the scroll and the focus set off is laid out before the measure.
-      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
       if (document.activeElement !== el || !el.matches(':focus-visible')) return null
       const s = getComputedStyle(el)
       const width = parseFloat(s.outlineWidth) || 0
@@ -805,11 +800,12 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
       return prior
     }, i)
     const plain = (await page.screenshot({ clip, scale: 'css', animations: 'disabled', caret: 'hide' })).toString('base64')
-    const after = await rectOf(i)
-    await controls.evaluate((list, [i, [value, priority]]) => {
+    const after = await controls.evaluate((list, [i, [value, priority]]) => {
+      const r = list[i].getBoundingClientRect()
       list[i].style.removeProperty('outline-color')
       if (value) list[i].style.setProperty('outline-color', value, priority)
       list[i].blur()
+      return [r.left, r.top, r.right, r.bottom]
     }, [i, before])
     // Moved since it was measured: the photos do not show the ring where it was looked for.
     if (after.some((v, k) => Math.abs(v - ring.rect[k]) > 0.5) && tries < 3) {
