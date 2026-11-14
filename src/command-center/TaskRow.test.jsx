@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import TaskRow, { TaskTree, indexSubtasks } from './TaskRow'
 import { getDueBounds } from './dueDates'
 
@@ -350,6 +350,118 @@ describe('TaskTree subtasks', () => {
     expect(waiting.closest('.mytasks-name-grid')).not.toBeNull()
     expect(waiting.closest('.mytasks-name-body')).not.toBeNull()
     expect(waiting.closest('.mytasks-title')).toBeNull()
+  })
+})
+
+describe('TaskTree Add subtask row', () => {
+  const sub = baseTask({ id: 's1', title: 'Book the train', parentId: 'p', position: 1 })
+
+  function renderTree({ parent = baseTask({ id: 'p', title: 'Plan the trip' }), onAddSubtask = vi.fn().mockResolvedValue(undefined), handleColumn = false } = {}) {
+    render(
+      <TaskTree
+        task={parent}
+        subtasksByParent={indexSubtasks([parent, sub])}
+        projectNameById={new Map([['p1', 'Alpha']])}
+        pendingIds={new Set()}
+        openTaskId={null}
+        projectOptions={PROJECT_OPTIONS}
+        dueBounds={DUE_BOUNDS}
+        visibleColumns={VISIBLE_COLUMNS}
+        gridTemplateColumns="44px 1fr 100px 100px 100px 80px"
+        phone={false}
+        handleColumn={handleColumn}
+        onToggleComplete={vi.fn()}
+        onOpen={vi.fn()}
+        onQuickUpdate={vi.fn()}
+        onAddSubtask={onAddSubtask}
+      />
+    )
+    return { onAddSubtask, parent }
+  }
+
+  const expand = () => fireEvent.click(screen.getByRole('button', { name: '1 open subtask of Plan the trip' }))
+  const addButton = () => screen.queryByRole('button', { name: 'Add subtask to Plan the trip' })
+
+  test('the row shows only while the subtasks are shown, and names the parent', () => {
+    renderTree()
+    expect(addButton()).toBeNull()
+    expand()
+    expect(addButton()).toBeTruthy()
+    expect(addButton().textContent).toBe('Add subtask')
+    fireEvent.click(screen.getByRole('button', { name: '1 open subtask of Plan the trip' }))
+    expect(addButton()).toBeNull()
+  })
+
+  // A click away saves and closes the box; the row stays mounted, so the box opened again must
+  // take a second subtask (not stay read-only from the first save).
+  test('after a save by clicking away, the box opened again adds another', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    try {
+      const { onAddSubtask, parent } = renderTree()
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'Pack the charger' } })
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Pack the charger'))
+      await waitFor(() => expect(addButton()).toBeTruthy())
+      fireEvent.click(addButton())
+      const next = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      expect(next.readOnly).toBe(false)
+      fireEvent.change(next, { target: { value: 'Print the tickets' } })
+      fireEvent.keyDown(next, { key: 'Enter' })
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Print the tickets'))
+    } finally {
+      outside.remove()
+    }
+  })
+
+  test('no row under an inbox task', () => {
+    renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
+    expand()
+    expect(screen.getByRole('button', { name: 'Open Book the train' })).toBeTruthy()
+    expect(addButton()).toBeNull()
+  })
+
+  test('Enter adds under the parent and keeps the box open; Esc discards', async () => {
+    const { onAddSubtask, parent } = renderTree()
+    expand()
+    fireEvent.click(addButton())
+    const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+    expect(document.activeElement).toBe(box)
+    fireEvent.change(box, { target: { value: 'Pack the bags' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Pack the bags'))
+    await waitFor(() => expect(box.value).toBe(''))
+    expect(screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })).toBe(box)
+    fireEvent.change(box, { target: { value: 'never added' } })
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'New subtask of Plan the trip' })).toBeNull()
+    expect(onAddSubtask).toHaveBeenCalledTimes(1)
+    expect(addButton()).toBeTruthy()
+  })
+
+  test('a failed create shows why and keeps the typed title', async () => {
+    renderTree({ onAddSubtask: vi.fn().mockRejectedValue(new Error('Server said no')) })
+    expand()
+    fireEvent.click(addButton())
+    const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+    fireEvent.change(box, { target: { value: 'Pack the bags' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await screen.findByText('Server said no')
+    expect(box.value).toBe('Pack the bags')
+  })
+
+  test('leaving it empty closes it', () => {
+    renderTree()
+    expand()
+    fireEvent.click(addButton())
+    fireEvent.blur(screen.getByRole('textbox', { name: 'New subtask of Plan the trip' }))
+    expect(addButton()).toBeTruthy()
   })
 })
 

@@ -382,6 +382,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     await fetchTasks()
   }, [api, fetchTasks, inlineAdd, endPositionFor])
 
+  // The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx). It throws when the
+  // create fails, so the row can show why and keep the typed title; the list reloads after.
+  const addSubtask = useCallback(async (parent, title) => {
+    await api.createTask({ title, parentId: parent.id })
+    await fetchTasks()
+  }, [api, fetchTasks])
+
   // The sheet closes itself once this resolves, and only if it is still the opening that sent
   // the request (NewTaskSheet.jsx), so a slow create never closes a newer draft.
   // The sheet's default is no due date, and that group starts collapsed (Later too), so the
@@ -682,6 +689,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const sortedTasks = heldTasks.length > 0 ? allSorted.filter((t) => !heldIds.includes(t.id)) : allSorted
 
   const commonRowProps = {
+    onAddSubtask: addSubtask,
     dueBounds,
     projectNameById,
     subtasksByParent,

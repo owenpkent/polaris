@@ -42,6 +42,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
   and keeps the "ready" notification in the tray as the reminder. The notification is posted at
   once rather than through Android's inexact alarm, which held it back by half a minute. Android
   still asks to confirm the install, and nothing installs silently.
+- On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
+  press Enter to add it under that task, as many times as you like, and Esc closes the box. An
+  inbox item still has no subtasks.
 
 ## 2.10.0 (2026-11-12)
 
