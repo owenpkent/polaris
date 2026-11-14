@@ -10,6 +10,14 @@ carries, because `cc update` snapshots the database before one and a rollback re
   name wraps beside its date. Every date chip is one size, with its words centred and a repeat
   glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
   time is no taller than one without. Under 380px wide the date still goes under the name.
+- In the Android app, a downloaded update now opens an "Update ready" dialog with Later and Install,
+  so the owner no longer has to find the notification or the Settings card. If Android has to be
+  allowed to install apps first, the install carries on by itself when the owner comes back from
+  that page (from the dialog, the notification or the card), and the dialog returns with a line
+  asking to allow it if it was still refused. Pressing Later asks for notification permission once
+  and keeps the "ready" notification in the tray as the reminder. The notification is posted at
+  once rather than through Android's inexact alarm, which held it back by half a minute. Android
+  still asks to confirm the install, and nothing installs silently.
 
 ## 2.10.0 (2026-11-12)
 

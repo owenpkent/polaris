@@ -105,14 +105,15 @@ export async function discardAppUpdate() {
 }
 
 // One notification, shown at once, saying a checked APK is ready. Tapping it is handled by
-// subscribeAppUpdateTaps.
+// subscribeAppUpdateTaps. It has no schedule: a scheduled one goes through Android's inexact
+// alarm, which held it back by half a minute on a test device; with none it is posted at once.
 export async function scheduleAppUpdateNotification({ version }) {
   await nativeCall('LocalNotifications', 'schedule', {
     notifications: [{
       id: APP_UPDATE_NOTIFICATION_ID,
       title: `Polaris ${version} is ready to install`,
       body: 'Tap to install. Android asks you to confirm once.',
-      schedule: { at: new Date(Date.now() + 1000).toISOString(), allowWhileIdle: true },
+      // Not an exact alarm: without this the plugin opens Android's Alarms and reminders page.
       isExactNotification: false,
       extra: { kind: 'app-update' },
     }],
