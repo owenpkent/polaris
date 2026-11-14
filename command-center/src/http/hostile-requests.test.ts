@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import type { App } from '../app.ts';
-import { TEST_TOKENS, fakeApp, withServer } from './test-support.ts';
+import { TAILNET_HOST, TEST_TOKENS, fakeApp, withServer } from './test-support.ts';
 
 interface RawResponse { status: number; head: string; body: string }
 
@@ -167,26 +167,31 @@ test('upgrades and half-sent calls cut off by a reset leave the server answering
 });
 
 // ---- Tailscale identity switched on (tailscale.ts). A loopback peer that sends the owner's login
-// is the owner on /api by design; everything else below is what must still be refused.
+// to this machine's tailnet name is the owner on /api by design: that is what `tailscale serve`
+// forwards. Everything else below is what must still be refused.
 
 const LOGIN = 'owner@example.com';
 const login = (value = LOGIN): [string, string] => ['Tailscale-User-Login', value];
+const OWN_ORIGIN = `https://${TAILNET_HOST}`;
+/** A request as the proxy forwards it: addressed to the tailnet name, whatever else it carries. */
+const viaProxy = (base: string, method: string, target: string, headers: [string, string][] = [], body?: string): Promise<RawResponse> =>
+  raw(base, method, target, [['Host', TAILNET_HOST], ...headers], body);
 const identityOn = { tailscaleLogin: LOGIN, corsOrigins: ['https://localhost'], identityWriteOrigins: ['https://localhost'] };
 
 test('identity: only the one configured login, in the one header, is the owner', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());
   await withServer(app, identityOn, async (base) => {
-    assert.equal((await raw(base, 'GET', '/api/tasks', [login()])).status, 200);
+    assert.equal((await viaProxy(base, 'GET', '/api/tasks', [login()])).status, 200);
     for (const value of ['attacker@example.com', 'owner@example.com.evil.example', 'owner@example.co', 'xowner@example.com', 'owner@example.com x', 'owner@example.com;attacker@example.com',
       'owner@example.com, attacker@example.com', 'attacker@example.com, owner@example.com', '"owner@example.com"', 'owner%40example.com', 'owner@exaⅿple.com', '*', '']) {
-      const r = await raw(base, 'GET', '/api/tasks', [login(value)]);
+      const r = await viaProxy(base, 'GET', '/api/tasks', [login(value)]);
       assert.ok(refused(r), `login ${JSON.stringify(value)} answered ${r.status}`);
     }
-    assert.ok(refused(await raw(base, 'GET', '/api/tasks', [login('attacker@example.com'), login()])), 'two login headers were taken as one');
-    assert.ok(refused(await raw(base, 'GET', '/api/tasks', [login(), login()])), 'a repeated login header was taken as one');
+    assert.ok(refused(await viaProxy(base, 'GET', '/api/tasks', [login('attacker@example.com'), login()])), 'two login headers were taken as one');
+    assert.ok(refused(await viaProxy(base, 'GET', '/api/tasks', [login(), login()])), 'a repeated login header was taken as one');
     for (const name of ['Tailscale_User_Login', 'X-Tailscale-User-Login', 'Tailscale-User-Name', 'X-Forwarded-User']) {
-      assert.ok(refused(await raw(base, 'GET', '/api/tasks', [[name, LOGIN]])), `header ${name} was taken as the login`);
+      assert.ok(refused(await viaProxy(base, 'GET', '/api/tasks', [[name, LOGIN]])), `header ${name} was taken as the login`);
     }
   });
 });
@@ -195,9 +200,8 @@ test('identity never opens MCP, under any spelling of the path', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());
   await withServer(app, identityOn, async (base) => {
-    const { host } = new URL(base);
     for (const target of ['/mcp', '/mcp/readonly', '/api/../mcp', '/api\\..\\mcp', '/api/identity/../../mcp']) {
-      const r = await raw(base, 'POST', target, [login(), MCP_ACCEPT, ['Origin', `http://${host}`], ['Sec-Fetch-Site', 'same-origin']], createTaskCall('identity on mcp'));
+      const r = await viaProxy(base, 'POST', target, [login(), MCP_ACCEPT, ['Origin', OWN_ORIGIN], ['Sec-Fetch-Site', 'same-origin']], createTaskCall('identity on mcp'));
       assert.equal(r.status, 401, `identity got ${r.status} on ${JSON.stringify(target)}`);
     }
     assert.equal(taskCount(app), 0);
@@ -208,9 +212,9 @@ test('identity: a write is taken from the dashboard\'s own origin or a listed on
   const app = fakeApp();
   t.after(() => app.close());
   await withServer(app, identityOn, async (base) => {
-    const { host } = new URL(base);
-    const write = (headers: [string, string][]) => raw(base, 'POST', '/api/tasks', [login(), ...headers], JSON.stringify({ title: 'a write' }));
-    assert.equal((await write([['Origin', `http://${host}`]])).status, 201);
+    const host = TAILNET_HOST;
+    const write = (headers: [string, string][]) => viaProxy(base, 'POST', '/api/tasks', [login(), ...headers], JSON.stringify({ title: 'a write' }));
+    assert.equal((await write([['Origin', OWN_ORIGIN]])).status, 201);
     assert.equal((await write([['Origin', 'https://localhost']])).status, 201);
     const elsewhere: [string, string][][] = [
       [],
@@ -218,9 +222,9 @@ test('identity: a write is taken from the dashboard\'s own origin or a listed on
       [['Origin', 'null']],
       [['Origin', `http://${host}.evil.example`]],
       [['Origin', `http://${host}@evil.example`]],
-      [['Origin', 'http://127.0.0.1:1']],
+      [['Origin', `https://${host}:1`]],
       [['Origin', 'https://evil.example'], ['Sec-Fetch-Site', 'cross-site']],
-      [['Origin', `http://${host}`], ['Sec-Fetch-Site', 'cross-site']],
+      [['Origin', OWN_ORIGIN], ['Sec-Fetch-Site', 'cross-site']],
       [['Origin', 'https://evil.example'], ['Sec-Fetch-Site', 'same-site']],
       [['Sec-Fetch-Site', 'none']],
       [['Origin', 'http://localhost:5173']],
@@ -228,14 +232,14 @@ test('identity: a write is taken from the dashboard\'s own origin or a listed on
       [['Origin', 'http://localhost']],
       [['Origin', 'HTTPS://LOCALHOST']],
       [['Origin', 'https://localhost:443']],
-      [['Referer', `http://${host}/`]],
+      [['Referer', `${OWN_ORIGIN}/`]],
     ];
     for (const headers of elsewhere) {
       const r = await write(headers);
       assert.equal(r.status, 403, `a write with ${JSON.stringify(headers)} answered ${r.status}`);
     }
     for (const method of ['PATCH', 'PUT', 'DELETE']) {
-      const r = await raw(base, method, '/api/tasks/t_none', [login(), ['Origin', 'https://evil.example']], method === 'DELETE' ? undefined : '{}');
+      const r = await viaProxy(base, method, '/api/tasks/t_none', [login(), ['Origin', 'https://evil.example']], method === 'DELETE' ? undefined : '{}');
       assert.equal(r.status, 403, `${method} from another site answered ${r.status}`);
     }
     assert.equal(taskCount(app), 2);
@@ -246,7 +250,7 @@ test('identity: another site can neither send the login header itself nor read a
   const app = fakeApp();
   t.after(() => app.close());
   await withServer(app, identityOn, async (base) => {
-    const preflight = (origin: string) => raw(base, 'OPTIONS', '/api/tasks', [['Origin', origin], ['Access-Control-Request-Method', 'GET'], ['Access-Control-Request-Headers', 'tailscale-user-login']]);
+    const preflight = (origin: string) => viaProxy(base, 'OPTIONS', '/api/tasks', [['Origin', origin], ['Access-Control-Request-Method', 'GET'], ['Access-Control-Request-Headers', 'tailscale-user-login']]);
     for (const origin of ['https://evil.example', 'null', 'http://localhost:5173']) {
       const r = await preflight(origin);
       assert.equal(r.status, 403, `a preflight from ${origin} answered ${r.status}`);
@@ -259,7 +263,31 @@ test('identity: another site can neither send the login header itself nor read a
     assert.ok(!/access-control-allow-headers:.*(tailscale-user-login|\*)/i.test(listed.head), 'the listed origin may send the login header');
     // A read the proxy stamped for a page on another site is answered, but with no CORS grant, so
     // the browser keeps the answer from that page.
-    const read = await raw(base, 'GET', '/api/tasks', [login(), ['Origin', 'https://evil.example']]);
+    const read = await viaProxy(base, 'GET', '/api/tasks', [login(), ['Origin', 'https://evil.example']]);
     assert.ok(!/access-control-allow-origin/i.test(read.head), 'a stamped read was granted to another site');
+  });
+});
+
+// The one attempt that got through on 2026-11-14, before identity looked at the Host. A website open
+// in a browser on the daemon's own machine re-points its own name at 127.0.0.1 (DNS rebinding). Its
+// page is then same-origin to the daemon, so it may add the login header itself and read the answer,
+// and its requests arrive from loopback. The Host is the name the page was loaded under.
+test('identity: the login of the owner sent to a name outside the tailnet is not the owner', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  app.store.createTask({ title: 'private' }, 'human');
+  await withServer(app, identityOn, async (base) => {
+    const { host: loopback, port } = new URL(base);
+    for (const host of [`attacker.example:${port}`, 'attacker.example', loopback, `localhost:${port}`, `polaris.ts.net.attacker.example:${port}`, 'ts.net', `${TAILNET_HOST}.`]) {
+      const page: [string, string][] = [['Host', host], login(), ['Origin', `http://${host}`], ['Sec-Fetch-Site', 'same-origin']];
+      const read = await raw(base, 'GET', '/api/tasks', page);
+      assert.equal(read.status, 401, `a read addressed to ${host} answered ${read.status}`);
+      assert.ok(!read.body.includes('private'), `a read addressed to ${host} leaked a task`);
+      const write = await raw(base, 'POST', '/api/tasks', page, JSON.stringify({ title: 'planted' }));
+      assert.equal(write.status, 401, `a write addressed to ${host} answered ${write.status}`);
+    }
+    assert.equal(taskCount(app), 1);
+    // Addressed to the tailnet name, the same login is the owner.
+    assert.equal((await viaProxy(base, 'GET', '/api/tasks', [login()])).status, 200);
   });
 });
