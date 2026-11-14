@@ -28,11 +28,20 @@ carries, because `cc update` snapshots the database before one and a rollback re
 - On a desktop a task's name takes its whole cell in My tasks, so a click anywhere between the
   check and the panel button renames it, not only a click on its words. The subtask count and
   Waiting sit at the cell's right end.
-- A click on empty space beside an open task panel closes it, saving what was typed, as Esc does.
+- A click on empty space beside an open task panel closes it. That, Close, and Esc each save
+  what was typed first, a comment or subtask name left by Tab included.
 - Opening a task's panel no longer moves or narrows My tasks at any width: the panel covers the
   list's right side, as it does on Board, and no column is hidden while it is open.
 - Under the manual sort the Add task row shows the grip the rows above it have, and a task just
   added to the ungrouped list has its reorder handle while the row is still open.
+- In the Android app, a downloaded update now opens an "Update ready" dialog with Later and Install,
+  so the owner no longer has to find the notification or the Settings card. If Android has to be
+  allowed to install apps first, the install carries on by itself when the owner comes back from
+  that page (from the dialog, the notification or the card), and the dialog returns with a line
+  asking to allow it if it was still refused. Pressing Later asks for notification permission once
+  and keeps the "ready" notification in the tray as the reminder. The notification is posted at
+  once rather than through Android's inexact alarm, which held it back by half a minute. Android
+  still asks to confirm the install, and nothing installs silently.
 
 ## 2.10.0 (2026-11-12)
 

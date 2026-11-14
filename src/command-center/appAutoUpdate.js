@@ -13,6 +13,7 @@ export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 // without a version. A ready file stands on its own.
 export const DEFAULT_APP_UPDATE_PREFS = {
   enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null,
+  asked: false,
 }
 const STATES = ['newer', 'no-apk', 'current', 'unknown']
 
@@ -35,6 +36,8 @@ export function readAppUpdatePrefs() {
       lastError: text(parsed.lastError),
       lastState: STATES.includes(parsed.lastState) ? parsed.lastState : null,
       latest: text(parsed.latest),
+      // True once the updater has asked for notification permission (when the owner pressed Later).
+      asked: parsed.asked === true,
     }
   } catch {
     return { ...DEFAULT_APP_UPDATE_PREFS }
@@ -157,15 +160,104 @@ async function doCheck({ running, now, force, fetchImpl, bridge }) {
   }
 }
 
+// The install prompt's state, in memory. `dismissed` is the version the owner put off with Later
+// (until the next launch, or a newer ready version). `needsAllow` is set when the owner came back
+// from Android's install settings and it was still refused.
+export const APP_UPDATE_PROMPT_EVENT = 'cc-app-update-prompt'
+export const PENDING_INSTALL_KEY = 'cc-app-update-pending-install'
+let dismissed = null
+let needsAllow = false
+
+function promptChanged() {
+  try {
+    window.dispatchEvent(new Event(APP_UPDATE_PROMPT_EVENT))
+  } catch {
+    // No window to tell.
+  }
+}
+
+export function getPromptState() {
+  return { dismissed, needsAllow }
+}
+
+export function resetPromptState() {
+  dismissed = null
+  needsAllow = false
+  setPendingInstall(false)
+}
+
+function setPendingInstall(on) {
+  try {
+    if (on) sessionStorage.setItem(PENDING_INSTALL_KEY, '1')
+    else sessionStorage.removeItem(PENDING_INSTALL_KEY)
+  } catch {
+    // Without storage the install simply is not continued on return.
+  }
+}
+
+function hasPendingInstall() {
+  try {
+    return sessionStorage.getItem(PENDING_INSTALL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 // Hands the ready APK to Android's installer. Until Android has allowed Polaris to install apps,
-// opens the page where the owner allows it, once.
+// opens the page where the owner allows it, once, and remembers that an install is pending:
+// continueInstallOnResume finishes it when the app comes back. The dialog's Install, the
+// notification tap and the Settings card all come through here.
 export async function installReadyUpdate({ bridge = defaultBridge } = {}) {
   const { ready } = readAppUpdatePrefs()
   if (!ready) throw new Error('No update is ready to install.')
+  needsAllow = false
   if (!(await bridge.canInstall())) {
+    setPendingInstall(true)
     await bridge.openInstallSettings()
+    promptChanged()
     return { opened: 'settings' }
   }
   await bridge.install(ready.path)
+  promptChanged()
   return { opened: 'installer' }
+}
+
+// On resume: if an install was waiting on the permission page, finish it when Android now allows
+// it and the file is still there; otherwise bring the prompt back with the reason.
+export async function continueInstallOnResume({ bridge = defaultBridge } = {}) {
+  if (!hasPendingInstall()) return { skipped: true }
+  setPendingInstall(false)
+  const { ready } = readAppUpdatePrefs()
+  if (!ready) return { skipped: true }
+  const good = await bridge.verify(ready.path).then((v) => v.ok, () => false)
+  if (!good) return { skipped: true }
+  if (await bridge.canInstall()) {
+    needsAllow = false
+    await bridge.install(ready.path)
+    promptChanged()
+    return { opened: 'installer' }
+  }
+  needsAllow = true
+  dismissed = null
+  promptChanged()
+  return { opened: 'settings' }
+}
+
+// Later: hides the prompt until the next launch and, the first time ever, asks for notification
+// permission so the ready notification can stay in the tray as the reminder.
+export async function laterAppUpdate({ bridge = defaultBridge, requestPermission = () => native.requestNotificationPermission() } = {}) {
+  const { ready, asked } = readAppUpdatePrefs()
+  dismissed = ready ? ready.version : null
+  needsAllow = false
+  promptChanged()
+  if (!ready || asked) return { asked: false }
+  patch({ asked: true })
+  let granted = false
+  try {
+    granted = await requestPermission()
+  } catch {
+    // A refused or failed request leaves the card as the only way back.
+  }
+  if (granted) await quietly(() => bridge.notify({ version: ready.version }))
+  return { asked: true, granted }
 }
