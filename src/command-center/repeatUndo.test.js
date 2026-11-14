@@ -1,56 +1,25 @@
-import { describe, test, expect, vi, afterEach } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import { dropUntouchedNext } from './repeatUndo'
-import { markOffline, resetOfflineStatus } from './offlineStatus'
-
-afterEach(() => resetOfflineStatus())
 
 const made = { id: 'n', status: 'open', updatedAt: '2026-11-14T10:00:00.000Z' }
 
-function fakeApi(current) {
-  return {
-    getTask: vi.fn(async () => (current instanceof Error ? Promise.reject(current) : { task: current })),
-    updateTask: vi.fn().mockResolvedValue({ task: {} }),
-  }
-}
-
 describe('dropUntouchedNext', () => {
-  test('drops a copy that is as it was made', async () => {
-    const api = fakeApi({ ...made })
+  test('asks the server to drop the copy only while it is as it was made', async () => {
+    const api = { updateTaskIfUnchanged: vi.fn().mockResolvedValue({ task: {} }) }
     await dropUntouchedNext(api, made)
-    expect(api.updateTask).toHaveBeenCalledWith('n', { status: 'dropped' })
+    expect(api.updateTaskIfUnchanged).toHaveBeenCalledWith('n', { status: 'dropped' }, made.updatedAt)
   })
 
-  test('leaves a copy edited since it was made', async () => {
-    const api = fakeApi({ ...made, title: 'Renamed', updatedAt: '2026-11-14T10:00:05.000Z' })
-    await dropUntouchedNext(api, made)
-    expect(api.updateTask).not.toHaveBeenCalled()
-  })
-
-  test('leaves a copy already done or dropped', async () => {
-    for (const status of ['done', 'dropped', 'in_progress']) {
-      const api = fakeApi({ ...made, status })
-      await dropUntouchedNext(api, made)
-      expect(api.updateTask).not.toHaveBeenCalled()
-    }
-  })
-
-  test('out of reach of the server, the stored copy is not trusted and nothing is dropped', async () => {
-    const api = fakeApi({ ...made })
-    api.getTask.mockImplementationOnce(async () => { markOffline(); return { task: { ...made } } })
-    await dropUntouchedNext(api, made)
-    expect(api.updateTask).not.toHaveBeenCalled()
-  })
-
-  test('does nothing for a task that made no copy', async () => {
-    const api = fakeApi({ ...made })
+  test('does nothing for a task that made no copy, or a copy with no stamp to check', async () => {
+    const api = { updateTaskIfUnchanged: vi.fn() }
     await dropUntouchedNext(api, null)
-    expect(api.getTask).not.toHaveBeenCalled()
+    await dropUntouchedNext(api, { id: 'n' })
+    expect(api.updateTaskIfUnchanged).not.toHaveBeenCalled()
   })
 
-  test('a copy that cannot be read, or a failed drop, does not fail the Undo', async () => {
-    await expect(dropUntouchedNext(fakeApi(new Error('offline')), made)).resolves.toBeUndefined()
-    const api = fakeApi({ ...made })
-    api.updateTask.mockRejectedValueOnce(new Error('down'))
+  // A copy changed since (409), or a server out of reach: the reopen still counts.
+  test('a refused or failed drop does not fail the Undo', async () => {
+    const api = { updateTaskIfUnchanged: vi.fn().mockRejectedValue(new Error('The task has changed since it was read.')) }
     await expect(dropUntouchedNext(api, made)).resolves.toBeUndefined()
   })
 })

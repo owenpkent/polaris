@@ -987,8 +987,9 @@ describe('MyTasksTab completing a repeating task', () => {
     await waitFor(() => expect(container.querySelector('[data-task-id="n"]')?.className).toContain('just-changed'), { timeout: 3000 })
   })
 
-  // Reopening the done one alone left two of the same task.
-  test('Undo reopens it and drops the next copy completing it made', async () => {
+  // Reopening the done one alone left two of the same task. The drop names the updatedAt the copy
+  // was made with, so the server refuses it for a copy changed since (repeatUndo.js).
+  test('Undo reopens it, then asks the server to drop the next copy if it is unchanged', async () => {
     stubMatchMedia(1280)
     const bounds = getDueBounds()
     const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
@@ -996,17 +997,16 @@ describe('MyTasksTab completing a repeating task', () => {
     api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
     api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
     api.reopenTask = vi.fn().mockResolvedValue({})
-    api.getTask = vi.fn().mockResolvedValue({ task: next })
-    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
+    api.updateTaskIfUnchanged = vi.fn().mockResolvedValue({ task: {} })
     render(<><MyTasksTab /><UndoToast /></>)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
-    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('n', { status: 'dropped' }))
+    await waitFor(() => expect(api.updateTaskIfUnchanged).toHaveBeenCalledWith('n', { status: 'dropped' }, next.updatedAt))
     expect(api.reopenTask).toHaveBeenCalledWith('d')
-    expect(api.reopenTask.mock.invocationCallOrder[0]).toBeLessThan(api.updateTask.mock.invocationCallOrder[0])
+    expect(api.reopenTask.mock.invocationCallOrder[0]).toBeLessThan(api.updateTaskIfUnchanged.mock.invocationCallOrder[0])
   })
 
-  test('Undo keeps a next copy edited since, and a Retry after a failed reopen still drops an untouched one', async () => {
+  test('a refused drop leaves the Undo done, and a Retry after a failed reopen still asks for the drop', async () => {
     stubMatchMedia(1280)
     const bounds = getDueBounds()
     const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
@@ -1014,23 +1014,15 @@ describe('MyTasksTab completing a repeating task', () => {
     api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
     api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
     api.reopenTask = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue({})
-    api.getTask = vi.fn().mockResolvedValue({ task: next })
-    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
-    render(<><MyTasksTab /><UndoToast /></>)
+    // The copy was renamed in between, so the server answers 409.
+    api.updateTaskIfUnchanged = vi.fn().mockRejectedValue(new Error('The task has changed since it was read.'))
+    const { container } = render(<><MyTasksTab /><UndoToast /></>)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
     const retry = await screen.findByRole('button', { name: 'Retry reopening Brush teeth' })
-    expect(api.getTask).not.toHaveBeenCalled()
+    expect(api.updateTaskIfUnchanged).not.toHaveBeenCalled()
     fireEvent.click(retry)
-    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('n', { status: 'dropped' }))
-
-    // The same again, with the copy renamed in between: it stays.
-    api.updateTask.mockClear()
-    api.getTask.mockResolvedValue({ task: { ...next, title: 'Floss', updatedAt: '2026-11-14T10:00:09.000Z' } })
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
-    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledTimes(3))
-    await waitFor(() => expect(api.getTask).toHaveBeenCalledTimes(2))
-    expect(api.updateTask).not.toHaveBeenCalled()
+    await waitFor(() => expect(api.updateTaskIfUnchanged).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toBe(''))
   })
 })

@@ -183,6 +183,35 @@ test('complete/reopen round trip, including the next occurrence of a recurring t
   });
 });
 
+// The completed toast's Undo drops a repeat's next copy only while nothing has changed it. The
+// check and the write are one transaction, so an edit cannot land between them.
+test('PATCH /api/tasks/:id with ifUpdatedAt writes only while the task is unchanged, and is a 409 otherwise', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  const task = app.store.createTask({ title: 'weekly sync', dueAt: '2026-09-10', recurrence: 'FREQ=WEEKLY' }, 'human');
+  await withServer(app, {}, async (base) => {
+    const { next } = (await api(base, 'POST', `/api/tasks/${task.id}/complete`)).json;
+    // As made: the stamp the complete call returned still holds, comment and all.
+    const dropped = await api(base, 'PATCH', `/api/tasks/${next.id}`, { status: 'dropped', ifUpdatedAt: next.updatedAt });
+    assert.equal(dropped.status, 200);
+    assert.equal(dropped.json.task.status, 'dropped');
+
+    // Changed since: refused, and nothing is written.
+    const other = app.store.createTask({ title: 'copy' }, 'human');
+    const renamed = app.store.updateTask(other.id, { title: 'copy, renamed' }, 'human');
+    assert.notEqual(renamed.updatedAt, 'never');
+    const refused = await api(base, 'PATCH', `/api/tasks/${other.id}`, { status: 'dropped', ifUpdatedAt: 'never' });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.json.error.code, 'Conflict');
+    assert.equal(app.store.requireTask(other.id).status, 'open');
+    assert.equal(app.store.requireTask(other.id).title, 'copy, renamed');
+
+    // The condition is not a field: it is never stored or echoed in the history.
+    const events = app.store.taskHistory(next.id);
+    assert.ok(!JSON.stringify(events).includes('ifUpdatedAt'));
+  });
+});
+
 test('POST /api/tasks/:id/restore puts back a history entry, and the history says which can be', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());
