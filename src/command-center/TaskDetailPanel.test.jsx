@@ -1536,3 +1536,118 @@ describe('the custom repeat builder when the panel is left', () => {
     expect(api.updateTask).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('a click outside the panel', () => {
+  // A press and a release, as a pointer makes them; fireEvent.click alone has no press.
+  function pointerClick(target) {
+    fireEvent.pointerDown(target, { button: 0 })
+    fireEvent.click(target, { button: 0 })
+  }
+
+  test('on empty space closes it; on a control, a task row, or inside the panel it does not', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    const onClose = vi.fn()
+    const page = document.createElement('div')
+    page.innerHTML = '<p>Empty space</p><button type="button">Filter</button><div data-task-id="t_2"><span>Other task</span></div>'
+    document.body.appendChild(page)
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+      const panel = await screen.findByRole('dialog', { name: 'Task details' })
+      pointerClick(panel)
+      pointerClick(screen.getByText('Filter'))
+      pointerClick(screen.getByText('Other task'))
+      expect(onClose).not.toHaveBeenCalled()
+      // A selection dragged out of the panel starts inside it, so it does not close it either.
+      fireEvent.pointerDown(panel, { button: 0 })
+      fireEvent.click(screen.getByText('Empty space'), { button: 0 })
+      expect(onClose).not.toHaveBeenCalled()
+      pointerClick(screen.getByText('Empty space'))
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      page.remove()
+    }
+  })
+
+  // A comment or subtask box left by keyboard keeps its draft (it adds only on a click away from
+  // the box), so the click that closes the panel must add it, as Esc does.
+  async function leftByTabThenClickedAway(open, boxName, value) {
+    const onClose = vi.fn()
+    const page = document.createElement('p')
+    page.textContent = 'Empty space'
+    document.body.appendChild(page)
+    try {
+      render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+      await open()
+      const box = await screen.findByRole('textbox', { name: boxName })
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value } })
+      act(() => { screen.getByRole('textbox', { name: 'Task title' }).focus() })
+      expect(screen.getByRole('textbox', { name: boxName }).value).toBe(value)
+      pointerClick(page)
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      page.remove()
+    }
+  }
+
+  // Close is a way out too: it saves the same drafts.
+  async function leftByTabThenClosed(open, boxName, value) {
+    const onClose = vi.fn()
+    render(<TaskDetailPanel taskId="t_1" onClose={onClose} />)
+    await open()
+    const box = await screen.findByRole('textbox', { name: boxName })
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value } })
+    act(() => { screen.getByRole('textbox', { name: 'Task title' }).focus() })
+    fireEvent.click(screen.getByRole('button', { name: 'Close task details' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  }
+
+  test('Close adds a comment draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.addComment.mockResolvedValue({})
+    await leftByTabThenClosed(
+      async () => fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' })),
+      'Add a comment',
+      'Looks right',
+    )
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledWith('t_1', 'Looks right'))
+    expect(api.addComment).toHaveBeenCalledTimes(1)
+  })
+
+  test('Close adds a subtask draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({})
+    await leftByTabThenClosed(
+      async () => fireEvent.click(await screen.findByText('Add subtask')),
+      'Subtask name',
+      'Tickets',
+    )
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' }))
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+  })
+
+  test('adds a comment draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.addComment.mockResolvedValue({})
+    await leftByTabThenClickedAway(
+      async () => fireEvent.click(await screen.findByRole('button', { name: 'Add a comment' })),
+      'Add a comment',
+      'Looks right',
+    )
+    await waitFor(() => expect(api.addComment).toHaveBeenCalledWith('t_1', 'Looks right'))
+    expect(api.addComment).toHaveBeenCalledTimes(1)
+  })
+
+  test('adds a subtask draft left by Tab', async () => {
+    api.getTask.mockResolvedValue(detail(TASK, []))
+    api.createTask.mockResolvedValue({})
+    await leftByTabThenClickedAway(
+      async () => fireEvent.click(await screen.findByText('Add subtask')),
+      'Subtask name',
+      'Tickets',
+    )
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Tickets', parentId: 't_1' }))
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+  })
+})
