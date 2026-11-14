@@ -986,4 +986,23 @@ describe('MyTasksTab completing a repeating task', () => {
     await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toContain(`Completed Brush teeth. The next one is due ${formatLongDate(bounds.tomorrow)}.`))
     await waitFor(() => expect(container.querySelector('[data-task-id="n"]')?.className).toContain('just-changed'), { timeout: 3000 })
   })
+
+  // Reopening the done one alone left two of the same task.
+  test('Undo reopens it and drops the next copy completing it made', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
+    const next = { ...row, id: 'n' }
+    api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
+    api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
+    api.reopenTask = vi.fn().mockResolvedValue({})
+    api.getTask = vi.fn().mockResolvedValue({ task: next })
+    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('n', { status: 'dropped' }))
+    expect(api.reopenTask).toHaveBeenCalledWith('d')
+    expect(api.reopenTask.mock.invocationCallOrder[0]).toBeLessThan(api.updateTask.mock.invocationCallOrder[0])
+  })
 })

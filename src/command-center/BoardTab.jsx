@@ -8,6 +8,7 @@ import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
 import DueChip from './DueChip'
 import { showCompleted, showMoved, dismissMoved } from './undoToast'
+import { dropUntouchedNext } from './repeatUndo'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { markChanged, useJustChanged } from './useJustChanged'
 import { oneLine, useFitToText } from './useFitToText'
@@ -681,7 +682,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
   // rejects, so the toast can say so: this tab may have gone by then.
   const toggleCompleteRef = useRef(null)
-  const toggleComplete = useCallback(async (task) => {
+  const toggleComplete = useCallback(async (task, { undoNext = null } = {}) => {
     const wasDone = task.status === 'done'
     let next = null
     const pid = projectRef
@@ -692,11 +693,12 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     try {
       if (wasDone) {
         await api.reopenTask(task.id)
+        await dropUntouchedNext(api, undoNext)
       } else {
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         const res = await api.completeTask(task.id)
         next = res?.next ?? null
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }), { nextDue: next?.dueAt ?? null })
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }, { undoNext: next }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await refreshIfShown(pid)
