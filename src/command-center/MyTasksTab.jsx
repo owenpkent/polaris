@@ -421,6 +421,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const toggleCompleteRef = useRef(null)
   const toggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
+    let next = null
     setActionError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
     // Optimistic: flip the visible state immediately.
@@ -431,11 +432,15 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       } else {
         // The row stays while its check celebrates and it fades (TaskRow, CompleteBurst.jsx).
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
-        await api.completeTask(task.id)
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
+        const res = await api.completeTask(task.id)
+        next = res?.next ?? null
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await fetchTasks()
+      // A repeat's next copy is tinted where it lands, which may be the very place the done one
+      // left: without it the row reads as not completed at all.
+      if (next) markChanged(next.id)
     } catch (err) {
       // Roll back on failure.
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)))

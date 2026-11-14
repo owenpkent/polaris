@@ -45,6 +45,10 @@ carries, because `cc update` snapshots the database before one and a rollback re
 - On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
   press Enter to add it under that task, as many times as you like, and Esc closes the box. An
   inbox item still has no subtasks.
+- Completing a repeating task on My tasks or Board now says when the next one is due in the
+  "Completed" toast, and tints the new copy where it lands. A repeat counted from completion can
+  come back on the same day the done one was due, which made the row look as if it was never
+  completed.
 
 ## 2.10.0 (2026-11-12)
 

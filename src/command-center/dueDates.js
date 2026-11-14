@@ -178,6 +178,13 @@ export function formatDueCell(dueAt, bounds, locale) {
   return out(parsed.toLocaleDateString('en-US', opts), null, ', ')
 }
 
+// A date as a sentence names it, with its weekday: "Sun, Nov 15". `iso` is YYYY-MM-DD, or a due
+// date with a time, whose day alone is used.
+export function formatLongDate(iso) {
+  const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
 // A due date in a short form for places with no Today or weekday words (a goal's task list, an
 // import preview): "Oct 18", or "Oct 18, 9:00 AM" with a time.
 export function formatDueShort(dueAt, locale) {

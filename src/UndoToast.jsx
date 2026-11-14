@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { dismissToast, runUndo, runView, useUndoToasts } from './command-center/undoToast'
+import { formatLongDate } from './command-center/dueDates'
 
 export const TOAST_MS = 6000
 
 // What a toast says, and its buttons' names, which carry the title so each is told apart.
-function toastWords({ kind, title, where, failed }) {
+// `tail` follows the title as it is, its own space or stop included.
+function toastWords({ kind, title, where, failed, nextDue }) {
   if (kind === 'moved') {
     return failed
       ? { lead: 'Could not move back', tail: '', retry: `Retry moving ${title} back`, dismiss: `Dismiss, ${title} stays in ${where}` }
-      : { lead: 'Moved', tail: `to ${where}`, undo: `Undo moving ${title} to ${where}` }
+      : { lead: 'Moved', tail: ` to ${where}`, undo: `Undo moving ${title} to ${where}` }
   }
   return failed
     ? { lead: 'Could not reopen', tail: '', retry: `Retry reopening ${title}`, dismiss: `Dismiss, ${title} stays completed` }
-    : { lead: 'Completed', tail: '', undo: `Undo completing ${title}` }
+    : { lead: 'Completed', tail: nextDue ? `. The next one is due ${formatLongDate(nextDue)}.` : '', undo: `Undo completing ${title}` }
 }
 
 // "Completed <task>" with an Undo button, or "Moved <task> to <where>" with View and Undo, near
@@ -81,7 +83,7 @@ function Toast({ toast }) {
       }}
     >
       <span className="undo-toast-text">
-        {words.lead} <span className="undo-toast-title">{title}</span>{words.tail && ` ${words.tail}`}
+        {words.lead} <span className="undo-toast-title">{title}</span>{words.tail}
       </span>
       {failed ? (
         <span className="undo-toast-actions">

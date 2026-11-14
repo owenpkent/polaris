@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import MyTasksTab from './MyTasksTab'
 import { BREAKPOINT_QUERIES } from './columnsState'
-import { getDueBounds } from './dueDates'
+import { formatLongDate, getDueBounds } from './dueDates'
 import UndoToast from '../UndoToast'
 import { resetUndoToast } from './undoToast'
 
@@ -908,5 +908,28 @@ describe('MyTasksTab move toast', () => {
     await act(async () => { finish() })
     await act(async () => {})
     expect(screen.queryByRole('button', { name: /^View Solo/ })).toBeNull()
+  })
+})
+
+// A repeating task counted from completion can make its next copy due the very day the done one
+// was, so the row looks as if it never left. The toast says when the next one is due, and the
+// copy is tinted where it lands.
+describe('MyTasksTab completing a repeating task', () => {
+  afterEach(() => resetUndoToast())
+
+  test('the toast names the next due date and the next copy is tinted', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' }
+    let completed = false
+    api.listTasks.mockImplementation(() => Promise.resolve({ tasks: [completed ? { ...row, id: 'n' } : { ...row, id: 'd' }] }))
+    api.completeTask = vi.fn(async () => {
+      completed = true
+      return { task: { ...row, id: 'd', status: 'done' }, next: { ...row, id: 'n' } }
+    })
+    const { container } = render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toContain(`Completed Brush teeth. The next one is due ${formatLongDate(bounds.tomorrow)}.`))
+    await waitFor(() => expect(container.querySelector('[data-task-id="n"]')?.className).toContain('just-changed'), { timeout: 3000 })
   })
 })

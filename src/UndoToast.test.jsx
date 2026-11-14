@@ -26,6 +26,17 @@ describe('UndoToast', () => {
     expect(document.activeElement).toBe(document.body)
   })
 
+  // A repeat counted from completion can come back the same day the done one was due, so the
+  // toast says when the next one is due; a plain task, or one queued offline, has no date to name.
+  test('a repeating task says when its next one is due', () => {
+    render(<UndoToast />)
+    const region = screen.getByRole('status')
+    act(() => showCompleted('Brush teeth', () => {}, { nextDue: '2026-11-15' }))
+    expect(region.textContent).toContain('Completed Brush teeth. The next one is due Sun, Nov 15.')
+    act(() => showCompleted('Pay rent', () => {}))
+    expect(region.textContent).not.toContain('next one')
+  })
+
   test('Undo runs the callback once and removes the toast', () => {
     const undo = vi.fn()
     render(<UndoToast />)
