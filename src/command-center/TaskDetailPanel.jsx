@@ -6,7 +6,7 @@ import { Loading, ErrorBanner, StatusChip, ProjectChip, Avatar, formatDate, PRIO
 import { SOURCE_LABELS } from './TaskRow'
 import DueDateMenu from './DueDateMenu'
 import { oneLine, useFitToText } from './useFitToText'
-import { formatDueCell, getDueBounds, repeatLabel } from './dueDates'
+import { formatDueCell, formatLongDate, getDueBounds, repeatLabel } from './dueDates'
 import HandoffMenu from './HandoffMenu'
 import { isSafeHref } from './SafeMarkdown'
 import { useOffline } from './offlineStatus'
@@ -371,11 +371,6 @@ function RepeatBuilderSection({ draft, dueIso, api, onDraft, onSave, onCancel })
       </div>
     </div>
   )
-}
-
-function formatLongDate(iso) {
-  const d = new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 // Under the due date of an open repeating task: the date completing it will bring the next one

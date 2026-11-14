@@ -136,6 +136,22 @@ describe('BoardTab', () => {
     expect(screen.getByRole('status').textContent).toBe('')
   })
 
+  // A repeat counted from completion can come back where the done card was, so the toast says when
+  // the next one is due and the new card is tinted.
+  test('completing a repeating card names the next due date and tints the next card', async () => {
+    let completed = false
+    api.getProject.mockImplementation(() => Promise.resolve({ project: project(), sections: SECTIONS, tasks: boardTasks().map((t) => (completed && t.id === 't1' ? { ...t, id: 't1n' } : t)) }))
+    api.completeTask.mockImplementation(async () => {
+      completed = true
+      return { task: { id: 't1', status: 'done' }, next: { id: 't1n', title: 'Task One', dueAt: '2026-11-15' } }
+    })
+    const { container } = render(<><BoardTab /><UndoToast /></>)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toContain('Completed Task One. The next one is due Sun, Nov 15.'))
+    await waitFor(() => expect(container.querySelector('[data-task-id="t1n"]')?.className).toContain('just-changed'), { timeout: 3000 })
+  })
+
   test("a card's check circle completes the task, and a done card's check reopens it", async () => {
     render(<BoardTab />)
     const todo = await screen.findByRole('region', { name: 'Todo' })

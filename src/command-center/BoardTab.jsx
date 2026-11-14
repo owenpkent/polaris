@@ -683,6 +683,7 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   const toggleCompleteRef = useRef(null)
   const toggleComplete = useCallback(async (task) => {
     const wasDone = task.status === 'done'
+    let next = null
     const pid = projectRef
     setError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
@@ -693,11 +694,15 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
         await api.reopenTask(task.id)
       } else {
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
-        await api.completeTask(task.id)
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
+        const res = await api.completeTask(task.id)
+        next = res?.next ?? null
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await refreshIfShown(pid)
+      // A repeat's next copy is tinted where it lands, which may be the very place the done one
+      // left: without it the card reads as not completed at all.
+      if (next) markChanged(next.id)
     } catch (err) {
       setTaskStatus(task.id, task.status)
       throw err
