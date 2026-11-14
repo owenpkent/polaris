@@ -196,15 +196,19 @@ test('PATCH /api/tasks/:id with ifUpdatedAt writes only while the task is unchan
     assert.equal(dropped.status, 200);
     assert.equal(dropped.json.task.status, 'dropped');
 
-    // Changed since: refused, and nothing is written.
-    const other = app.store.createTask({ title: 'copy' }, 'human');
-    const renamed = app.store.updateTask(other.id, { title: 'copy, renamed' }, 'human');
-    assert.notEqual(renamed.updatedAt, 'never');
-    const refused = await api(base, 'PATCH', `/api/tasks/${other.id}`, { status: 'dropped', ifUpdatedAt: 'never' });
+    // The Undo's own case: the copy is renamed after it was made, then the drop arrives with the
+    // stamp from the complete call. Refused, and nothing is written.
+    const again = app.store.createTask({ title: 'water plants', dueAt: '2026-09-10', recurrence: 'FREQ=WEEKLY' }, 'human');
+    const made = (await api(base, 'POST', `/api/tasks/${again.id}/complete`)).json.next;
+    const renamed = (await api(base, 'PATCH', `/api/tasks/${made.id}`, { title: 'water the plants' })).json.task;
+    assert.notEqual(renamed.updatedAt, made.updatedAt);
+    const refused = await api(base, 'PATCH', `/api/tasks/${made.id}`, { status: 'dropped', ifUpdatedAt: made.updatedAt });
     assert.equal(refused.status, 409);
     assert.equal(refused.json.error.code, 'Conflict');
-    assert.equal(app.store.requireTask(other.id).status, 'open');
-    assert.equal(app.store.requireTask(other.id).title, 'copy, renamed');
+    assert.equal(app.store.requireTask(made.id).status, 'open');
+    assert.equal(app.store.requireTask(made.id).title, 'water the plants');
+    // With the stamp it has now, the same write goes through.
+    assert.equal((await api(base, 'PATCH', `/api/tasks/${made.id}`, { status: 'dropped', ifUpdatedAt: renamed.updatedAt })).status, 200);
 
     // The condition is not a field: it is never stored or echoed in the history.
     const events = app.store.taskHistory(next.id);

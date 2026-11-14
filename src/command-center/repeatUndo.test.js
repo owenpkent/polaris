@@ -17,6 +17,15 @@ describe('dropUntouchedNext', () => {
     expect(api.updateTaskIfUnchanged).not.toHaveBeenCalled()
   })
 
+  // Its items can be ticked without the copy's own stamp moving, so the stamp proves nothing.
+  test('leaves the copy of a checklist that repeats with its items', async () => {
+    const api = { updateTaskIfUnchanged: vi.fn() }
+    await dropUntouchedNext(api, { ...made, customFields: { checklistRepeatItems: true } })
+    expect(api.updateTaskIfUnchanged).not.toHaveBeenCalled()
+    await dropUntouchedNext(api, { ...made, customFields: { checklistRepeatItems: false, colour: 'red' } })
+    expect(api.updateTaskIfUnchanged).toHaveBeenCalledTimes(1)
+  })
+
   // A copy changed since (409), or a server out of reach: the reopen still counts.
   test('a refused or failed drop does not fail the Undo', async () => {
     const api = { updateTaskIfUnchanged: vi.fn().mockRejectedValue(new Error('The task has changed since it was read.')) }
