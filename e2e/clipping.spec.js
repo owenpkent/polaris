@@ -798,15 +798,26 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
   // A repeating task's toast also says when the next one is due, after the long title.
   test('a repeating task toast with a long title and its next date fits, Undo whole', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`, { recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' })
-    await openView(page)
-    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
-    const undo = page.getByRole('button', { name: `Undo completing ${title}` })
-    await expect(undo).toBeVisible()
-    await undo.hover() // holds the toast's timer
-    const toast = page.getByRole('status').filter({ has: undo })
-    await expect(toast).toContainText('The next one is due')
-    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
-    await undo.click({ trial: true })
+    try {
+      await openView(page)
+      await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+      const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+      await expect(undo).toBeVisible()
+      await undo.hover() // holds the toast's timer
+      const toast = page.getByRole('status').filter({ has: undo })
+      await expect(toast).toContainText('The next one is due')
+      expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+      await undo.click({ trial: true })
+    } finally {
+      // The worker's database is shared with later specs, and the keyboard sweep of My tasks
+      // counts Tab stops per open row, so the copy the repeat made is dropped (completing it would
+      // make another), and the task too if the test stopped before completing it.
+      const headers = { Authorization: `Bearer ${TOKEN}` }
+      const list = await (await request.get('/api/tasks', { headers })).json()
+      for (const t of list.tasks) {
+        if (t.title === title && t.status === 'open') await request.patch(`/api/tasks/${t.id}`, { headers, data: { status: 'dropped' } })
+      }
+    }
   })
 
   // The move toast carries two buttons, View and Undo, beside a long title and where it went.
