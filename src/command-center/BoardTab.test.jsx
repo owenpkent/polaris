@@ -214,6 +214,35 @@ describe('BoardTab', () => {
     expect(after.value).toBe('Second card')
   })
 
+  // A click away starts a save; while it waits the box is editable, so a second name can be typed
+  // there and the card left by a click again. That second name is saved once the first settles,
+  // never dropped by the first save closing the card (review on #183).
+  test('a name typed while a click-away save waits, then left by a click, is saved after it', async () => {
+    const finishes = []
+    api.createTask.mockImplementation(() => new Promise((resolve) => { finishes.push(() => resolve({ task: { id: 'new' } })) }))
+    const clickAway = (box) => {
+      fireEvent.pointerDown(document.body)
+      act(() => { box.blur() })
+      fireEvent.pointerUp(document.body)
+    }
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'First card' } })
+    clickAway(box)
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'First card', projectId: 'p1', sectionId: 's2' }))
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value: 'Second card' } })
+    clickAway(box)
+    await act(async () => { finishes[0]() })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith({ title: 'Second card', projectId: 'p1', sectionId: 's2' }))
+    expect(api.createTask).toHaveBeenCalledTimes(2)
+    await act(async () => { finishes[1]() })
+    await waitFor(() => expect(within(doing).queryByRole('textbox')).toBeNull())
+  })
+
   test('Add task in No section sends a null section, and Esc closes it', async () => {
     render(<BoardTab />)
     const lane = await screen.findByRole('region', { name: 'No section' })

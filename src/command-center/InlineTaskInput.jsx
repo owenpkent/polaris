@@ -24,8 +24,23 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // `handleColumn` adds the leading cell the rows have under the manual sort (TaskRow.jsx), with
 // the grip their handle shows, drawn only: the task can be moved once it is added.
 export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, dueColumn = true, phone = false, defaultDueAt = null, api, handleColumn = false }) {
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the row while a save was in flight ('click' or 'key'), a blur the busy row
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
   const [error, setError] = useState(null)
   const [picking, setPicking] = useState(false)
   const [dueAt, setDueAt] = useState(defaultDueAt)
@@ -95,7 +110,11 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   }
 
   function handleBlur(e) {
-    if (busy || cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(addOnLeave)
@@ -113,35 +132,47 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // `leave` is a click elsewhere: once saved the row closes, unless focus has come back to it,
   // and focus is not pulled back to the row either way.
   async function commit(picked, draft, { leave = false } = {}) {
-    const sent = title
+    const sent = titleRef.current
     const trimmed = sent.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setPicking(false)
     setDueAt(picked)
     setRecurrence(draft.recurrence)
     setCustomRepeat(draft.customRepeat)
     setBusy(true)
     setError(null)
+    let saved = false
     try {
       await onSubmit(trimmed, { dueAt: picked, recurrence: draft.recurrence || null })
-      if (!mounted.current) return
-      if (leave && !rowRef.current?.contains(document.activeElement)) {
-        onCancel()
-        return
-      }
+      saved = true
+    } catch (err) {
+      if (mounted.current) setError(err.message || 'Could not add task.')
+    }
+    if (!mounted.current) return
+    setBusy(false)
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    if (saved) {
       // Saved: the next row starts clean, on the group's date, keeping only a name typed while it
       // saved.
-      setTitle((current) => (current === sent ? '' : current))
+      if (titleRef.current === sent) setTitle('')
       setDueAt(defaultDueAt)
       setRecurrence('')
       setCustomRepeat(false)
       setSaved((n) => n + 1)
-    } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add task.')
     }
-    setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    if (rowRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the row. A failed save keeps the row and says why. Otherwise an empty row
+    // closes, and a name typed while it saved is added in turn, on the group's date, when a click
+    // took focus away, as that click would have done had the row not been busy; left by
+    // keyboard, it stays a draft.
+    if (!saved) return
+    if (!titleRef.current.trim()) onCancel()
+    else if (leave || left === 'click') commit(defaultDueAt, { recurrence: '', customRepeat: false }, { leave: true })
   }
 
   // Whether an IME composition is open, so the Enter that confirms a candidate in a Chinese,

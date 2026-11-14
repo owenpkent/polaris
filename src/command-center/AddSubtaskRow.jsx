@@ -17,8 +17,15 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // the server is away (api.createTask, the outbox), so nothing here is disabled offline.
 export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, handleColumn = false, onAdd }) {
   const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the row while a save was in flight ('click' or 'key'), a blur the busy row
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
   const buttonRef = useRef(null)
@@ -29,6 +36,16 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   const cancelled = useRef(false)
   const refocusButton = useRef(false)
   const press = usePointerPress()
+
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
 
   useEffect(() => {
     mounted.current = true
@@ -63,31 +80,38 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }
 
   async function commit({ leave = false } = {}) {
-    const sent = title
+    const sent = titleRef.current
     const trimmed = sent.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setBusy(true)
     setError(null)
-    let closed = false
+    let saved = false
     try {
       await onAdd(parent, trimmed)
-      if (!mounted.current) return
-      if (leave && !rowRef.current?.contains(document.activeElement)) {
-        close()
-        closed = true
-        return
-      }
-      // Only what was sent is cleared: a name typed while it saved stays for the next Enter.
-      setTitle((current) => (current === sent ? '' : current))
+      saved = true
     } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add that subtask.')
+      if (mounted.current) setError(err.message || 'Could not add that subtask.')
     } finally {
       // Every settled save ends the busy state, the click-away save that closes the box too:
-      // the row stays mounted, so a box opened again later would otherwise stay read-only.
+      // the row stays mounted, so a box opened again later would otherwise stay busy.
       if (mounted.current) setBusy(false)
     }
-    if (!leave && !closed) inputRef.current?.focus()
+    if (!mounted.current) return
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    // Only what was sent is cleared: a name typed while it saved stays.
+    if (saved && titleRef.current === sent) setTitle('')
+    if (rowRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the row. A failed save keeps the box and says why. Otherwise an empty box
+    // closes, and a name typed while it saved is saved in turn when a click took focus away, as
+    // that click would have done had the row not been busy; left by keyboard, it stays a draft.
+    if (!saved) return
+    if (!titleRef.current.trim()) close()
+    else if (leave || left === 'click') commit({ leave: true })
   }
 
   // Added on the release, before the click it makes lands, unless that click is in the row or
@@ -99,7 +123,11 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }
 
   function handleBlur(e) {
-    if (busy || cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(addOnLeave)

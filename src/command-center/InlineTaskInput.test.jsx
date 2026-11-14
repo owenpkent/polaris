@@ -135,6 +135,49 @@ describe('InlineTaskInput', () => {
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
   })
 
+  // A click away starts a save; while it waits the box is editable, so a second name can be typed
+  // there and the row left by a click again. That second name is added once the first settles,
+  // never dropped by the first save closing the row (review on #183).
+  test('a name typed while a click-away save waits, then left by a click, is added after it', async () => {
+    const finishes = []
+    const onSubmit = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+    const today = getDueBounds().today
+    const { input, onCancel } = setup({ onSubmit, defaultDueAt: today })
+    const clickAway = () => {
+      fireEvent.pointerDown(document.body)
+      act(() => { input.blur() })
+      fireEvent.pointerUp(document.body)
+    }
+    fireEvent.change(input, { target: { value: 'First task' } })
+    clickAway()
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('First task', { dueAt: today, recurrence: null }))
+    act(() => { input.focus() })
+    fireEvent.change(input, { target: { value: 'Second task' } })
+    clickAway()
+    await act(async () => { finishes[0]() })
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith('Second task', { dueAt: today, recurrence: null }))
+    expect(onSubmit).toHaveBeenCalledTimes(2)
+    expect(onCancel).not.toHaveBeenCalled()
+    await act(async () => { finishes[1]() })
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1))
+  })
+
+  // Left by keyboard while a save waits, a name typed meanwhile stays a draft, as Tab keeps one.
+  test('a name typed while a save waits, then left by keyboard, stays a draft', async () => {
+    let finish
+    const onSubmit = vi.fn(() => new Promise((resolve) => { finish = resolve }))
+    const { input, onCancel } = setup({ onSubmit, defaultDueAt: getDueBounds().today })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'First task' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.change(input, { target: { value: 'Second task' } })
+    act(() => { input.blur() })
+    await act(async () => { finish() })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(input.value).toBe('Second task')
+  })
+
   // Tab, or a script moving focus, is not a click elsewhere: the draft stays for the owner.
   test('leaving the row by keyboard with a name in it keeps the draft', () => {
     const { input, onSubmit, onCancel } = setup()

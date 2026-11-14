@@ -441,6 +441,41 @@ describe('TaskTree Add subtask row', () => {
     expect(document.activeElement).toBe(box)
   })
 
+  // A click away starts a save; while it waits the box is editable, so a second name can be typed
+  // there and the box left by a click again. That second name is saved once the first settles,
+  // never dropped by the first save closing the box (review on #183).
+  test('a name typed while a click-away save waits, then left by a click, is saved after it', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    const clickAway = () => {
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+    }
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      const { parent } = renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'First task' } })
+      clickAway()
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'First task'))
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Second task' } })
+      clickAway()
+      await act(async () => { finishes[0]() })
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Second task'))
+      expect(onAddSubtask).toHaveBeenCalledTimes(2)
+      await act(async () => { finishes[1]() })
+      await waitFor(() => expect(addButton()).toBeTruthy())
+    } finally {
+      outside.remove()
+    }
+  })
+
   test('no row under an inbox task', () => {
     renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
     expand()

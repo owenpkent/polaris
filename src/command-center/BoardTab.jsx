@@ -266,8 +266,23 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
 // list's Add task does.
 function LaneAddTask({ section, onCreate }) {
   const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the card while a save was in flight ('click' or 'key'), a blur the busy card
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
   const openerRef = useRef(null)
@@ -319,7 +334,11 @@ function LaneAddTask({ section, onCreate }) {
   function handleBlur(e) {
     // Leaving an empty card closes it, and a click elsewhere saves a named one, unless focus went
     // to one of its own buttons.
-    if (busy || formRef.current?.contains(e.relatedTarget)) return
+    if (formRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(submitOnLeave)
@@ -336,27 +355,35 @@ function LaneAddTask({ section, onCreate }) {
 
   // `leave` is a click elsewhere: once saved the card closes, unless focus has come back to it.
   async function submit({ leave = false } = {}) {
-    const sent = title
+    const sent = titleRef.current
     const trimmed = sent.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setBusy(true)
     setError(null)
+    let saved = false
     try {
       await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
-      if (!mounted.current) return
-      if (leave && !formRef.current?.contains(document.activeElement)) {
-        setBusy(false)
-        close()
-        return
-      }
-      // Only what was sent is cleared: a name typed while it saved stays for the next Enter.
-      setTitle((current) => (current === sent ? '' : current))
+      saved = true
     } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add task.')
+      if (mounted.current) setError(err.message || 'Could not add task.')
     }
+    if (!mounted.current) return
     setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    // Only what was sent is cleared: a name typed while it saved stays.
+    if (saved && titleRef.current === sent) setTitle('')
+    if (formRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the card. A failed save keeps the card and says why. Otherwise an empty card
+    // closes, and a name typed while it saved is saved in turn when a click took focus away, as
+    // that click would have done had the card not been busy; left by keyboard, it stays a draft.
+    if (!saved) return
+    if (!titleRef.current.trim()) close()
+    else if (leave || left === 'click') submit({ leave: true })
   }
 
   if (!open) {
