@@ -508,6 +508,40 @@ describe('TaskTree Add subtask row', () => {
     }
   })
 
+  // Each save scrolls the open box into view, so on a phone it stays above the keyboard. A save
+  // that lands after Esc, with the owner gone elsewhere, must not pull the page back to the row
+  // (review on #183).
+  test('a save scrolls the open box into view, but not once Esc has closed it and focus moved on', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'Pack the charger' } })
+      fireEvent.keyDown(box, { key: 'Enter' })
+      await act(async () => { finishes[0]() })
+      expect(scroll).toHaveBeenCalledTimes(1)
+
+      fireEvent.change(box, { target: { value: 'Print the tickets' } })
+      fireEvent.keyDown(box, { key: 'Enter' })
+      fireEvent.keyDown(box, { key: 'Escape' })
+      act(() => { outside.focus() })
+      await act(async () => { finishes[1]() })
+      expect(onAddSubtask).toHaveBeenCalledTimes(2)
+      expect(scroll).toHaveBeenCalledTimes(1)
+    } finally {
+      delete Element.prototype.scrollIntoView
+      outside.remove()
+    }
+  })
+
   test('no row under an inbox task', () => {
     renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
     expand()

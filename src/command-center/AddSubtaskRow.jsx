@@ -53,11 +53,13 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }, [])
 
   // Counts the subtasks saved from this box. Each one pushes the box down, so it is kept on
-  // screen (above the phone's keyboard too). jsdom has no scrollIntoView.
+  // screen (above the phone's keyboard too), but only while it is open and still in use: a save
+  // that lands after Esc, or after the owner has moved on, leaves the page where it is. jsdom has
+  // no scrollIntoView.
   const [saved, setSaved] = useState(0)
   useEffect(() => {
-    if (saved > 0) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
-  }, [saved])
+    if (saved > 0 && editing && rowRef.current?.contains(document.activeElement)) rowRef.current.scrollIntoView?.({ block: 'nearest' })
+  }, [saved]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A name typed while a save waited, then left by a click: saved once the render that shows the
   // first save has run, so it is sent with the parent's list as it is then.
