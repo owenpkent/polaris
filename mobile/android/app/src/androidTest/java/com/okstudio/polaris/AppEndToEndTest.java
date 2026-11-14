@@ -277,7 +277,55 @@ public class AppEndToEndTest {
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
             app.waitFor("subtask " + i + " to be added", "document.body.innerText.toLowerCase().includes('step" + i + "')&&document.body.innerText.includes('0 / " + (14 + i) + "')", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(i);
+            assertBoxAboveKeyboard(BOX, i);
+        }
+    }
+
+    // The subtasks shown under a task in My tasks end with an Add subtask row. On a phone a real
+    // tap opens its box with the soft keyboard, and the box stays above the keyboard as each
+    // Enter adds a row over it and pushes it down.
+    @Test
+    public void listAddSubtaskBoxStaysAboveTheKeyboardWhileTyping() throws Exception {
+        connect();
+        String title = "List subtasks " + System.currentTimeMillis();
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:" + WebAppDriver.quote(title) + "})}).then(r=>r.json()).then(t=>{const id=t.id||(t.task&&t.task.id);"
+            + "return Promise.all(Array.from({length:3},(_,i)=>fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:'List step '+(i+1),parentId:id})}))).then(rs=>rs.map(r=>r.status).join(','));})";
+        String statuses = app.evalAsync(create, 30000);
+        assertTrue("Subtask create failed: " + statuses, statuses.replace("\"", "").matches("2\\d\\d(,2\\d\\d){2}"));
+
+        // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+        app.eval("window.__ptOld=true;location.reload();null");
+        app.waitFor("the reload", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&__pt.find('button','Open navigation')", LOAD_MS);
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        String toggle = "__pt.find('button'," + WebAppDriver.quote("3 open subtasks of " + title) + ")";
+        app.waitFor("the No due date group", "__pt.find('button','No due date')||" + toggle, LOAD_MS);
+        if (!app.truthy(toggle)) app.click("button", "No due date");
+        app.waitFor("the subtask count", toggle, LOAD_MS);
+        app.eval(toggle + ".click();null");
+
+        String row = "__pt.find('button'," + WebAppDriver.quote("Add subtask to " + title) + ")";
+        app.waitFor("the Add subtask row", row, 10000);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        String box = "Array.from(document.querySelectorAll('input')).find(e=>e.getAttribute('aria-label')==="
+            + WebAppDriver.quote("New subtask of " + title) + ")";
+        app.waitFor("the subtask box", "document.activeElement&&document.activeElement===" + box, 10000);
+        waitForKeyboard(true);
+
+        for (int i = 1; i <= 4; i++) {
+            InstrumentationRegistry.getInstrumentation().sendStringSync("liststep" + i);
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
+            String count = "__pt.find('button'," + WebAppDriver.quote((3 + i) + " open subtasks of " + title) + ")";
+            app.waitFor("subtask " + i + " to be added", count + "&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
+            WebAppDriver.sleep(800);
+            assertBoxAboveKeyboard(box, i);
         }
     }
 
@@ -313,6 +361,43 @@ public class AppEndToEndTest {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
         waitForKeyboard(false);
         app.waitFor("the tab bar to come back", "document.documentElement.dataset.keyboard!=='open'&&(" + navShown + ")", 10000);
+    }
+
+    // The Add task row stays open for the next name after Enter, so on a phone the soft keyboard
+    // must stay up through several adds and the box must stay above it.
+    @Test
+    public void addTaskBoxKeepsTheKeyboardThroughSeveralAdds() throws Exception {
+        connect();
+        String stamp = String.valueOf(System.currentTimeMillis());
+        // A task of its own, so the list has a group with an Add task row on a fresh database.
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:'Keyboard adds " + stamp + "'})}).then(r=>String(r.status))";
+        assertTrue("Task create failed", app.evalAsync(create, 15000).replace("\"", "").startsWith("2"));
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        app.waitFor("the No due date group", "__pt.find('button','No due date')", LOAD_MS);
+        if (!app.truthy("__pt.find('button','Add task')")) app.click("button", "No due date");
+
+        String row = "__pt.find('button','Add task')";
+        app.waitFor("an Add task row", row, LOAD_MS);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        String box = "Array.from(document.querySelectorAll('input')).find(e=>e.getAttribute('aria-label')==='New task name')";
+        app.waitFor("the new task box", "document.activeElement&&document.activeElement===" + box, 10000);
+        waitForKeyboard(true);
+
+        for (int i = 1; i <= 3; i++) {
+            String name = "added" + i + "x" + stamp;
+            InstrumentationRegistry.getInstrumentation().sendStringSync(name);
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
+            app.waitFor("task " + i + " to be added", "__pt.find('button'," + WebAppDriver.quote("Open " + name) + ")&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
+            WebAppDriver.sleep(800);
+            assertBoxAboveKeyboard(box, i);
+        }
     }
 
     // Creates a task due today through the API, from the page as the dashboard does, then reloads
@@ -530,17 +615,17 @@ public class AppEndToEndTest {
         throw new AssertionError("The soft keyboard never " + (expected ? "appeared" : "went away") + " after a real tap on the subtask box.");
     }
 
-    private void assertBoxAboveKeyboard(int step) {
-        assertTrue("The keyboard went away after subtask " + step, imeAndScreen()[0] == 1);
+    private void assertBoxAboveKeyboard(String box, int step) {
+        assertTrue("The keyboard went away after add " + step, imeAndScreen()[0] == 1);
         int[] ime = imeAndScreen();
-        String[] r = rect(BOX);
+        String[] r = rect(box);
         float dpr = Float.parseFloat(r[4]);
         float top = Float.parseFloat(r[1]);
         float bottom = Float.parseFloat(r[3]);
         float vvBottom = Float.parseFloat(app.eval("window.visualViewport.offsetTop+window.visualViewport.height"));
         int[] origin = webViewOrigin();
         float imeTopCss = (ime[2] - ime[1] - origin[1]) / dpr;
-        String report = "after subtask " + step + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
+        String report = "after add " + step + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
             + vvBottom + "; IME top " + imeTopCss + " (inset " + ime[1] + " px of " + ime[2] + ", dpr " + dpr + ")";
         android.util.Log.i("KeyboardTest", report);
         assertTrue("Box above the visual viewport bottom, " + report, bottom <= vvBottom + 1);

@@ -819,6 +819,60 @@ describe('MyTasksTab Add task keeps new tasks just above the row until it closes
   })
 })
 
+// A second name typed while a click-away save waits, then left by a click, is added after the
+// first is in the list, so its manual position puts it under the first, not above (review on
+// #183). The server here answers as nextPosition does: a create with no position goes first.
+describe('MyTasksTab Add task saves a name queued behind a click-away save in order', () => {
+  const task = (id, title, position, dueAt) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  afterEach(() => localStorage.clear())
+
+  test('starting from an empty Today, the two land in the order typed', async () => {
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'due', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const { today, tomorrow } = getDueBounds()
+    const list = [task('t9', 'Later on', 1, tomorrow)]
+    api.listTasks.mockImplementation(async () => ({ tasks: [...list] }))
+    const finishes = []
+    api.createTask.mockImplementation((payload) => new Promise((resolve) => {
+      finishes.push(() => {
+        const position = payload.position ?? Math.min(...list.map((t) => t.position)) - 1
+        const made = task(`n${list.length}`, payload.title, position, payload.dueAt)
+        list.push(made)
+        resolve({ task: made })
+      })
+    }))
+    stubMatchMedia(1280)
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open Later on' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add task' })[0])
+    const input = await screen.findByRole('textbox', { name: 'New task name' })
+    const clickAway = () => {
+      fireEvent.pointerDown(document.body)
+      act(() => { input.blur() })
+      fireEvent.pointerUp(document.body)
+    }
+    fireEvent.change(input, { target: { value: 'First task' } })
+    clickAway()
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1))
+    act(() => { input.focus() })
+    fireEvent.change(input, { target: { value: 'Second task' } })
+    clickAway()
+    await act(async () => { finishes[0]() })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(2))
+    expect(api.createTask.mock.calls[1][0]).toEqual(expect.objectContaining({ title: 'Second task', dueAt: today }))
+    await act(async () => { finishes[1]() })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'New task name' })).toBeNull())
+    const first = list.find((t) => t.title === 'First task')
+    const second = list.find((t) => t.title === 'Second task')
+    expect(second.position).toBeGreaterThan(first.position)
+    const order = screen.getAllByRole('button', { name: /^Open (First|Second) task$/ }).map((b) => b.getAttribute('aria-label'))
+    expect(order).toEqual(['Open First task', 'Open Second task'])
+  })
+})
+
 describe('MyTasksTab Today group', () => {
   const todayIso = () => getDueBounds().today
   const open = (id) => ({ id, title: `Open ${id}`, status: 'open', priority: 'none', dueAt: todayIso(), projectId: null })

@@ -17,8 +17,15 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // the server is away (api.createTask, the outbox), so nothing here is disabled offline.
 export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, handleColumn = false, onAdd }) {
   const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the row while a save was in flight ('click' or 'key'), a blur the busy row
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
   const buttonRef = useRef(null)
@@ -30,10 +37,37 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   const refocusButton = useRef(false)
   const press = usePointerPress()
 
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
+
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
+
+  // Counts the subtasks saved from this box. Each one pushes the box down, so it is kept on
+  // screen (above the phone's keyboard too), but only while it is open and still in use: a save
+  // that lands after Esc, or after the owner has moved on, leaves the page where it is. jsdom has
+  // no scrollIntoView.
+  const [saved, setSaved] = useState(0)
+  useEffect(() => {
+    if (saved > 0 && editing && rowRef.current?.contains(document.activeElement)) rowRef.current.scrollIntoView?.({ block: 'nearest' })
+  }, [saved]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A name typed while a save waited, then left by a click: saved once the render that shows the
+  // first save has run, so it is sent with the parent's list as it is then.
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || rowRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    commit({ leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (editing) inputRef.current?.focus()
@@ -63,29 +97,45 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }
 
   async function commit({ leave = false } = {}) {
-    const trimmed = title.trim()
-    if (!trimmed || busy) return
+    const sent = titleRef.current
+    const trimmed = sent.trim()
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setBusy(true)
     setError(null)
-    let closed = false
+    let ok = false
     try {
       await onAdd(parent, trimmed)
-      if (!mounted.current) return
-      if (leave && !rowRef.current?.contains(document.activeElement)) {
-        close()
-        closed = true
-        return
-      }
-      setTitle('')
+      ok = true
     } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add that subtask.')
+      if (mounted.current) setError(err.message || 'Could not add that subtask.')
     } finally {
       // Every settled save ends the busy state, the click-away save that closes the box too:
-      // the row stays mounted, so a box opened again later would otherwise stay read-only.
+      // the row stays mounted, so a box opened again later would otherwise stay busy.
       if (mounted.current) setBusy(false)
     }
-    if (!leave && !closed) inputRef.current?.focus()
+    if (!mounted.current) return
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    if (ok) {
+      // Only what was sent is cleared: a name typed while it saved stays.
+      if (titleRef.current === sent) setTitle('')
+      setSaved((n) => n + 1)
+    }
+    if (rowRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the row. A failed save keeps the box and says why. Otherwise an empty box
+    // closes, once a held press has been released, so nothing moves under it first. A name
+    // typed while it saved is saved in turn when the last way out was a click, as that click
+    // would have done had the row not been busy; left last by keyboard, it stays a draft.
+    if (!ok) return
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else close()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   // Added on the release, before the click it makes lands, unless that click is in the row or
@@ -97,7 +147,11 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }
 
   function handleBlur(e) {
-    if (busy || cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(addOnLeave)
@@ -155,8 +209,8 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
               onCompositionStart={() => { composing.current = true }}
               onCompositionEnd={() => { composing.current = false }}
               onBlur={handleBlur}
-              // Read-only rather than disabled while it saves, so focus stays for the next one.
-              readOnly={busy}
+              // Editable while it saves, as the panel's subtask box is (a second Enter waits for
+              // the first): on Android a focused box turning read-only puts the keyboard away.
               aria-busy={busy || undefined}
               placeholder="Write a subtask name"
               aria-label={`New subtask of ${parent.title}`}

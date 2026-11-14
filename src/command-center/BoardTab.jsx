@@ -266,8 +266,23 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
 // list's Add task does.
 function LaneAddTask({ section, onCreate }) {
   const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the card while a save was in flight ('click' or 'key'), a blur the busy card
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
   const openerRef = useRef(null)
@@ -275,6 +290,14 @@ function LaneAddTask({ section, onCreate }) {
   const reopenFocus = useRef(false)
   const mounted = useRef(true)
   const fitRef = useFitToText(title, inputRef)
+
+  // A name typed while a save waited, then left by a click: saved once the render that shows the
+  // first save has run, so it is sent with the lane as it is then.
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || formRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    submit({ leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     mounted.current = true
@@ -319,7 +342,11 @@ function LaneAddTask({ section, onCreate }) {
   function handleBlur(e) {
     // Leaving an empty card closes it, and a click elsewhere saves a named one, unless focus went
     // to one of its own buttons.
-    if (busy || formRef.current?.contains(e.relatedTarget)) return
+    if (formRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(submitOnLeave)
@@ -336,25 +363,40 @@ function LaneAddTask({ section, onCreate }) {
 
   // `leave` is a click elsewhere: once saved the card closes, unless focus has come back to it.
   async function submit({ leave = false } = {}) {
-    const trimmed = title.trim()
-    if (!trimmed || busy) return
+    const sent = titleRef.current
+    const trimmed = sent.trim()
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setBusy(true)
     setError(null)
+    let saved = false
     try {
       await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
-      if (!mounted.current) return
-      if (leave && !formRef.current?.contains(document.activeElement)) {
-        setBusy(false)
-        close()
-        return
-      }
-      setTitle('')
+      saved = true
     } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add task.')
+      if (mounted.current) setError(err.message || 'Could not add task.')
     }
+    if (!mounted.current) return
     setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    // Only what was sent is cleared: a name typed while it saved stays.
+    if (saved && titleRef.current === sent) setTitle('')
+    if (formRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the card. A failed save keeps the card and says why. Otherwise an empty card
+    // closes, once a held press has been released: the short Add task row taking the tall card's
+    // place would move what is under the pointer (Show done) before the release. A name typed
+    // while it saved is saved in turn when the last way out was a click, as that click would have
+    // done had the card not been busy; left last by keyboard, it stays a draft.
+    if (!saved) return
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else close()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   if (!open) {
@@ -389,7 +431,8 @@ function LaneAddTask({ section, onCreate }) {
             close({ focusOpener: true })
           }
         }}
-        readOnly={busy}
+        // Editable while it saves (a second Enter waits for the first): on Android a focused box
+        // turning read-only puts the keyboard away.
         aria-busy={busy || undefined}
         placeholder="Write a task name"
         aria-label={`New task in ${section.name}`}

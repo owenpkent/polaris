@@ -420,6 +420,128 @@ describe('TaskTree Add subtask row', () => {
     }
   })
 
+  // Android puts the soft keyboard away when a focused box turns read-only, so the box stays
+  // editable while a subtask saves, and a name typed meanwhile is kept for the next Enter.
+  test('the box stays editable while a subtask saves, and keeps what was typed meanwhile', async () => {
+    let finish
+    const onAddSubtask = vi.fn(() => new Promise((resolve) => { finish = resolve }))
+    const { parent } = renderTree({ onAddSubtask })
+    expand()
+    fireEvent.click(addButton())
+    const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+    fireEvent.change(box, { target: { value: 'Pack the charger' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Pack the charger')
+    expect(box.readOnly).toBe(false)
+    fireEvent.change(box, { target: { value: 'Print the tickets' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAddSubtask).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+    expect(box.value).toBe('Print the tickets')
+    expect(document.activeElement).toBe(box)
+  })
+
+  // A click away starts a save; while it waits the box is editable, so a second name can be typed
+  // there and the box left by a click again. That second name is saved once the first settles,
+  // never dropped by the first save closing the box (review on #183).
+  test('a name typed while a click-away save waits, then left by a click, is saved after it', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    const clickAway = () => {
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+    }
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      const { parent } = renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'First task' } })
+      clickAway()
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'First task'))
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Second task' } })
+      clickAway()
+      await act(async () => { finishes[0]() })
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Second task'))
+      expect(onAddSubtask).toHaveBeenCalledTimes(2)
+      await act(async () => { finishes[1]() })
+      await waitFor(() => expect(addButton()).toBeTruthy())
+    } finally {
+      outside.remove()
+    }
+  })
+
+  // The last way out decides: a click-away save, then a newer name left by Tab, keeps that name as
+  // a draft, as Tab always does (review on #183).
+  test('a click-away save, then a newer name left by keyboard, keeps that name as a draft', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'First task' } })
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+      fireEvent.click(outside)
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledTimes(1))
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Second task' } })
+      act(() => { outside.focus() })
+      await act(async () => { finishes[0]() })
+      await act(async () => {})
+      expect(onAddSubtask).toHaveBeenCalledTimes(1)
+      expect(box.value).toBe('Second task')
+      expect(screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })).toBe(box)
+    } finally {
+      outside.remove()
+    }
+  })
+
+  // Each save scrolls the open box into view, so on a phone it stays above the keyboard. A save
+  // that lands after Esc, with the owner gone elsewhere, must not pull the page back to the row
+  // (review on #183).
+  test('a save scrolls the open box into view, but not once Esc has closed it and focus moved on', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'Pack the charger' } })
+      fireEvent.keyDown(box, { key: 'Enter' })
+      await act(async () => { finishes[0]() })
+      expect(scroll).toHaveBeenCalledTimes(1)
+
+      fireEvent.change(box, { target: { value: 'Print the tickets' } })
+      fireEvent.keyDown(box, { key: 'Enter' })
+      fireEvent.keyDown(box, { key: 'Escape' })
+      act(() => { outside.focus() })
+      await act(async () => { finishes[1]() })
+      expect(onAddSubtask).toHaveBeenCalledTimes(2)
+      expect(scroll).toHaveBeenCalledTimes(1)
+    } finally {
+      delete Element.prototype.scrollIntoView
+      outside.remove()
+    }
+  })
+
   test('no row under an inbox task', () => {
     renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
     expand()
