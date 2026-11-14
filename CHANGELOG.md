@@ -10,6 +10,30 @@ carries, because `cc update` snapshots the database before one and a rollback re
   name wraps beside its date. Every date chip is one size, with its words centred and a repeat
   glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
   time is no taller than one without. Under 380px wide the date still goes under the name.
+- The same rule now holds wherever something repeats down a list: it is one size, with its words
+  centred, in one column.
+  - Board cards show the due date as that chip, first in the foot, with the assignee at the foot's
+    right end.
+  - A search result's date is the chip at its right, in the words and colours of My tasks.
+  - The priority pill is as wide as Urgent.
+  - No project is an outlined pill rather than the bare word None.
+  - The subtask count is one width and comes before Waiting, now a quiet pill.
+  - A goal's status button is one width, and its progress bar takes the whole width with its words
+    under it, so every bar starts and ends in the same place.
+- The due date picker:
+  - It marks today with a dot under its number, which stays when today is the day picked.
+  - On a phone its quick dates are four equal pills, two to a line.
+  - On a desktop the quick dates, Add time, and Repeat are buttons again, one size down the
+    column, as they are in the new task's date step.
+- On a desktop a task's name takes its whole cell in My tasks, so a click anywhere between the
+  check and the panel button renames it, not only a click on its words. The subtask count and
+  Waiting sit at the cell's right end.
+- A click on empty space beside an open task panel closes it. That, Close, and Esc each save
+  what was typed first, a comment or subtask name left by Tab included.
+- Opening a task's panel no longer moves or narrows My tasks at any width: the panel covers the
+  list's right side, as it does on Board, and no column is hidden while it is open.
+- Under the manual sort the Add task row shows the grip the rows above it have, and a task just
+  added to the ungrouped list has its reorder handle while the row is still open.
 - In the Android app, a downloaded update now opens an "Update ready" dialog with Later and Install,
   so the owner no longer has to find the notification or the Settings card. If Android has to be
   allowed to install apps first, the install carries on by itself when the owner comes back from

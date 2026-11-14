@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { GripVertical } from 'lucide-react'
 import { Popover } from './Menu'
 import AddDuePanel from './AddDuePanel'
 import { formatDueCell, getDueBounds } from './dueDates'
@@ -20,7 +21,8 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // keyboard keeps the draft. A create that fails keeps the title and what Add task handed over
 // (the date, the repeat, and whether the repeat was made in Custom), so the picker reopens on it
 // for another try.
-// `handleColumn` adds the empty leading cell the rows have under the manual sort (TaskRow.jsx).
+// `handleColumn` adds the leading cell the rows have under the manual sort (TaskRow.jsx), with
+// the grip their handle shows, drawn only: the task can be moved once it is added.
 export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, dueColumn = true, phone = false, defaultDueAt = null, api, handleColumn = false }) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
@@ -196,7 +198,11 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       className="mytasks-grid inline-add-row"
       style={{ gridTemplateColumns, alignItems: 'center', minHeight: 'var(--row)', borderBottom: '1px solid var(--bd)' }}
     >
-      {handleColumn && <span aria-hidden="true" />}
+      {handleColumn && (
+        <span aria-hidden="true" className="inline-add-handle">
+          <GripVertical size={16} />
+        </span>
+      )}
       {/* The empty circle a row has, so the new row reads as the task it will be. */}
       <span aria-hidden="true" className="inline-add-check">
         <span className="task-check-circle" />

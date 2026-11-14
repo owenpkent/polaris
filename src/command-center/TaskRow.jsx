@@ -5,6 +5,7 @@ import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
+import DueChip from './DueChip'
 import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 import { PRIORITY_OPTIONS, taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
@@ -79,9 +80,6 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
   )
 }
 
-// The soft background behind a phone due chip, matching the text colour formatDueCell chose.
-const CHIP_BACKGROUNDS = { 'var(--green)': 'var(--green-soft)', 'var(--red)': 'var(--red-soft)' }
-
 function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
@@ -103,23 +101,7 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         title={due.text || undefined}
       >
         {phone && due.text ? (
-          // The day and the time each stay whole, the time on its own line under the day. The
-          // repeat glyph is inside the chip, after the day, so every chip in a list is one width
-          // and they line up whether or not a task repeats.
-          <span
-            className={due.time ? 'due-chip has-time' : 'due-chip'}
-            style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
-          >
-            {due.time ? (
-              <>
-                <span>{due.date}{glyph}</span> <span>{due.time}</span>
-              </>
-            ) : (
-              <>
-                {due.text}{glyph}
-              </>
-            )}
-          </span>
+          <DueChip due={due} repeat={Boolean(repeat)} />
         ) : phone ? (
           // A task with no date still needs a way to set one: a quiet "Add date" with no fill,
           // so a list of dateless tasks is not a list of chips.
@@ -164,8 +146,10 @@ function ProjectCell({ task, projectName, projectOptions, onUpdate }) {
 
   return (
     <div style={{ position: 'relative', minWidth: 0 }}>
-      <CellButton innerRef={btnRef} ariaLabel={`Change project for ${task.title}`} onClick={() => setOpen((v) => !v)} placeholder="None">
-        {projectName ? <ProjectChip name={projectName} /> : null}
+      {/* No project is a pill too, a quiet one with no dot, so every row of the column has the
+          same shape and Project reads as a column rather than pills and bare words. */}
+      <CellButton innerRef={btnRef} ariaLabel={`Change project for ${task.title}`} onClick={() => setOpen((v) => !v)}>
+        {projectName ? <ProjectChip name={projectName} /> : <span className="project-chip is-none">None</span>}
       </CellButton>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label={`Project for ${task.title}`} minWidth={200} />
     </div>
@@ -252,9 +236,10 @@ function caretOffsetAt(container, x, y) {
 
 // A task's name in its row. Clicking the text, or Enter or Space on it, edits the name in place
 // (Asana's list does the same): Enter or a click away saves through `onRename`, Esc puts the old
-// name back, and an empty or unchanged name saves nothing. The rest of the name cell is the row,
-// which opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes
-// where the click was only when that text is the stored title; otherwise it goes to the end.
+// name back, and an empty or unchanged name saves nothing. Above 640px the button fills the name
+// cell up to what follows it, so the whole cell is the target; the panel button ending the cell
+// opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes where the
+// click was only when that text is the stored title; otherwise, or past the words, it goes to the end.
 function TitleCell({ task, nameText, disabled, onRename }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -499,14 +484,14 @@ export default function TaskRow({
         <span className="mytasks-name-body">
           <span className="mytasks-name-grid">
           <TitleCell task={task} nameText={nameText} disabled={pending} onRename={(title) => onQuickUpdate(task, { title })} />
+          {/* The count first, at one width, then Waiting, so each starts at the same place on
+              every row that has it (.subtask-chip, .waiting-chip). */}
           {(task.status === 'waiting' || subtaskCount > 0) && (
             <span className="mytasks-name-meta">
-              {task.status === 'waiting' && (
-                <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
-              )}
               {subtaskCount > 0 && (
                 <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
               )}
+              {task.status === 'waiting' && <span className="waiting-chip">Waiting</span>}
             </span>
           )}
           {!phone && openButton}

@@ -56,9 +56,12 @@ function localToday() {
 let created = 0
 // A new task goes first in the manual order, so a test that needs one to sit at the end of its day
 // group, or two to sit in the order they were made, passes `{ position: endPosition() }`. Each call
-// is higher than the last and far past anything the seed or the server numbers.
+// is higher than the last and far past anything the seed or the server numbers. Calls are 1000
+// apart: a task added from the list's Add task row, or moved to the end, takes the last position
+// plus one (positionBetween in src/command-center/reorder.js), and must stay below the next call's
+// number, or a later test's "last" task lands among an earlier test's rows in the same worker.
 let endNumber = 1e9
-export const endPosition = () => ++endNumber
+export const endPosition = () => (endNumber += 1000)
 
 export async function createTask(request, testInfo, label, extra = {}) {
   const title = `UI test ${label} ${testInfo.project.name} ${++created}`

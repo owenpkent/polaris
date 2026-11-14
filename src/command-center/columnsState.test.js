@@ -60,55 +60,50 @@ describe('getVisibleColumns', () => {
   const noHidden = { name: false, due: false, project: false, assignee: false, priority: false, source: false }
 
   test('shows every column when nothing is hidden and no breakpoint is active', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 
   test('respects an explicit per-column hidden flag', () => {
     const hidden = { ...noHidden, priority: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'source'])
   })
 
   test('never hides the name column even if asked to', () => {
     const hidden = { ...noHidden, name: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toContain('name')
   })
 
   test('narrow900 hides assignee, priority, and source even when the user left them visible', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: false, phone: false, panelOpen: false })
-    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project'])
-  })
-
-  test('an open detail panel hides priority and source the same way narrow900 does', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: true })
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project'])
   })
 
   test('narrow600 hides the project column independently of narrow900', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: true, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: true, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'assignee', 'priority', 'source'])
   })
 
   test('narrow900 and narrow600 combined hide project, priority, and source', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
   test('phone tier fixes the column set to name and due only', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: true, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
   test('phone tier keeps due visible even if the user hid it, ignoring saved hidden state', () => {
     const hidden = { ...noHidden, due: true, priority: true, project: true, source: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: true, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
-  test('phone tier overrides narrow900/narrow600/panelOpen all being active too', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: true, panelOpen: true })
+  test('phone tier overrides narrow900 and narrow600 being active too', () => {
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 })
@@ -332,7 +327,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('reports narrow900 alone at a mid-size viewport', () => {
@@ -342,7 +337,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('reports narrow900 and narrow600 together, but not phone, just above the phone breakpoint', () => {
@@ -352,7 +347,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false })
   })
 
   test('reports all three breakpoints active on a phone-size viewport', () => {
@@ -363,7 +358,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: true,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true })
   })
 
   test('updates state when a media query change event fires', () => {
@@ -383,7 +378,7 @@ describe('useNarrowBreakpoints', () => {
     act(() => {
       stub.fire(Q.narrow900)
     })
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('removes every change listener on unmount', () => {
@@ -412,16 +407,6 @@ describe('the sidebar and an open task panel', () => {
     expect(Q.narrow600).toBe('(max-width: 832px)')
     expect(Q.narrowInbox).toBe('(max-width: 1032px)')
     expect(Q.phone).toBe('(max-width: 640px)')
-  })
-
-  test('an open panel on a narrowPanel window hides Project too', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: true, narrowPanel: true })
-    expect(ids(visible)).toEqual(['name', 'due'])
-  })
-
-  test('narrowPanel alone, with no panel open, hides nothing', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false, narrowPanel: true })
-    expect(ids(visible)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 })
 
