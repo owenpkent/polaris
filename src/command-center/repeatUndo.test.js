@@ -1,5 +1,8 @@
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, afterEach } from 'vitest'
 import { dropUntouchedNext } from './repeatUndo'
+import { markOffline, resetOfflineStatus } from './offlineStatus'
+
+afterEach(() => resetOfflineStatus())
 
 const made = { id: 'n', status: 'open', updatedAt: '2026-11-14T10:00:00.000Z' }
 
@@ -29,6 +32,13 @@ describe('dropUntouchedNext', () => {
       await dropUntouchedNext(api, made)
       expect(api.updateTask).not.toHaveBeenCalled()
     }
+  })
+
+  test('out of reach of the server, the stored copy is not trusted and nothing is dropped', async () => {
+    const api = fakeApi({ ...made })
+    api.getTask.mockImplementationOnce(async () => { markOffline(); return { task: { ...made } } })
+    await dropUntouchedNext(api, made)
+    expect(api.updateTask).not.toHaveBeenCalled()
   })
 
   test('does nothing for a task that made no copy', async () => {

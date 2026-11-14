@@ -175,6 +175,19 @@ describe('BoardTab', () => {
     expect(screen.queryByRole('button', { name: 'Undo completing Task One' })).toBeNull()
   })
 
+  // Reopening the done card alone left two of the same task.
+  test("Undo on a repeating card reopens it and drops the next copy completing it made", async () => {
+    const next = { id: 't1n', title: 'Task One', status: 'open', dueAt: '2026-11-15', updatedAt: '2026-11-14T10:00:00.000Z' }
+    api.completeTask.mockResolvedValue({ task: { id: 't1', status: 'done' }, next })
+    api.getTask = vi.fn().mockResolvedValue({ task: next })
+    render(<><UndoToast /><BoardTab /></>)
+    const todo = await screen.findByRole('region', { name: 'Todo' })
+    fireEvent.click(within(todo).getByRole('checkbox', { name: 'Complete Task One' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Task One' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('t1n', { status: 'dropped' }))
+    expect(api.reopenTask).toHaveBeenCalledWith('t1')
+  })
+
   test('a failed complete puts the card back and says so', async () => {
     api.completeTask.mockRejectedValueOnce(new Error('Could not update that task.'))
     render(<BoardTab />)

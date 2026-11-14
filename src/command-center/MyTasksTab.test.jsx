@@ -1005,4 +1005,32 @@ describe('MyTasksTab completing a repeating task', () => {
     expect(api.reopenTask).toHaveBeenCalledWith('d')
     expect(api.reopenTask.mock.invocationCallOrder[0]).toBeLessThan(api.updateTask.mock.invocationCallOrder[0])
   })
+
+  test('Undo keeps a next copy edited since, and a Retry after a failed reopen still drops an untouched one', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
+    const next = { ...row, id: 'n' }
+    api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
+    api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
+    api.reopenTask = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue({})
+    api.getTask = vi.fn().mockResolvedValue({ task: next })
+    api.updateTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
+    const retry = await screen.findByRole('button', { name: 'Retry reopening Brush teeth' })
+    expect(api.getTask).not.toHaveBeenCalled()
+    fireEvent.click(retry)
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('n', { status: 'dropped' }))
+
+    // The same again, with the copy renamed in between: it stays.
+    api.updateTask.mockClear()
+    api.getTask.mockResolvedValue({ task: { ...next, title: 'Floss', updatedAt: '2026-11-14T10:00:09.000Z' } })
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
+    await waitFor(() => expect(api.reopenTask).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(api.getTask).toHaveBeenCalledTimes(2))
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
 })
