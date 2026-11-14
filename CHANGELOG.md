@@ -3,7 +3,9 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 3.0.0 (2026-11-13)
+
+No migration. The version moves to 3 with no breaking change: 2.11 would have followed 2.10.
 
 - On a phone, a task's due date is back on the name's line: the name, then the date chip at its
   right, then the button that opens the panel, so a short task is one line tall again and a long
