@@ -795,6 +795,20 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
     await expectNothingCutOff(page)
   })
 
+  // A repeating task's toast also says when the next one is due, after the long title.
+  test('a repeating task toast with a long title and its next date fits, Undo whole', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`, { recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' })
+    await openView(page)
+    await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+    const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+    await expect(undo).toBeVisible()
+    await undo.hover() // holds the toast's timer
+    const toast = page.getByRole('status').filter({ has: undo })
+    await expect(toast).toContainText('The next one is due')
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    await undo.click({ trial: true })
+  })
+
   // The move toast carries two buttons, View and Undo, beside a long title and where it went.
   test('a move toast with a long title fits, View and Undo whole', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)

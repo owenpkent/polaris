@@ -16,8 +16,11 @@ function set(next) {
   for (const l of listeners) l()
 }
 
-export function showCompleted(title, undo) {
-  show({ kind: 'completed', title: title || 'task', undo })
+// `nextDue` is the due date of the copy a repeating task made when it was completed, so the
+// toast can say when it comes back: a copy due the day the done one was looks as if the done one
+// never left. Queued offline there is no answer yet, and so no date.
+export function showCompleted(title, undo, { nextDue = null } = {}) {
+  show({ kind: 'completed', title: title || 'task', undo, nextDue })
 }
 
 // "Moved <task> to <where>", after the owner's own change sends a task to another group or lane,
