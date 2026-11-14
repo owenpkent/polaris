@@ -291,6 +291,14 @@ function LaneAddTask({ section, onCreate }) {
   const mounted = useRef(true)
   const fitRef = useFitToText(title, inputRef)
 
+  // A name typed while a save waited, then left by a click: saved once the render that shows the
+  // first save has run, so it is sent with the lane as it is then.
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || formRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    submit({ leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
@@ -379,11 +387,16 @@ function LaneAddTask({ section, onCreate }) {
       return
     }
     // Focus has left the card. A failed save keeps the card and says why. Otherwise an empty card
-    // closes, and a name typed while it saved is saved in turn when a click took focus away, as
-    // that click would have done had the card not been busy; left by keyboard, it stays a draft.
+    // closes, once a held press has been released: the short Add task row taking the tall card's
+    // place would move what is under the pointer (Show done) before the release. A name typed
+    // while it saved is saved in turn when the last way out was a click, as that click would have
+    // done had the card not been busy; left last by keyboard, it stays a draft.
     if (!saved) return
-    if (!titleRef.current.trim()) close()
-    else if (leave || left === 'click') submit({ leave: true })
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else close()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   if (!open) {

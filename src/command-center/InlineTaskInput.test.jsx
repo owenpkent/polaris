@@ -178,6 +178,28 @@ describe('InlineTaskInput', () => {
     expect(input.value).toBe('Second task')
   })
 
+  // The last way out decides: a click-away save, then a newer name left by Tab, keeps that name as
+  // a draft, as Tab always does (review on #183).
+  test('a click-away save, then a newer name left by keyboard, keeps that name as a draft', async () => {
+    const finishes = []
+    const onSubmit = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+    const { input, onCancel } = setup({ onSubmit, defaultDueAt: getDueBounds().today })
+    fireEvent.change(input, { target: { value: 'First task' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { input.blur() })
+    fireEvent.pointerUp(document.body)
+    fireEvent.click(document.body)
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    act(() => { input.focus() })
+    fireEvent.change(input, { target: { value: 'Second task' } })
+    act(() => { input.blur() })
+    await act(async () => { finishes[0]() })
+    await act(async () => {})
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(input.value).toBe('Second task')
+  })
+
   // Tab, or a script moving focus, is not a click elsewhere: the draft stays for the owner.
   test('leaving the row by keyboard with a name in it keeps the draft', () => {
     const { input, onSubmit, onCancel } = setup()

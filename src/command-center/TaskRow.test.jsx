@@ -476,6 +476,38 @@ describe('TaskTree Add subtask row', () => {
     }
   })
 
+  // The last way out decides: a click-away save, then a newer name left by Tab, keeps that name as
+  // a draft, as Tab always does (review on #183).
+  test('a click-away save, then a newer name left by keyboard, keeps that name as a draft', async () => {
+    const outside = document.createElement('button')
+    outside.textContent = 'Elsewhere'
+    document.body.appendChild(outside)
+    try {
+      const finishes = []
+      const onAddSubtask = vi.fn(() => new Promise((resolve) => { finishes.push(resolve) }))
+      renderTree({ onAddSubtask })
+      expand()
+      fireEvent.click(addButton())
+      const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+      fireEvent.change(box, { target: { value: 'First task' } })
+      fireEvent.pointerDown(outside)
+      act(() => { outside.focus() })
+      fireEvent.pointerUp(outside)
+      fireEvent.click(outside)
+      await waitFor(() => expect(onAddSubtask).toHaveBeenCalledTimes(1))
+      act(() => { box.focus() })
+      fireEvent.change(box, { target: { value: 'Second task' } })
+      act(() => { outside.focus() })
+      await act(async () => { finishes[0]() })
+      await act(async () => {})
+      expect(onAddSubtask).toHaveBeenCalledTimes(1)
+      expect(box.value).toBe('Second task')
+      expect(screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })).toBe(box)
+    } finally {
+      outside.remove()
+    }
+  })
+
   test('no row under an inbox task', () => {
     renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
     expand()

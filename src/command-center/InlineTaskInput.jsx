@@ -72,6 +72,15 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     if (saved > 0) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
   }, [saved])
 
+  // A name typed while a save waited, then left by a click: added once the render that shows the
+  // first save has run, so onSubmit works out its place from the list as it is then (under the
+  // manual sort, after the first task rather than above it).
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || rowRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    commit(defaultDueAt, { recurrence: '', customRepeat: false }, { leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // A click elsewhere that takes focus from the row waits for the release before the row closes
   // or adds: closing on the press would move the rows under it up by a row, and the release would
   // land on whatever moved under the pointer instead of what was hit (pointerPress.js).
@@ -167,12 +176,16 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       return
     }
     // Focus has left the row. A failed save keeps the row and says why. Otherwise an empty row
-    // closes, and a name typed while it saved is added in turn, on the group's date, when a click
-    // took focus away, as that click would have done had the row not been busy; left by
-    // keyboard, it stays a draft.
+    // closes, once a held press has been released, so nothing moves under it first. A name typed
+    // while it saved is added in turn, on the group's date, when the last way out was a click, as
+    // that click would have done had the row not been busy; left last by keyboard, it stays a
+    // draft.
     if (!saved) return
-    if (!titleRef.current.trim()) onCancel()
-    else if (leave || left === 'click') commit(defaultDueAt, { recurrence: '', customRepeat: false }, { leave: true })
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else onCancel()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   // Whether an IME composition is open, so the Enter that confirms a candidate in a Chinese,

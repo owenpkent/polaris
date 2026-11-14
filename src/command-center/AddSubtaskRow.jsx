@@ -52,6 +52,21 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
     return () => { mounted.current = false }
   }, [])
 
+  // Counts the subtasks saved from this box. Each one pushes the box down, so it is kept on
+  // screen (above the phone's keyboard too). jsdom has no scrollIntoView.
+  const [saved, setSaved] = useState(0)
+  useEffect(() => {
+    if (saved > 0) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [saved])
+
+  // A name typed while a save waited, then left by a click: saved once the render that shows the
+  // first save has run, so it is sent with the parent's list as it is then.
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || rowRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    commit({ leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (editing) inputRef.current?.focus()
     else if (refocusButton.current) {
@@ -86,10 +101,10 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
     leftWhileBusy.current = null
     setBusy(true)
     setError(null)
-    let saved = false
+    let ok = false
     try {
       await onAdd(parent, trimmed)
-      saved = true
+      ok = true
     } catch (err) {
       if (mounted.current) setError(err.message || 'Could not add that subtask.')
     } finally {
@@ -100,18 +115,25 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
     if (!mounted.current) return
     const left = leftWhileBusy.current
     leftWhileBusy.current = null
-    // Only what was sent is cleared: a name typed while it saved stays.
-    if (saved && titleRef.current === sent) setTitle('')
+    if (ok) {
+      // Only what was sent is cleared: a name typed while it saved stays.
+      if (titleRef.current === sent) setTitle('')
+      setSaved((n) => n + 1)
+    }
     if (rowRef.current?.contains(document.activeElement)) {
       if (!leave) inputRef.current?.focus()
       return
     }
     // Focus has left the row. A failed save keeps the box and says why. Otherwise an empty box
-    // closes, and a name typed while it saved is saved in turn when a click took focus away, as
-    // that click would have done had the row not been busy; left by keyboard, it stays a draft.
-    if (!saved) return
-    if (!titleRef.current.trim()) close()
-    else if (leave || left === 'click') commit({ leave: true })
+    // closes, once a held press has been released, so nothing moves under it first. A name
+    // typed while it saved is saved in turn when the last way out was a click, as that click
+    // would have done had the row not been busy; left last by keyboard, it stays a draft.
+    if (!ok) return
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else close()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   // Added on the release, before the click it makes lands, unless that click is in the row or

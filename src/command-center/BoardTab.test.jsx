@@ -243,6 +243,53 @@ describe('BoardTab', () => {
     await waitFor(() => expect(within(doing).queryByRole('textbox')).toBeNull())
   })
 
+  // The last way out decides: a click-away save, then a newer name left by Tab, keeps that name as
+  // a draft, as Tab always does (review on #183).
+  test('a click-away save, then a newer name left by keyboard, keeps that name as a draft', async () => {
+    const finishes = []
+    api.createTask.mockImplementation(() => new Promise((resolve) => { finishes.push(() => resolve({ task: { id: 'new' } })) }))
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'First card' } })
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    fireEvent.pointerUp(document.body)
+    fireEvent.click(document.body)
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1))
+    act(() => { box.focus() })
+    fireEvent.change(box, { target: { value: 'Second card' } })
+    act(() => { box.blur() })
+    await act(async () => { finishes[0]() })
+    await act(async () => {})
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+    expect(within(doing).getByRole('textbox', { name: 'New task in Doing' }).value).toBe('Second card')
+  })
+
+  // A save that settles while the pointer is still held on Show done must not close the tall card
+  // under it: the release would land on whatever moved there. It closes after the release.
+  test('a save that settles during a held press elsewhere closes the card only after the release', async () => {
+    let finish
+    api.createTask.mockImplementation(() => new Promise((resolve) => { finish = () => resolve({ task: { id: 'new' } }) }))
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+    fireEvent.change(box, { target: { value: 'Fresh card' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1))
+    fireEvent.pointerDown(document.body)
+    act(() => { box.blur() })
+    await act(async () => { finish() })
+    await act(async () => {})
+    expect(within(doing).getByRole('textbox', { name: 'New task in Doing' })).toBeTruthy()
+    fireEvent.pointerUp(document.body)
+    await waitFor(() => expect(within(doing).queryByRole('textbox')).toBeNull())
+  })
+
   test('Add task in No section sends a null section, and Esc closes it', async () => {
     render(<BoardTab />)
     const lane = await screen.findByRole('region', { name: 'No section' })
