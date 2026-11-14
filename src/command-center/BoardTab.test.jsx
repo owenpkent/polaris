@@ -193,6 +193,27 @@ describe('BoardTab', () => {
     await waitFor(() => expect(within(doing).getByRole('textbox', { name: 'New task in Doing' }).value).toBe(''))
   })
 
+  // Android puts the soft keyboard away when a focused box turns read-only, so the box stays
+  // editable while a task saves, and a name typed meanwhile is kept for the next Enter.
+  test("a lane's add box stays editable while a task saves, and keeps what was typed meanwhile", async () => {
+    let finish
+    api.createTask.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ task: { id: 'new' } }) }))
+    render(<BoardTab />)
+    const doing = await screen.findByRole('region', { name: 'Doing' })
+    fireEvent.click(within(doing).getByRole('button', { name: 'Add task to Doing' }))
+    const box = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    fireEvent.change(box, { target: { value: 'First card' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+    expect(box.readOnly).toBe(false)
+    fireEvent.change(box, { target: { value: 'Second card' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(api.createTask).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+    const after = within(doing).getByRole('textbox', { name: 'New task in Doing' })
+    expect(after.value).toBe('Second card')
+  })
+
   test('Add task in No section sends a null section, and Esc closes it', async () => {
     render(<BoardTab />)
     const lane = await screen.findByRole('region', { name: 'No section' })

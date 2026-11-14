@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import InlineTaskInput from './InlineTaskInput'
 import { getDueBounds } from './dueDates'
 
@@ -50,6 +50,25 @@ describe('InlineTaskInput', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2))
     expect(onSubmit).toHaveBeenLastCalledWith('Buy bread', { dueAt: today, recurrence: null })
     expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  // Android puts the soft keyboard away when a focused box turns read-only, so the box stays
+  // editable while a task saves, and a name typed meanwhile is kept for the next Enter.
+  test('the box stays editable while a task saves, and keeps what was typed meanwhile', async () => {
+    let finish
+    const onSubmit = vi.fn(() => new Promise((resolve) => { finish = resolve }))
+    const { input } = setup({ onSubmit, defaultDueAt: getDueBounds().today })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Buy milk' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(input.readOnly).toBe(false)
+    fireEvent.change(input, { target: { value: 'Buy bread' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+    expect(input.value).toBe('Buy bread')
+    expect(document.activeElement).toBe(input)
   })
 
   // Enter is also the key that accepts a candidate in Chinese, Japanese, and Korean input methods.

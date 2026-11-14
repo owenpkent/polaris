@@ -45,6 +45,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
 - On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
   press Enter to add it under that task, as many times as you like, and Esc closes the box. An
   inbox item still has no subtasks.
+- In the Android app the keyboard stays up after Enter in the Add task row, the Add subtask row, and a
+  Board lane's add box, so the next name can be typed at once. Each box used to turn read-only
+  while it saved, which made Android put the keyboard away. A name typed while one saves is kept.
 
 ## 2.10.0 (2026-11-12)
 

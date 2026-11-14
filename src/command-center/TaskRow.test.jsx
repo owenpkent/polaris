@@ -420,6 +420,27 @@ describe('TaskTree Add subtask row', () => {
     }
   })
 
+  // Android puts the soft keyboard away when a focused box turns read-only, so the box stays
+  // editable while a subtask saves, and a name typed meanwhile is kept for the next Enter.
+  test('the box stays editable while a subtask saves, and keeps what was typed meanwhile', async () => {
+    let finish
+    const onAddSubtask = vi.fn(() => new Promise((resolve) => { finish = resolve }))
+    const { parent } = renderTree({ onAddSubtask })
+    expand()
+    fireEvent.click(addButton())
+    const box = screen.getByRole('textbox', { name: 'New subtask of Plan the trip' })
+    fireEvent.change(box, { target: { value: 'Pack the charger' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAddSubtask).toHaveBeenCalledWith(parent, 'Pack the charger')
+    expect(box.readOnly).toBe(false)
+    fireEvent.change(box, { target: { value: 'Print the tickets' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onAddSubtask).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+    expect(box.value).toBe('Print the tickets')
+    expect(document.activeElement).toBe(box)
+  })
+
   test('no row under an inbox task', () => {
     renderTree({ parent: baseTask({ id: 'p', title: 'Plan the trip', status: 'inbox' }) })
     expand()

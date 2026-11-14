@@ -63,7 +63,8 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
   }
 
   async function commit({ leave = false } = {}) {
-    const trimmed = title.trim()
+    const sent = title
+    const trimmed = sent.trim()
     if (!trimmed || busy) return
     setBusy(true)
     setError(null)
@@ -76,7 +77,8 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
         closed = true
         return
       }
-      setTitle('')
+      // Only what was sent is cleared: a name typed while it saved stays for the next Enter.
+      setTitle((current) => (current === sent ? '' : current))
     } catch (err) {
       if (!mounted.current) return
       setError(err.message || 'Could not add that subtask.')
@@ -155,8 +157,8 @@ export default function AddSubtaskRow({ parent, depth, gridTemplateColumns, hand
               onCompositionStart={() => { composing.current = true }}
               onCompositionEnd={() => { composing.current = false }}
               onBlur={handleBlur}
-              // Read-only rather than disabled while it saves, so focus stays for the next one.
-              readOnly={busy}
+              // Editable while it saves, as the panel's subtask box is (a second Enter waits for
+              // the first): on Android a focused box turning read-only puts the keyboard away.
               aria-busy={busy || undefined}
               placeholder="Write a subtask name"
               aria-label={`New subtask of ${parent.title}`}

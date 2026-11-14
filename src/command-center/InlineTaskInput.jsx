@@ -113,7 +113,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // `leave` is a click elsewhere: once saved the row closes, unless focus has come back to it,
   // and focus is not pulled back to the row either way.
   async function commit(picked, draft, { leave = false } = {}) {
-    const trimmed = title.trim()
+    const sent = title
+    const trimmed = sent.trim()
     if (!trimmed || busy) return
     setPicking(false)
     setDueAt(picked)
@@ -128,8 +129,9 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
         onCancel()
         return
       }
-      // Saved: the next row starts clean, on the group's date.
-      setTitle('')
+      // Saved: the next row starts clean, on the group's date, keeping only a name typed while it
+      // saved.
+      setTitle((current) => (current === sent ? '' : current))
       setDueAt(defaultDueAt)
       setRecurrence('')
       setCustomRepeat(false)
@@ -220,8 +222,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
           // Leaving an empty row closes it, and a click elsewhere adds a named one, unless focus
           // went to its own due date button.
           onBlur={handleBlur}
-          // Read-only rather than disabled while it saves, so focus stays in the row for the next.
-          readOnly={busy}
+          // Editable while it saves, so focus stays in the row for the next (a second Enter waits
+          // for the first): on Android a focused box turning read-only puts the keyboard away.
           aria-busy={busy || undefined}
           placeholder="Write a task name"
           aria-label="New task name"
