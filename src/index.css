@@ -1067,8 +1067,7 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
    of its own under the group, which cost a row's height in every group. It sits over the rows'
    panel buttons: it reaches through the header's padding, and keeps the 4px a row's last cell
    keeps at its edge. */
-.mytasks-section-add { margin-left: auto; margin-right: calc(-1 * var(--space-3)); padding-right: var(--space-1); color: var(--t2); }
-.mytasks-section-add:hover { color: var(--t1); }
+.mytasks-section-add { margin-left: auto; margin-right: calc(-1 * var(--space-3)); padding-right: var(--space-1); }
 
 /* The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx): the Plus sits in a 44px
    cell where a subtask's check is, and the words start where a subtask's name starts. */
