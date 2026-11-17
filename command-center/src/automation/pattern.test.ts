@@ -140,8 +140,8 @@ test('a "-" after a class escape is read as RegExp reads it: the escape, a dash,
 
 // Fuzz crashes of 2026-11-13 and 2026-11-16 (target pattern): "\00" was NUL and a "0" here, and
 // the octal escape for NUL to RegExp.
-test('"\\0" followed by a digit is refused, since RegExp reads it as an octal escape', () => {
-  for (const pattern of ['\\00', '\\00\\b', '\\012', '[\\01]', 'a\\09']) {
+test('"\\0" followed by an octal digit is refused, since RegExp reads it as an octal escape', () => {
+  for (const pattern of ['\\00', '\\00\\b', '\\012', '[\\01]', 'a\\07']) {
     assert.throws(() => compilePattern(pattern), (e: unknown) => e instanceof PatternError && /octal/.test(e.message), `expected /${pattern}/ to be refused`);
   }
   const agree: [string, string[]][] = [
@@ -149,6 +149,9 @@ test('"\\0" followed by a digit is refused, since RegExp reads it as an octal es
     ['^\\0a$', ['\0a', '0a']],
     ['^[\\0-9]+$', ['\u00005', 'a']],
     ['\\0\\b', ['\u00004', '4']],
+    // 8 and 9 are not octal digits: NUL, then the digit, to RegExp and here.
+    ['^\\08$', ['\u00008', '8', '\u0000']],
+    ['^[\\09]+$', ['\u00009', '8']],
   ];
   for (const [pattern, inputs] of agree) {
     for (const input of inputs) {

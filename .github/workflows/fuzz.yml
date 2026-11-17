@@ -136,7 +136,7 @@ jobs:
             target="${dir#crashes/}"
             [[ "$target" =~ ^[a-z0-9-]+$ ]] || { echo "skipped a folder that is not a target's: $target"; continue; }
             found=$((found + 1))
-            inputs=("$dir"/crash-* "$dir"/oom-* "$dir"/timeout-* "$dir"/slow-unit-*)
+            inputs=("$dir"/crash-* "$dir"/oom-* "$dir"/timeout-* "$dir"/slow-unit-* "$dir"/leak-*)
             # No input file means the target failed some other way (build or install); the failed
             # job in the run says why, so there is no issue.
             [ ${#inputs[@]} -gt 0 ] || continue

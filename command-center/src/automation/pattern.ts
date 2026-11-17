@@ -14,7 +14,7 @@
 // classes, `\d \w \s` and their negations, `\b \B ^ $`, groups (capturing or not), alternation,
 // and the quantifiers `* + ? {n} {n,} {n,m}` with an optional lazy suffix. A count is read with
 // any number of digits, as RegExp reads it ({0006} is {6}), and a count above 100 is refused.
-// Backreferences, lookaround, and flags are not supported, and a pattern that uses them is refused
+// Backreferences, lookaround, octal escapes, and flags are not supported, and a pattern that uses them is refused
 // at validation with a message that says so. The result is a boolean, so greedy and lazy match the same way.
 // Where a pattern is accepted, `test` agrees with `new RegExp(pattern).test(input)`.
 
@@ -211,10 +211,10 @@ class Parser {
 
   /** The code point an escape stands for, `c` being the character after the backslash. */
   #escapedCodePoint(c: string): number {
-    // "\0" is NUL only where no digit follows it. RegExp reads "\00" and "\012" as octal escapes,
-    // so reading them as NUL and a literal digit would disagree with it: refused instead (found
-    // by the nightly fuzz run of 2026-11-13).
-    if (c === '0' && /^[0-9]$/.test(this.#peek() ?? '')) throw new PatternError("'\\0' followed by a digit is not supported (octal escapes are not)");
+    // "\0" is NUL only where no octal digit follows it. RegExp reads "\00" and "\012" as octal
+    // escapes, so reading them as NUL and a literal digit would disagree with it: refused instead
+    // (found by the nightly fuzz run of 2026-11-13). "\08" and "\09" are NUL and the digit to both.
+    if (c === '0' && /^[0-7]$/.test(this.#peek() ?? '')) throw new PatternError("'\\0' followed by a digit from 0 to 7 is not supported (octal escapes are not)");
     if (c in SIMPLE_ESCAPES) return SIMPLE_ESCAPES[c];
     if (c === 'x') return this.#hex(2);
     if (c === 'u') return this.#hex(4);
