@@ -86,10 +86,26 @@ if (existsSync(seeds)) cpSync(seeds, evolved, { recursive: true, force: false })
 // A dictionary of format tokens (libFuzzer syntax) lets the mutator splice in keywords it would
 // take far longer to invent byte by byte. Optional: a target without one runs as before.
 const dictFile = path.join(root, 'fuzz/dict', `${target}.dict`);
+// libFuzzer writes the input it stopped on to the artifact prefix: crash-*, timeout-*, oom-*,
+// slow-unit-*, or leak-*.
+const findings = () => readdirSync(crashes).filter((name) => /^(crash|timeout|oom|slow-unit|leak)-/.test(name));
+const known = new Set(findings());
+const started = Date.now();
 const result = run([evolved, ...common], [
   `-max_total_time=${seconds}`,
   '-rss_limit_mb=2048',
   `-artifact_prefix=${crashes}${path.sep}`,
   ...(existsSync(dictFile) ? [`-dict=${dictFile}`] : []),
 ]);
+// On most nights of 2026-11 the pattern target's process was ended by SIGABRT after libFuzzer
+// had printed "Done N runs": node aborted while exiting, in libuv (uv__io_poll: Assertion
+// `errno == EINTR' failed), and the job failed with nothing found. An abort is such an end, and
+// not a failure, only when the whole time budget had been used and no input was written. An
+// abort part way through, any other signal, and any exit code of the process's own (a finding
+// is 77) stay failures.
+const newFindings = findings().filter((name) => !known.has(name));
+if (result.status === null && result.signal === 'SIGABRT' && newFindings.length === 0 && Date.now() - started >= seconds * 1000) {
+  console.error(`fuzz: the ${target} process aborted while exiting, after its ${seconds} s budget and with no input written to ${crashes}. Not a finding; treated as a pass.`);
+  process.exit(0);
+}
 process.exit(result.status ?? 1);

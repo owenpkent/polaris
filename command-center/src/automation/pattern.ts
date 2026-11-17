@@ -211,6 +211,10 @@ class Parser {
 
   /** The code point an escape stands for, `c` being the character after the backslash. */
   #escapedCodePoint(c: string): number {
+    // "\0" is NUL only where no digit follows it. RegExp reads "\00" and "\012" as octal escapes,
+    // so reading them as NUL and a literal digit would disagree with it: refused instead (found
+    // by the nightly fuzz run of 2026-11-13).
+    if (c === '0' && /^[0-9]$/.test(this.#peek() ?? '')) throw new PatternError("'\\0' followed by a digit is not supported (octal escapes are not)");
     if (c in SIMPLE_ESCAPES) return SIMPLE_ESCAPES[c];
     if (c === 'x') return this.#hex(2);
     if (c === 'u') return this.#hex(4);
@@ -230,6 +234,12 @@ class Parser {
     const tests: CharTest[] = [];
     let pendingRange: number | undefined; // the low end of "a-" seen so far
     let previous: number | undefined; // the last single code point, a candidate low end
+    // RegExp cannot make a range from a class escape, and reads "\s-x" as the three members \s,
+    // "-", and x, after which the class goes on afresh: x is not the low end of a range either
+    // ("[\s--z]" is \s, "-", "z", not \s and the range "-" to "z"; found by the nightly fuzz
+    // run of 2026-11-12).
+    let afterSet = false; // the last member was a class escape
+    let alone = false; // the next member follows the "-" after a class escape
     for (;;) {
       const c = this.#next();
       if (c === ']') break;
@@ -240,6 +250,11 @@ class Parser {
         if (e in CLASS_ESCAPES) set = CLASS_ESCAPES[e];
         else if (e === 'b') single = 0x08;
         else single = this.#escapedCodePoint(e);
+      } else if (c === '-' && afterSet && this.#peek() !== ']') {
+        tests.push((cp) => cp === 0x2d);
+        afterSet = false;
+        alone = true;
+        continue;
       } else if (c === '-' && previous !== undefined && pendingRange === undefined && this.#peek() !== ']') {
         pendingRange = previous;
         tests.pop();
@@ -261,8 +276,10 @@ class Parser {
       } else {
         const cp = single!;
         tests.push((x) => x === cp);
-        previous = cp;
+        previous = alone ? undefined : cp;
       }
+      afterSet = set !== undefined && !alone;
+      alone = false;
     }
     const anyOf: CharTest = (cp) => tests.some((t) => t(cp));
     return { kind: 'char', test: negate ? (cp) => !anyOf(cp) : anyOf };

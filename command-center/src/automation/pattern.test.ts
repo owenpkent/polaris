@@ -118,6 +118,45 @@ test('unsupported syntax is refused with a message that names it', () => {
   }
 });
 
+// Fuzz crashes from 2026-11-12 on (target pattern): "[^\s--z]{5}" matched "\0\0\0\0dh" for RegExp
+// and not here, where "--z" after the class escape was read as a range.
+test('a "-" after a class escape is read as RegExp reads it: the escape, a dash, and the next member', () => {
+  const agree: [string, string[]][] = [
+    ['[^\\s--z]{5}', ['\0\0\0\0dh', '\0\0\0\0zh', 'ab-de', 'abcde']],
+    ['^[\\s--z]+$', [' -z', 'a', '.']],
+    ['^[\\w-.]+$', ['a-b.c', 'a b']],
+    ['^[\\w-.-z]+$', ['.-z', 'x/y']],
+    ['^[\\d-\\s-z-~]+$', ['1 -z{~', 'a']],
+    ['^[\\d-\\w]+$', ['1-a', '.']],
+    ['^[\\s-]+$', [' -', 'a']],
+    ['^[\\s-\\x41-C]+$', [' -AC', 'B']],
+  ];
+  for (const [pattern, inputs] of agree) {
+    for (const input of inputs) {
+      assert.equal(compilePattern(pattern).test(input), new RegExp(pattern).test(input), `/${pattern}/ against ${JSON.stringify(input)}`);
+    }
+  }
+});
+
+// Fuzz crashes of 2026-11-13 and 2026-11-16 (target pattern): "\00" was NUL and a "0" here, and
+// the octal escape for NUL to RegExp.
+test('"\\0" followed by a digit is refused, since RegExp reads it as an octal escape', () => {
+  for (const pattern of ['\\00', '\\00\\b', '\\012', '[\\01]', 'a\\09']) {
+    assert.throws(() => compilePattern(pattern), (e: unknown) => e instanceof PatternError && /octal/.test(e.message), `expected /${pattern}/ to be refused`);
+  }
+  const agree: [string, string[]][] = [
+    ['\\0', ['a\0b', 'ab']],
+    ['^\\0a$', ['\0a', '0a']],
+    ['^[\\0-9]+$', ['\u00005', 'a']],
+    ['\\0\\b', ['\u00004', '4']],
+  ];
+  for (const [pattern, inputs] of agree) {
+    for (const input of inputs) {
+      assert.equal(compilePattern(pattern).test(input), new RegExp(pattern).test(input), `/${pattern}/ against ${JSON.stringify(input)}`);
+    }
+  }
+});
+
 // Fuzz crash on 2026-11-09 (target pattern): a brace count of four digits was read as literal text.
 test('a repeat count may have leading zeros or more than three digits, as RegExp reads it', () => {
   const agree: [string, string[]][] = [
