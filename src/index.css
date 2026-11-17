@@ -167,6 +167,11 @@
   --row-pad: 4px;
   --section-gap: 12px;
 }
+/* A phone shows few rows at a time: the gap before a group is one step smaller there. */
+@media (max-width: 640px) {
+  :root { --section-gap: var(--space-3); }
+  :root[data-density='compact'] { --section-gap: var(--space-2); }
+}
 
 /* Light theme, applied when the pre-paint script in index.html (mirrored by
    src/theme.js) sets data-theme="light" on <html>. Same depth model, flipped:
@@ -924,10 +929,18 @@ kbd { color: var(--t1); }
 .filter-box.is-checked { border-color: var(--blue); background: var(--blue); }
 
 @media (max-width: 640px) {
+  /* A phone has no Add task button here (the floating one adds), so Filter, Sort, and Group need
+     no band of their own: the page's top padding is over them and one step is under them. */
   .mytasks-toolbar {
     flex-direction: column;
     align-items: stretch;
+    padding: 0 0 var(--space-2);
   }
+  /* The first and last things in a row (the handle or the check, the panel button) and in the
+     toolbar are small glyphs inside 44px targets, so they already stand clear of the screen's
+     edge. The toolbar and the list reach half way into the page's 16px side padding, which gives
+     a name that much more room before it wraps. */
+  .mytasks-toolbar, .mytasks-list { margin-inline: calc(-1 * var(--space-2)); }
   .mytasks-toolbar-add {
     width: 100%;
   }
