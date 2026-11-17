@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing, applyViewSettings } from './support.js'
+import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing, applyViewSettings, isPhone } from './support.js'
 
 // The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
 // targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
@@ -77,13 +77,21 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     expect(await smallTargets(page.getByRole('toolbar', { name: 'Tasks' }))).toEqual([])
   })
 
-  test('My tasks rows and group headers', async ({ page }) => {
+  test('My tasks rows and group headers', async ({ page }, testInfo) => {
     await openView(page)
-    const offenders = await smallTargets(
-      page.locator('main'),
-      '[aria-label^="Open "], [aria-label^="Collapse "], [aria-label^="Expand "], [role="checkbox"], [aria-label^="Change "]'
-    )
-    expect(offenders).toEqual([])
+    const main = page.locator('main')
+    expect(await smallTargets(main, '[aria-label^="Open "], [role="checkbox"], [aria-label^="Change "]')).toEqual([])
+    // A group header on a phone is 32px tall, the owner's choice (CONTRIBUTING.md, Density): its
+    // arrow and its Add task are that tall and still 44px wide. Above a phone they are 44px.
+    const inHeader = '[aria-label^="Collapse "], [aria-label^="Expand "], [aria-label="Add task"]'
+    if (!isPhone(testInfo)) {
+      expect(await smallTargets(main, inHeader)).toEqual([])
+      return
+    }
+    expect(await smallTargets(main, inHeader, 32)).toEqual([])
+    const widths = await main.locator(inHeader).evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width)))
+    expect(widths.length).toBeGreaterThan(0)
+    expect(widths.filter((w) => w < 44)).toEqual([])
   })
 
   test('navigation: the sidebar on desktop, the drawer on a phone', async ({ page }, testInfo) => {

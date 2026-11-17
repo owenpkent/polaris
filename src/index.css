@@ -167,10 +167,13 @@
   --row-pad: 4px;
   --section-gap: 12px;
 }
-/* A phone shows few rows at a time: the gap before a group is one step smaller there. */
+/* A phone shows few rows at a time: the gap before a group is one step smaller there, and a
+   group's header is 32px in both densities. Its arrow and its Add task are as tall as the header
+   and 44px wide: under the 44px target by the owner's choice (2026-11-16), as the controls of a
+   Compact row are. */
 @media (max-width: 640px) {
-  :root { --section-gap: var(--space-3); }
-  :root[data-density='compact'] { --section-gap: var(--space-2); }
+  :root { --section-gap: var(--space-3); --row-head: 32px; }
+  :root[data-density='compact'] { --section-gap: var(--space-2); --row-head: 32px; }
 }
 
 /* Light theme, applied when the pre-paint script in index.html (mirrored by
