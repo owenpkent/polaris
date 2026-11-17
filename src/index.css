@@ -1063,6 +1063,12 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   transition: background 0.12s, color 0.12s;
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
+/* On a phone a group's Add task is a + at the end of its header (TaskGroupSection.jsx), not a row
+   of its own under the group, which cost a row's height in every group. It sits over the rows'
+   panel buttons: it reaches through the header's padding, and keeps the 4px a row's last cell
+   keeps at its edge. */
+.mytasks-section-add { margin-left: auto; margin-right: calc(-1 * var(--space-3)); padding-right: var(--space-1); color: var(--t2); }
+.mytasks-section-add:hover { color: var(--t1); }
 
 /* The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx): the Plus sits in a 44px
    cell where a subtask's check is, and the words start where a subtask's name starts. */
@@ -2405,7 +2411,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
    its left edge on the name's, on a phone under 380px). Every chip
    is one size, 88px by 32px, the room "Tomorrow" needs, with its words centred, so the chips in
    a list line up as a column whatever each one says: a day, a day and a time, or a day that
-   repeats. Only a date with its year is wider, and it is never cut. */
+   repeats. Only a date with its year is wider, and it is never cut. A phone row in My tasks is
+   the exception (the rule after the empty chip's, below). */
 .due-chip {
   display: inline-flex;
   align-items: center;
@@ -2446,9 +2453,12 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .due-chip.is-empty { background: transparent; color: var(--t3); font-weight: 500; padding: 0; }
 .due-chip.has-time > span { white-space: nowrap; }
 .due-chip.has-time > span + span { font-size: 12px; font-weight: 500; }
-/* Under the name (a phone under 380px) the prompt starts where the name does. */
-@media (max-width: 379px) {
-  .due-chip.is-empty { min-width: 0; }
+/* A phone row's chip is as wide as its words, not the one size: a name beside a short date has
+   that much more room before it wraps. The chips keep one height and their right edges in line,
+   next to the panel button. A Board card's foot and a search result keep the one size. Under the
+   name (a phone under 380px) the prompt for a date then starts where the name does. */
+@media (max-width: 640px) {
+  .mytasks-row .due-chip { min-width: 0; }
 }
 
 /* New task sheet (NewTaskSheet.jsx): a dialog that rises from the bottom edge under 640px and

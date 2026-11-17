@@ -8,7 +8,9 @@ import ReorderableRows, { useReorderScope } from './ReorderableRows'
 // panel (MyTasksTab), so a section has no surface of its own.
 // `addRow`, when present, describes the trailing "Add task" row for this
 // group ({ dueAt }), which turns into the inline input where it is, so nothing
-// moves under the pointer; `inlineAdd`, when present, is this group's own active
+// moves under the pointer. On a phone that row would cost a row's height in every group, so Add
+// task is a + at the end of the header instead, and the inline input opens at the end of the
+// group all the same. `inlineAdd`, when present, is this group's own active
 // inline input -- already filtered to this group by the caller, so any other
 // group's inline input has no effect here. It stays at the end of the group, with the tasks
 // added from it in `tasks` just above it (heldIds in MyTasksTab.jsx).
@@ -67,6 +69,11 @@ export default function TaskGroupSection({
         </button>
         <span className="mytasks-section-title">{title}</span>
         <span className="mytasks-section-count">{tasks.length}</span>
+        {phone && addRow && !inlineAdd && !collapsed && (
+          <button type="button" className="icon-btn mytasks-section-add" aria-label="Add task" onClick={onOpenInlineAdd}>
+            <Plus size={18} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {!collapsed && (
@@ -101,7 +108,7 @@ export default function TaskGroupSection({
             <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={inlineGridTemplate} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={handleColumn} onSubmit={onSubmitInlineAdd} onCancel={onCancelInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
           )}
 
-          {addRow && !inlineAdd && (
+          {addRow && !inlineAdd && !phone && (
             <button type="button" className="mytasks-add-row" onClick={onOpenInlineAdd}>
               <Plus size={16} aria-hidden="true" /> Add task
             </button>
