@@ -68,7 +68,7 @@ test.describe('States between success and failure', { tag: ['@flow'] }, () => {
       await expect(banner).toBeVisible()
       const retry = banner.getByRole('button', { name: 'Retry' })
       await expect(retry).toBeVisible()
-      expect(await smallTargets(banner), 'controls under 44px in the error banner').toEqual([])
+      expect(await smallTargets(banner), 'controls that are too small in the error banner').toEqual([])
       await expect(page.getByRole('main').getByText(view.loading, { exact: true })).toHaveCount(0)
 
       // The retry must be a real request, not a re-render of the old answer.

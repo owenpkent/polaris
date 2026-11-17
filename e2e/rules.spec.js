@@ -71,7 +71,7 @@ test.describe('Rules', { tag: ['@flow'] }, () => {
     expect(await ruleByName(request, SEEDED)).toBeDefined()
   })
 
-  test('rule controls are 44px targets', async ({ page }) => {
+  test('rule controls are big enough targets', async ({ page }) => {
     await openView(page, 'rules')
     await expect(page.locator('main')).toContainText(SEEDED)
     expect(await smallTargets(page.locator('main'), 'button, summary')).toEqual([])

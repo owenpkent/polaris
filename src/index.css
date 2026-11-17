@@ -169,7 +169,7 @@
 }
 /* A phone shows few rows at a time: the gap before a group is one step smaller there, and a
    group's header is 32px in both densities. Its arrow and its Add task are as tall as the header
-   and 44px wide: under the 44px target by the owner's choice (2026-11-16), as the controls of a
+   and 44px wide: smaller than the 44px default by the owner's choice (2026-11-16), as the controls of a
    Compact row are. */
 @media (max-width: 640px) {
   :root { --section-gap: var(--space-3); --row-head: 32px; }
