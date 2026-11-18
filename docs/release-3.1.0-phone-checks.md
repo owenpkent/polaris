@@ -6,9 +6,9 @@ deletes this file together with the plan (docs/release-3.1.0-plan.md).
 
 ## When
 
-The easy way is after the release: the app offers "Update ready", Install and then Android's own
-question install it, and the server updates itself. Nothing to build and no cable. If a check
-fails then, the fix goes out as the next release.
+The easy way is after the release: the app offers "Update ready". Tap Install, then confirm when
+Android asks. The server updates itself. Nothing to build and no cable. If a check fails then,
+the fix goes out as the next release.
 
 To check before the release is signed instead, the phone has to be on a USB cable and the eToken
 plugged in, and on main after the merges this builds, signs and installs the app:
