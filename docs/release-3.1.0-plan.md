@@ -122,6 +122,9 @@ diffs), so neither should make the other conflict.
 
 ### Before the release, still to check
 
+What only the real phone can show is gathered as eight short checks in
+docs/release-3.1.0-phone-checks.md.
+
 1. #190 changes the phone layout of My tasks. Checked in the Android app on the emulator on
    2026-11-18 (Android 16, WebView 133), against a build of main: the app's own test suite passed
    28 of 28. At 412px, the width of the owner's phone, in the dark and the light theme, the
