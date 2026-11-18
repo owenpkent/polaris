@@ -26,7 +26,7 @@ Three cases, with times as a correct clock would show them. In each, both edits 
 | 2. Phone 10 minutes ahead | Phone edits offline at 12:05, which its clock calls 12:15. Laptop edits live at 12:08. Phone reconnects at 12:10. | The stamp is clamped to 12:10, so the phone's older edit wins | The laptop's edit, made last |
 | 3. Phone's clock is set back while offline | Phone edits the title to "A" at a stamp of 12:15, the clock is corrected by 10 minutes, then the phone edits the title to "B" at a stamp of 12:07. | "B" sorts first in the queue, so "A" is applied last and stays. No conflict is recorded, because both edits are from one device | "B", typed last |
 
-Cases 1 and 2 leave a trace in the task's history. Case 3 leaves none. Case 3 is read from the code and has not been reproduced in a test yet.
+Cases 1 and 2 leave a trace in the task's history. Case 3 leaves none. Case 3 was reproduced in a scratch test on 2026-11-17 during review: the dashboard sent "B" first and "A" last, in one batch, and the server does not compare two edits from one device.
 
 How likely is any of this? Not very. A phone or a laptop that sets its clock from the network is usually within a second of the server, and the two edits must be to the same field of the same task and closer together than the error. The risk is a device whose clock is plainly wrong (set by hand, a dead clock battery, no network time), and today nothing would tell the owner.
 
@@ -39,7 +39,7 @@ A hybrid logical clock stamps each event with the largest clock value its device
 
 Against the three cases:
 
-- **Case 1** is unchanged. The phone's hybrid clock at 12:05 is "12:00 plus a counter" (the last server time it saw), which is still before the laptop's 12:01. The phone still loses.
+- **Case 1** is unchanged. Even if the server's stamps were fed into the phone's clock, the phone's hybrid clock at 12:05 would be "12:00 plus a counter" (the last server time it saw), which is still before the laptop's 12:01. The phone still loses.
 - **Case 2** is unchanged. The phone's stamp is still 12:15.
 - **Case 3** is fixed, by the never-backwards guarantee alone.
 
@@ -49,29 +49,35 @@ So the entry in docs/related-projects.md was right that there is a gap and wrong
 
 ## The change proposed
 
-Two small things, both in the dashboard, plus one field from the server.
+Order and time are two different things, and today one number does both jobs. The change separates them. It is in the dashboard, plus one field from the server.
 
-**1. The device learns the server's time, and stamps offline edits in it.**
+**1. The queue is ordered by a counter, not by the clock.**
 
-- Server: `GET /api/events`, which the dashboard already polls and never stores, also returns the server's current time. One field, no new route.
-- Dashboard: on each poll it notes its own clock before and after the request and computes an offset: the server's time minus the midpoint of the two. The error is at most half the round trip, which is well under a second over Tailscale. It keeps the measurement with the shortest round trip, per server, in localStorage, so it is there when the device goes offline.
-- A queued edit's `at` becomes the device's clock plus the offset. The wire format does not change: `at` is still one ISO time. The server's merge does not change, and `clampToNow` stays as a backstop.
-- This fixes cases 1 and 2: the phone's 12:05 edit is stamped 12:05 whatever its clock says.
+- Each queued edit gets the next number of a counter that lives in the queue's own store (IndexedDB) and is advanced in the same step that adds the edit. So it survives a restart, and two tabs on one device cannot issue the same number. (Today the key is the wall clock and a counter that restarts with the page, so two tabs queuing in the same millisecond would write the same key. That needs a coincidence no person can produce, but it goes away too.)
+- Edits are replayed in the order they were made, whatever the clock did in between.
+- This fixes case 3. It is the one useful part of the hybrid clock.
 
-**2. A device's stamps and queue keys never go backwards.**
+**2. The device learns the server's time.**
 
-- The dashboard remembers the last stamp it issued and never issues an earlier or equal one. The queue is ordered by that stamp, not by the raw clock.
-- This fixes case 3. It is the one useful part of the hybrid clock, and it is a few lines.
+- Server: `GET /api/events`, which the dashboard already polls and never stores, also returns the server's current time. One field, no new route. The poll is sent with `cache: 'no-store'`, since the server sets no cache header on `/api`.
+- Dashboard: on each poll it notes its own clock before and after the request and computes an offset: the server's time minus the midpoint of the two. The error is at most half the round trip, and a sample with a long round trip (over two seconds, say) is thrown away. It keeps the best recent sample per server.
 
-**3. The owner can see it.** A line on Settings, per device: "This device's clock is 0.3 seconds ahead of the server." Above some threshold (30 seconds, say) it becomes a plain warning that says the edits made offline on this device are still ordered correctly, and that the clock should be fixed anyway. This is the only visible change.
+**3. An edit's time is worked out when it is sent, in server time.**
+
+- A queued edit stores the device's own clock reading, as today. When the queue is sent, each edit's `at` is that reading plus the offset measured on this reconnection: sending waits for one fresh measurement. Then the times are made to rise in queue order (an edit is never stamped earlier than the one before it).
+- Worked out at send time, not at edit time, so one rule covers three cases: an edit queued before the device had any offset, an offset that would be days old, and a queue that mixes both.
+- The wire format does not change: `at` is still one ISO time. The merge in core/outbox.ts does not change, and `clampToNow` stays as a backstop.
+- This fixes cases 1 and 2: the phone's 12:05 edit is stamped 12:05 whatever its clock says. It also makes an offline completion's time right, which is the day a repeating task counts its next copy from.
+
+**4. The owner can see it.** A line on Settings, per device: "This device's clock is 0.3 seconds ahead of the server." Above some threshold (30 seconds, say) it becomes a plain warning that says the edits made offline on this device are still ordered correctly, and that the clock should be fixed anyway. This is the only visible change.
 
 ## What this trusts, and what it does not fix
 
 - The stamp is still the device's claim, as today. A device that lies about time can still win a conflict it should lose, by at most the time until it reconnects. There is one owner and their own devices, so this is unchanged and acceptable.
-- A clock that changes while the device is offline and the page is closed makes the stored offset wrong by the size of the change. While the page is open this can be detected (the browser has a second clock that does not jump); across a restart it cannot. Case 3's fix still holds, since order does not depend on the offset.
-- A device that has never reached this server since the change has no offset and behaves as today.
+- A clock that is changed while the device is offline. The offset measured at reconnection is right for the edits made after the change and wrong, by the size of the change, for those made before it. If the clock was set back, the earlier edits come out later than the server's "now" and are clamped to it, so several of them share one time: among themselves the queue order still decides, and against another device's edit in that same instant the tie falls to the op id, as any tie does today. The order in which this device's own edits apply is right in every case, since it no longer depends on time.
 - If the server's own clock is wrong, every stamp is wrong together, so the order of edits is still right.
 - Two edits made closer together than the measurement error are still ordered by chance. Nothing can fix that, and the loser is in the history.
+- The Android app runs the same code in its WebView and needs nothing of its own. This is reasoned from mobile/README.md, not tested.
 
 ## What does not change
 
@@ -80,19 +86,20 @@ No new offline op kind, no schema migration, no change to the merge in core/outb
 ## Tests
 
 - core/outbox.property.test.ts: a model with devices whose clocks are off by a random amount. With corrected stamps the merge must pick the edit that was really made last, outside the error bound. The same model with raw stamps documents cases 1 and 2.
-- src/command-center/outbox.test.jsx: the offset is applied to `at`; a stamp never goes backwards when the clock does; the queue replays in the order typed (case 3, first as a failing test against today's code).
-- A unit test for the offset: the shortest round trip wins, a slow response is ignored, and it is kept per server.
+- src/command-center/outbox.test.jsx: case 3 first, as a failing test against today's code (two edits to one field, the second with an earlier clock: today the later one is sent first). Then: the counter survives a new page and is shared by two queues on one store; an edit queued with no offset is stamped with the one measured at reconnection; times rise in queue order; times that would pass the server's "now" are clamped and still apply in order.
+- A unit test for the offset: the shortest round trip wins, a slow response is thrown away, it is kept per server, and sending waits for a fresh one.
+- The response shape of `GET /api/events` is documented in command-center/src/http/README.md and pinned by tests; both change with the new field.
 - e2e: the UI tests freeze the browser's clock at the moment the database was seeded, so the measured offset there grows as a test runs. Check that no offline spec asserts on a stamp before turning this on.
 
 ## Rollout
 
-One pull request for parts 1 and 2 and their tests. Part 3 (the Settings line) is a change to how the dashboard looks, so it ends with the screenshot run, and can be the same pull request or the next one.
+One pull request for parts 1 to 3 and their tests. Part 4 (the Settings line) is a change to how the dashboard looks, so it ends with the screenshot run, and can be the same pull request or the next one. Part 1 alone is worth having and could go first: it fixes the one case that leaves no trace, and it changes nothing about which device wins.
 
 ## Size
 
-About 150 lines in the dashboard, one field in one server route, and the tests. A day's work including review.
+About 200 lines in the dashboard, one field in one server route, and the tests. A day's work including review.
 
 ## Open questions for the owner
 
-1. Build parts 1 and 2 now, or only add the Settings line first and look at the real offsets of the phone and the laptop for a week before deciding?
+1. Build parts 1 to 3 now, or only part 1 (the order fix) and the Settings line first, and look at the real offsets of the phone and the laptop for a week before deciding?
 2. Should a badly wrong clock be a quiet line on Settings, or also a warning in the offline banner?
