@@ -3,6 +3,7 @@ import { cleanup, render, screen, act } from '@testing-library/react'
 import { DEFAULT_BASE_URL, createApiClient, MY_TASKS_QUERY } from './api'
 import { cacheGet, memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus, setLastSync } from './offlineStatus'
+import { noteServerTime, resetServerClock } from './serverClock'
 import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected: true, baseUrl: 'http://x', token: 'tok' }) }))
@@ -34,6 +35,7 @@ beforeEach(() => {
   resetOfflineStatus()
   // The server clock sample and the sent-time floor are kept in localStorage.
   localStorage.clear()
+  resetServerClock()
 })
 
 afterEach(() => cleanup())
@@ -876,6 +878,29 @@ describe('order and time of a replayed queue', () => {
     const again = server({ clock: 'down' })
     await flushOutbox('http://x', 'tok')
     expect(Math.abs(ms(again[0][0].at) - (T - 2000 + 10 * 60 * 1000))).toBeLessThan(2000)
+  })
+
+  test('a stored reading more than an hour old does not stand in for a failed one', async () => {
+    // Two hours ago the server read ten minutes ahead. Nothing says that still holds.
+    const then = Date.now() - 2 * 60 * 60 * 1000
+    noteServerTime('http://x', new Date(then + 10 * 60 * 1000).toISOString(), then, then)
+    await comment('a', T - 4000)
+    const posted = server({ clock: 'down' })
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0][0].at).toBe(new Date(T - 4000).toISOString())
+  })
+
+  test('a send that starts while a write is still being queued takes that write with it', async () => {
+    // The write has its place in the queue and is still reading the copy, slowly, when the send
+    // starts. Sent now, it goes before anything made after it; left for the next send, it would not.
+    const copy = memoryBackend()
+    setCacheBackend({ ...copy, entries: async () => { await new Promise((r) => setTimeout(r, 15)); return copy.entries() } })
+    const created = queueOfflineWrite({ baseUrl: 'http://x', myTasksUrl: 'http://x/api/tasks', kind: 'create_task', taskId: 't_made0ffline', body: { title: 'First' } }, T)
+    const posted = server()
+    const sent = flushOutbox('http://x', 'tok')
+    await created
+    expect(await sent).toBe(true)
+    expect(posted.flat().map((o) => o.kind)).toEqual(['create_task'])
   })
 
   test('a reading that never answers does not hold the send past the timeout', async () => {

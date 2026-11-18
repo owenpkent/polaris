@@ -199,11 +199,25 @@ async function addCreatedTask(baseUrl, myTasksUrl, task) {
   })
 }
 
+// Writes on their way into the queue. A write takes its place first and is stored a moment later,
+// after its lookups. A send that starts in between waits for it (doFlush), so it does not go
+// out after writes that were made later.
+const queuing = new Set()
+const QUEUING_WAIT_MS = 2000
+
 /**
  * Queues one task write and returns what the server would have answered, built from the local
  * copy, so the caller carries on exactly as it does online.
  */
-export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(baseUrl), myTasksUrl, kind, taskId, opId = newOpId(), body = {} }, now = Date.now()) {
+export function queueOfflineWrite(write, now = Date.now()) {
+  const queued = queueWrite(write, now)
+  const settled = queued.then(() => {}, () => {})
+  queuing.add(settled)
+  settled.then(() => queuing.delete(settled))
+  return queued
+}
+
+async function queueWrite({ baseUrl, origin = connectionOrigin(baseUrl), myTasksUrl, kind, taskId, opId = newOpId(), body = {} }, now) {
   const at = new Date(now).toISOString()
   // The place in the queue is taken first, before anything else is awaited, so two writes are
   // sent in the order they were made even when the second one's lookups below finish first.
@@ -289,6 +303,8 @@ export async function adoptLocalOutbox(baseUrl) {
 }
 
 const flushing = new Map()
+// How old a stored reading of the server's clock may be to stand in for one that could not be taken.
+const MAX_FALLBACK_AGE_MS = 60 * 60 * 1000
 
 /**
  * Sends everything queued for the server at `baseUrl`. Resolves to true when none of it is left.
@@ -339,6 +355,14 @@ function summarize(results) {
 }
 
 async function doFlush(origin, token) {
+  // A write that has its place but is not stored yet goes with this send, not the next one. The
+  // wait is short and bounded: a store that never answers must not hold the queue.
+  if (queuing.size) {
+    let timer
+    await Promise.race([Promise.all([...queuing]), new Promise((resolve) => { timer = setTimeout(resolve, QUEUING_WAIT_MS) })])
+    clearTimeout(timer)
+  }
+
   let entries
   try {
     entries = await listOps(origin)
@@ -348,10 +372,11 @@ async function doFlush(origin, token) {
   if (!entries.length) return true
 
   // Learn the server's time now, so the times sent are in it. A measurement that fails or times
-  // out falls back to the last stored one, then to the device's own readings: it never blocks or
+  // out falls back to the last stored one if it is recent (an old one says little about a clock
+  // that may have been corrected since), then to the device's own readings: it never blocks or
   // fails the send. Worked out once for the whole queue so every batch agrees.
-  await measureServerTime(origin, token)
-  const offsetMs = storedOffset(origin)?.offsetMs
+  const fresh = await measureServerTime(origin, token)
+  const offsetMs = (fresh ? storedOffset(origin) : storedOffset(origin, { maxAgeMs: MAX_FALLBACK_AGE_MS }))?.offsetMs
   const times = correctedTimes(entries, { offsetMs, floorMs: lastSentAt(origin), now: Date.now() })
   entries = entries.map(([key, op], i) => [key, op, times[i]])
 

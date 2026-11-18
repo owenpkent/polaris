@@ -1,11 +1,14 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { correctedTimes, lastSentAt, measureServerTime, noteSent, noteServerTime, storedOffset } from './serverClock'
+import { correctedTimes, lastSentAt, measureServerTime, noteSent, noteServerTime, resetServerClock, storedOffset } from './serverClock'
 
 const MIN = 60 * 1000
 const iso = (ms) => new Date(ms).toISOString()
 const T = Date.parse('2026-11-17T12:00:00.000Z')
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  resetServerClock()
+})
 afterEach(() => vi.restoreAllMocks())
 
 describe('noteServerTime', () => {
@@ -88,7 +91,47 @@ describe('noteServerTime', () => {
   })
 })
 
+describe('storage that reads but cannot be written', () => {
+  test('a reading and a floor are still kept for the life of the page', () => {
+    // A private window or a full disk: getItem answers (with nothing), setItem throws.
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    noteServerTime('http://x', iso(T + MIN), T, T)
+    noteSent('http://x', T + 9)
+    expect(storedOffset('http://x').offsetMs).toBe(MIN)
+    expect(lastSentAt('http://x')).toBe(T + 9)
+    noteSent('http://x', T + 20)
+    expect(lastSentAt('http://x')).toBe(T + 20)
+    expect(storedOffset('http://x').offsetMs).toBe(MIN)
+  })
+})
+
+describe('storedOffset with an age limit', () => {
+  test('a sample further than the limit from now, in either direction, is not given', () => {
+    noteServerTime('http://x', iso(T + MIN), T, T)
+    expect(storedOffset('http://x', { maxAgeMs: 60 * MIN, now: T + 59 * MIN }).offsetMs).toBe(MIN)
+    expect(storedOffset('http://x', { maxAgeMs: 60 * MIN, now: T + 61 * MIN })).toBeNull()
+    expect(storedOffset('http://x', { maxAgeMs: 60 * MIN, now: T - 61 * MIN })).toBeNull()
+    expect(storedOffset('http://x').offsetMs).toBe(MIN)
+  })
+})
+
 describe('measureServerTime', () => {
+  test('an answer that arrives after the limit is not kept', async () => {
+    vi.useFakeTimers()
+    try {
+      let answer
+      const fetchImpl = () => new Promise((resolve) => { answer = resolve })
+      const pending = measureServerTime('http://x', 't', { fetchImpl, timeoutMs: 1000 })
+      await vi.advanceTimersByTimeAsync(1001)
+      expect(await pending).toBeNull()
+      answer({ ok: true, json: async () => ({ now: iso(T) }) })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(storedOffset('http://x')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   const answer = (body, ok = true) => vi.fn(async () => ({ ok, json: async () => body }))
 
   test('reads GET /api/events?limit=1 with the token, uncached, and stores the sample', async () => {

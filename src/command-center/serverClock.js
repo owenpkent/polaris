@@ -18,9 +18,14 @@ const DISAGREE_SLACK_MS = 50
 // The range a Date can hold. A time outside it cannot be written as ISO.
 const MAX_DATE_MS = 8.64e15
 
+// The copy that serves, until the page closes, when storage cannot be written (denied, full, a
+// private window). Reading may still work then, and would give back what was there before the
+// write failed, so once a write has failed this copy is the one that counts.
 let memory = {}
+let unsaved = false
 
 function load() {
+  if (unsaved) return memory
   try {
     const raw = localStorage.getItem(KEY)
     const parsed = raw ? JSON.parse(raw) : {}
@@ -35,8 +40,20 @@ function save(all) {
   memory = all
   try {
     localStorage.setItem(KEY, JSON.stringify(all))
+    unsaved = false
   } catch {
-    // Storage is denied or full: the in-memory copy above serves until the page closes.
+    unsaved = true
+  }
+}
+
+/** Forgets everything, stored or not. For tests. */
+export function resetServerClock() {
+  memory = {}
+  unsaved = false
+  try {
+    localStorage.removeItem(KEY)
+  } catch {
+    // Nothing stored that can be removed.
   }
 }
 
@@ -73,10 +90,16 @@ export function noteServerTime(origin, serverNowIso, t0, t1) {
   return sample
 }
 
-/** The stored sample for `origin`, or null. */
-export function storedOffset(origin) {
+/**
+ * The stored sample for `origin`, or null. With `maxAgeMs`, null as well when the sample was
+ * taken more than that from `now` in either direction: an old reading says little about a clock
+ * that may have been corrected since.
+ */
+export function storedOffset(origin, { maxAgeMs, now = Date.now() } = {}) {
   const s = entryFor(load(), origin).sample
-  return validSample(s) ? s : null
+  if (!validSample(s)) return null
+  if (Number.isFinite(maxAgeMs) && Math.abs(now - s.measuredAt) > maxAgeMs) return null
+  return s
 }
 
 /** The last time (ms, server time) sent to `origin`, or undefined. */
@@ -101,9 +124,11 @@ export function noteSent(origin, ms) {
 export async function measureServerTime(origin, token, { timeoutMs = 2500, fetchImpl = fetch, now = Date.now } = {}) {
   const controller = new AbortController()
   let timer
+  let expired = false
   // The race also covers a fetch that ignores the abort signal.
   const timedOut = new Promise((resolve) => {
     timer = setTimeout(() => {
+      expired = true
       controller.abort()
       resolve(null)
     }, timeoutMs)
@@ -118,6 +143,8 @@ export async function measureServerTime(origin, token, { timeoutMs = 2500, fetch
     })
     if (!response || !response.ok) return null
     const data = await response.json()
+    // An answer that arrives after the limit was given up on is not a reading worth keeping.
+    if (expired) return null
     const t1 = now()
     return noteServerTime(origin, data?.now, t0, t1)
   })().catch(() => null)
