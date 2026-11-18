@@ -172,6 +172,15 @@ describe('AboutSettings', () => {
       expect(screen.getByRole('status').textContent).toBe(NOTICE)
     })
 
+    test('a stored reading that a slower, later one confirmed is not called old', () => {
+      // Four minutes ago, a quick reading. Just now a slower one that agrees: the quick one is
+      // kept as the better measurement, and the clocks were still checked just now.
+      note(5000, T - 4 * 60 * 1000)
+      noteServerTime(ORIGIN, new Date(T + 5000 + 250).toISOString(), T, T + 500)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("5 seconds behind the server's clock")
+    })
+
     test('a reading more than two minutes old is given as the last one, connected or not', () => {
       note(5000, T - 5 * 60 * 1000)
       render(<AboutSettings />)

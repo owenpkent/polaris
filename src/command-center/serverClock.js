@@ -7,9 +7,9 @@
 // Order is not decided here: the queue keeps its own counter.
 //
 // The stored object is one JSON value in localStorage, keyed by origin:
-//   { [origin]: { sample: { offsetMs, rttMs, measuredAt } | null, floorMs: number | null } }
-// `sample` is the best recent measurement. `floorMs` is the last time sent to that server, so a
-// later flush never starts below it.
+//   { [origin]: { sample: { offsetMs, rttMs, measuredAt } | null, checkedAt: number, floorMs: number | null } }
+// `sample` is the best recent measurement, and `checkedAt` when a reading was last taken.
+// `floorMs` is the last time sent to that server, so a later flush never starts below it.
 
 const KEY = 'cc-server-clock-v1'
 const MAX_SAMPLE_AGE_MS = 5 * 60 * 1000
@@ -126,6 +126,10 @@ function validSample(s) {
  * one is more than five minutes from `t1` in either direction (the device's clock may have moved),
  * or when the two cannot both be right: each is off by at most half its round trip, so offsets
  * further apart than that mean one of the clocks was changed in between, and the newer one counts.
+ *
+ * `checkedAt` is the device time of the last reading taken, whether or not it replaced the stored
+ * sample: a kept sample is still confirmed by every reading that agrees with it, so this, not the
+ * sample's own time, says how fresh what the card shows is.
  */
 export function noteServerTime(origin, serverNowIso, t0, t1) {
   if (typeof serverNowIso !== 'string') return null
@@ -136,11 +140,17 @@ export function noteServerTime(origin, serverNowIso, t0, t1) {
   const entry = entryFor(all, origin)
   const old = entry.sample
   const disagree = validSample(old) && Math.abs(sample.offsetMs - old.offsetMs) > (sample.rttMs + old.rttMs) / 2 + DISAGREE_SLACK_MS
-  if (!validSample(old) || disagree || sample.rttMs <= old.rttMs || Math.abs(t1 - old.measuredAt) > MAX_SAMPLE_AGE_MS) {
-    all[origin] = { ...entry, sample }
-    save(all)
-  }
+  const replace = !validSample(old) || disagree || sample.rttMs <= old.rttMs || Math.abs(t1 - old.measuredAt) > MAX_SAMPLE_AGE_MS
+  all[origin] = { ...entry, sample: replace ? sample : old, checkedAt: t1 }
+  save(all)
   return sample
+}
+
+/** The device time (ms) of the last reading taken for `origin`, or undefined. */
+export function lastCheckedAt(origin) {
+  const entry = entryFor(load(), origin)
+  const at = Number.isFinite(entry.checkedAt) ? entry.checkedAt : entry.sample?.measuredAt
+  return Number.isFinite(at) ? at : undefined
 }
 
 /**

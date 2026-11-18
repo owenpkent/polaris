@@ -7,7 +7,8 @@ import { describeOffset } from './serverClock'
 import { useServerClock } from './useServerClock'
 import { Notice } from './shared'
 
-// The events poll takes a reading every ten seconds while connected.
+// The events poll checks the clocks every ten seconds while connected, so a last check older
+// than this means the checks have stopped.
 const OLD_READING_MS = 2 * 60 * 1000
 
 function Row({ label, children }) {
@@ -35,11 +36,19 @@ export function formatBuild({ version, commit, builtAt } = BUILD_INFO) {
 export default function AboutSettings({ build = BUILD_INFO }) {
   const { connected, health, api, baseUrl, local } = useConnection()
   const offline = useOffline()
-  const reading = useServerClock(connectionOrigin(baseUrl))
+  const { reading, checkedAt } = useServerClock(connectionOrigin(baseUrl))
   const clock = describeOffset(reading)
-  // A reading is taken with every events poll while connected. One that is older says what the
-  // clocks were, not what they are: the server is out of reach, or edits are waiting to be sent.
-  const old = !reading || offline || !connected || Math.abs(Date.now() - reading.measuredAt) > OLD_READING_MS
+  // The clocks are checked with every events poll while connected (`checkedAt`, which moves on
+  // even when the poll only confirms the stored reading). When the last check is older, what is
+  // shown says what the clocks were, not what they are: the server is out of reach, or edits are
+  // waiting to be sent. Nothing re-renders the card while no check arrives, so it looks again
+  // twice a minute.
+  const [, look] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => look((n) => n + 1), OLD_READING_MS / 4)
+    return () => clearInterval(timer)
+  }, [])
+  const old = offline || !connected || !Number.isFinite(checkedAt) || Math.abs(Date.now() - checkedAt) > OLD_READING_MS
   const [fresh, setFresh] = useState(null)
   useEffect(() => {
     // A different server, or none, starts from its own health check, never the last one's answer.

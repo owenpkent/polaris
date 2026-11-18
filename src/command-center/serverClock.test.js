@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { CLOCK_WARN_MS, correctedTimes, describeOffset, lastSentAt, measureServerTime, noteSent, noteServerTime, resetServerClock, serverClockVersion, storedOffset, subscribeServerClock } from './serverClock'
+import { CLOCK_WARN_MS, correctedTimes, describeOffset, lastCheckedAt, lastSentAt, measureServerTime, noteSent, noteServerTime, resetServerClock, serverClockVersion, storedOffset, subscribeServerClock } from './serverClock'
 
 const MIN = 60 * 1000
 const iso = (ms) => new Date(ms).toISOString()
@@ -27,6 +27,15 @@ describe('noteServerTime', () => {
     expect(storedOffset('http://x').rttMs).toBe(40)
     noteServerTime('http://x', iso(T + 3970), T + 3000, T + 3040)
     expect(storedOffset('http://x').measuredAt).toBe(T + 3040)
+  })
+
+  test('the time of the last check moves on even when the stored sample is kept', () => {
+    noteServerTime('http://x', iso(T + 1000), T, T + 100)
+    expect(lastCheckedAt('http://x')).toBe(T + 100)
+    noteServerTime('http://x', iso(T + 2150), T + 1000, T + 1400)
+    expect(storedOffset('http://x').measuredAt).toBe(T + 100)
+    expect(lastCheckedAt('http://x')).toBe(T + 1400)
+    expect(lastCheckedAt('http://y')).toBeUndefined()
   })
 
   test('a reading that cannot agree with the stored one replaces it, even with a longer round trip', () => {
