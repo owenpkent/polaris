@@ -15,9 +15,9 @@ has been a patch release: every heading in CHANGELOG.md ends in .0.
 
 ## 3. Merge order
 
-Sixteen pull requests are open and reviewed on their head commits: #186 to #201. Their titles and
-base branches were checked with `gh` on 2026-11-18 and match the plan. None of them touches
-`command-center/src/core/schema.ts`.
+Seventeen pull requests are open and reviewed on their head commits: #186 to #201, and #203. Their
+titles and base branches were checked with `gh` on 2026-11-18 and match the plan. None of them
+touches `command-center/src/core/schema.ts`.
 
 Not part of this plan:
 
@@ -49,6 +49,9 @@ Not part of this plan:
   - e2e/support.js: #190, #199
   - package.json: #197, #201
   - mobile/package.json: #196, #201
+  - mobile/README.md: #201, #203
+  - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203
+    (three lines apart at the nearest; a trial merge of the two branches is clean)
   - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
     src/command-center/api.js: #186, #195
 - Checked against the diffs on 2026-11-18: in each of these files the pull requests change places
@@ -71,22 +74,24 @@ Not part of this plan:
    owner approved, and CLAUDE.md.
 8. Merge #200 (Android test fix). Small and independent. Do it before #201, which reports the
    same known test failure.
-9. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
-10. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
+9. Merge #203 (the box being typed in shows whole above the keyboard). It changes the same app
+   test file as #200, in other places, so it goes straight after it.
+10. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
+11. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
     merge it. It adds a sweep test and a paragraph in CONTRIBUTING.md.
-11. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
+12. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
     before stack B, whose first full browser test run then happens on top of it. Both change
     `e2e/support.js`, in places far apart.
-12. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
+13. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
     conflicts with CLAUDE.md or command-center/README.md.
-13. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
+14. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
     merge. Watch the first browser run closely: it changes the test fixture for every UI test.
-14. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
+15. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
     CI, then merge. It also changes `package.json` and `mobile/package.json`.
-15. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
+16. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
     with nothing. #194 is the proposal that #195 and #199 carry out; the plan merges them last,
     and they could go anywhere in the order.
-16. Wait for the Tests run on main to pass, all twelve browser test parts included
+17. Wait for the Tests run on main to pass, all twelve browser test parts included
     (`gh run list --workflow test.yml --branch main`). Then follow the release checklist in
     docs/releases.md.
 
@@ -96,8 +101,12 @@ diffs), so neither should make the other conflict.
 
 ### Before the release, still to check
 
-1. #190 changes the phone layout of My tasks and has not been looked at in the Android app on the
-   emulator (release checklist, step 3).
+1. #190 changes the phone layout of My tasks. Checked in the Android app on the emulator on
+   2026-11-18 (Android 16, WebView 133), against a build of main, at 360px and at 412px, the
+   width of the owner's phone, in the dark and the light theme and in Compact: the app's own test
+   suite passed 28 of 28, and the toolbar, the 32px headers, the + in a header, the date chips and the name
+   box a + opens with the keyboard up all measured as the pull request describes. The details are
+   in a comment on #190. A look on the real phone is what is left.
 2. #196 (Capacitor 8.6.2) touches keyboard and system bar insets. Checked on 2026-11-18 on the
    emulator (Android 16, WebView 133), against a build of main with Capacitor 8.6.0: the app's own
    test suite gave the same result on both (27 of 28, the one failure being the test #200 fixes),
@@ -116,12 +125,18 @@ diffs), so neither should make the other conflict.
    run locally at desktop; for #201, none.
 4. The last commit of #199 was not run on the emulator on its own, though #201's check ran on a
    build that contains it.
-5. Found during the #196 check, in both builds, so not from any pull request here: in a task's
-   panel, with the keyboard up, the Subtask name box sometimes comes to rest with its bottom edge
-   13px under the keyboard (3 runs in 6 on main; with Capacitor 8.6.2 once 13px under and once
-   level with the keyboard's edge in 6). In the runs that watched it for six seconds it stayed
-   there. The text typed is still readable. This was seen with scripted taps, not confirmed with a
-   finger, and the app's own keyboard tests pass. It is not fixed and has no pull request yet.
+5. Found during the #196 check, on main too: in a task's panel, with the keyboard up, the Subtask
+   name box sometimes came to rest with its bottom edge 13px under the keyboard. The cause is
+   text that arrives while the keyboard is still coming up, which the script that found it sent:
+   the WebView then brings only the caret into view. A finger on the on-screen keyboard cannot do
+   that; a hardware keyboard with the on-screen one showing as well can. #203 fixes it for every
+   text box and adds an app test that failed in two runs of three without the fix. Nothing is
+   left to check here before the release.
+6. Found during the #190 check, on main too, and not fixed: in the dark theme on a WebView older
+   than 140, the status bar's clock and icons are white on a near-white strip and cannot be read.
+   There Capacitor pads the window itself, and the strip behind the status bar is the window's
+   own background, not the page. A phone with a current WebView draws the page there and is not
+   affected, so this does not hold the release. It has no pull request.
 
 ## 4. Release notes
 
@@ -168,6 +183,9 @@ No migration.
   a browser, and someone who controls the DNS answers your browser gets is still outside what the
   server can check. Behind `tailscale serve` nothing changes, and the token path and MCP are as
   they were.
+- On a phone, the box being typed in shows whole above the keyboard also when text arrives while
+  the keyboard is still coming up, as it can from a hardware keyboard with the on-screen one
+  showing as well. Before, the lower 13px of the box could stay under the keyboard.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
   refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
