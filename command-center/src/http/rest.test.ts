@@ -403,6 +403,11 @@ test('GET /api/events reports headId, the newest event, even when the page is ca
     assert.equal(capped.json.events.length, 1);
     assert.ok(capped.json.lastId < app.store.lastEventId());
     assert.equal(capped.json.headId, app.store.lastEventId());
+    // now is the store's clock as an ISO string, which a device uses to measure its own offset.
+    assert.match(capped.json.now, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    // The test app injects a ticking clock, so it is the store's clock, not the wall clock.
+    assert.ok(Date.parse(capped.json.now) < Date.parse(app.store.timestamp()));
+    assert.equal(Date.parse(capped.json.now) > Date.UTC(2026, 8, 12), true);
 
     const empty = await api(base, 'GET', `/api/events?after=${capped.json.headId}&limit=1`);
     assert.equal(empty.json.events.length, 0);
