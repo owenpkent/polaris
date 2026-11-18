@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
-import { KEYBOARD_MIN_PX, SHOW_DELAY_MS, isTextEntry, keyboardLooksOpen, visibleHeight, watchKeyboard } from './keyboard'
+import { KEYBOARD_MIN_PX, SETTLE_MS, SHOW_DELAY_MS, isTextEntry, keyboardLooksOpen, showFocusedBox, visibleHeight, watchKeyboard } from './keyboard'
 
 // jsdom has no visualViewport, so each test puts in one it can resize and zoom.
 let viewport
@@ -14,6 +14,16 @@ function resizeViewport(height, scale = 1) {
 function field(html) {
   document.body.innerHTML = html
   return document.body.firstElementChild
+}
+
+const rectAt = (top, height) => ({ top, bottom: top + height, height, left: 0, right: 200, width: 200 })
+
+// A field at a place on the page (jsdom lays nothing out), with a spy for the scroll jsdom lacks.
+function placedField({ top, height = 44, html = '<input>' }) {
+  const el = field(html)
+  el.getBoundingClientRect = () => rectAt(top, height)
+  el.scrollIntoView = vi.fn()
+  return el
 }
 
 const isOpen = () => document.documentElement.dataset.keyboard === 'open'
@@ -164,5 +174,161 @@ describe('watchKeyboard', () => {
     stop()
     stop = undefined
     expect(isOpen()).toBe(false)
+  })
+
+  test('once the keyboard has come up and settled, a focused box left cut off is shown whole', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 286 })
+    input.focus()
+    resizeViewport(317)
+    expect(isOpen()).toBe(true)
+    // Not at once: the browser's own scroll comes just after the resize and is given its turn.
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(SETTLE_MS - 1)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(input.scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
+  test('a box the browser placed whole is left where it is', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 200 })
+    input.focus()
+    resizeViewport(317)
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('a keyboard that comes up in steps is waited out', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 286 })
+    input.focus()
+    resizeViewport(600)
+    expect(isOpen()).toBe(true)
+    vi.advanceTimersByTime(SETTLE_MS - 50)
+    resizeViewport(317)
+    vi.advanceTimersByTime(SETTLE_MS - 50)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(50)
+    expect(input.scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  test('a later change of height with the keyboard up does not pull the page back to the box', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 200 })
+    input.focus()
+    resizeViewport(317)
+    vi.advanceTimersByTime(SETTLE_MS)
+    // The owner scrolls the box out of sight, and a phone browser's address bar comes back.
+    input.getBoundingClientRect = () => rectAt(500, 44)
+    resizeViewport(261)
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(isOpen()).toBe(true)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('nothing is scrolled when the keyboard went away again before it settled', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 286 })
+    input.focus()
+    resizeViewport(317)
+    resizeViewport(860)
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(isOpen()).toBe(false)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('nor when focus has left the field for a button by then', () => {
+    stop = watchKeyboard()
+    document.body.innerHTML = '<input><button>Done</button>'
+    const input = document.querySelector('input')
+    input.getBoundingClientRect = () => rectAt(286, 44)
+    input.scrollIntoView = vi.fn()
+    const button = document.querySelector('button')
+    button.scrollIntoView = vi.fn()
+    input.focus()
+    resizeViewport(317)
+    button.focus()
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('stopping drops the look that was still to come', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 286 })
+    input.focus()
+    resizeViewport(317)
+    stop()
+    stop = undefined
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
+describe('showFocusedBox', () => {
+  beforeEach(() => { viewport.height = 317 })
+
+  test('a focused box cut off at the bottom of what is visible is scrolled just into view', () => {
+    const input = placedField({ top: 286 })
+    input.focus()
+    expect(showFocusedBox()).toBe(true)
+    expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+  })
+
+  test('so is one cut off at the top', () => {
+    const input = placedField({ top: -10 })
+    input.focus()
+    expect(showFocusedBox()).toBe(true)
+  })
+
+  test('a box that shows whole is not moved, one that touches the edge included', () => {
+    const middle = placedField({ top: 200 })
+    middle.focus()
+    expect(showFocusedBox()).toBe(false)
+    expect(middle.scrollIntoView).not.toHaveBeenCalled()
+
+    const edge = placedField({ top: 273 })
+    edge.focus()
+    expect(showFocusedBox()).toBe(false)
+    expect(edge.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('what is visible starts where the visual viewport does', () => {
+    viewport.offsetTop = 100
+    const under = placedField({ top: 380 })
+    under.focus()
+    expect(showFocusedBox()).toBe(true)
+
+    const inside = placedField({ top: 360 })
+    inside.focus()
+    expect(showFocusedBox()).toBe(false)
+
+    const above = placedField({ top: 90 })
+    above.focus()
+    expect(showFocusedBox()).toBe(true)
+  })
+
+  test('a field taller than what is visible is left to the browser, which keeps the caret in view', () => {
+    const notes = placedField({ top: 100, height: 400, html: '<textarea></textarea>' })
+    notes.focus()
+    expect(showFocusedBox()).toBe(false)
+    expect(notes.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('nothing happens with no field focused, a button focused, or no visual viewport', () => {
+    expect(showFocusedBox()).toBe(false)
+
+    const button = placedField({ top: 286, html: '<button>Go</button>' })
+    button.focus()
+    expect(showFocusedBox()).toBe(false)
+    expect(button.scrollIntoView).not.toHaveBeenCalled()
+
+    const input = placedField({ top: 286 })
+    input.focus()
+    delete window.visualViewport
+    expect(showFocusedBox()).toBe(false)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
   })
 })
