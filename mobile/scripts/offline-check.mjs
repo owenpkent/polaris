@@ -71,6 +71,18 @@ if (!serial.startsWith('emulator-')) {
   process.exit(1)
 }
 
+// Playwright attaches to every device adb lists, so no phone may be attached at all, not only unused.
+const phones = (spawnSync(adbPath, ['devices'], { encoding: 'utf8' }).stdout || '')
+  .split('\n')
+  .slice(1)
+  .map((line) => line.trim().split(/\s+/))
+  .filter(([name, state]) => name && state === 'device' && !name.startsWith('emulator-'))
+  .map(([name]) => name)
+if (phones.length) {
+  console.error(`A physical device is attached to adb (${phones.join(', ')}). Unplug it, or disconnect it from adb, and run again.`)
+  process.exit(1)
+}
+
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
 
 function adb(...adbArgs) {
@@ -80,11 +92,23 @@ function adb(...adbArgs) {
 }
 
 // Needs a root adbd: a Google APIs emulator image has one, a Google Play image does not.
-spawnSync(adbPath, ['-s', serial, 'root'], { encoding: 'utf8' })
-adb('wait-for-device')
-await sleep(1500)
-if (adb('shell', 'id', '-u') !== '0') {
-  console.error('adb cannot run as root on this device. Use an emulator on a Google APIs image, not a Google Play one.')
+const noRootMessage = 'adb cannot run as root on this device. Use an emulator on a Google APIs image, not a Google Play one.'
+const rooting = spawnSync(adbPath, ['-s', serial, 'root'], { encoding: 'utf8', timeout: 30000 })
+if (/cannot run as root/.test(`${rooting.stdout}${rooting.stderr}`)) {
+  console.error(noRootMessage)
+  process.exit(1)
+}
+if (spawnSync(adbPath, ['-s', serial, 'wait-for-device'], { timeout: 30000 }).status !== 0) {
+  console.error(`${serial} did not come back within 30 seconds of adb root.`)
+  process.exit(1)
+}
+let uid = ''
+for (const end = Date.now() + 30000; uid !== '0' && Date.now() < end; ) {
+  uid = (spawnSync(adbPath, ['-s', serial, 'shell', 'id', '-u'], { encoding: 'utf8', timeout: 10000 }).stdout || '').trim()
+  if (uid !== '0') await sleep(1000)
+}
+if (uid !== '0') {
+  console.error(noRootMessage)
   process.exit(1)
 }
 
@@ -121,13 +145,21 @@ let autoTimeBefore
 let autoTimeTouched = false
 let clockTouched = false
 
-// Puts back what the run changed. Safe to call twice, and from a signal handler (nothing here waits).
+// What could not be put back. A problem found here fails the run.
+const restoreProblems = new Set()
+let recoveryShown = false
+
+// Puts back what the run changed. It is entirely synchronous (spawnSync, rmSync, kill), because it
+// runs from signal and exit handlers that cannot wait, and it is safe to call again: each step is
+// skipped once it has worked.
 function cleanup() {
   if (clockTouched) {
     try {
       adb('shell', 'date', `@${Math.floor(Date.now() / 1000)}`)
       clockTouched = false
+      restoreProblems.delete('clock')
     } catch (err) {
+      restoreProblems.add('clock')
       console.error(`Could not set the device clock back to this machine's time: ${err.message}`)
     }
   }
@@ -136,9 +168,15 @@ function cleanup() {
       if (autoTimeBefore === 'null' || autoTimeBefore === '') adb('shell', 'settings', 'delete', 'global', 'auto_time')
       else adb('shell', 'settings', 'put', 'global', 'auto_time', autoTimeBefore)
       autoTimeTouched = false
+      restoreProblems.delete('auto_time')
     } catch (err) {
+      restoreProblems.add('auto_time')
       console.error(`Could not restore the automatic time setting (it was ${autoTimeBefore}): ${err.message}`)
     }
+  }
+  if (restoreProblems.size && !recoveryShown) {
+    recoveryShown = true
+    console.error(`Put the emulator back by hand:\n  adb -s ${serial} shell settings put global auto_time 1\n  adb -s ${serial} shell date @${Math.floor(Date.now() / 1000)}`)
   }
   if (forwarded) {
     spawnSync(adbPath, ['-s', serial, 'reverse', '--remove', `tcp:${port}`], { stdio: 'ignore' })
@@ -147,12 +185,24 @@ function cleanup() {
   if (server && server.exitCode === null) server.kill()
   rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
-for (const signal of ['SIGINT', 'SIGTERM']) {
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
     cleanup()
-    process.exit(130)
+    process.exit(signal === 'SIGHUP' ? 129 : 130)
   })
 }
+for (const event of ['uncaughtException', 'unhandledRejection']) {
+  process.on(event, (err) => {
+    console.error(`${event}: ${err?.stack || err}`)
+    cleanup()
+    process.exit(1)
+  })
+}
+// The backstop for any other way out. A failed restore still makes the exit code non-zero.
+process.on('exit', () => {
+  cleanup()
+  if (restoreProblems.size) process.exitCode = 1
+})
 
 // The scratch daemon logs every request it answers between these lines, so each one is printed as
 // it happens and all of them again at the end, where they can be read together.
@@ -232,11 +282,17 @@ try {
   const orderTask = (await api('POST', '/api/tasks', { title: 'Clock order check', dueAt })).task
   const timeTask = (await api('POST', '/api/tasks', { title: 'Clock time check', dueAt })).task
 
-  // Playwright lists every device adb sees; take the one this run chose.
-  device = (await android.devices()).find((d) => d.serial() === serial)
-  if (!device) throw new Error(`Playwright did not find the device ${serial}.`)
-  const webview = await device.webView({ pkg: PKG }, { timeout: 60000 })
-  const page = await webview.page()
+  // Only the WebView's own debugging socket is used, so Playwright's driver app is not installed.
+  // No phone is attached (checked above); the one this run chose is taken from the list.
+  let page
+  try {
+    device = (await android.devices({ omitDriverInstall: true })).find((d) => d.serial() === serial)
+    if (!device) throw new Error(`Playwright did not list the device ${serial}.`)
+    const webview = await device.webView({ pkg: PKG }, { timeout: 60000 })
+    page = await webview.page()
+  } catch (err) {
+    throw new Error(`Could not attach to the app's WebView: ${err.message}\nThe installed app must be the debug build this script just installed (a release build is not debuggable). If it is, Playwright may need its driver app after all: remove omitDriverInstall in offline-check.mjs.`)
+  }
   page.setDefaultTimeout(30000)
   console.log(`WebView: ${await page.evaluate(() => navigator.userAgent)}`)
 
@@ -265,12 +321,37 @@ try {
   const serverTask = async (id) => api('GET', `/api/tasks/${id}`)
   const deviceNow = () => page.evaluate(() => Date.now())
 
-  // Let the app take a clock reading while online (the events poll runs every ten seconds).
-  await sleep(12000)
+  // A task's panel opens offline only from the app's stored copy of that task, which the app
+  // fills in the background after it connects. Opening each task once while online puts it there
+  // for certain, so the offline edits below do not depend on how far that had got.
+  for (const title of ['Clock order check', 'Clock time check']) {
+    await page.getByRole('button', { name: `Open ${title}`, exact: true }).click()
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('textbox', { name: 'Task title' }).waitFor()
+    await page.keyboard.press('Escape')
+    await panel.waitFor({ state: 'hidden' })
+  }
+  note('each task opens while online, so the app has its own copy of it', true)
+
+  // The app stores a reading of the server's clock (cc-server-clock-v1) with each events poll, every
+  // ten seconds, while online and with nothing waiting to be sent. Read the one for this server.
+  const clockSample = () => page.evaluate((origin) => {
+    try {
+      return JSON.parse(localStorage.getItem('cc-server-clock-v1') || '{}')[origin]?.sample ?? null
+    } catch {
+      return null
+    }
+  }, new URL(base).origin)
+  const firstReading = await until('first clock reading', async () => {
+    const sample = await clockSample()
+    return { done: Boolean(sample), sample }
+  }, 40000)
+  note('the app took a reading of the server clock while online', firstReading.done, JSON.stringify(firstReading.sample))
 
   // 1. Order: two edits to one field offline, with the clock set back between them.
   await offline()
-  await page.getByRole('status').filter({ hasText: 'Offline.' }).waitFor({ timeout: 40000 }).catch(() => console.log('No Offline banner within 40 s.'))
+  const sawOffline = await page.getByRole('status').filter({ hasText: 'Offline.' }).waitFor({ timeout: 40000 }).then(() => true, () => false)
+  note('the app shows it is offline', sawOffline)
   await editTitle('Clock order check', 'Order A')
   const hostBefore = Date.now()
   clockTouched = true
@@ -304,8 +385,14 @@ try {
 
   // 2. Time: the device is ten minutes behind. A live edit, then a later offline edit to the
   // same field. The offline edit is the newer one and must win.
-  await page.getByRole('status').filter({ hasText: 'Offline.' }).waitFor({ state: 'hidden', timeout: 40000 }).catch(() => console.log('Still shown as offline after 40 s.'))
-  await sleep(12000)
+  const sawOnline = await page.getByRole('status').filter({ hasText: 'Offline.' }).waitFor({ state: 'hidden', timeout: 40000 }).then(() => true, () => false)
+  note('the app shows it is back online', sawOnline)
+  // A new reading, taken with the device ten minutes behind: the server is ten minutes ahead of it.
+  const behindReading = await until('clock reading while behind', async () => {
+    const sample = await clockSample()
+    return { done: Math.abs((sample?.offsetMs ?? 0) - -SKEW_SECONDS * 1000) < 60000, sample }
+  }, 60000)
+  note('the app took a new clock reading while the device was ten minutes behind', behindReading.done, JSON.stringify(behindReading.sample))
   await offline()
   await api('PATCH', `/api/tasks/${timeTask.id}`, { title: 'Laptop edit' })
   await sleep(3000)
@@ -332,7 +419,6 @@ try {
   note('the notice is shown', notice.length > 0, notice.replace(/\s+/g, ' '))
   if (shotsDir) await page.screenshot({ path: join(shotsDir, 'app-about-clock.png') }).catch((err) => console.error(`Screenshot failed: ${err.message}`))
 
-  status = results.every(Boolean) ? 0 : 1
 } catch (err) {
   note('the check ran to the end', false, String(err?.stack || err).slice(0, 600))
 } finally {
@@ -343,6 +429,9 @@ try {
   }
   cleanup()
 }
+const restored = restoreProblems.size === 0
+note("the emulator's clock and automatic time were restored", restored, restored ? undefined : `not restored: ${[...restoreProblems].join(', ')}; see the commands printed above`)
+status = results.every(Boolean) ? 0 : 1
 console.log(`\nOffline queue check on ${serial}:\n${lines.join('\n')}`)
 console.log(`\n${results.filter(Boolean).length} of ${results.length} checks passed`)
 process.exit(status)

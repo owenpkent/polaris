@@ -142,6 +142,8 @@ npm run test:android:offline -- --shots <folder>  # also write a screenshot of t
 
 It prints one PASS or FAIL line per check and exits 0 only if all passed. For a moment it sets the emulator's clock back ten minutes and turns the automatic time setting off. Both are put back when the run ends, also after a failure or Ctrl+C: the setting to the value it had, the clock to this machine's time. It is not part of CI.
 
+It also clears the app's data on the emulator, and leaves the emulator's adb running as root until the emulator restarts. It stops before touching anything if a phone is attached to adb (unplug it, or disconnect it from adb), since Playwright would attach to it too. If the run was killed half way, the emulator may still have the wrong clock; put it back with `adb shell settings put global auto_time 1` and `adb shell date @<epoch seconds>` (this machine's time, for example from `date +%s`).
+
 `scripts/device-test.mjs` holds what this and `scripts/test.mjs` share: picking the device, a free port, and the scratch daemon.
 
 ### Without Android Studio
