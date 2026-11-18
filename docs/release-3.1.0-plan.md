@@ -149,7 +149,9 @@ diffs), so neither should make the other conflict.
    theme. #204 makes the icons follow the phone's setting there, and adds an app test that reads
    the screen: it failed without the change and passed with it in both themes with the phone set
    to light and to dark. The strip itself keeps the phone's colour. From WebView 140 on nothing
-   changes. All of that is from the emulator. Not covered: a real phone.
+   should change, by a reading of the code. All of that is from the emulator. Not covered: a
+   real phone, a WebView of 140 or newer on a device, and the gesture bar's handle, which gets
+   the same style as the status bar but was not read from the screen.
 
 ## 4. Release notes
 
