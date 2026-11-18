@@ -163,7 +163,8 @@ diffs), so neither should make the other conflict.
    should change, by a reading of the code. All of that is from the emulator. Not covered: a
    real phone, a WebView of 140 or newer on a device, the phone turned with the app open, and
    the gesture bar's handle, which gets the same style as the status bar and was looked at in a
-   screenshot but not read by a test.
+   screenshot but not read by a test. One limit #205 names: a tablet has no tab bar, so on an
+   old WebView its bottom strip is the bars' colour over a page of the page's colour.
 
 ## 4. Release notes
 
@@ -215,9 +216,9 @@ No migration.
   showing as well. Before, the lower 13px of the box could stay under the keyboard.
 - In the Android app on a WebView older than 140, the status bar's clock and icons can be read
   again when the dashboard's theme and the phone's light or dark setting differ. Before, the dark
-  theme on a phone set to light drew white icons on a white strip. Now the strips behind the
-  status bar and the gesture bar take the colour of the dashboard's own bars there, as they have
-  on a current WebView, where nothing changes.
+  theme on a phone set to light drew white icons on a white strip. Now the app's window, which
+  is what shows behind the status bar and the gesture bar there, takes the colour of the
+  dashboard's own bars, so the bars look as they do on a current WebView, where nothing changes.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
   refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
