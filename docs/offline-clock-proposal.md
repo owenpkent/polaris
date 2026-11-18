@@ -53,19 +53,21 @@ Order and time are two different things, and today one number does both jobs. Th
 
 **1. The queue is ordered by a counter, not by the clock.**
 
-- Each queued edit gets the next number of a counter that lives in the queue's own store (IndexedDB) and is advanced in the same step that adds the edit. So it survives a restart, and two tabs on one device cannot issue the same number. (Today the key is the wall clock and a counter that restarts with the page, so two tabs queuing in the same millisecond would write the same key. That needs a coincidence no person can produce, but it goes away too.)
+- Each queued edit gets the next number of a counter that lives in the queue's own store (IndexedDB), under a reserved key, and is advanced with the store's atomic `update(key, fn)`, the step `adoptLocalOutbox` already relies on. So it survives a restart, and two tabs on one device cannot issue the same number. (Today the key is the wall clock and a counter that restarts with the page, so two tabs queuing in the same millisecond would write the same key. That needs a coincidence no person can produce, but it goes away too.)
 - Edits are replayed in the order they were made, whatever the clock did in between.
 - This fixes case 3. It is the one useful part of the hybrid clock.
 
 **2. The device learns the server's time.**
 
 - Server: `GET /api/events`, which the dashboard already polls and never stores, also returns the server's current time. One field, no new route. The poll is sent with `cache: 'no-store'`, since the server sets no cache header on `/api`.
-- Dashboard: on each poll it notes its own clock before and after the request and computes an offset: the server's time minus the midpoint of the two. The error is at most half the round trip, and a sample with a long round trip (over two seconds, say) is thrown away. It keeps the best recent sample per server.
+- Dashboard: on each poll it notes its own clock before and after the request and computes an offset: the server's time minus the midpoint of the two. The error is at most half the round trip, so a sample with a short round trip is preferred to one with a long one (over two seconds, say). It keeps the best recent sample per server, in localStorage.
 
 **3. An edit's time is worked out when it is sent, in server time.**
 
-- A queued edit stores the device's own clock reading, as today. When the queue is sent, each edit's `at` is that reading plus the offset measured on this reconnection: sending waits for one fresh measurement. Then the times are made to rise in queue order (an edit is never stamped earlier than the one before it).
+- A queued edit stores the device's own clock reading, as today. When the queue is sent, each edit's `at` is that reading plus the offset measured on this reconnection. Then the times are made to rise in queue order (an edit is never stamped earlier than the one before it).
+- Sending never waits for long. It waits a few seconds for a fresh measurement and takes the one with the shortest round trip. If only slow ones came, it uses the best of those, whose error is still at most half its round trip. If none came (the poll failed while other requests worked), it uses the last offset stored for this server, and with none stored it sends the device's readings as they are, which is today's behaviour. An edit is never held back because the clock could not be checked.
 - Worked out at send time, not at edit time, so one rule covers three cases: an edit queued before the device had any offset, an offset that would be days old, and a queue that mixes both.
+- Why the times must rise: a device's own edits apply in queue order whatever their times, but each is weighed against other devices' edits by its time. Without the rule, a device's earlier edit could beat a laptop's edit that the same device's later edit then loses to, and the field would end on the earlier value.
 - The wire format does not change: `at` is still one ISO time. The merge in core/outbox.ts does not change, and `clampToNow` stays as a backstop.
 - This fixes cases 1 and 2: the phone's 12:05 edit is stamped 12:05 whatever its clock says. It also makes an offline completion's time right, which is the day a repeating task counts its next copy from.
 
@@ -74,7 +76,9 @@ Order and time are two different things, and today one number does both jobs. Th
 ## What this trusts, and what it does not fix
 
 - The stamp is still the device's claim, as today. A device that lies about time can still win a conflict it should lose, by at most the time until it reconnects. There is one owner and their own devices, so this is unchanged and acceptable.
-- A clock that is changed while the device is offline. The offset measured at reconnection is right for the edits made after the change and wrong, by the size of the change, for those made before it. If the clock was set back, the earlier edits come out later than the server's "now" and are clamped to it, so several of them share one time: among themselves the queue order still decides, and against another device's edit in that same instant the tie falls to the op id, as any tie does today. The order in which this device's own edits apply is right in every case, since it no longer depends on time.
+- A clock that changes while the device is offline, whether set by hand or stepped by the device's own network time, and whether or not the page stayed open. The offset measured at reconnection is right for the edits made after the change and wrong, by the size of the change, for those made before it. An offset taken at edit time would be the mirror image: right before the change, wrong after it, and missing for an edit made before the device ever measured one. Neither is right in every case, and send time was chosen for covering the cases with no offset at all. Slow drift is the same thing in small: a clock that gains a second a day is a few seconds out after a week offline.
+- When a reading is too far ahead (the clock was set back after it), that edit comes out later than the server's "now" and is clamped to it. Because times rise in queue order, every edit queued after it is pushed up and clamped as well, so a run of edits can share one time. Among themselves the queue order still decides. Against another device's edit in that same instant the tie falls to the op id, as any tie does today.
+- The order in which a device's own edits apply is right in every case, since it no longer depends on time.
 - If the server's own clock is wrong, every stamp is wrong together, so the order of edits is still right.
 - Two edits made closer together than the measurement error are still ordered by chance. Nothing can fix that, and the loser is in the history.
 - The Android app runs the same code in its WebView and needs nothing of its own. This is reasoned from mobile/README.md, not tested.
@@ -87,7 +91,7 @@ No new offline op kind, no schema migration, no change to the merge in core/outb
 
 - core/outbox.property.test.ts: a model with devices whose clocks are off by a random amount. With corrected stamps the merge must pick the edit that was really made last, outside the error bound. The same model with raw stamps documents cases 1 and 2.
 - src/command-center/outbox.test.jsx: case 3 first, as a failing test against today's code (two edits to one field, the second with an earlier clock: today the later one is sent first). Then: the counter survives a new page and is shared by two queues on one store; an edit queued with no offset is stamped with the one measured at reconnection; times rise in queue order; times that would pass the server's "now" are clamped and still apply in order.
-- A unit test for the offset: the shortest round trip wins, a slow response is thrown away, it is kept per server, and sending waits for a fresh one.
+- A unit test for the offset: the shortest round trip wins, it is kept per server, and sending falls back in the order given above (a fresh sample, a slow one, the stored one, none) without ever holding the queue.
 - The response shape of `GET /api/events` is documented in command-center/src/http/README.md and pinned by tests; both change with the new field.
 - e2e: the UI tests freeze the browser's clock at the moment the database was seeded, so the measured offset there grows as a test runs. Check that no offline spec asserts on a stamp before turning this on.
 
