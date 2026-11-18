@@ -3,7 +3,7 @@ import {
   subscribeNativeShares, nativeCall, checkNotificationPermission, requestNotificationPermission,
   scheduleNotifications, cancelAllNotifications, subscribeNotificationTaps, subscribeAppResume, getAppInfo,
   downloadAppUpdate, verifyAppUpdate, canInstallApps, openInstallSettings, installAppUpdate, discardAppUpdate,
-  scheduleAppUpdateNotification, cancelAppUpdateNotification, subscribeAppUpdateTaps, APP_UPDATE_NOTIFICATION_ID,
+  scheduleAppUpdateNotification, cancelAppUpdateNotification, subscribeAppUpdateTaps, APP_UPDATE_NOTIFICATION_ID, drawsUnderSystemBars,
 } from './nativeApp'
 
 afterEach(() => {
@@ -223,5 +223,31 @@ describe('AppUpdater wrappers', () => {
     const np = bridge({ getPending: { notifications: [{ id: 5 }, { id: APP_UPDATE_NOTIFICATION_ID }] } })
     await cancelAllNotifications()
     expect(np).toHaveBeenLastCalledWith('LocalNotifications', 'cancel', { notifications: [{ id: 5 }] })
+  })
+})
+
+describe('drawsUnderSystemBars', () => {
+  const agent = (chrome) => `Mozilla/5.0 (Linux; Android 16; Pixel 9 Build/BP22; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/${chrome} Mobile Safari/537.36`
+
+  test('from WebView 140 on the page is drawn under the bars', () => {
+    expect(drawsUnderSystemBars(agent('140.0.7339.51'))).toBe(true)
+    expect(drawsUnderSystemBars(agent('144.0.7559.59'))).toBe(true)
+  })
+
+  test('an older WebView gets a padded window', () => {
+    expect(drawsUnderSystemBars(agent('139.0.7258.158'))).toBe(false)
+    expect(drawsUnderSystemBars(agent('133.0.6943.137'))).toBe(false)
+    expect(drawsUnderSystemBars(agent('99.0.4844.88'))).toBe(false)
+  })
+
+  test('a version that cannot be read counts as a current one', () => {
+    expect(drawsUnderSystemBars('')).toBe(true)
+    expect(drawsUnderSystemBars(null)).toBe(true)
+    expect(drawsUnderSystemBars('Mozilla/5.0 (win32) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/26.1.0')).toBe(true)
+    expect(drawsUnderSystemBars('Chrome/abc')).toBe(true)
+  })
+
+  test('with nothing passed it reads the browser it runs in', () => {
+    expect(drawsUnderSystemBars()).toBe(true)
   })
 })

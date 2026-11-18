@@ -329,6 +329,52 @@ public class AppEndToEndTest {
         }
     }
 
+    // The status bar's clock and icons have to stand out from what is behind them, in the dark and
+    // the light theme, with the phone set to light and to dark. Where the page is drawn under the
+    // bar (WebView 140 and newer) the dashboard's top bar is behind them. On an older WebView the
+    // app window's own background is, and it follows the phone's setting, not the theme, so there
+    // the icons have to follow the phone (systemBarStyle in src/theme.js). Before that, the dark
+    // theme on a phone set to light had white icons on a white strip. The screen itself is read:
+    // the commonest colour in the status bar's strip is what is behind the icons.
+    @Test
+    public void statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo() throws Exception {
+        connect();
+        String before = shell("cmd uimode night");
+        try {
+            for (String night : new String[] { "no", "yes" }) {
+                shell("cmd uimode night " + night);
+                for (String theme : new String[] { "dark", "light" }) {
+                    // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+                    app.eval("localStorage.setItem('cc-theme-v1'," + WebAppDriver.quote(theme) + ");window.__ptOld=true;location.reload();null");
+                    // The page has to have seen the phone's setting too, or the screen read below
+                    // could still be the one from before the setting changed.
+                    app.waitFor("the reload in the " + theme + " theme", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor"
+                        + "&&document.documentElement.dataset.theme===" + WebAppDriver.quote(theme)
+                        + "&&matchMedia('(prefers-color-scheme: dark)').matches===" + night.equals("yes"), LOAD_MS);
+                    String where = "the " + theme + " theme with the phone's dark setting " + (night.equals("yes") ? "on" : "off");
+                    // The style goes over the bridge after the page has painted, so it is waited
+                    // for, and then it has to hold.
+                    WebAppDriver.sleep(500);
+                    String problem = statusBarProblem();
+                    long end = System.currentTimeMillis() + 8000;
+                    while (problem != null && System.currentTimeMillis() < end) {
+                        WebAppDriver.sleep(250);
+                        problem = statusBarProblem();
+                    }
+                    if (problem == null) {
+                        WebAppDriver.sleep(1000);
+                        problem = statusBarProblem();
+                    }
+                    android.util.Log.i("StatusBarTest", where + ": " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
+                    assertTrue("In " + where + ": " + problem, problem == null);
+                }
+            }
+        } finally {
+            app.eval("localStorage.removeItem('cc-theme-v1');null");
+            shell("cmd uimode night " + (before.contains("yes") ? "yes" : before.contains("auto") ? "auto" : "no"));
+        }
+    }
+
     // The tab bar and the New task button step aside while the soft keyboard is open
     // (src/keyboard.js), and come back once it is put away with Back, the field still focused.
     @Test
@@ -591,6 +637,46 @@ public class AppEndToEndTest {
         int[] xy = new int[2];
         scenario.onActivity(a -> ((com.getcapacitor.BridgeActivity) a).getBridge().getWebView().getLocationOnScreen(xy));
         return xy;
+    }
+
+    // What statusBarProblem last read from the screen, for the log.
+    private String statusBarSeen = "nothing read";
+
+    // Null when the status bar's icons stand out from the strip behind them: dark icons on a light
+    // strip, or light icons on a dark one. Otherwise what is wrong, with the colour found.
+    private String statusBarProblem() {
+        statusBarSeen = "nothing read";
+        int[] bar = new int[2];
+        scenario.onActivity(a -> {
+            android.view.View decor = a.getWindow().getDecorView();
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(decor);
+            bar[0] = insets == null ? 0 : insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            bar[1] = androidx.core.view.WindowCompat.getInsetsController(a.getWindow(), decor).isAppearanceLightStatusBars() ? 1 : 0;
+        });
+        if (bar[0] <= 0) return "the window reports no status bar";
+        android.graphics.Bitmap shot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        if (shot == null) return "no screenshot could be taken";
+        java.util.HashMap<Integer, Integer> counts = new java.util.HashMap<>();
+        int height = Math.min(bar[0], shot.getHeight());
+        for (int y = height / 4; y < height * 3 / 4; y++) {
+            for (int x = 0; x < shot.getWidth(); x += 2) counts.merge(shot.getPixel(x, y), 1, Integer::sum);
+        }
+        int colour = 0;
+        int most = -1;
+        for (java.util.Map.Entry<Integer, Integer> e : counts.entrySet()) {
+            if (e.getValue() > most) {
+                most = e.getValue();
+                colour = e.getKey();
+            }
+        }
+        shot.recycle();
+        double light = 0.2126 * android.graphics.Color.red(colour) + 0.7152 * android.graphics.Color.green(colour) + 0.0722 * android.graphics.Color.blue(colour);
+        boolean darkIcons = bar[1] == 1;
+        String found = String.format("#%06X behind the status bar", colour & 0xFFFFFF);
+        statusBarSeen = (darkIcons ? "dark" : "light") + " icons, " + found;
+        if (darkIcons && light < 128) return "dark icons on a dark strip, " + found;
+        if (!darkIcons && light >= 128) return "light icons on a light strip, " + found;
+        return null;
     }
 
     private int[] imeAndScreen() {
