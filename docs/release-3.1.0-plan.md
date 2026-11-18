@@ -51,7 +51,8 @@ Not part of this plan:
   - mobile/package.json: #196, #201
   - mobile/README.md: #201, #203
   - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203
-    (three lines apart at the nearest; a trial merge of the two branches is clean)
+    (three lines apart at the nearest)
+  - A trial merge of #203's branch with #200's, and with #201's, is clean.
   - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
     src/command-center/api.js: #186, #195
 - Checked against the diffs on 2026-11-18: in each of these files the pull requests change places
@@ -102,11 +103,13 @@ diffs), so neither should make the other conflict.
 ### Before the release, still to check
 
 1. #190 changes the phone layout of My tasks. Checked in the Android app on the emulator on
-   2026-11-18 (Android 16, WebView 133), against a build of main, at 360px and at 412px, the
-   width of the owner's phone, in the dark and the light theme and in Compact: the app's own test
-   suite passed 28 of 28, and the toolbar, the 32px headers, the + in a header, the date chips and the name
-   box a + opens with the keyboard up all measured as the pull request describes. The details are
-   in a comment on #190. A look on the real phone is what is left.
+   2026-11-18 (Android 16, WebView 133), against a build of main: the app's own test suite passed
+   28 of 28. At 412px, the width of the owner's phone, in the dark and the light theme, the
+   toolbar, the 32px headers, the + in a header and the date chips measured as the pull request
+   describes, and Compact was looked at in the dark theme. The name box a + opens rests as far
+   above the keyboard as the box main's Add task row opens. At 360px the chip goes under the
+   name, as on main, and the header, the toolbar and the + measure the same. The details are in
+   a comment on #190. Not covered: a real phone, and a WebView of 140 or newer.
 2. #196 (Capacitor 8.6.2) touches keyboard and system bar insets. Checked on 2026-11-18 on the
    emulator (Android 16, WebView 133), against a build of main with Capacitor 8.6.0: the app's own
    test suite gave the same result on both (27 of 28, the one failure being the test #200 fixes),
@@ -126,17 +129,20 @@ diffs), so neither should make the other conflict.
 4. The last commit of #199 was not run on the emulator on its own, though #201's check ran on a
    build that contains it.
 5. Found during the #196 check, on main too: in a task's panel, with the keyboard up, the Subtask
-   name box sometimes came to rest with its bottom edge 13px under the keyboard. The cause is
-   text that arrives while the keyboard is still coming up, which the script that found it sent:
-   the WebView then brings only the caret into view. A finger on the on-screen keyboard cannot do
-   that; a hardware keyboard with the on-screen one showing as well can. #203 fixes it for every
-   text box and adds an app test that failed in two runs of three without the fix. Nothing is
-   left to check here before the release.
-6. Found during the #190 check, on main too, and not fixed: in the dark theme on a WebView older
-   than 140, the status bar's clock and icons are white on a near-white strip and cannot be read.
-   There Capacitor pads the window itself, and the strip behind the status bar is the window's
-   own background, not the page. A phone with a current WebView draws the page there and is not
-   affected, so this does not hold the release. It has no pull request.
+   name box sometimes came to rest with its bottom edge 13px under the keyboard. On the emulator
+   the cause was text that arrives while the keyboard is still coming up, which the script that
+   found it sent: the WebView then brings only the caret into view. A finger on the on-screen
+   keyboard cannot do that; a hardware keyboard with the on-screen one showing as well may. #203
+   changes it for every text box, on the reasoning that the cause is not particular to one box,
+   and adds an app test for the Subtask name box that failed in four runs of six without the
+   change and passed eight of eight with it. All of that is from the emulator (WebView 133). Not
+   covered: a real phone, a WebView of 140 or newer, and a phone browser.
+6. Found during the #190 check, on main too, and not fixed: in the dark theme on the emulator's
+   WebView 133, the status bar's clock and icons are white on a near-white strip and cannot be
+   read. Below WebView 140 Capacitor pads the window itself, and the strip behind the status bar
+   is the window's own background, not the page. A phone with a current WebView draws the page
+   there, so it should not be affected, but that was not looked at. In this plan's judgement it
+   does not hold the release. It has no pull request.
 
 ## 4. Release notes
 
@@ -184,7 +190,7 @@ No migration.
   server can check. Behind `tailscale serve` nothing changes, and the token path and MCP are as
   they were.
 - On a phone, the box being typed in shows whole above the keyboard also when text arrives while
-  the keyboard is still coming up, as it can from a hardware keyboard with the on-screen one
+  the keyboard is still coming up, as it may from a hardware keyboard with the on-screen one
   showing as well. Before, the lower 13px of the box could stay under the keyboard.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
