@@ -373,7 +373,14 @@ public class AppEndToEndTest {
                 }
             }
             // The phone's setting switched with the app open and no reload: the app puts its
-            // window's own background back then, and the bars have to come right again.
+            // window's own background back then, and the bars have to come right again. In the
+            // dark theme, with the phone going to light: the window's own background is then
+            // nearly white, which could not pass for the dark bars. (In the light theme it is
+            // three steps of blue from the light bars' colour.)
+            app.eval("localStorage.setItem('cc-theme-v1','dark');window.__ptOld=true;location.reload();null");
+            app.waitFor("the reload in the dark theme", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor"
+                + "&&document.documentElement.dataset.theme==='dark'&&matchMedia('(prefers-color-scheme: dark)').matches", LOAD_MS);
+            WebAppDriver.sleep(1000);
             shell("cmd uimode night no");
             app.waitFor("the page to see the phone's dark setting go off", "!matchMedia('(prefers-color-scheme: dark)').matches", LOAD_MS);
             String bars = app.eval("getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim()").replace("\"", "");
@@ -388,8 +395,8 @@ public class AppEndToEndTest {
                 WebAppDriver.sleep(1000);
                 problem = statusBarProblem(bars);
             }
-            android.util.Log.i("StatusBarTest", "after the phone's dark setting went off with the app open: " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
-            assertTrue("After the phone's dark setting went off with the app open: " + problem, problem == null);
+            android.util.Log.i("StatusBarTest", "the dark theme after the phone's dark setting went off with the app open: " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
+            assertTrue("In the dark theme after the phone's dark setting went off with the app open: " + problem, problem == null);
         } finally {
             app.eval("localStorage.removeItem('cc-theme-v1');null");
             shell("cmd uimode night " + (before.contains("yes") ? "yes" : before.contains("auto") ? "auto" : "no"));

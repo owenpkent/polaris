@@ -306,6 +306,20 @@ describe('applyTheme inside the Android app', () => {
     ])
   })
 
+  test('an app that refuses the style too: the fallback is tried and nothing is thrown', async () => {
+    const nativePromise = vi.fn().mockRejectedValue(new Error('no plugin'))
+    window.Capacitor = { isNativePlatform: () => true, nativePromise }
+    stubUserAgent(OLD_WEBVIEW)
+    stubBarColour('#252931')
+    expect(() => applyTheme('dark', false)).not.toThrow()
+    await flush()
+    expect(nativePromise.mock.calls).toEqual([
+      ['SystemBars', 'setStyle', { style: 'DARK' }],
+      ['SystemBars', 'setStyle', { style: 'LIGHT' }],
+    ])
+    expect(document.documentElement.dataset.theme).toBe('dark')
+  })
+
   test('a theme switched again before the app answered: only the last one colours the window', async () => {
     const nativePromise = vi.fn().mockResolvedValue({})
     window.Capacitor = { isNativePlatform: () => true, nativePromise }

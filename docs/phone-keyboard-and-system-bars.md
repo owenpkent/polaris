@@ -47,8 +47,9 @@ version as the plugin does, through `drawsUnderSystemBars` in src/command-center
 
 `statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo` in AppEndToEndTest reads the screen in
 both themes with the phone set to light and to dark, and once more after the setting is switched
-with the app open. On either kind of WebView the strip has to be the colour of the dashboard's
-bars and the icons have to stand out from it. `AppWindowColourTest` holds what the plugin takes
+with the app open. On either kind of WebView the strip behind the status bar has to be the colour
+of the dashboard's bars and the icons have to stand out from it; the strip behind the gesture bar
+is the same window and was looked at in a screenshot, not read by the test. `AppWindowColourTest` holds what the plugin takes
 as a colour.
 
 Capacitor also writes `--safe-area-inset-top`, `-right`, `-bottom`, and `-left` on `<html>`, for

@@ -43,7 +43,7 @@ public class AppWindowPlugin extends Plugin {
     @Override
     protected void handleOnConfigurationChanged(Configuration newConfig) {
         super.handleOnConfigurationChanged(newConfig);
-        if (colour == null) return;
+        if (colour == null || getActivity() == null) return;
         // Posted, so it runs after SystemBars has put the theme's background back, whichever of
         // the two plugins is told of the change first.
         View decor = getActivity().getWindow().getDecorView();
