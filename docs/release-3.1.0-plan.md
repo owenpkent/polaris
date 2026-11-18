@@ -15,9 +15,9 @@ has been a patch release: every heading in CHANGELOG.md ends in .0.
 
 ## 3. Merge order
 
-Eighteen pull requests are open and reviewed on their head commits: #186 to #201, #203 and #204.
-Their titles and base branches were checked with `gh` on 2026-11-18 and match the plan. None of them
-touches `command-center/src/core/schema.ts`.
+Nineteen pull requests are open and reviewed on their head commits: #186 to #201, and #203 to
+#205. Their titles and base branches were checked with `gh` on 2026-11-18 and match the plan.
+None of them touches `command-center/src/core/schema.ts`.
 
 Not part of this plan:
 
@@ -30,9 +30,9 @@ Not part of this plan:
 - No merge without a review on the head commit, and the owner gives the word for each merge.
 - Branch protection does not require branches to be up to date, so a pull request needs updating
   only when it conflicts.
-- Two stacks. Stack A: #191, then #193 (base `fix/nightly-fuzz`). Stack B: #195, then #199 (base
-  `feat/offline-order-and-server-time`), then #201 (base `feat/settings-clock-line`). The parent
-  is always merged first.
+- Three stacks. Stack A: #191, then #193 (base `fix/nightly-fuzz`). Stack B: #195, then #199 (base
+  `feat/offline-order-and-server-time`), then #201 (base `feat/settings-clock-line`). Stack C:
+  #204, then #205 (base `fix/status-bar-old-webview`). The parent is always merged first.
 - When a parent is squash-merged and its branch deleted, GitHub retargets the child to main. The
   child then usually shows conflicts, because its history still holds the parent's commits. Merge
   main into the child's branch, keeping the child's side for the files the parent touched, and
@@ -49,10 +49,12 @@ Not part of this plan:
   - e2e/support.js: #190, #199
   - package.json: #197, #201
   - mobile/package.json: #196, #201
-  - mobile/README.md: #201, #203, #204
+  - mobile/README.md: #201, #203, #204, #205
   - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203,
-    #204 (#200 and #203 are three lines apart at the nearest)
-  - docs/phone-keyboard-and-system-bars.md: #203, #204 (different sections)
+    #204, #205 (#200 and #203 are three lines apart at the nearest)
+  - docs/phone-keyboard-and-system-bars.md: #203, #204, #205 (#203 in another section)
+  - #204 and #205 change the same lines of those three files and of src/theme.js and its test,
+    which is why they are a stack.
   - A trial merge of #203's branch with #200's, and with #201's, is clean. So is one of #204's
     branch with each of #200's, #201's, #203's and #190's.
   - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
@@ -79,25 +81,29 @@ Not part of this plan:
    same known test failure.
 9. Merge #203 (the box being typed in shows whole above the keyboard). It changes the same app
    test file as #200, in other places, so it goes straight after it.
-10. Merge #204 (on an old WebView the status bar's icons follow the phone). It changes the same
-    app test file and the same two documents as #203, in other places, so it goes straight after
-    it. If GitHub reports a conflict then, update its branch and post its review again.
-11. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
-12. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
+10. Merge #204 (stack C parent: on an old WebView the status bar's icons follow the phone). It
+    changes the same app test file and the same two documents as #203, in other places, so it
+    goes straight after it. If GitHub reports a conflict then, update its branch and post its
+    review again.
+11. Update #205 (now on main; see the rules above), post the review again, wait for CI, the
+    Android emulator job included, then merge. It adds the app's AppWindow plugin, which gives the
+    strips behind the bars the dashboard's colour on an old WebView.
+12. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
+13. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
     merge it. It adds a sweep test and a paragraph in CONTRIBUTING.md.
-13. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
+14. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
     before stack B, whose first full browser test run then happens on top of it. Both change
     `e2e/support.js`, in places far apart.
-14. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
+15. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
     conflicts with CLAUDE.md or command-center/README.md.
-15. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
+16. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
     merge. Watch the first browser run closely: it changes the test fixture for every UI test.
-16. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
+17. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
     CI, then merge. It also changes `package.json` and `mobile/package.json`.
-17. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
+18. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
     with nothing. #194 is the proposal that #195 and #199 carry out; the plan merges them last,
     and they could go anywhere in the order.
-18. Wait for the Tests run on main to pass, all twelve browser test parts included
+19. Wait for the Tests run on main to pass, all twelve browser test parts included
     (`gh run list --workflow test.yml --branch main`). Then follow the release checklist in
     docs/releases.md.
 
@@ -128,9 +134,10 @@ diffs), so neither should make the other conflict.
    right on Android 15 and newer and wrong on Android 10 to 14. So on an Android 16 phone nothing
    should change. A look at the new task sheet with the keyboard open on the real phone is the
    check that is left.
-3. The three stacked pull requests, #193, #199 and #201, have run only CI's fast jobs so far: the
-   browser tests do not run until each is a pull request into main. For #199, four UI specs were
-   run locally at desktop; for #201, none.
+3. The four stacked pull requests, #193, #199, #201 and #205, have run only CI's fast jobs so
+   far: the browser tests and the Android emulator job do not run until each is a pull request
+   into main. For #199, four UI specs were run locally at desktop; for #201, none. #205 changes
+   no page of the dashboard, and its app tests were run on the local emulator.
 4. The last commit of #199 was not run on the emulator on its own, though #201's check ran on a
    build that contains it.
 5. Found during the #196 check, on main too: in a task's panel, with the keyboard up, the Subtask
@@ -146,12 +153,17 @@ diffs), so neither should make the other conflict.
    the status bar's clock and icons were white on a near-white strip and could not be read. Below
    WebView 140 Capacitor pads the window itself, and the strip behind the status bar is the
    window's own background, which follows the phone's light or dark setting, not the dashboard's
-   theme. #204 makes the icons follow the phone's setting there, and adds an app test that reads
-   the screen: it failed without the change and passed with it in both themes with the phone set
-   to light and to dark. The strip itself keeps the phone's colour. From WebView 140 on nothing
+   theme. #204 makes the icons follow the phone's setting there, so they can be read. #205, on
+   top of it, has the page hand the window the colour of its own bars through a small plugin in
+   the app, so the strips look as they do on a current WebView and the icons follow the theme
+   again; the icons follow the phone only if that fails. An app test reads the screen: in both
+   themes, with the phone set to light and to dark, and after the setting is switched with the
+   app open, the strip has to be the colour of the dashboard's bars and the icons have to stand
+   out from it. It failed without each change and passed with both. From WebView 140 on nothing
    should change, by a reading of the code. All of that is from the emulator. Not covered: a
-   real phone, a WebView of 140 or newer on a device, and the gesture bar's handle, which gets
-   the same style as the status bar but was not read from the screen.
+   real phone, a WebView of 140 or newer on a device, the phone turned with the app open, and
+   the gesture bar's handle, which gets the same style as the status bar and was looked at in a
+   screenshot but not read by a test.
 
 ## 4. Release notes
 
@@ -202,9 +214,10 @@ No migration.
   the keyboard is still coming up, as it may from a hardware keyboard with the on-screen one
   showing as well. Before, the lower 13px of the box could stay under the keyboard.
 - In the Android app on a WebView older than 140, the status bar's clock and icons can be read
-  again when the dashboard's theme and the phone's light or dark setting differ. There the icons
-  now follow the phone's setting. Before, the dark theme on a phone set to light drew white icons
-  on a white strip. On a current WebView nothing changes.
+  again when the dashboard's theme and the phone's light or dark setting differ. Before, the dark
+  theme on a phone set to light drew white icons on a white strip. Now the strips behind the
+  status bar and the gesture bar take the colour of the dashboard's own bars there, as they have
+  on a current WebView, where nothing changes.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
   refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
