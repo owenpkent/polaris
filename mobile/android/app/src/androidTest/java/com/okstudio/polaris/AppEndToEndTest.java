@@ -525,12 +525,18 @@ public class AppEndToEndTest {
         app.waitFor("Open to be focused", "document.activeElement===" + open, 10000);
         // Focus is given at once and without scrolling, and the scroll that brings the row in is a
         // smooth one unless the device asks for reduced motion (MyTasksTab.jsx). So the row is
-        // waited for, not measured in the same instant. CI's emulator has animations off, which
-        // the WebView reports as reduced motion, and never saw the gap; an emulator with
-        // animations on did whenever the list was long enough to need the scroll, which it is
-        // once the tests before this one have added their tasks.
-        app.waitFor("the Open button to be scrolled onto the screen", "(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
-            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()", 5000);
+        // waited for, not measured in the same instant. CI's emulator has animations off and never
+        // showed the gap, as it would not if its WebView then reports reduced motion and the
+        // scroll is instant; an emulator with animations on showed it whenever the list was long
+        // enough to need the scroll, which it is once the tests before this one have added their
+        // tasks.
+        //
+        // The row has arrived when it is where it was at the last look (the scroll has ended), and
+        // it must then be on screen and above the tab bar, as the toast's buttons must be above.
+        app.waitFor("the Open button to stop on the screen, above the tab bar", "(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "const navTop=" + nav + ".getBoundingClientRect().top;"
+            + "const still=window.__ptOpenTop===r.top;window.__ptOpenTop=r.top;"
+            + "return still&&r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.bottom<=navTop+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()", 5000);
     }
 
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
