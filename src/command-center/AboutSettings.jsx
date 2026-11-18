@@ -7,6 +7,9 @@ import { describeOffset } from './serverClock'
 import { useServerClock } from './useServerClock'
 import { Notice } from './shared'
 
+// The events poll takes a reading every ten seconds while connected.
+const OLD_READING_MS = 2 * 60 * 1000
+
 function Row({ label, children }) {
   return (
     <div>
@@ -32,7 +35,11 @@ export function formatBuild({ version, commit, builtAt } = BUILD_INFO) {
 export default function AboutSettings({ build = BUILD_INFO }) {
   const { connected, health, api, baseUrl, local } = useConnection()
   const offline = useOffline()
-  const clock = describeOffset(useServerClock(connectionOrigin(baseUrl)))
+  const reading = useServerClock(connectionOrigin(baseUrl))
+  const clock = describeOffset(reading)
+  // A reading is taken with every events poll while connected. One that is older says what the
+  // clocks were, not what they are: the server is out of reach, or edits are waiting to be sent.
+  const old = !reading || offline || !connected || Math.abs(Date.now() - reading.measuredAt) > OLD_READING_MS
   const [fresh, setFresh] = useState(null)
   useEffect(() => {
     // A different server, or none, starts from its own health check, never the last one's answer.
@@ -52,7 +59,7 @@ export default function AboutSettings({ build = BUILD_INFO }) {
       clockText = clock.state === 'match'
         ? "Matches the server's clock"
         : `${clock.amount} ${relation} the server's clock`
-      if (offline || !connected) clockText += ', when last checked'
+      if (old) clockText += ', when last checked'
     }
   }
   return (
@@ -64,8 +71,10 @@ export default function AboutSettings({ build = BUILD_INFO }) {
         {clockText && <Row label="Device clock">{clockText}</Row>}
       </dl>
       {!local && clock.warn && (
+        // The amount is in the row above and not here: this is a status, read out when its words
+        // change, and the amount changes with every reading.
         <Notice tone="yellow">
-          {`This device's clock is ${clock.amount} ${relation} the server's. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right.`}
+          This device&apos;s clock is not in step with the server&apos;s. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right.
         </Notice>
       )}
     </section>

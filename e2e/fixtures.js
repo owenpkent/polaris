@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test'
 import { BASE_PORT, startScratchServer } from './server.js'
+import { pinServerClock } from './support.js'
 
 // Every spec imports `test` and `expect` from here, not from @playwright/test.
 //
@@ -48,6 +49,19 @@ export const test = base.extend({
       const seeded = process.env.CC_UI_SEED_TIME
       if (!seeded) throw new Error('CC_UI_SEED_TIME is not set: the scratchServer fixture did not run')
       await page.clock.install({ time: new Date(seeded) })
+      await use(undefined)
+    },
+    { auto: true },
+  ],
+  // The dashboard reads the server's clock from the events poll (src/command-center/serverClock.js)
+  // and compares it with the browser's, which the fixture above froze at the seed moment while
+  // the server runs on real time. Left alone, every page would measure a difference that grows
+  // as the worker runs, and the About card would show a different one, with or without its
+  // notice, in every run. This ties the server's clock, as the page reads it, to the page's own.
+  // A test that wants a difference calls pinServerClock again with one: the later call wins.
+  pinnedServerClock: [
+    async ({ page }, use) => {
+      await pinServerClock(page)
       await use(undefined)
     },
     { auto: true },

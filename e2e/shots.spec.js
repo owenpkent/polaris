@@ -888,7 +888,6 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   // The About card is the last on the page, so the jump button brings it into the shot. The
   // dashboard build carries the commit and the build time, which change with every build.
   test('settings: about', async ({ page }, testInfo) => {
-    await pinServerClock(page)
     await openView(page, 'settings')
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
     const card = page.getByRole('region', { name: 'About' })

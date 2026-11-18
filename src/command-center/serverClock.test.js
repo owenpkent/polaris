@@ -230,13 +230,20 @@ describe('describeOffset', () => {
   test('amounts are in whole seconds, minutes, hours or days, singular for one', () => {
     expect(at(1400)).toEqual({ state: 'behind', amount: '1 second', warn: false })
     expect(at(42 * SEC).amount).toBe('42 seconds')
-    expect(at(89 * SEC).amount).toBe('89 seconds')
-    expect(at(90 * SEC).amount).toBe('2 minutes')
+    expect(at(90 * SEC).amount).toBe('90 seconds')
     expect(at(10 * MIN).amount).toBe('10 minutes')
-    expect(at(90 * MIN).amount).toBe('2 hours')
-    expect(at(36 * HOUR).amount).toBe('2 days')
-    expect(at(3 * 24 * HOUR).amount).toBe('3 days')
     expect(at(60 * MIN).amount).toBe('60 minutes')
+    expect(at(36 * HOUR).amount).toBe('36 hours')
+    expect(at(3 * 24 * HOUR).amount).toBe('3 days')
+  })
+
+  test('a unit runs until the next one rounds to two, so no step reads oddly', () => {
+    expect(at(119.4 * SEC).amount).toBe('119 seconds')
+    expect(at(119.5 * SEC).amount).toBe('2 minutes')
+    expect(at(119.4 * MIN).amount).toBe('119 minutes')
+    expect(at(119.5 * MIN).amount).toBe('2 hours')
+    expect(at(47.4 * HOUR).amount).toBe('47 hours')
+    expect(at(47.5 * HOUR).amount).toBe('2 days')
   })
 
   test('the sign says behind or ahead', () => {

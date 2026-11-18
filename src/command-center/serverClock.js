@@ -54,10 +54,10 @@ export function serverClockVersion() {
   return version
 }
 
-// Another tab wrote a reading.
+// Another tab wrote a reading, or cleared the storage (which arrives with no key).
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('storage', (event) => {
-    if (event.key === KEY) changed()
+    if (event.key === KEY || event.key === null) changed()
   })
 }
 
@@ -100,10 +100,12 @@ export function describeOffset(sample) {
   if (!validSample(sample)) return { state: 'none', amount: null, warn: false }
   const abs = Math.abs(sample.offsetMs)
   if (abs <= Math.max(1000, sample.rttMs / 2)) return { state: 'match', amount: null, warn: false }
+  // Each unit runs until the next one rounds to 2, so no step reads oddly: 119 seconds, then
+  // 2 minutes; 119 minutes, then 2 hours; 47 hours, then 2 days.
   let amount
-  if (abs < 90 * 1000) amount = words(Math.round(abs / 1000), 'second')
-  else if (abs < 90 * 60 * 1000) amount = words(Math.round(abs / 60000), 'minute')
-  else if (abs < 36 * 3600 * 1000) amount = words(Math.round(abs / 3600000), 'hour')
+  if (abs < 119.5 * 1000) amount = words(Math.round(abs / 1000), 'second')
+  else if (abs < 119.5 * 60 * 1000) amount = words(Math.round(abs / 60000), 'minute')
+  else if (abs < 47.5 * 3600 * 1000) amount = words(Math.round(abs / 3600000), 'hour')
   else amount = words(Math.round(abs / 86400000), 'day')
   return { state: sample.offsetMs > 0 ? 'behind' : 'ahead', amount, warn: abs >= CLOCK_WARN_MS }
 }

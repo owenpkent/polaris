@@ -26,8 +26,10 @@ afterEach(() => {
 const row = (label) => screen.getByText(label).nextElementSibling.textContent
 
 // A reading that says the server is `offsetMs` ahead of this device, with a 100 ms round trip.
-const T = Date.parse('2026-11-17T12:00:00.000Z')
-const note = (offsetMs) => noteServerTime(ORIGIN, new Date(T + offsetMs + 50).toISOString(), T, T + 100)
+// Taken now by default: the card says so when a reading is more than two minutes old.
+const T = Date.now()
+const NOTICE = "This device's clock is not in step with the server's. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right."
+const note = (offsetMs, at = T) => noteServerTime(ORIGIN, new Date(at + offsetMs + 50).toISOString(), at, at + 100)
 
 describe('AboutSettings', () => {
   test('shows the dashboard build and the server version', () => {
@@ -157,15 +159,23 @@ describe('AboutSettings', () => {
       resetServerClock()
       note(10 * 60 * 1000)
       render(<AboutSettings />)
-      expect(screen.getByRole('status').textContent).toBe(
-        "This device's clock is 10 minutes behind the server's. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right.",
-      )
+      expect(screen.getByRole('status').textContent).toBe(NOTICE)
     })
 
-    test('the notice says ahead when the device is ahead', () => {
+    test('the notice has the same words whatever the amount and the direction, so it is read out once', () => {
       note(-10 * 60 * 1000)
       render(<AboutSettings />)
-      expect(screen.getByRole('status').textContent).toMatch(/^This device's clock is 10 minutes ahead of the server's\./)
+      expect(row('Device clock')).toBe("10 minutes ahead of the server's clock")
+      expect(screen.getByRole('status').textContent).toBe(NOTICE)
+      act(() => { resetServerClock(); note(45 * 1000) })
+      expect(row('Device clock')).toBe("45 seconds behind the server's clock")
+      expect(screen.getByRole('status').textContent).toBe(NOTICE)
+    })
+
+    test('a reading more than two minutes old is given as the last one, connected or not', () => {
+      note(5000, T - 5 * 60 * 1000)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("5 seconds behind the server's clock, when last checked")
     })
 
     test('follows a reading taken after it was shown', () => {
