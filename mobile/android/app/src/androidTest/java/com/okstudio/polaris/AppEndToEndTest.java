@@ -333,9 +333,11 @@ public class AppEndToEndTest {
     // the light theme, with the phone set to light and to dark. Where the page is drawn under the
     // bar (WebView 140 and newer) the dashboard's top bar is behind them. On an older WebView the
     // app window's own background is, and it follows the phone's setting, not the theme, so there
-    // the icons have to follow the phone (systemBarStyle in src/theme.js). Before that, the dark
-    // theme on a phone set to light had white icons on a white strip. The screen itself is read:
-    // the commonest colour in the status bar's strip is what is behind the icons.
+    // the page hands the window the colour of its bars (AppWindowPlugin, applySystemBars in
+    // src/theme.js). Before that, the dark theme on a phone set to light had white icons on a
+    // white strip. So on either kind of WebView the strip has to be the colour of the dashboard's
+    // bars, and the icons have to stand out from it. The screen itself is read: the commonest
+    // colour in the status bar's strip is what is behind the icons.
     @Test
     public void statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo() throws Exception {
         connect();
@@ -355,20 +357,39 @@ public class AppEndToEndTest {
                     // The style goes over the bridge after the page has painted, so it is waited
                     // for, and then it has to hold.
                     WebAppDriver.sleep(500);
-                    String problem = statusBarProblem();
+                    String bars = app.eval("getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim()").replace("\"", "");
+                    String problem = statusBarProblem(bars);
                     long end = System.currentTimeMillis() + 8000;
                     while (problem != null && System.currentTimeMillis() < end) {
                         WebAppDriver.sleep(250);
-                        problem = statusBarProblem();
+                        problem = statusBarProblem(bars);
                     }
                     if (problem == null) {
                         WebAppDriver.sleep(1000);
-                        problem = statusBarProblem();
+                        problem = statusBarProblem(bars);
                     }
                     android.util.Log.i("StatusBarTest", where + ": " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
                     assertTrue("In " + where + ": " + problem, problem == null);
                 }
             }
+            // The phone's setting switched with the app open and no reload: the app puts its
+            // window's own background back then, and the bars have to come right again.
+            shell("cmd uimode night no");
+            app.waitFor("the page to see the phone's dark setting go off", "!matchMedia('(prefers-color-scheme: dark)').matches", LOAD_MS);
+            String bars = app.eval("getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim()").replace("\"", "");
+            WebAppDriver.sleep(500);
+            String problem = statusBarProblem(bars);
+            long end = System.currentTimeMillis() + 8000;
+            while (problem != null && System.currentTimeMillis() < end) {
+                WebAppDriver.sleep(250);
+                problem = statusBarProblem(bars);
+            }
+            if (problem == null) {
+                WebAppDriver.sleep(1000);
+                problem = statusBarProblem(bars);
+            }
+            android.util.Log.i("StatusBarTest", "after the phone's dark setting went off with the app open: " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
+            assertTrue("After the phone's dark setting went off with the app open: " + problem, problem == null);
         } finally {
             app.eval("localStorage.removeItem('cc-theme-v1');null");
             shell("cmd uimode night " + (before.contains("yes") ? "yes" : before.contains("auto") ? "auto" : "no"));
@@ -642,9 +663,10 @@ public class AppEndToEndTest {
     // What statusBarProblem last read from the screen, for the log.
     private String statusBarSeen = "nothing read";
 
-    // Null when the status bar's icons stand out from the strip behind them: dark icons on a light
-    // strip, or light icons on a dark one. Otherwise what is wrong, with the colour found.
-    private String statusBarProblem() {
+    // Null when the strip behind the status bar is the colour of the dashboard's bars ("#rrggbb")
+    // and the status bar's icons stand out from it: dark icons on a light strip, or light icons on
+    // a dark one. Otherwise what is wrong, with the colour found.
+    private String statusBarProblem(String bars) {
         statusBarSeen = "nothing read";
         int[] bar = new int[2];
         scenario.onActivity(a -> {
@@ -676,6 +698,17 @@ public class AppEndToEndTest {
         statusBarSeen = (darkIcons ? "dark" : "light") + " icons, " + found;
         if (darkIcons && light < 128) return "dark icons on a dark strip, " + found;
         if (!darkIcons && light >= 128) return "light icons on a light strip, " + found;
+        int wanted;
+        try {
+            wanted = android.graphics.Color.parseColor(bars);
+        } catch (IllegalArgumentException e) {
+            return "the dashboard's bar colour could not be read: " + bars;
+        }
+        // Two steps of leeway a channel, for a screen that rounds colours.
+        boolean same = Math.abs(android.graphics.Color.red(colour) - android.graphics.Color.red(wanted)) <= 2
+            && Math.abs(android.graphics.Color.green(colour) - android.graphics.Color.green(wanted)) <= 2
+            && Math.abs(android.graphics.Color.blue(colour) - android.graphics.Color.blue(wanted)) <= 2;
+        if (!same) return "the strip is not the colour of the dashboard's bars (" + bars + "), " + found;
         return null;
     }
 
