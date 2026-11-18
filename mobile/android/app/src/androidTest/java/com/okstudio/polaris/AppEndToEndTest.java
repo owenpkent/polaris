@@ -523,8 +523,14 @@ public class AppEndToEndTest {
         app.click("button", "View " + title + " in " + where);
         String open = "__pt.find('button'," + WebAppDriver.quote("Open " + title) + ")";
         app.waitFor("Open to be focused", "document.activeElement===" + open, 10000);
-        assertTrue("Open button is outside the viewport", app.truthy("(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
-            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()"));
+        // Focus is given at once and without scrolling, and the scroll that brings the row in is a
+        // smooth one unless the device asks for reduced motion (MyTasksTab.jsx). So the row is
+        // waited for, not measured in the same instant. CI's emulator has animations off, which
+        // the WebView reports as reduced motion, and never saw the gap; an emulator with
+        // animations on did whenever the list was long enough to need the scroll, which it is
+        // once the tests before this one have added their tasks.
+        app.waitFor("the Open button to be scrolled onto the screen", "(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()", 5000);
     }
 
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
