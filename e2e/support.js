@@ -501,6 +501,26 @@ export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
   await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))
 }
 
+// The fixture freezes the browser's clock at the moment the database was seeded while the test
+// server runs on real time, so the dashboard would measure a different, growing difference in
+// every run. This answers GET /api/events with `now` set to the page's own clock plus
+// `serverAheadMs`, so the About card reads a fixed difference. Call it before the view is opened.
+export async function pinServerClock(page, serverAheadMs = 0) {
+  await page.route((url) => url.pathname === '/api/events', async (route) => {
+    if (!isGet(route)) return route.fallback()
+    try {
+      const response = await route.fetch()
+      const body = await response.json()
+      const pageNow = await page.evaluate(() => Date.now())
+      body.now = new Date(pageNow + serverAheadMs).toISOString()
+      await route.fulfill({ response, json: body })
+    } catch {
+      // The request may be gone with the page. Let it go on unchanged.
+      try { await route.fallback() } catch { /* gone */ }
+    }
+  })
+}
+
 // Content the user cannot see in full (CONTRIBUTING.md, "Nothing is cut off"). Returns readable
 // strings, one per problem, so a failure names each one:
 //

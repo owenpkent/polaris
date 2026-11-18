@@ -36,6 +36,31 @@ function load() {
   }
 }
 
+// React follows the stored data through a version counter, as offlineStatus.js does.
+let version = 0
+const listeners = new Set()
+
+function changed() {
+  version += 1
+  listeners.forEach((listener) => listener())
+}
+
+export function subscribeServerClock(listener) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export function serverClockVersion() {
+  return version
+}
+
+// Another tab wrote a reading.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === KEY) changed()
+  })
+}
+
 function save(all) {
   memory = all
   try {
@@ -44,6 +69,7 @@ function save(all) {
   } catch {
     unsaved = true
   }
+  changed()
 }
 
 /** Forgets everything, stored or not. For tests. */
@@ -55,6 +81,31 @@ export function resetServerClock() {
   } catch {
     // Nothing stored that can be removed.
   }
+  changed()
+}
+
+// From this difference on, the About card adds a notice.
+export const CLOCK_WARN_MS = 30000
+
+function words(n, unit) {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
+}
+
+/**
+ * How a stored reading reads to the owner. Pure. A reading cannot tell a difference smaller than
+ * half its round trip (or one second), so that counts as a match. `offsetMs` is the server's time
+ * minus the device's, so a positive one means the device is behind.
+ */
+export function describeOffset(sample) {
+  if (!validSample(sample)) return { state: 'none', amount: null, warn: false }
+  const abs = Math.abs(sample.offsetMs)
+  if (abs <= Math.max(1000, sample.rttMs / 2)) return { state: 'match', amount: null, warn: false }
+  let amount
+  if (abs < 90 * 1000) amount = words(Math.round(abs / 1000), 'second')
+  else if (abs < 90 * 60 * 1000) amount = words(Math.round(abs / 60000), 'minute')
+  else if (abs < 36 * 3600 * 1000) amount = words(Math.round(abs / 3600000), 'hour')
+  else amount = words(Math.round(abs / 86400000), 'day')
+  return { state: sample.offsetMs > 0 ? 'behind' : 'ahead', amount, warn: abs >= CLOCK_WARN_MS }
 }
 
 function entryFor(all, origin) {

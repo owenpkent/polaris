@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { correctedTimes, lastSentAt, measureServerTime, noteSent, noteServerTime, resetServerClock, storedOffset } from './serverClock'
+import { CLOCK_WARN_MS, correctedTimes, describeOffset, lastSentAt, measureServerTime, noteSent, noteServerTime, resetServerClock, serverClockVersion, storedOffset, subscribeServerClock } from './serverClock'
 
 const MIN = 60 * 1000
 const iso = (ms) => new Date(ms).toISOString()
@@ -203,5 +203,81 @@ describe('correctedTimes', () => {
   test('a time that does not parse passes through and does not move the running value', () => {
     const out = correctedTimes([entry(iso(T)), entry('garbage'), entry(iso(T - 1000))], { now: T + 1e6 })
     expect(out).toEqual([iso(T), 'garbage', iso(T + 1)])
+  })
+})
+
+describe('describeOffset', () => {
+  const SEC = 1000
+  const HOUR = 60 * MIN
+  const at = (offsetMs, rttMs = 100) => describeOffset({ offsetMs, rttMs, measuredAt: T })
+
+  test('no reading, or an invalid one, is none', () => {
+    const none = { state: 'none', amount: null, warn: false }
+    expect(describeOffset(null)).toEqual(none)
+    expect(describeOffset(undefined)).toEqual(none)
+    expect(describeOffset({ offsetMs: 'x', rttMs: 1, measuredAt: 1 })).toEqual(none)
+  })
+
+  test('a difference inside one second or half the round trip is a match', () => {
+    const match = { state: 'match', amount: null, warn: false }
+    expect(at(1000)).toEqual(match)
+    expect(at(-1000)).toEqual(match)
+    expect(at(0)).toEqual(match)
+    expect(at(2500, 5000)).toEqual(match)
+    expect(at(2501, 5000).state).toBe('behind')
+  })
+
+  test('amounts are in whole seconds, minutes, hours or days, singular for one', () => {
+    expect(at(1400)).toEqual({ state: 'behind', amount: '1 second', warn: false })
+    expect(at(42 * SEC).amount).toBe('42 seconds')
+    expect(at(89 * SEC).amount).toBe('89 seconds')
+    expect(at(90 * SEC).amount).toBe('2 minutes')
+    expect(at(10 * MIN).amount).toBe('10 minutes')
+    expect(at(90 * MIN).amount).toBe('2 hours')
+    expect(at(36 * HOUR).amount).toBe('2 days')
+    expect(at(3 * 24 * HOUR).amount).toBe('3 days')
+    expect(at(60 * MIN).amount).toBe('60 minutes')
+  })
+
+  test('the sign says behind or ahead', () => {
+    expect(at(10 * MIN).state).toBe('behind')
+    expect(at(-10 * MIN).state).toBe('ahead')
+    expect(at(-10 * MIN).amount).toBe('10 minutes')
+  })
+
+  test('the warning starts at thirty seconds', () => {
+    expect(CLOCK_WARN_MS).toBe(30 * SEC)
+    expect(at(29.9 * SEC).warn).toBe(false)
+    expect(at(30 * SEC).warn).toBe(true)
+    expect(at(-30 * SEC).warn).toBe(true)
+  })
+})
+
+describe('subscribeServerClock', () => {
+  test('is told when a reading, a sent time or a reset changes the stored data', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeServerClock(listener)
+    const before = serverClockVersion()
+    noteServerTime('http://x', iso(T + 1000), T, T + 100)
+    expect(listener).toHaveBeenCalledTimes(1)
+    noteSent('http://x', T)
+    expect(listener).toHaveBeenCalledTimes(2)
+    resetServerClock()
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(serverClockVersion()).toBe(before + 3)
+    unsubscribe()
+    noteServerTime('http://x', iso(T + 1000), T, T + 100)
+    resetServerClock()
+    expect(listener).toHaveBeenCalledTimes(3)
+  })
+
+  test('another tab writing the key is a change too', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeServerClock(listener)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'cc-server-clock-v1' }))
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new StorageEvent('storage', { key: 'something-else' }))
+    expect(listener).toHaveBeenCalledTimes(1)
+    unsubscribe()
   })
 })

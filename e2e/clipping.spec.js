@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
+import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, pinServerClock, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -46,6 +46,14 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   test('Settings', async ({ page }) => {
     await openView(page, 'settings')
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test('Settings, About with the clock notice', async ({ page }) => {
+    await pinServerClock(page, 10 * 60 * 1000)
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
+    await expect(page.getByRole('region', { name: 'About' }).getByRole('status')).toBeVisible()
     await expectNothingCutOff(page)
   })
 

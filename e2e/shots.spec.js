@@ -2,7 +2,7 @@ import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { TOKEN } from './server.js'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, pinServerClock, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -888,10 +888,23 @@ test.describe('shots', { tag: ['@visual'] }, () => {
   // The About card is the last on the page, so the jump button brings it into the shot. The
   // dashboard build carries the commit and the build time, which change with every build.
   test('settings: about', async ({ page }, testInfo) => {
+    await pinServerClock(page)
     await openView(page, 'settings')
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
     const card = page.getByRole('region', { name: 'About' })
     await expect(card.getByText(/^v\d/).last()).toBeVisible()
+    await expect(card.getByText("Matches the server's clock")).toBeVisible()
     await shot(page, testInfo, 'settings', 'about', [card.getByText('Dashboard', { exact: true }).locator('xpath=following-sibling::span')])
+  })
+
+  // The device's clock ten minutes behind the server's: the row and the notice under it.
+  test('settings: about, clock warning', async ({ page }, testInfo) => {
+    await pinServerClock(page, 10 * 60 * 1000)
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
+    const card = page.getByRole('region', { name: 'About' })
+    await expect(card.getByText(/^v\d/).last()).toBeVisible()
+    await expect(card.getByRole('status')).toBeVisible()
+    await shot(page, testInfo, 'settings', 'about-clock-warning', [card.getByText('Dashboard', { exact: true }).locator('xpath=following-sibling::span')])
   })
 })

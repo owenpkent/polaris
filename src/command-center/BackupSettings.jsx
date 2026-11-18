@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Copy, Lock, LockOpen, Play, ShieldCheck } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { useOffline } from './offlineStatus'
-import { ConfirmButton, ErrorBanner } from './shared'
+import { ConfirmButton, ErrorBanner, Notice } from './shared'
 
 // 18 random bytes are 144 bits. Made here, in the browser, which has to show it to the owner anyway:
 // the server then never has a reason to send a passphrase to anyone.
@@ -23,25 +23,6 @@ function Row({ label, children }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.75rem', fontSize: '0.85rem', padding: '0.3rem 0' }}>
       <span style={{ color: 'var(--t2)', flex: '0 0 7.5rem' }}>{label}</span>
       <span style={{ flex: '1 1 12rem', minWidth: 0, overflowWrap: 'anywhere' }}>{children}</span>
-    </div>
-  )
-}
-
-function Notice({ tone, children }) {
-  return (
-    <div
-      role="status"
-      style={{
-        padding: '0.6rem 0.85rem',
-        borderRadius: 8,
-        fontSize: '0.85rem',
-        margin: '0.75rem 0',
-        background: `var(--${tone}-soft)`,
-        color: 'var(--t1)',
-        borderLeft: `3px solid var(--${tone})`,
-      }}
-    >
-      {children}
     </div>
   )
 }

@@ -1,18 +1,33 @@
-import { describe, test, expect, vi, afterEach } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import AboutSettings, { formatBuild } from './AboutSettings'
+import { markOffline, resetOfflineStatus } from './offlineStatus'
+import { noteServerTime, resetServerClock } from './serverClock'
 
 // A server that has not answered yet, so the first rows read the context's last health check.
 const waiting = () => ({ health: () => new Promise(() => {}) })
-let connection = { connected: true, health: { version: '2.0.0' }, api: waiting() }
+const ORIGIN = 'http://server.test'
+const fresh = () => ({ connected: true, local: false, baseUrl: ORIGIN, health: { version: '2.0.0' }, api: waiting() })
+let connection = fresh()
 vi.mock('./ConnectionContext', () => ({ useConnection: () => connection }))
+
+beforeEach(() => {
+  localStorage.clear()
+  resetServerClock()
+  resetOfflineStatus()
+})
 
 afterEach(() => {
   cleanup()
-  connection = { connected: true, health: { version: '2.0.0' }, api: waiting() }
+  resetOfflineStatus()
+  connection = fresh()
 })
 
 const row = (label) => screen.getByText(label).nextElementSibling.textContent
+
+// A reading that says the server is `offsetMs` ahead of this device, with a 100 ms round trip.
+const T = Date.parse('2026-11-17T12:00:00.000Z')
+const note = (offsetMs) => noteServerTime(ORIGIN, new Date(T + offsetMs + 50).toISOString(), T, T + 100)
 
 describe('AboutSettings', () => {
   test('shows the dashboard build and the server version', () => {
@@ -75,6 +90,94 @@ describe('AboutSettings', () => {
     render(<AboutSettings />)
     expect(connection.api.health).not.toHaveBeenCalled()
     expect(row('Server')).toBe('Not connected')
+  })
+
+  describe('device clock', () => {
+    test('says when no reading has been taken', () => {
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe('Not measured yet')
+      expect(screen.queryByRole('status')).toBeNull()
+    })
+
+    test('says when the clocks match', () => {
+      note(300)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("Matches the server's clock")
+    })
+
+    test('says how far behind the device is', () => {
+      note(5000)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("5 seconds behind the server's clock")
+    })
+
+    test('says how far ahead the device is', () => {
+      note(-2 * 60 * 1000)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("2 minutes ahead of the server's clock")
+    })
+
+    test('a reading for another server is not used', () => {
+      noteServerTime('http://other.test', new Date(T + 5000).toISOString(), T, T + 100)
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe('Not measured yet')
+    })
+
+    test('shows nothing with no server at all', () => {
+      note(10 * 60 * 1000)
+      connection = { ...fresh(), local: true, connected: false }
+      render(<AboutSettings />)
+      expect(screen.queryByText('Device clock')).toBeNull()
+      expect(screen.queryByRole('status')).toBeNull()
+    })
+
+    test('says it is the last reading when the server is out of reach', () => {
+      note(5000)
+      markOffline()
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("5 seconds behind the server's clock, when last checked")
+    })
+
+    test('says so as well without a connection, but not for a missing reading', () => {
+      note(0)
+      connection = { ...fresh(), connected: false }
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe("Matches the server's clock, when last checked")
+      cleanup()
+      resetServerClock()
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe('Not measured yet')
+    })
+
+    test('a difference of ten minutes brings a notice, five seconds does not', () => {
+      note(5000)
+      render(<AboutSettings />)
+      expect(screen.queryByRole('status')).toBeNull()
+      cleanup()
+      resetServerClock()
+      note(10 * 60 * 1000)
+      render(<AboutSettings />)
+      expect(screen.getByRole('status').textContent).toBe(
+        "This device's clock is 10 minutes behind the server's. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right.",
+      )
+    })
+
+    test('the notice says ahead when the device is ahead', () => {
+      note(-10 * 60 * 1000)
+      render(<AboutSettings />)
+      expect(screen.getByRole('status').textContent).toMatch(/^This device's clock is 10 minutes ahead of the server's\./)
+    })
+
+    test('follows a reading taken after it was shown', () => {
+      render(<AboutSettings />)
+      expect(row('Device clock')).toBe('Not measured yet')
+      act(() => { note(10 * 60 * 1000) })
+      expect(row('Device clock')).toBe("10 minutes behind the server's clock")
+      expect(screen.getByRole('status')).toBeTruthy()
+      act(() => { resetServerClock() })
+      expect(row('Device clock')).toBe('Not measured yet')
+      expect(screen.queryByRole('status')).toBeNull()
+    })
   })
 
   test('a build without a commit or a version still reads', () => {
