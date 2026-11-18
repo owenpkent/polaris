@@ -15,8 +15,8 @@ has been a patch release: every heading in CHANGELOG.md ends in .0.
 
 ## 3. Merge order
 
-Seventeen pull requests are open and reviewed on their head commits: #186 to #201, and #203. Their
-titles and base branches were checked with `gh` on 2026-11-18 and match the plan. None of them
+Eighteen pull requests are open and reviewed on their head commits: #186 to #201, #203 and #204.
+Their titles and base branches were checked with `gh` on 2026-11-18 and match the plan. None of them
 touches `command-center/src/core/schema.ts`.
 
 Not part of this plan:
@@ -49,10 +49,12 @@ Not part of this plan:
   - e2e/support.js: #190, #199
   - package.json: #197, #201
   - mobile/package.json: #196, #201
-  - mobile/README.md: #201, #203
-  - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203
-    (three lines apart at the nearest)
-  - A trial merge of #203's branch with #200's, and with #201's, is clean.
+  - mobile/README.md: #201, #203, #204
+  - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203,
+    #204 (#200 and #203 are three lines apart at the nearest)
+  - docs/phone-keyboard-and-system-bars.md: #203, #204 (different sections)
+  - A trial merge of #203's branch with #200's, and with #201's, is clean. So is one of #204's
+    branch with each of #200's, #201's, #203's and #190's.
   - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
     src/command-center/api.js: #186, #195
 - Checked against the diffs on 2026-11-18: in each of these files the pull requests change places
@@ -77,22 +79,25 @@ Not part of this plan:
    same known test failure.
 9. Merge #203 (the box being typed in shows whole above the keyboard). It changes the same app
    test file as #200, in other places, so it goes straight after it.
-10. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
-11. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
+10. Merge #204 (on an old WebView the status bar's icons follow the phone). It changes the same
+    app test file and the same two documents as #203, in other places, so it goes straight after
+    it. If GitHub reports a conflict then, update its branch and post its review again.
+11. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
+12. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
     merge it. It adds a sweep test and a paragraph in CONTRIBUTING.md.
-12. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
+13. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
     before stack B, whose first full browser test run then happens on top of it. Both change
     `e2e/support.js`, in places far apart.
-13. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
+14. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
     conflicts with CLAUDE.md or command-center/README.md.
-14. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
+15. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
     merge. Watch the first browser run closely: it changes the test fixture for every UI test.
-15. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
+16. Update #201 (base `feat/settings-clock-line` moves to main), post the review again, wait for
     CI, then merge. It also changes `package.json` and `mobile/package.json`.
-16. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
+17. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
     with nothing. #194 is the proposal that #195 and #199 carry out; the plan merges them last,
     and they could go anywhere in the order.
-17. Wait for the Tests run on main to pass, all twelve browser test parts included
+18. Wait for the Tests run on main to pass, all twelve browser test parts included
     (`gh run list --workflow test.yml --branch main`). Then follow the release checklist in
     docs/releases.md.
 
@@ -137,12 +142,14 @@ diffs), so neither should make the other conflict.
    and adds an app test for the Subtask name box that failed in four runs of six without the
    change and passed eight of eight with it. All of that is from the emulator (WebView 133). Not
    covered: a real phone, a WebView of 140 or newer, and a phone browser.
-6. Found during the #190 check, on main too, and not fixed: in the dark theme on the emulator's
-   WebView 133, the status bar's clock and icons are white on a near-white strip and cannot be
-   read. Below WebView 140 Capacitor pads the window itself, and the strip behind the status bar
-   is the window's own background, not the page. A phone with a current WebView draws the page
-   there, so it should not be affected, but that was not looked at. In this plan's judgement it
-   does not hold the release. It has no pull request.
+6. Found during the #190 check, on main too: in the dark theme on the emulator's WebView 133,
+   the status bar's clock and icons were white on a near-white strip and could not be read. Below
+   WebView 140 Capacitor pads the window itself, and the strip behind the status bar is the
+   window's own background, which follows the phone's light or dark setting, not the dashboard's
+   theme. #204 makes the icons follow the phone's setting there, and adds an app test that reads
+   the screen: it failed without the change and passed with it in both themes with the phone set
+   to light and to dark. The strip itself keeps the phone's colour. From WebView 140 on nothing
+   changes. All of that is from the emulator. Not covered: a real phone.
 
 ## 4. Release notes
 
@@ -192,6 +199,10 @@ No migration.
 - On a phone, the box being typed in shows whole above the keyboard also when text arrives while
   the keyboard is still coming up, as it may from a hardware keyboard with the on-screen one
   showing as well. Before, the lower 13px of the box could stay under the keyboard.
+- In the Android app on a WebView older than 140, the status bar's clock and icons can be read
+  again when the dashboard's theme and the phone's light or dark setting differ. There the icons
+  now follow the phone's setting. Before, the dark theme on a phone set to light drew white icons
+  on a white strip. On a current WebView nothing changes.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
   refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
