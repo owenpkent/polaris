@@ -153,7 +153,7 @@ The headless emulator boots in about half a minute; `adb shell getprop sys.boot_
 
 ## Icons
 
-`assets/` holds the sources, copied from public/icons (`icon-only.png` for older launchers, `icon-foreground.png` for adaptive ones). The adaptive background is the colour in `android/app/src/main/res/values/ic_launcher_background.xml`, the dashboard's dark background. To regenerate after changing them:
+`assets/` holds the sources, copied from public/icons (`icon-only.png` for older launchers, `icon-foreground.png` for adaptive ones). The adaptive background is the colour in `android/app/src/main/res/values/ic_launcher_background.xml`, `#17191E`: the dashboard's dark background when the icon was made (the dark page is `#1e2128` now, and the icon kept its colour). To regenerate after changing them:
 
 ```sh
 npx @capacitor/assets generate --android --assetPath assets --iconBackgroundColor "#17191e" --iconBackgroundColorDark "#17191e"
