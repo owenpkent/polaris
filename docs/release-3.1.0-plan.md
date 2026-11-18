@@ -10,8 +10,8 @@ deletes this file. Written on 2026-11-18.
 
 Propose 3.1.0. The batch adds features (the Device clock row on Settings, the phone layout changes
 of My tasks), and this repository's own history bumps the minor number for features (2.7 through
-2.10). The number is the owner's call. 3.0.1 was the working name earlier, and it would be the
-choice if the batch is read as fixes only.
+2.10). The number is the owner's call. 3.0.1 was the working name earlier, but no release so far
+has been a patch release: every heading in CHANGELOG.md ends in .0.
 
 ## 3. Merge order
 
@@ -49,6 +49,11 @@ Not part of this plan:
   - e2e/support.js: #190, #199
   - package.json: #197, #201
   - mobile/package.json: #196, #201
+  - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
+    src/command-center/api.js: #186, #195
+- Checked against the diffs on 2026-11-18: in each of these files the pull requests change places
+  some lines apart, so most should merge cleanly. The exception is by design: #195 and #199 change
+  the same lines of CLAUDE.md and command-center/README.md, which is why they are a stack.
 
 ### Steps
 
@@ -69,8 +74,9 @@ Not part of this plan:
 9. Merge #191 (stack A parent: pattern matcher and nightly fuzz report).
 10. Update #193 if it conflicts (see the rules above), post the review again on the new head, then
     merge it. It adds a sweep test and a paragraph in CONTRIBUTING.md.
-11. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs and
-    `e2e/support.js`, so it goes before stack B, where #199 changes the same support file.
+11. Merge #190 (phone layout of My tasks and the 32px rule). It changes many e2e specs, so it goes
+    before stack B, whose first full browser test run then happens on top of it. Both change
+    `e2e/support.js`, in places far apart.
 12. Merge #195 (stack B parent: offline edits in order, server time). Update it first if it
     conflicts with CLAUDE.md or command-center/README.md.
 13. Update #199 (now on main), post the review again, wait for CI's browser tests on it, then
@@ -84,9 +90,9 @@ Not part of this plan:
     (`gh run list --workflow test.yml --branch main`). Then follow the release checklist in
     docs/releases.md.
 
-The suggested order follows the file overlaps, and no better one turned up. One option: merge
-#190 before stack A if CONTRIBUTING.md conflicts turn out to be easier that way. The two orders
-touch the same lines either way.
+The suggested order follows the file overlaps, and no better one turned up. #190 and stack A could
+go in either order: both change CONTRIBUTING.md, but in places far apart (checked against the
+diffs), so neither should make the other conflict.
 
 ### Before the release, still to check
 
@@ -105,7 +111,9 @@ touch the same lines either way.
    right on Android 15 and newer and wrong on Android 10 to 14. So on an Android 16 phone nothing
    should change. A look at the new task sheet with the keyboard open on the real phone is the
    check that is left.
-3. #199 and #201 have run only the fast CI job so far (stacked), and four UI specs locally.
+3. The three stacked pull requests, #193, #199 and #201, have run only CI's fast jobs so far: the
+   browser tests do not run until each is a pull request into main. For #199, four UI specs were
+   run locally at desktop; for #201, none.
 4. The last commit of #199 was not run on the emulator on its own, though #201's check ran on a
    build that contains it.
 5. Found during the #196 check, in both builds, so not from any pull request here: in a task's
@@ -133,9 +141,12 @@ No migration.
   group's date. Above 640px nothing changes size.
 - Edits and comments made offline are sent in the order you made them, even if the device's clock
   was set back while it was offline. Before, an earlier edit could be sent last and win, with no
-  conflict recorded. Each edit's time is now worked out in the server's time when the queue is
-  sent, so a device with a wrong clock no longer wins or loses a conflict it should not. If the
-  server's clock cannot be read, sending carries on as before.
+  conflict recorded. A device's clock is now measured against the server's when the queue is
+  sent, and each edit's time goes out in the server's time, so a conflict is decided by when you
+  made the edit and not by how far the device's clock is off. If the server's clock cannot be
+  read just then, the last reading is used if it is under an hour old, and otherwise sending
+  carries on as before. An edit made before the device's clock was changed while offline still
+  gets a time that is wrong by the size of the change.
 - Settings, About, has a new Device clock row. It says "Matches the server's clock", or how far
   behind or ahead this device is, and "Not measured yet" before the first reading. From a
   difference of 30 seconds a notice says the clock is not in step and that offline edits are still
@@ -150,16 +161,20 @@ No migration.
   span is counted from the due date in that case: Wednesday.
 - If you turned on Tailscale sign-in (`CC_TAILSCALE_LOGIN`), a request now counts as you only when
   it is addressed to a tailnet (ts.net) name. Before, a request from the same machine carrying
-  your login header was enough, whatever name it was addressed to. This closes the server's half
-  of a DNS rebinding attack. Only that half was tried, with a hand-written request, not a real
-  browser attack. Behind `tailscale serve` nothing changes, and the token path and MCP are as they
-  were.
+  your login header was enough, whatever name it was addressed to. So with sign-in by identity, a
+  request addressed by IP address, by a short name, or to localhost is no longer treated as you;
+  the token still works for those. This takes away what the server contributed to a DNS rebinding
+  attack. It was shown with a hand-written request to the server, not with a real attack through
+  a browser, and someone who controls the DNS answers your browser gets is still outside what the
+  server can check. Behind `tailscale serve` nothing changes, and the token path and MCP are as
+  they were.
 - Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
   RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
   refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
   as before.
 - Security and dependency updates: the hono and @hono/node-server fixes that cleared seven open
-  security alerts, Capacitor 8.6.2 in the Android app, and newer versions of Vite, Playwright,
+  security alerts, Capacitor 8.6.2 in the Android app (it carries fixes to how the keyboard and
+  the system bars are allowed for on newer WebViews), and newer versions of Vite, Playwright,
   jsdom and other tools and GitHub Actions.
 - For contributors: a bounded sweep of the pattern engine against RegExp runs with the tests; the
   nightly fuzz run now reports a finding instead of passing in silence, and counts an abort while
@@ -176,7 +191,7 @@ No migration.
 Release 3.1.0
 
 On a phone, My tasks shows more tasks: a tighter toolbar and group gaps, date chips as wide as their words, and a group's Add task is a + in its header. The written minimum click target is now 32px.
-Offline edits are sent in the order you made them, with times in the server's time, even when the device clock is wrong. Settings, About, has a new Device clock row.
+Offline edits are sent in the order you made them, and their times are corrected to the server's clock when they are sent. Settings, About, has a new Device clock row that shows how far the device's clock is off.
 Undo on a repeating task drops the copy that completing it made. A repeat counted from the finish always lands later than the task completed.
 With Tailscale sign-in on, a request counts as you only when it is addressed to a tailnet name.
 Rules: the pattern matcher follows RegExp after a class escape, and an octal escape such as \00 is refused when a rule is saved.
