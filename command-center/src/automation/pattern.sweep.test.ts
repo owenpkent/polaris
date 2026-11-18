@@ -4,13 +4,14 @@
 // same answer on every input (the promise at the top of pattern.ts).
 //
 // The nightly fuzz target (fuzz/targets/pattern.fuzz.ts) makes the same comparison on random
-// inputs, and took nights to reach `[\s--z]` and `\00`. A sweep reaches every short pattern of its
-// alphabet in about two seconds, on every push. The idea is RE2's exhaustive tester
-// (re2/testing/exhaustive_tester.cc).
+// inputs, and found `[\s--z]` and `\00` on the nights chance led it there. A sweep reaches every
+// short pattern of its alphabet in about three seconds, on every push. The idea is RE2's
+// exhaustive tester (re2/testing/exhaustive_tester.cc).
 //
 // The sweep is deterministic, so it tells nothing new from one night to the next: it is for the
 // day pattern.ts changes. The bounds here keep the normal suite fast. After a change to
-// pattern.ts, run the deeper one once (longer patterns, every token, more inputs; minutes):
+// pattern.ts, run the deeper one once (longer patterns, every token, more inputs; about eight
+// minutes on one core):
 //   CC_PATTERN_SWEEP=deep node --test src/automation/pattern.sweep.test.ts
 //
 // THE RULE when a sweep fails: fix pattern.ts (make it agree, or refuse the syntax with a
@@ -46,14 +47,24 @@ function* each(source: Iterable<string>, wrap: (s: string) => string[]): Generat
 interface Tally { patterns: number; refused: number; oursOnly: number; compared: number }
 
 /**
+ * The one known kind of pattern the engine accepts and RegExp refuses: a group name used twice
+ * where RegExp does not allow it ("Duplicate capture group name", as in `(?<n>)(?<n>)`). The
+ * engine does not keep names, so it reads the groups as unnamed ones. The promise at the top of
+ * pattern.ts covers only what both accept, so this breaks nothing; it is written down here so
+ * that any other pattern of the kind is noticed. Found by the deep sweep on 2026-11-17.
+ */
+const namesAGroupTwice = (pattern: string): boolean => pattern.split('(?<n>').length > 2;
+
+/**
  * Compares the engine with RegExp on every pattern, against `inputs` and whatever `more` adds for
- * that pattern. A pattern the engine refuses is not compared, and neither is one RegExp refuses
- * (the promise covers what both accept). An error from the engine that is not a PatternError
- * fails the test.
+ * that pattern. A pattern the engine refuses is not compared. A pattern the engine accepts and
+ * RegExp refuses fails the sweep unless it is the known kind above: it is a difference nobody has
+ * looked at. An error from the engine that is not a PatternError fails the test.
  */
 function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly string[], more?: (pattern: string) => string[]): Tally {
   const tally: Tally = { patterns: 0, refused: 0, oursOnly: 0, compared: 0 };
   const shown: string[] = [];
+  const strays: string[] = [];
   let disagreements = 0;
   for (const source of patterns) {
     tally.patterns++;
@@ -68,8 +79,9 @@ function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly stri
     let theirs: RegExp;
     try {
       theirs = new RegExp(source);
-    } catch {
+    } catch (err) {
       tally.oursOnly++;
+      if (!namesAGroupTwice(source) && strays.length < 25) strays.push(`${JSON.stringify(source)}: ${String(err)}`);
       continue;
     }
     let reported = false;
@@ -85,6 +97,7 @@ function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly stri
   }
   t.diagnostic(`${tally.patterns} patterns: ${tally.refused} refused, ${tally.oursOnly} accepted here and refused by RegExp, ${tally.compared} comparisons`);
   assert.equal(disagreements, 0, `${disagreements} disagreements with RegExp, the first of them:\n${shown.join('\n')}`);
+  assert.deepEqual(strays, [], 'accepted here and refused by RegExp, and not a known difference');
   return tally;
 }
 
@@ -92,7 +105,8 @@ function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly stri
 const FLOOR = 50_000;
 
 test('sweep: groups, alternation, quantifiers, and anchors', (t) => {
-  const all = ['a', 'b', '.', '(', '(?:', ')', '|', '*', '+', '?', '^', '$'];
+  // A lazy quantifier needs no token of its own: "*" then "?" writes one.
+  const all = ['a', 'b', '.', '(', '(?:', '(?<n>', ')', '|', '*', '+', '?', '^', '$'];
   const core = ['a', 'b', '(', ')', '|', '*', '?', '^', '$'];
   const inputs = [...sequences(['a', 'b', '\n'], 3)];
   // Normally every token to three, and the core of them to five, which is where a quantified
@@ -116,9 +130,9 @@ test('sweep: character classes', (t) => {
   // bracket, and in the deep sweep a backspace, an open bracket, and an early close.
   const members = pick(
     ['a', 'z', '-', '^', '0', '\\d', '\\W', '\\s', '\\0', '\\-', '\\]', '5'],
-    ['a', 'm', 'z', '-', '^', '0', '\\d', '\\W', '\\s', '\\0', '\\-', '\\]', '5', '\\b', '[', ']'],
+    ['a', 'm', 'z', '-', '^', '0', '\\d', '\\W', '\\s', '\\0', '\\-', '\\]', '5', '\\b', '[', ']', '\\D', '\\S', '\\w'],
   );
-  const inputs = ['', 'a', 'b', 'm', 'z', '-', '^', '0', '5', ' ', '\0', '_', 'A', '\\', ']', '[', '\b', 'd', 'W', 's', '\n', ',', '~',
+  const inputs = ['', 'a', 'b', 'm', 'z', '-', '^', '0', '5', ' ', '\0', '_', 'A', '\\', ']', '[', '\b', 'd', 'W', 's', '\n', ',', '~', '\t', ' ',
     // After a "]" member the rest of the pattern is literal text: two-character inputs reach it.
     ...pick([], ['a]', 'az', '-]', 'a-', '0]', ']]'])];
   const wrap = pick(
@@ -127,6 +141,25 @@ test('sweep: character classes', (t) => {
   );
   // Four members is the least that holds `\s--z` and `\s-a-z`, the shapes of the 2026-11 finding.
   assert.ok(sweep(t, each(sequences(members, pick(4, 5)), wrap), inputs).compared > FLOOR);
+});
+
+test('sweep: the character tables, over every code unit', (t) => {
+  // What `\d \w \s`, their negations, `.`, and a word boundary say about each of the 65536 code
+  // units: the engine keeps its own tables for these (the Unicode spaces and line ends among
+  // them), and one wrong entry is one wrong answer here. The other sweeps test how a pattern is
+  // read, on a handful of characters; this one tests the tables, on all of them.
+  const units = Array.from({ length: 0x10000 }, (_, code) => String.fromCharCode(code));
+  const sets = ['\\d', '\\D', '\\w', '\\W', '\\s', '\\S'];
+  const patterns = [
+    ...sets.flatMap((set) => [`^${set}$`, `^[${set}]$`, `^[^${set}]$`, `^[a${set}-]$`]),
+    '^.$', '^[^]$', '^[^a]$', '^[\\0-\\uffff]$', '^[ -~]$',
+  ];
+  const single = sweep(t, patterns, units);
+  // A boundary reads the unit on each side of it: every unit after a letter, and before one.
+  const pairs = sweep(t, ['^a\\b[^]$', '^a\\B[^]$'], units.map((unit) => `a${unit}`)).compared
+    + sweep(t, ['^[^]\\ba$', '^[^]\\Ba$', '\\b', '\\B', '^\\b', '\\b$'], units.map((unit) => `${unit}a`)).compared;
+  assert.equal(single.refused + single.oursOnly, 0, 'every pattern of this sweep is one both engines accept');
+  assert.equal(single.compared + pairs, (patterns.length + 8) * 0x10000);
 });
 
 test('sweep: escapes', (t) => {
