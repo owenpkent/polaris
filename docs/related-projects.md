@@ -16,7 +16,7 @@ The eight most useful things found, best first.
 
 | # | Idea | From | Polaris today |
 |---|---|---|---|
-| 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 were found by the nightly random fuzzing; a bounded sweep finds both in about a second on every push |
+| 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 were found by the nightly random fuzzing; a bounded sweep finds both in about a second, and could run on every push |
 | 2 | A hybrid logical clock for "newer edit wins" | Actual Budget | Gap. The outbox merge orders edits by the device's own clock, clamped to now, so a phone whose clock runs behind loses to an older edit |
 | 3 | Written failure cases of merging per field | Super Productivity | Have it. Their two design notes are a checklist to read our merge against |
 | 4 | Check the Tailscale identity with a lookup, not the header alone | golink | Gap. Polaris checks loopback peer, the header, and the origin of a write, and does no lookup |
