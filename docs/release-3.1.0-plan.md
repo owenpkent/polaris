@@ -15,8 +15,8 @@ has been a patch release: every heading in CHANGELOG.md ends in .0.
 
 ## 3. Merge order
 
-Nineteen pull requests are open and reviewed on their head commits: #186 to #201, and #203 to
-#205. Their titles and base branches were checked with `gh` on 2026-11-18 and match the plan.
+Twenty pull requests are open and reviewed on their head commits: #186 to #201, and #203 to
+#206. Their titles and base branches were checked with `gh` on 2026-11-18 and match the plan.
 None of them touches `command-center/src/core/schema.ts`.
 
 Not part of this plan:
@@ -43,13 +43,13 @@ Not part of this plan:
   changes the test fixture for every UI test.
 - Files that more than one pull request touches, so a later one may need its branch updated after
   an earlier one merges (and then a fresh review on the new head):
-  - CLAUDE.md: #189, #190, #195, #199, #201
+  - CLAUDE.md: #189, #190, #195, #199, #201, #206
   - CONTRIBUTING.md: #190, #191, #193, #201
-  - command-center/README.md: #186, #187, #191, #195, #199
+  - command-center/README.md: #186, #187, #191, #195, #199, #206
   - e2e/support.js: #190, #199
   - package.json: #197, #201
   - mobile/package.json: #196, #201
-  - mobile/README.md: #201, #203, #204, #205
+  - mobile/README.md: #201, #203, #204, #205, #206
   - mobile/android/app/src/androidTest/java/com/okstudio/polaris/AppEndToEndTest.java: #200, #203,
     #204, #205 (#200 and #203 are three lines apart at the nearest)
   - docs/phone-keyboard-and-system-bars.md: #203, #204, #205 (#203 in another section)
@@ -59,6 +59,8 @@ Not part of this plan:
     branch with each of #200's, #201's, #203's and #190's.
   - command-center/src/http/rest.ts, its test, command-center/src/http/README.md, and
     src/command-center/api.js: #186, #195
+  - command-center/src/http/README.md also: #206. SECURITY.md, docs/update-proposal.md and
+    docs/releases.md are changed by #206 alone.
 - Checked against the diffs on 2026-11-18: in each of these files the pull requests change places
   some lines apart, so most should merge cleanly. The exception is by design: #195 and #199 change
   the same lines of CLAUDE.md and command-center/README.md, which is why they are a stack.
@@ -103,7 +105,14 @@ Not part of this plan:
 18. Merge #192 (reading list) and #194 (offline clock proposal). They are documents and conflict
     with nothing. #194 is the proposal that #195 and #199 carry out; the plan merges them last,
     and they could go anywhere in the order.
-19. Wait for the Tests run on main to pass, all twelve browser test parts included
+19. Merge #206 (the documentation sweep after 3.0.0) last. It changes seven documents, and a
+    trial merge with each pull request that touches a document is clean. It left three known
+    corrections out because another pull request rewrites the same line or the one beside it:
+    the import job in README.md (#191), the `limit` of `GET /api/events` in the HTTP README
+    (#195), and the list of what `AppEndToEndTest` checks in mobile/README.md (#203). Its
+    description names them. Once those three are merged, add the corrections to #206's branch,
+    post its review again, and merge it.
+20. Wait for the Tests run on main to pass, all twelve browser test parts included
     (`gh run list --workflow test.yml --branch main`). Then follow the release checklist in
     docs/releases.md.
 
@@ -227,6 +236,10 @@ No migration.
   security alerts, Capacitor 8.6.2 in the Android app (it carries fixes to how the keyboard and
   the system bars are allowed for on newer WebViews), and newer versions of Vite, Playwright,
   jsdom and other tools and GitHub Actions.
+- Documents: a sweep against the code corrected SECURITY.md and the update proposal (a release
+  tag may be signed with the EV certificate as well as an SSH key), the HTTP README (who may
+  write over Tailscale identity, two more filters of `GET /api/tasks`, `archived` on a new
+  project), and smaller statements in four other documents.
 - For contributors: a bounded sweep of the pattern engine against RegExp runs with the tests; the
   nightly fuzz run now reports a finding instead of passing in silence, and counts an abort while
   node exits as a pass only after the fuzzer finished cleanly; an Android test that failed on an
