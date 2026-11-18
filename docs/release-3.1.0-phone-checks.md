@@ -6,9 +6,9 @@ deletes this file together with the plan (docs/release-3.1.0-plan.md).
 
 ## When
 
-The easy way is after the release: the app offers "Update ready", one tap installs it, and the
-server updates itself. Nothing to build and no cable. If a check fails then, the fix goes out as
-the next release.
+The easy way is after the release: the app offers "Update ready", Install and then Android's own
+question install it, and the server updates itself. Nothing to build and no cable. If a check
+fails then, the fix goes out as the next release.
 
 To check before the release is signed instead, the phone has to be on a USB cable and the eToken
 plugged in, and on main after the merges this builds, signs and installs the app:
@@ -21,9 +21,10 @@ Checks 7 and 8 need the server on the new code as well, so they wait for the rel
 
 ## Before you start
 
-Open Settings, About. The Dashboard row should name 3.1.0 (for checks 7 and 8 the Server row
-too). If it still names 3.0.0, the update has not been installed yet: Settings, App update,
-Check now.
+Open Settings, About. After the release the Dashboard row should name 3.1.0 (for checks 7 and 8
+the Server row too). If it still names 3.0.0 then, the update has not been installed yet:
+Settings, App update, Check now. A build made from main before the release names 3.0.0, which is
+right: the version is only bumped by the release.
 
 ## The checks
 
@@ -31,9 +32,10 @@ For each one: do the step, compare with what is expected. If one is not as descr
 is enough to report it, and a screenshot helps.
 
 1. **My tasks, the list** (#190). Open My tasks and look at the page.
-   Expected: Filter, Sort and Group are on one row. Each group has a thin header. Today and
-   Tomorrow have a + at the right end of their header, and no "Add task" row under the group. The
-   dates' right edges line up, and nothing is cut off at either side of the screen.
+   Expected: Filter, Sort and Group are on one row. Each group has a thin header. Today,
+   Tomorrow and No due date have a + at the right end of their header while they are open, and no
+   "Add task" row under the group. The other groups have no +. The dates' right edges line up, and
+   nothing is cut off at either side of the screen.
 
 2. **A group's +** (#190). Tap the + in Today's header.
    Expected: a name box opens at the end of Today, the keyboard comes up, and the whole box shows
@@ -55,12 +57,13 @@ is enough to report it, and a screenshot helps.
    one as it was.
 
 6. **Undo on a repeating task** (#186). Complete a task that repeats. To make one: add a task due
-   today and set Repeat to Daily.
+   today, open its due date, and set Repeats to Daily.
    Expected: the toast says "Completed" with the task's name and when the next one is due. Tap
    Undo: the task is open again, and there is one of it in the list, not two.
 
 7. **The device clock** (#199). Open Settings, About.
-   Expected: a Device clock row that says "Matches the server's clock".
+   Expected: a Device clock row that says "Matches the server's clock". If it says "Not measured
+   yet", leave Settings and open it again after a few seconds.
 
 8. **Edits made offline** (#195). Turn on airplane mode. Rename one task, then complete another.
    Turn airplane mode off.
