@@ -17,7 +17,7 @@ The eight most useful things found, best first.
 | # | Idea | From | Polaris today |
 |---|---|---|---|
 | 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 were found by the nightly random fuzzing; a bounded sweep finds both in about a second, and could run on every push |
-| 2 | A hybrid logical clock for "newer edit wins" | Actual Budget | Gap. The outbox merge orders edits by the device's own clock, clamped to now, so a phone whose clock runs behind loses to an older edit |
+| 2 | Stamp offline edits in the server's time | Actual Budget, by contrast | Gap. The outbox merge orders edits by the device's own clock, clamped to now, so a phone whose clock runs behind loses to an older edit. Actual's hybrid logical clock looked like the remedy and is not: it never corrects the difference between two clocks. See docs/offline-clock-proposal.md (#194) |
 | 3 | Written failure cases of merging per field | Super Productivity | Have it. Their two design notes are a checklist to read our merge against |
 | 4 | Check the Tailscale identity with a lookup, not the header alone | golink | Gap. Polaris checks loopback peer, the header, and the origin of a write, and does no lookup |
 | 5 | Model-based tests: a plain object as the model, the real Store beside it | fast-check | Gap. No test uses `fc.commands` yet; the outbox merge is the natural first target |
@@ -37,7 +37,7 @@ The eight most useful things found, best first.
 
 - [timestamp.ts](https://github.com/actualbudget/actual/blob/master/packages/crdt/src/crdt/timestamp.ts): the clock itself, with a node id and a limit on drift.
 - [The sync folder](https://github.com/actualbudget/actual/tree/master/packages/loot-core/src/server/sync): applying, deduplicating, and holding messages.
-- Polaris: **Gap**, item 2 of the shortlist.
+- Polaris: **Gap**, item 2 of the shortlist, but this clock is not the fix. It keeps one device's stamps in order and refuses to sync when two clocks are more than five minutes apart; it does not correct a clock that is wrong. docs/offline-clock-proposal.md (#194) works this through and proposes that a device learn the server's time.
 
 **[TaskChampion](https://github.com/GothenburgBitFactory/taskchampion)** (MIT). The sync core of Taskwarrior.
 
