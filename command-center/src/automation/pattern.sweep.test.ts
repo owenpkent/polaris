@@ -52,14 +52,21 @@ interface Tally { patterns: number; refused: number; oursOnly: number; compared:
  * engine does not keep names, so it reads the groups as unnamed ones. The promise at the top of
  * pattern.ts covers only what both accept, so this breaks nothing; it is written down here so
  * that any other pattern of the kind is noticed. Found by the deep sweep on 2026-11-17.
+ *
+ * Such a pattern is not excused, it is compared: with each group given a name of its own it is
+ * the same pattern to a matcher, and RegExp must accept that and agree with the engine on it.
  */
-const namesAGroupTwice = (pattern: string): boolean => pattern.split('(?<n>').length > 2;
+const withNamesOfTheirOwn = (pattern: string): string => {
+  let n = 0;
+  return pattern.replaceAll('(?<n>', () => `(?<n${n++}>`);
+};
 
 /**
  * Compares the engine with RegExp on every pattern, against `inputs` and whatever `more` adds for
  * that pattern. A pattern the engine refuses is not compared. A pattern the engine accepts and
- * RegExp refuses fails the sweep unless it is the known kind above: it is a difference nobody has
- * looked at. An error from the engine that is not a PatternError fails the test.
+ * RegExp refuses fails the sweep, as a difference nobody has looked at, unless it is the known
+ * kind above, which is compared as said there. An error from the engine that is not a
+ * PatternError fails the test.
  */
 function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly string[], more?: (pattern: string) => string[]): Tally {
   const tally: Tally = { patterns: 0, refused: 0, oursOnly: 0, compared: 0 };
@@ -81,8 +88,12 @@ function sweep(t: TestContext, patterns: Iterable<string>, inputs: readonly stri
       theirs = new RegExp(source);
     } catch (err) {
       tally.oursOnly++;
-      if (!namesAGroupTwice(source) && strays.length < 25) strays.push(`${JSON.stringify(source)}: ${String(err)}`);
-      continue;
+      try {
+        theirs = new RegExp(withNamesOfTheirOwn(source));
+      } catch {
+        if (strays.length < 25) strays.push(`${JSON.stringify(source)}: ${String(err)}`);
+        continue;
+      }
     }
     let reported = false;
     for (const input of more ? [...inputs, ...more(source)] : inputs) {
