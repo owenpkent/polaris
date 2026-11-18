@@ -239,6 +239,37 @@ describe('watchKeyboard', () => {
     expect(input.scrollIntoView).not.toHaveBeenCalled()
   })
 
+  test('nor when it went away part of the way through the wait', () => {
+    stop = watchKeyboard()
+    const input = placedField({ top: 286 })
+    input.focus()
+    resizeViewport(317)
+    vi.advanceTimersByTime(SETTLE_MS - 50)
+    // The page is its full height again, and the box is now below what was the keyboard's edge.
+    input.getBoundingClientRect = () => rectAt(900, 44)
+    resizeViewport(860)
+    vi.advanceTimersByTime(SETTLE_MS * 3)
+    expect(isOpen()).toBe(false)
+    expect(input.scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  test('focus that has moved to another field by then: that field is the one shown whole', () => {
+    stop = watchKeyboard()
+    document.body.innerHTML = '<input id="a"><input id="b">'
+    const a = document.getElementById('a')
+    const b = document.getElementById('b')
+    a.getBoundingClientRect = () => rectAt(200, 44)
+    b.getBoundingClientRect = () => rectAt(286, 44)
+    a.scrollIntoView = vi.fn()
+    b.scrollIntoView = vi.fn()
+    a.focus()
+    resizeViewport(317)
+    b.focus()
+    vi.advanceTimersByTime(SETTLE_MS)
+    expect(a.scrollIntoView).not.toHaveBeenCalled()
+    expect(b.scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
   test('nor when focus has left the field for a button by then', () => {
     stop = watchKeyboard()
     document.body.innerHTML = '<input><button>Done</button>'

@@ -271,8 +271,7 @@ public class AppEndToEndTest {
         tapElement(row);
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
         waitForKeyboard(true);
-        WebAppDriver.sleep(SETTLED_MS);
-        assertBoxAboveKeyboard(BOX, "once the keyboard is up");
+        assertBoxSettlesAboveKeyboard(BOX, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("step" + i);
@@ -319,9 +318,8 @@ public class AppEndToEndTest {
         InstrumentationRegistry.getInstrumentation().sendStringSync("abcdefghij");
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
         waitForKeyboard(true);
-        WebAppDriver.sleep(SETTLED_MS);
+        assertBoxSettlesAboveKeyboard(BOX, "after text that arrived while the keyboard came up");
         android.util.Log.i("KeyboardTest", "early keys: the box holds " + app.eval(BOX + ".value"));
-        assertBoxAboveKeyboard(BOX, "after text that arrived while the keyboard came up");
     }
 
     // The subtasks shown under a task in My tasks end with an Add subtask row. On a phone a real
@@ -361,8 +359,7 @@ public class AppEndToEndTest {
             + WebAppDriver.quote("New subtask of " + title) + ")";
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
-        WebAppDriver.sleep(SETTLED_MS);
-        assertBoxAboveKeyboard(box, "once the keyboard is up");
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("liststep" + i);
@@ -434,8 +431,7 @@ public class AppEndToEndTest {
         String box = "Array.from(document.querySelectorAll('input')).find(e=>e.getAttribute('aria-label')==='New task name')";
         app.waitFor("the new task box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
-        WebAppDriver.sleep(SETTLED_MS);
-        assertBoxAboveKeyboard(box, "once the keyboard is up");
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 3; i++) {
             String name = "added" + i + "x" + stamp;
@@ -574,8 +570,8 @@ public class AppEndToEndTest {
             + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()"));
     }
 
-    // Long enough after the keyboard is up for the page to have come to rest: the WebView's own
-    // scroll, and the look src/keyboard.js takes SETTLE_MS (300) after the last change of height.
+    // Long enough after the page has seen the keyboard for it to have come to rest: the WebView's
+    // own scroll, and the look src/keyboard.js takes SETTLE_MS (300) after the last change of height.
     private static final long SETTLED_MS = 1200;
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
@@ -663,6 +659,18 @@ public class AppEndToEndTest {
             WebAppDriver.sleep(250);
         }
         throw new AssertionError("The soft keyboard never " + (expected ? "appeared" : "went away") + " after a real tap on the subtask box.");
+    }
+
+    // The window's IME inset can show before the page has been made shorter, and a slow emulator
+    // can take its time over the scroll that follows. So this waits for the page itself to have
+    // seen the keyboard (src/keyboard.js marks <html>), gives it SETTLED_MS, and then waits for
+    // the box to lie whole in what is visible before measuring it against the keyboard.
+    private void assertBoxSettlesAboveKeyboard(String box, String when) {
+        app.waitFor("the page to see the keyboard", "document.documentElement.dataset.keyboard==='open'", 10000);
+        WebAppDriver.sleep(SETTLED_MS);
+        app.waitFor("the box to show whole in what is visible, " + when, "(()=>{const r=" + box + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "return r.top>=vv.offsetTop-1&&r.bottom<=vv.offsetTop+vv.height+1})()", 5000);
+        assertBoxAboveKeyboard(box, when);
     }
 
     private void assertBoxAboveKeyboard(String box, String when) {

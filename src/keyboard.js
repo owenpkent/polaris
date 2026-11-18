@@ -98,7 +98,7 @@ export function watchKeyboard(win = window) {
     win.clearTimeout(settleTimer)
     settleTimer = win.setTimeout(() => {
       settleTimer = null
-      if (root.dataset.keyboard === 'open') showFocusedBox(win)
+      if (keyboardLooksOpen(baseline, win)) showFocusedBox(win)
     }, SETTLE_MS)
   }
 
