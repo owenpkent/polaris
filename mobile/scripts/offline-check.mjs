@@ -71,12 +71,13 @@ if (!serial.startsWith('emulator-')) {
   process.exit(1)
 }
 
-// Playwright attaches to every device adb lists, so no phone may be attached at all, not only unused.
+// Playwright attaches to every device adb lists, so no phone may be attached at all, not only
+// unused, and in whatever state adb shows it (ready, unauthorized, offline).
 const phones = (spawnSync(adbPath, ['devices'], { encoding: 'utf8' }).stdout || '')
   .split('\n')
   .slice(1)
   .map((line) => line.trim().split(/\s+/))
-  .filter(([name, state]) => name && state === 'device' && !name.startsWith('emulator-'))
+  .filter(([name, state]) => name && state && !name.startsWith('emulator-'))
   .map(([name]) => name)
 if (phones.length) {
   console.error(`A physical device is attached to adb (${phones.join(', ')}). Unplug it, or disconnect it from adb, and run again.`)
