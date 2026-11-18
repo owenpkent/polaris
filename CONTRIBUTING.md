@@ -67,6 +67,7 @@ npm run test:all         # both
 npm test                 # dashboard unit tests only (Vitest + jsdom)
 (cd mobile && npm run apk)  # builds the Android app; needs a JDK and the Android SDK, see mobile/README.md
 npm run test:android     # the Android app's instrumented tests on a running emulator (mobile/README.md, Testing)
+npm run test:android:offline  # the offline queue and device clock checks in the real app, on a rooted emulator; not in CI (mobile/README.md, Testing)
 cd command-center && npm test && npm run typecheck
 ```
 

@@ -128,6 +128,22 @@ npm run test:android -- -Pandroid.testInstrumentationRunnerArguments.class=com.o
 
 CI runs the same command on an emulator for pull requests that touch `mobile/`, `src/`, `public/`, or the root `package.json` or lockfile (.github/workflows/android.yml). To start an emulator locally: `emulator -avd <name>`, and wait for it to boot.
 
+### Offline queue check
+
+`scripts/offline-check.mjs` (`npm run test:android:offline`) checks the offline queue and the clock handling in the real app, which the instrumented tests cannot do because they cannot change the device clock. It installs the debug APK, clears the app's data, connects the app to a scratch daemon, and drives the app's WebView with Playwright. It proves that two offline edits are sent in the order they were made even when the clock is set back between them, that a later offline edit from a device ten minutes behind wins over an earlier live edit (the loser is kept as `task.sync_conflict`), and that the About card shows the Device clock row and its notice.
+
+It needs a running emulator on a Google APIs image (a Google Play image does not allow `adb root`; a physical phone is refused), the same toolchain as the instrumented tests, and `npm install` at the repo root, since Playwright comes from there.
+
+```sh
+npm run test:android:offline                      # builds, then runs the checks
+npm run test:android:offline -- --skip-build      # reuse dist/ from the last npm run build
+npm run test:android:offline -- --shots <folder>  # also write a screenshot of the About card
+```
+
+It prints one PASS or FAIL line per check and exits 0 only if all passed. For a moment it sets the emulator's clock back ten minutes and turns the automatic time setting off. Both are put back when the run ends, also after a failure or Ctrl+C: the setting to the value it had, the clock to this machine's time. It is not part of CI.
+
+`scripts/device-test.mjs` holds what this and `scripts/test.mjs` share: picking the device, a free port, and the scratch daemon.
+
 ### Without Android Studio
 
 The command-line tools are enough to build and test, on Linux as on Windows. Download `commandlinetools-<os>-<build>_latest.zip` from the "Command line tools only" section of https://developer.android.com/studio, check its SHA-256 against the page, and unzip it so that `sdkmanager` sits at `<sdk>/cmdline-tools/latest/bin/`. Then install what CI uses and make the same emulator:

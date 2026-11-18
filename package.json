@@ -19,6 +19,7 @@
     "test:ui": "node scripts/test-ui.mjs",
     "test:all": "npm run test:fast && npm run test:ui",
     "test:android": "npm --prefix mobile run test:device --",
+    "test:android:offline": "npm --prefix mobile run test:offline --",
     "shots": "node scripts/shots.mjs",
     "release:apk": "npm --prefix mobile run release --"
   },
