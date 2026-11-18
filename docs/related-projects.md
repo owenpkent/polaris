@@ -16,14 +16,14 @@ The eight most useful things found, best first.
 
 | # | Idea | From | Polaris today |
 |---|---|---|---|
-| 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 took nights of random fuzzing to surface; a bounded sweep finds that kind in seconds |
+| 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 were found by the nightly random fuzzing; a bounded sweep finds both in about a second on every push |
 | 2 | A hybrid logical clock for "newer edit wins" | Actual Budget | Gap. The outbox merge orders edits by the device's own clock, clamped to now, so a phone whose clock runs behind loses to an older edit |
 | 3 | Written failure cases of merging per field | Super Productivity | Have it. Their two design notes are a checklist to read our merge against |
 | 4 | Check the Tailscale identity with a lookup, not the header alone | golink | Gap. Polaris checks loopback peer, the header, and the origin of a write, and does no lookup |
 | 5 | Model-based tests: a plain object as the model, the real Store beside it | fast-check | Gap. No test uses `fc.commands` yet; the outbox merge is the natural first target |
 | 6 | A dated freshness record, so a blocked release check is noticed | TUF | Owner's call. A signed tag proves who signed, not that it is the newest |
 | 7 | Show third-party text by who wrote it, and call the filter "not a boundary" | GitHub MCP server | Owner's call. Polaris flags all third-party text alike |
-| 8 | Skip fuzz crashes already reported, and prune the corpus on a schedule | ClusterFuzzLite | Gap. The corpus is cached between nights; nothing prunes it or recognises a known crash |
+| 8 | Skip fuzz crashes already reported, and prune the corpus on a schedule | ClusterFuzzLite | Gap in part. The corpus is cached between nights and pruned only by hand (`npm run fuzz:merge`). A repeat crash adds a comment to the open issue instead of a second issue, but the run still fails on it every night |
 
 ## Task trackers and offline sync
 
@@ -147,7 +147,7 @@ Checked and left out: PocketBase (a comparison point only). Not verified: Home A
 **[Pragmatic drag and drop](https://github.com/atlassian/pragmatic-drag-and-drop)** (Apache-2.0, licence not confirmed). Its [accessibility guideline](https://atlassian.design/components/pragmatic-drag-and-drop/accessibility-guidelines/) was read as a summary only.
 
 - Every item gets a button that opens a menu of moves, and each label names the item ("Move task 'clean dishes' to top of backlog").
-- Polaris: **Have it** (ReorderHandle.jsx and the task menu). Worth comparing our labels with theirs.
+- Polaris: **Have it** (ReorderHandle.jsx and the task menu). One difference: our menu items read "Move up" and "Move to top" and do not name the task, where theirs do.
 
 **[React Aria](https://github.com/adobe/react-spectrum)** (Apache-2.0). [Drag and drop](https://react-aria.adobe.com/dnd).
 
@@ -174,7 +174,7 @@ Checked and left out: PocketBase (a comparison point only). Not verified: Home A
 **[ClusterFuzzLite](https://google.github.io/clusterfuzzlite/running-clusterfuzzlite/github-actions/)** (Apache-2.0, quiet since February 2026). It does not run Jazzer.js, so it is a design reference only.
 
 - Separate jobs for nightly fuzzing, pruning the corpus, and coverage; a known crash is not reported twice.
-- Polaris: **Gap**, item 8 of the shortlist.
+- Polaris: **Gap** in part, item 8 of the shortlist.
 
 **[Playwright snapshots](https://playwright.dev/docs/test-snapshots)**.
 
