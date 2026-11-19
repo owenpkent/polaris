@@ -14,7 +14,7 @@ function hexToRgb(hex) {
 }
 
 test.describe('theme', { tag: ['@a11y', '@theme'] }, () => {
-  test('the top bar offers System, Light, and Dark at 44px', async ({ page }) => {
+  test('the top bar offers System, Light, and Dark as big enough targets', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Theme' }).click()
 
@@ -24,7 +24,7 @@ test.describe('theme', { tag: ['@a11y', '@theme'] }, () => {
       const item = menu.getByRole('menuitemradio', { name })
       await expect(item).toBeVisible()
       const box = await item.boundingBox()
-      expect(box.height, `${name} is a 44px target`).toBeGreaterThanOrEqual(MIN_TARGET)
+      expect(box.height, `${name} is a big enough target`).toBeGreaterThanOrEqual(MIN_TARGET)
     }
     await expect(menu.getByRole('menuitemradio', { name: 'System' })).toHaveAttribute(
       'aria-checked',

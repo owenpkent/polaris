@@ -191,7 +191,7 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone }) {
 // `handle` adds a 44px column before the checkbox for the row's reorder handle (the manual
 // sort, ReorderHandle.jsx), on every tier, so the handle is a full target on a phone too. The
 // phone's due column gives up 8px to it, so the Name header (its label and 44px menu) still
-// fits at 320px, where the list is 288px wide.
+// fits at 320px, where the list is 304px wide.
 //
 // On the phone a task row is one line where it can be: the name, then the date as wide as its
 // own chip, then the button that opens the panel (TaskRow.jsx), so the template is the lead

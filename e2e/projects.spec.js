@@ -115,7 +115,7 @@ test.describe('Projects', { tag: ['@flow'] }, () => {
     await expect(row(page, title)).toHaveCount(0)
   })
 
-  test('every control is a 44px target and the page never scrolls sideways, with a panel open', async ({ page }, testInfo) => {
+  test('every control is a big enough target and the page never scrolls sideways, with a panel open', async ({ page }, testInfo) => {
     const title = uniqueName('targets', testInfo)
     await openView(page, 'projects')
     await page.getByRole('toolbar', { name: 'Projects' }).getByRole('button', { name: 'New project' }).click()
