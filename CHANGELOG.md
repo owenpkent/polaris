@@ -3,6 +3,77 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## 3.1.0 (2026-11-19)
+
+No migration.
+
+- On a phone, My tasks shows more tasks at once. The Filter, Sort and Group bar is one row with no
+  band around it, the gap before a group is smaller, and the list and the bar reach a little
+  further into the page's side margin, so a name wraps later. A task's date chip is as wide as its
+  words instead of a fixed width, with every chip still one height and its right edge in line. A
+  group's header is 32px tall, and its Add task is a + at the end of that header instead of a row
+  of its own under the group. It opens the same inline row at the end of the group, on the
+  group's date. Above 640px nothing changes size.
+- Edits and comments made offline are sent in the order you made them, even if the device's clock
+  was set back while it was offline, and also when a dashboard tab opened before the update is
+  still running the old version. Before, an earlier edit could be sent last and win, with no
+  conflict recorded. A device's clock is now measured against the server's when the queue is
+  sent, and each edit's time goes out in the server's time, so a conflict is decided by when you
+  made the edit and not by how far the device's clock is off. If the server's clock cannot be
+  read just then, the last reading is used if it is under an hour old, and otherwise sending
+  carries on as before. An edit made before the device's clock was changed while offline still
+  gets a time that is wrong by the size of the change.
+- Settings, About, has a new Device clock row. It says "Matches the server's clock", or how far
+  behind or ahead this device is, and "Not measured yet" before the first reading. From a
+  difference of 30 seconds a notice says the clock is not in step and that offline edits are still
+  sent in order with their times corrected.
+- Undo on the completed toast for a repeating task now also drops the next copy that completing it
+  made, so you no longer end up with two of the same task. The copy is dropped only while it is as
+  it was made: a copy you have edited, moved or finished, or given a subtask or a comment, stays.
+  With the server out of reach nothing is dropped.
+- A repeat counted from the finish can no longer put its next copy on the day the completed one
+  was due, or earlier. Before, "every 2 days from the finish" with Monday's copy completed on
+  Saturday made another copy due Monday, so completing it looked like nothing happened. Now the
+  span is counted from the due date in that case: Wednesday.
+- If you turned on Tailscale sign-in (`CC_TAILSCALE_LOGIN`), a request now counts as you only when
+  it is addressed to a tailnet (ts.net) name. Before, a request from the same machine carrying
+  your login header was enough, whatever name it was addressed to. So with sign-in by identity, a
+  request addressed by IP address, by a short name, or to localhost is no longer treated as you;
+  the token still works for those. This takes away what the server contributed to a DNS rebinding
+  attack. It was shown with a hand-written request to the server, not with a real attack through
+  a browser, and someone who controls the DNS answers your browser gets is still outside what the
+  server can check. Behind `tailscale serve` nothing changes, and the token path and MCP are as
+  they were.
+- On a phone, the box being typed in shows whole above the keyboard also when text arrives while
+  the keyboard is still coming up, as it may from a hardware keyboard with the on-screen one
+  showing as well. Before, the lower 13px of the box could stay under the keyboard.
+- In the Android app on a WebView older than 140, the status bar's clock and icons can be read
+  again when the dashboard's theme and the phone's light or dark setting differ. Before, the dark
+  theme on a phone set to light drew white icons on a white strip. Now the app's window, which
+  is what shows behind the status bar and the gesture bar there, takes the colour of the
+  dashboard's own bars, so the bars look as they do on a current WebView, where nothing changes.
+- Rules, the `matches` condition: after a class escape a dash is a plain dash, as in JavaScript's
+  RegExp (`[^\s--z]` no longer reads `--z` as a range), and an octal escape such as `\00` is now
+  refused when a rule is saved, as a backreference already was. `\0` alone, `\08` and `\09` are
+  as before.
+- Security and dependency updates: the hono and @hono/node-server fixes that cleared seven open
+  security alerts, Capacitor 8.6.2 in the Android app (it carries fixes to how the keyboard and
+  the system bars are allowed for on newer WebViews), and newer versions of Vite, Playwright,
+  jsdom and other tools and GitHub Actions.
+- Documents: a sweep against the code corrected SECURITY.md and the update proposal (a release
+  tag may be signed with the EV certificate as well as an SSH key), the HTTP README (who may
+  write over Tailscale identity, two more filters of `GET /api/tasks`, `archived` on a new
+  project, the `limit` of `GET /api/events`), and smaller statements in four other documents.
+  command-center/README.md and CONTRIBUTING.md now describe how a dashboard tab left open in the
+  background updates itself, and how its reload waits for an unsaved edit.
+- For contributors: a bounded sweep of the pattern engine against RegExp runs with the tests; the
+  nightly fuzz run now reports a finding instead of passing in silence, and counts an abort while
+  node exits as a pass only after the fuzzer finished cleanly; an Android test that failed on an
+  emulator with animations on now waits for the scroll; `npm run test:android:offline` checks the
+  offline queue inside the real app on an emulator; a reading list of related projects and a
+  proposal for offline edits with a wrong clock are in docs/; and the written conventions now say
+  the smallest click target is 32px, no longer 44px.
+
 ## 3.0.0 (2026-11-13)
 
 No migration. The version moves to 3 with no breaking change: 2.11 would have followed 2.10.
