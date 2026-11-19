@@ -17,6 +17,8 @@ const INBOX_HAS_NO_THREAD = 'an inbox task has no thread until the owner accepts
 
 export class NotFoundError extends Error {}
 export class ValidationError extends Error {}
+/** A write that named the state it expected (updateTask's `ifUpdatedAt`) and found another. */
+export class ConflictError extends Error {}
 
 function appliedOpFromRow(r: Row): AppliedOp {
   return {
@@ -605,7 +607,12 @@ export class Store {
     });
   }
 
-  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: ActorInput = 'human', opts: { completedAt?: string } = {}): Task {
+  /**
+   * `ifUpdatedAt` makes the write conditional: it is refused with a ConflictError unless the task's
+   * updatedAt is still that value, checked in the same transaction as the write. The completed
+   * toast's Undo uses it to drop a repeat's next copy only while nothing has changed it: the stamp, its subtasks, and its comments.
+   */
+  updateTask(id: string, patch: TaskPatch & { status?: TaskStatus }, actor: ActorInput = 'human', opts: { completedAt?: string; ifUpdatedAt?: string } = {}): Task {
     this.validate(patch);
     // Normalised up front so the history records what was stored: a blank from a form clears the
     // field and lands as null, the same as an explicit null.
@@ -613,6 +620,15 @@ export class Store {
     if (patch.dueAt != null) patch = { ...patch, dueAt: this.localDue(patch.dueAt) };
     return this.db.transaction(() => {
       const before = this.requireTask(id);
+      if (opts.ifUpdatedAt !== undefined && before.updatedAt !== opts.ifUpdatedAt) throw new ConflictError('The task has changed since it was read.');
+      if (opts.ifUpdatedAt !== undefined) {
+        // Subtasks and comments do not move updatedAt, so the stamp alone cannot say whether the task
+        // was worked on. Any subtask, or any comment but the system one recurrence adds when it makes
+        // a copy, counts as activity.
+        const kids = this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM tasks WHERE parent_id = ?', [id])?.n ?? 0;
+        const talk = this.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM comments WHERE task_id = ? AND NOT (author = 'system' AND body LIKE 'Next occurrence of %')", [id])?.n ?? 0;
+        if (kids > 0 || talk > 0) throw new ConflictError('The task has changed since it was read.');
+      }
       if (patch.parentId && this.isAncestor(id, patch.parentId)) throw new ValidationError('a task cannot be nested under its own subtask');
 
       // Finishing a task is not a field write. It stamps completed_at, emits task.completed (which
@@ -625,7 +641,7 @@ export class Store {
         delete rest.status;
         if (patch.status === 'done') {
           if (Object.keys(rest).length) this.updateTask(id, rest, actor);
-          return this.completeTask(id, actor, opts).task;
+          return this.completeTask(id, actor, { completedAt: opts.completedAt }).task;
         }
         if (before.status === 'done' && patch.status === 'open') {
           if (Object.keys(rest).length) this.updateTask(id, rest, actor);

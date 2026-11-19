@@ -3,7 +3,7 @@
 // that reports a caught value itself goes through errorMessage, so a value that is not an Error is
 // sent as a fixed string, never as String(e).
 import type { ServerResponse } from 'node:http';
-import { NotFoundError, ValidationError } from '../core/index.ts';
+import { ConflictError, NotFoundError, ValidationError } from '../core/index.ts';
 
 /** An error with an explicit HTTP status/code, for cases core's NotFoundError/ValidationError don't cover (401, 405, 409, 413). */
 export class HttpError extends Error {
@@ -29,6 +29,7 @@ export function errorToPayload(e: unknown): { status: number; code: string; mess
   if (e instanceof HttpError) return { status: e.status, code: e.code, message: e.message };
   if (e instanceof NotFoundError) return { status: 404, code: 'NotFoundError', message: e.message };
   if (e instanceof ValidationError) return { status: 400, code: 'ValidationError', message: e.message };
+  if (e instanceof ConflictError) return { status: 409, code: 'Conflict', message: e.message };
   // The real message goes to the log only; the client gets a fixed string.
   console.error(`internal error: ${e instanceof Error ? e.message : String(e)}`);
   return { status: 500, code: 'InternalError', message: 'Internal error' };

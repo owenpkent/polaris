@@ -128,6 +128,23 @@ moving between fields does not flash it. The unit tests are in src/keyboard.test
 `tabBarStepsAsideWhileTheKeyboardIsOpen` in the Android app's AppEndToEndTest checks it with a real
 keyboard.
 
+**The box being typed in shows whole.** When the keyboard comes up over a focused box, the WebView
+scrolls the box to the middle of what is left, and nothing more is needed. That holds when
+the text comes after the keyboard, as it does from a finger. If text arrives while the keyboard is
+still coming up, the WebView brings only the caret into view: a 44px box is left with its lower
+13px under the keyboard, and it stays there. A hardware keyboard with the on-screen one showing as
+well can do it, and so can a script, which is how it was found (2026-11-18, the Subtask name box
+in a task's panel, WebView 133, in three scripted runs of six). So src/keyboard.js looks once
+more: 300ms after the visible height stops changing, a focused box that is cut off at the top or
+the bottom is scrolled just far enough to show whole. A box that already shows whole is never
+moved, so the WebView's own placing stands in the usual case. It happens only for the keyboard
+coming up. A later change of height never scrolls, because in a phone browser the address bar
+changes the height while the owner scrolls, and the page must not pull back to the box then. A box
+taller than what is visible (long notes) is left to the browser, which keeps the caret in view.
+`subtaskBoxShowsWholeWhenTextArrivesWhileTheKeyboardComesUp` in AppEndToEndTest sends keys straight
+after the tap, and the three tests that open a box with a real tap now also check it as soon as
+the keyboard is up, before anything is typed.
+
 ## Sources
 
 - [Capacitor SystemBars docs](https://unpkg.com/@capacitor/core@8.5.2/system-bars.md)

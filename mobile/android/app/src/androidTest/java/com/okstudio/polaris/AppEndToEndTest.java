@@ -271,14 +271,55 @@ public class AppEndToEndTest {
         tapElement(row);
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(BOX, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("step" + i);
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
             app.waitFor("subtask " + i + " to be added", "document.body.innerText.toLowerCase().includes('step" + i + "')&&document.body.innerText.includes('0 / " + (14 + i) + "')", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(BOX, i);
+            assertBoxAboveKeyboard(BOX, "after add " + i);
         }
+    }
+
+    // Text that arrives while the keyboard is still coming up (a hardware keyboard with the
+    // on-screen one showing as well) makes the WebView bring only the caret into view, which left
+    // the lower 13px of the box under the keyboard. src/keyboard.js looks at the box again once
+    // the keyboard has settled. Nothing is waited for between the tap and the keys, so they go in
+    // while the keyboard comes up; the first of them may be lost before the box has focus.
+    @Test
+    public void subtaskBoxShowsWholeWhenTextArrivesWhileTheKeyboardComesUp() throws Exception {
+        connect();
+        String title = "Early keys " + System.currentTimeMillis();
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:" + WebAppDriver.quote(title) + "})}).then(r=>String(r.status))";
+        assertTrue("Task create failed", app.evalAsync(create, 15000).replace("\"", "").startsWith("2"));
+
+        // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+        app.eval("window.__ptOld=true;location.reload();null");
+        app.waitFor("the reload", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&__pt.find('button','Open navigation')", LOAD_MS);
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        app.waitFor("the No due date group", "__pt.find('button','No due date')||__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        if (!app.truthy("__pt.find('button'," + WebAppDriver.quote(title) + ")")) app.click("button", "No due date");
+        app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        app.click("button", "Open " + title);
+        app.waitFor("the task panel", "__pt.find('dialog','Task details')", LOAD_MS);
+
+        // The Add subtask row in the middle of the panel, where the keyboard will cover it.
+        String row = "Array.from(document.querySelectorAll('[role=dialog] button')).filter(b=>b.textContent.trim()==='Add subtask').pop()";
+        app.waitFor("the Add subtask row", row, 10000);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        InstrumentationRegistry.getInstrumentation().sendStringSync("abcdefghij");
+        app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
+        waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(BOX, "after text that arrived while the keyboard came up");
+        android.util.Log.i("KeyboardTest", "early keys: the box holds " + app.eval(BOX + ".value"));
     }
 
     // The subtasks shown under a task in My tasks end with an Add subtask row. On a phone a real
@@ -318,6 +359,7 @@ public class AppEndToEndTest {
             + WebAppDriver.quote("New subtask of " + title) + ")";
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("liststep" + i);
@@ -325,7 +367,7 @@ public class AppEndToEndTest {
             String count = "__pt.find('button'," + WebAppDriver.quote((3 + i) + " open subtasks of " + title) + ")";
             app.waitFor("subtask " + i + " to be added", count + "&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(box, i);
+            assertBoxAboveKeyboard(box, "after add " + i);
         }
     }
 
@@ -463,6 +505,7 @@ public class AppEndToEndTest {
         String box = "Array.from(document.querySelectorAll('input')).find(e=>e.getAttribute('aria-label')==='New task name')";
         app.waitFor("the new task box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 3; i++) {
             String name = "added" + i + "x" + stamp;
@@ -470,7 +513,7 @@ public class AppEndToEndTest {
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
             app.waitFor("task " + i + " to be added", "__pt.find('button'," + WebAppDriver.quote("Open " + name) + ")&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(box, i);
+            assertBoxAboveKeyboard(box, "after add " + i);
         }
     }
 
@@ -597,10 +640,25 @@ public class AppEndToEndTest {
         app.click("button", "View " + title + " in " + where);
         String open = "__pt.find('button'," + WebAppDriver.quote("Open " + title) + ")";
         app.waitFor("Open to be focused", "document.activeElement===" + open, 10000);
-        assertTrue("Open button is outside the viewport", app.truthy("(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
-            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()"));
+        // Focus is given at once and without scrolling, and the scroll that brings the row in is a
+        // smooth one unless the device asks for reduced motion (MyTasksTab.jsx). So the row is
+        // waited for, not measured in the same instant. CI's emulator has animations off and never
+        // showed the gap, as it would not if its WebView then reports reduced motion and the
+        // scroll is instant; an emulator with animations on showed it whenever the list was long
+        // enough to need the scroll, which it is once the tests before this one have added their
+        // tasks.
+        //
+        // The row has arrived when it is where it was at the last look (the scroll has ended), and
+        // it must then be on screen and above the tab bar, as the toast's buttons must be above.
+        app.waitFor("the Open button to stop on the screen, above the tab bar", "(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "const navTop=" + nav + ".getBoundingClientRect().top;"
+            + "const still=window.__ptOpenTop===r.top;window.__ptOpenTop=r.top;"
+            + "return still&&r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.bottom<=navTop+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()", 5000);
     }
 
+    // Long enough after the page has seen the keyboard for it to have come to rest: the WebView's
+    // own scroll, and the look src/keyboard.js takes SETTLE_MS (300) after the last change of height.
+    private static final long SETTLED_MS = 1200;
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
     // A real touch at the middle of an element, injected as the system would, so focus and the
@@ -741,8 +799,20 @@ public class AppEndToEndTest {
         throw new AssertionError("The soft keyboard never " + (expected ? "appeared" : "went away") + " after a real tap on the subtask box.");
     }
 
-    private void assertBoxAboveKeyboard(String box, int step) {
-        assertTrue("The keyboard went away after add " + step, imeAndScreen()[0] == 1);
+    // The window's IME inset can show before the page has been made shorter, and a slow emulator
+    // can take its time over the scroll that follows. So this waits for the page itself to have
+    // seen the keyboard (src/keyboard.js marks <html>), gives it SETTLED_MS, and then waits for
+    // the box to lie whole in what is visible before measuring it against the keyboard.
+    private void assertBoxSettlesAboveKeyboard(String box, String when) {
+        app.waitFor("the page to see the keyboard", "document.documentElement.dataset.keyboard==='open'", 10000);
+        WebAppDriver.sleep(SETTLED_MS);
+        app.waitFor("the box to show whole in what is visible, " + when, "(()=>{const r=" + box + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "return r.top>=vv.offsetTop-1&&r.bottom<=vv.offsetTop+vv.height+1})()", 5000);
+        assertBoxAboveKeyboard(box, when);
+    }
+
+    private void assertBoxAboveKeyboard(String box, String when) {
+        assertTrue("The keyboard went away " + when, imeAndScreen()[0] == 1);
         int[] ime = imeAndScreen();
         String[] r = rect(box);
         float dpr = Float.parseFloat(r[4]);
@@ -751,7 +821,7 @@ public class AppEndToEndTest {
         float vvBottom = Float.parseFloat(app.eval("window.visualViewport.offsetTop+window.visualViewport.height"));
         int[] origin = webViewOrigin();
         float imeTopCss = (ime[2] - ime[1] - origin[1]) / dpr;
-        String report = "after add " + step + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
+        String report = when + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
             + vvBottom + "; IME top " + imeTopCss + " (inset " + ime[1] + " px of " + ime[2] + ", dpr " + dpr + ")";
         android.util.Log.i("KeyboardTest", report);
         assertTrue("Box above the visual viewport bottom, " + report, bottom <= vvBottom + 1);

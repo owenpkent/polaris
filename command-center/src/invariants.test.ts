@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url';
 import { githubFakeFromEnv } from './http/commands.ts';
 import { isTailscaleOwner, tailscaleLoginFromEnv } from './http/tailscale.ts';
 import { identityWriteOriginsFromEnv } from './http/commands.ts';
-import { TEST_TOKENS, api, fakeApp, withServer } from './http/test-support.ts';
+import { TAILNET_HOST, TEST_TOKENS, api, fakeApp, fetchViaTailnet, withServer } from './http/test-support.ts';
 import { VERSION } from './http/version.ts';
 import { fakeGithubFetch, type FixtureRoute } from './ingest/github/fixtures.ts';
 import { syncGithub } from './ingest/github/sync.ts';
@@ -1210,6 +1210,8 @@ test('10. the Tailscale login header opens nothing until CC_TAILSCALE_LOGIN name
 test('10. with a login named, identity is the owner on REST only, from a loopback peer only, and never on MCP', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());
+  // As the proxy forwards a request: addressed to a name under ts.net (http/test-support.ts).
+  const fetch = fetchViaTailnet;
   const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
   const enable = (base: string, headers: Record<string, string>) => fetch(`${base}/api/rules/${rule.id}`, {
     method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }),
@@ -1234,9 +1236,36 @@ test('10. with a login named, identity is the owner on REST only, from a loopbac
   });
   // The proxy is on this machine. A peer that is not loopback does not get to say who it is,
   // which is what keeps a daemon bound wider than loopback from taking the header off the LAN.
-  const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN }, socket: { remoteAddress: '192.168.1.20' } };
+  const fromLan = { headers: { 'tailscale-user-login': OWNER_LOGIN, host: TAILNET_HOST }, socket: { remoteAddress: '192.168.1.20' } };
   assert.equal(isTailscaleOwner(fromLan as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), false);
   assert.equal(isTailscaleOwner({ ...fromLan, socket: { remoteAddress: '127.0.0.1' } } as unknown as Parameters<typeof isTailscaleOwner>[0], OWNER_LOGIN), true);
+});
+
+test('10. identity counts only for a request addressed to a tailnet name, so a rebinding page on this machine is not the owner', async (t) => {
+  // The proxy answers on this machine's name under ts.net and forwards the Host the client sent.
+  // A website that re-points its own name at 127.0.0.1 is same-origin to the daemon, can add the
+  // login header itself, and arrives from loopback; the Host is the one thing it cannot choose.
+  const app = fakeApp();
+  t.after(() => app.close());
+  const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
+  await withServer(app, { tailscaleLogin: OWNER_LOGIN }, async (base) => {
+    // fetch writes the Host of the URL, 127.0.0.1 here: the owner's login, a loopback peer, and
+    // the page's "own origin", which is all a rebinding page has.
+    const sameOriginPage = { ...AS_OWNER, 'Sec-Fetch-Site': 'same-origin', Origin: base };
+    assert.equal((await fetch(`${base}/api/tasks`, { headers: sameOriginPage })).status, 401);
+    const write = await fetch(`${base}/api/rules/${rule.id}`, { method: 'PATCH', headers: { ...sameOriginPage, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }) });
+    assert.equal(write.status, 401);
+    assert.equal(app.store.getRule(rule.id)?.enabled, false);
+    // The same request addressed to the tailnet name is the owner.
+    assert.equal((await fetchViaTailnet(`${base}/api/tasks`, { headers: AS_OWNER })).status, 200);
+  });
+  const fromLoopback = (host: string | undefined) => ({ headers: { 'tailscale-user-login': OWNER_LOGIN, host }, socket: { remoteAddress: '127.0.0.1' } }) as unknown as Parameters<typeof isTailscaleOwner>[0];
+  for (const host of [undefined, '', '127.0.0.1:8788', 'localhost:8788', '[::1]:8788', 'attacker.example:8788', 'ts.net', '.ts.net', 'polaris.ts.net.attacker.example', 'attacker.example/.ts.net', 'attacker.example?.ts.net', 'polaris.tail1234.ts.net.', 'polaris_tail1234.ts.net', 'a@polaris.ts.net']) {
+    assert.equal(isTailscaleOwner(fromLoopback(host), OWNER_LOGIN), false, String(host));
+  }
+  for (const host of [TAILNET_HOST, `${TAILNET_HOST}:443`, 'Polaris.Tail1234.TS.NET', 'my-host.tail0a1b2c.ts.net:8443']) {
+    assert.equal(isTailscaleOwner(fromLoopback(host), OWNER_LOGIN), true, host);
+  }
 });
 
 test('10. a cross-site write over identity is accepted only from an origin the owner listed, and the development default does not count', async (t) => {
@@ -1247,6 +1276,8 @@ test('10. a cross-site write over identity is accepted only from an origin the o
   assert.deepEqual(identityWriteOriginsFromEnv({ CC_CORS_ORIGINS: 'https://localhost, http://localhost:5173' }), ['https://localhost', 'http://localhost:5173']);
   const app = fakeApp();
   t.after(() => app.close());
+  // As the proxy forwards a request: addressed to a name under ts.net (http/test-support.ts).
+  const fetch = fetchViaTailnet;
   const rule = app.store.saveRule({ name: 'sleeping', enabled: false, definition: NOTIFY_RULE as Record<string, Json> });
   const enable = (base: string, headers: Record<string, string>) => fetch(`${base}/api/rules/${rule.id}`, {
     method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true }),
