@@ -504,6 +504,38 @@ export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
   await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))
 }
 
+// The fixture freezes the browser's clock at the moment the database was seeded while the test
+// server runs on real time, so the dashboard would measure a different, growing difference in
+// every run. This makes the answer to GET /api/events carry a `now` that is the page's own clock
+// plus `serverAheadMs`, so the About card reads a fixed difference. The fixture calls it with zero
+// for every test (e2e/fixtures.js); a test that wants a difference calls it again, before the
+// view is opened, and the later call wins (its wrapper is the outer one).
+//
+// It wraps the page's own fetch from an init script, and is not a page.route on purpose: a route
+// switches on request interception for the whole page, and then a reload with the network cut is
+// no longer served by the service worker, which is what the offline specs test (tried on
+// 2026-11-18: every offline spec got a blank page). A failed request is not touched, so a page
+// that is offline fails as it would.
+export async function pinServerClock(page, serverAheadMs = 0) {
+  await page.addInitScript((aheadMs) => {
+    const real = window.fetch
+    window.fetch = async (input, init) => {
+      const response = await real(input, init)
+      try {
+        const request = typeof input === 'string' || input instanceof URL ? null : input
+        const url = new URL(request ? request.url : String(input), location.href)
+        const method = String(init?.method || request?.method || 'GET').toUpperCase()
+        if (url.pathname !== '/api/events' || method !== 'GET' || !response.ok) return response
+        const body = await response.clone().json()
+        body.now = new Date(Date.now() + aheadMs).toISOString()
+        return new Response(JSON.stringify(body), { status: response.status, statusText: response.statusText, headers: response.headers })
+      } catch {
+        return response
+      }
+    }
+  }, serverAheadMs)
+}
+
 // Content the user cannot see in full (CONTRIBUTING.md, "Nothing is cut off"). Returns readable
 // strings, one per problem, so a failure names each one:
 //

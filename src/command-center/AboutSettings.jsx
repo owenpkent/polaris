@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useConnection } from './ConnectionContext'
 import { BUILD_INFO } from './buildInfo'
+import { useOffline } from './offlineStatus'
+import { connectionOrigin } from './outbox'
+import { describeOffset } from './serverClock'
+import { useServerClock } from './useServerClock'
+import { Notice } from './shared'
+
+// The events poll checks the clocks every ten seconds while connected, so a last check older
+// than this means the checks have stopped.
+const OLD_READING_MS = 2 * 60 * 1000
 
 function Row({ label, children }) {
   return (
@@ -22,9 +31,24 @@ export function formatBuild({ version, commit, builtAt } = BUILD_INFO) {
 // Which code is running: the dashboard's build, and the server's version. The card asks the
 // server once when it opens, so a server updated since the connection test shows its new
 // version. /api/health is never cached, so offline that ask fails and the card keeps the
-// version the last health check reported.
+// version the last health check reported. It also says how far this device's clock is from the
+// server's, as last measured (serverClock.js), and adds a notice when the difference is large.
 export default function AboutSettings({ build = BUILD_INFO }) {
-  const { connected, health, api } = useConnection()
+  const { connected, health, api, baseUrl, local } = useConnection()
+  const offline = useOffline()
+  const { reading, checkedAt } = useServerClock(connectionOrigin(baseUrl))
+  const clock = describeOffset(reading)
+  // The clocks are checked with every events poll while connected (`checkedAt`, which moves on
+  // even when the poll only confirms the stored reading). When the last check is older, what is
+  // shown says what the clocks were, not what they are: the server is out of reach, or edits are
+  // waiting to be sent. Nothing re-renders the card while no check arrives, so it looks again
+  // twice a minute.
+  const [, look] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => look((n) => n + 1), OLD_READING_MS / 4)
+    return () => clearInterval(timer)
+  }, [])
+  const old = offline || !connected || !Number.isFinite(checkedAt) || Math.abs(Date.now() - checkedAt) > OLD_READING_MS
   const [fresh, setFresh] = useState(null)
   useEffect(() => {
     // A different server, or none, starts from its own health check, never the last one's answer.
@@ -36,13 +60,32 @@ export default function AboutSettings({ build = BUILD_INFO }) {
   }, [connected, api])
   const version = (connected && fresh) || health?.version
   const server = version ? `v${version}` : connected ? 'Not reached yet' : 'Not connected'
+  const relation = clock.state === 'ahead' ? 'ahead of' : 'behind'
+  let clockText = null
+  if (!local) {
+    if (clock.state === 'none') clockText = 'Not measured yet'
+    else {
+      clockText = clock.state === 'match'
+        ? "Matches the server's clock"
+        : `${clock.amount} ${relation} the server's clock`
+      if (old) clockText += ', when last checked'
+    }
+  }
   return (
     <section className="card" aria-labelledby="cc-about-heading">
       <div className="section-header" id="cc-about-heading">About</div>
       <dl className="settings-facts">
         <Row label="Dashboard">{formatBuild(build)}</Row>
         <Row label="Server">{server}</Row>
+        {clockText && <Row label="Device clock">{clockText}</Row>}
       </dl>
+      {!local && clock.warn && (
+        // The amount is in the row above and not here: this is a status, read out when its words
+        // change, and the amount changes with every reading.
+        <Notice tone="yellow">
+          This device&apos;s clock is not in step with the server&apos;s. Edits made offline on this device are still sent in the order you made them, with their times corrected. It is still worth setting the clock right.
+        </Notice>
+      )}
     </section>
   )
 }
