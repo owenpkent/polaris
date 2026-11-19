@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TAILSCALE_LOGIN_HEADER, isListedOriginBrowserRequest, isSameOriginBrowserRequest, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
+import { TAILSCALE_LOGIN_HEADER, isListedOriginBrowserRequest, isSameOriginBrowserRequest, isTailnetHost, isTailscaleOwner, normalizeTailscaleLogin, tailscaleLoginFromEnv } from './tailscale.ts';
 
 const LOGIN = 'owner@example.com';
 
-/** A request as the predicate sees it: node's lower-cased headers and the TCP peer (null: none known). */
+/**
+ * A request as the predicate sees it: node's lower-cased headers and the TCP peer (null: none known).
+ * The Host is the tailnet name the proxy forwards unless a test names another (host: undefined is none).
+ */
 function req(headers: Record<string, string | string[] | undefined>, remoteAddress: string | null = '127.0.0.1') {
-  return { headers, socket: { remoteAddress: remoteAddress ?? undefined } } as unknown as Parameters<typeof isTailscaleOwner>[0];
+  return { headers: { host: 'polaris.tail1234.ts.net', ...headers }, socket: { remoteAddress: remoteAddress ?? undefined } } as unknown as Parameters<typeof isTailscaleOwner>[0];
 }
 
 test('off until a login is configured, whatever the request says', () => {
@@ -39,6 +42,21 @@ test('off when the header is missing, repeated, or names someone else', () => {
   assert.equal(isTailscaleOwner(req({ [TAILSCALE_LOGIN_HEADER]: [LOGIN] }), LOGIN), false);
   // The other identity headers are not the login.
   assert.equal(isTailscaleOwner(req({ 'tailscale-user-name': LOGIN }), LOGIN), false);
+});
+
+test('off when the request was not addressed to a tailnet name: a page that re-points its own name at loopback is not the proxy', () => {
+  const owner = (host: string | undefined) => req({ [TAILSCALE_LOGIN_HEADER]: LOGIN, host });
+  for (const host of [undefined, '', '127.0.0.1', '127.0.0.1:8788', 'localhost:8788', '[::1]:8788', 'attacker.example', 'attacker.example:8788', 'ts.net', '.ts.net', 'a..ts.net',
+    'polaris.ts.net.attacker.example', 'polaris.ts.net.', 'attacker.example/.ts.net', 'attacker.example#.ts.net', 'a@polaris.ts.net', 'polaris_one.ts.net', '-a.ts.net', 'polaris.ts.net:', 'polaris.ts.net:port', 'polaris.ts.net:123456', 'polaris.ts.net ']) {
+    assert.equal(isTailnetHost(host), false, String(host));
+    assert.equal(isTailscaleOwner(owner(host), LOGIN), false, String(host));
+  }
+  for (const host of ['polaris.tail1234.ts.net', 'polaris.tail1234.ts.net:443', 'POLARIS.Tail1234.TS.net', 'my-host.tail0a1b2c.ts.net:8443', 'a.ts.net']) {
+    assert.equal(isTailnetHost(host), true, host);
+    assert.equal(isTailscaleOwner(owner(host), LOGIN), true, host);
+  }
+  // The right Host is not enough from a peer that is not this machine.
+  assert.equal(isTailscaleOwner(req({ [TAILSCALE_LOGIN_HEADER]: LOGIN }, '192.168.1.20'), LOGIN), false);
 });
 
 test('tailscaleLoginFromEnv trims and lower-cases, and a blank value leaves identity off', () => {
