@@ -4,7 +4,10 @@ import { TOKEN } from './server.js'
 // This worker's server port (set by the scratchServer fixture in e2e/fixtures.js).
 export const port = () => Number(process.env.CC_UI_WORKER_PORT)
 
-export const MIN_TARGET = 44
+// The smallest click target a control may offer. It was 44px until 2026-11-16, when the owner
+// dropped that as the minimum (CLAUDE.md, Conventions): controls are still 44px by default
+// (--target in src/index.css), and this is the floor a smaller one must keep.
+export const MIN_TARGET = 32
 
 // Opens a dashboard view already connected to the test server.
 export async function openView(page, view = 'mytasks', query = '') {
@@ -162,9 +165,9 @@ export async function expectNoHorizontalOverflow(page) {
   expect(scroll, `page scrolls sideways: scrollWidth ${scroll} > innerWidth ${inner}`).toBeLessThanOrEqual(inner)
 }
 
-// Every visible control in `scope` matching `selector` must offer a 44px click target
-// (CLAUDE.md). Returns the offenders as readable strings so a failure names them.
-// `min` is 44 (MIN_TARGET) everywhere except a row under Compact density, where it is 32.
+// Every visible control in `scope` matching `selector` must offer a click target of at least
+// `min` (MIN_TARGET, CLAUDE.md) each way. Returns the offenders as readable strings so a failure
+// names them.
 export async function smallTargets(scope, selector = 'button, [role="button"], select', min = MIN_TARGET) {
   return scope.locator(selector).evaluateAll((els, min) => {
     const out = []

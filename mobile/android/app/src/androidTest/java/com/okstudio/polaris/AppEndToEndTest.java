@@ -271,14 +271,55 @@ public class AppEndToEndTest {
         tapElement(row);
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(BOX, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("step" + i);
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
             app.waitFor("subtask " + i + " to be added", "document.body.innerText.toLowerCase().includes('step" + i + "')&&document.body.innerText.includes('0 / " + (14 + i) + "')", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(BOX, i);
+            assertBoxAboveKeyboard(BOX, "after add " + i);
         }
+    }
+
+    // Text that arrives while the keyboard is still coming up (a hardware keyboard with the
+    // on-screen one showing as well) makes the WebView bring only the caret into view, which left
+    // the lower 13px of the box under the keyboard. src/keyboard.js looks at the box again once
+    // the keyboard has settled. Nothing is waited for between the tap and the keys, so they go in
+    // while the keyboard comes up; the first of them may be lost before the box has focus.
+    @Test
+    public void subtaskBoxShowsWholeWhenTextArrivesWhileTheKeyboardComesUp() throws Exception {
+        connect();
+        String title = "Early keys " + System.currentTimeMillis();
+        String headers = "{'Authorization':'Bearer '+" + WebAppDriver.quote(apiToken) + ",'Content-Type':'application/json'}";
+        String create = "fetch(" + WebAppDriver.quote(serverUrl + "/api/tasks") + ",{method:'POST',headers:" + headers
+            + ",body:JSON.stringify({title:" + WebAppDriver.quote(title) + "})}).then(r=>String(r.status))";
+        assertTrue("Task create failed", app.evalAsync(create, 15000).replace("\"", "").startsWith("2"));
+
+        // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+        app.eval("window.__ptOld=true;location.reload();null");
+        app.waitFor("the reload", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor&&__pt.find('button','Open navigation')", LOAD_MS);
+        app.click("button", "Open navigation");
+        app.waitFor("the navigation drawer", "__pt.find('dialog','Navigation')", 10000);
+        app.click("button", "My tasks");
+        // The new task has no due date, so it is in a group that may start collapsed.
+        app.waitFor("the No due date group", "__pt.find('button','No due date')||__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        if (!app.truthy("__pt.find('button'," + WebAppDriver.quote(title) + ")")) app.click("button", "No due date");
+        app.waitFor("the task row", "__pt.find('button'," + WebAppDriver.quote(title) + ")", LOAD_MS);
+        app.click("button", "Open " + title);
+        app.waitFor("the task panel", "__pt.find('dialog','Task details')", LOAD_MS);
+
+        // The Add subtask row in the middle of the panel, where the keyboard will cover it.
+        String row = "Array.from(document.querySelectorAll('[role=dialog] button')).filter(b=>b.textContent.trim()==='Add subtask').pop()";
+        app.waitFor("the Add subtask row", row, 10000);
+        app.eval(row + ".scrollIntoView({block:'center'});null");
+        WebAppDriver.sleep(500);
+        tapElement(row);
+        InstrumentationRegistry.getInstrumentation().sendStringSync("abcdefghij");
+        app.waitFor("the subtask box", "document.activeElement&&document.activeElement.getAttribute('aria-label')==='Subtask name'", 10000);
+        waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(BOX, "after text that arrived while the keyboard came up");
+        android.util.Log.i("KeyboardTest", "early keys: the box holds " + app.eval(BOX + ".value"));
     }
 
     // The subtasks shown under a task in My tasks end with an Add subtask row. On a phone a real
@@ -318,6 +359,7 @@ public class AppEndToEndTest {
             + WebAppDriver.quote("New subtask of " + title) + ")";
         app.waitFor("the subtask box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 4; i++) {
             InstrumentationRegistry.getInstrumentation().sendStringSync("liststep" + i);
@@ -325,7 +367,53 @@ public class AppEndToEndTest {
             String count = "__pt.find('button'," + WebAppDriver.quote((3 + i) + " open subtasks of " + title) + ")";
             app.waitFor("subtask " + i + " to be added", count + "&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(box, i);
+            assertBoxAboveKeyboard(box, "after add " + i);
+        }
+    }
+
+    // The status bar's clock and icons have to stand out from what is behind them, in the dark and
+    // the light theme, with the phone set to light and to dark. Where the page is drawn under the
+    // bar (WebView 140 and newer) the dashboard's top bar is behind them. On an older WebView the
+    // app window's own background is, and it follows the phone's setting, not the theme, so there
+    // the icons have to follow the phone (systemBarStyle in src/theme.js). Before that, the dark
+    // theme on a phone set to light had white icons on a white strip. The screen itself is read:
+    // the commonest colour in the status bar's strip is what is behind the icons.
+    @Test
+    public void statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo() throws Exception {
+        connect();
+        String before = shell("cmd uimode night");
+        try {
+            for (String night : new String[] { "no", "yes" }) {
+                shell("cmd uimode night " + night);
+                for (String theme : new String[] { "dark", "light" }) {
+                    // The old page is marked, as in clearConnection, so the wait cannot pass before the reload.
+                    app.eval("localStorage.setItem('cc-theme-v1'," + WebAppDriver.quote(theme) + ");window.__ptOld=true;location.reload();null");
+                    // The page has to have seen the phone's setting too, or the screen read below
+                    // could still be the one from before the setting changed.
+                    app.waitFor("the reload in the " + theme + " theme", "!window.__ptOld&&document.readyState==='complete'&&window.Capacitor"
+                        + "&&document.documentElement.dataset.theme===" + WebAppDriver.quote(theme)
+                        + "&&matchMedia('(prefers-color-scheme: dark)').matches===" + night.equals("yes"), LOAD_MS);
+                    String where = "the " + theme + " theme with the phone's dark setting " + (night.equals("yes") ? "on" : "off");
+                    // The style goes over the bridge after the page has painted, so it is waited
+                    // for, and then it has to hold.
+                    WebAppDriver.sleep(500);
+                    String problem = statusBarProblem();
+                    long end = System.currentTimeMillis() + 8000;
+                    while (problem != null && System.currentTimeMillis() < end) {
+                        WebAppDriver.sleep(250);
+                        problem = statusBarProblem();
+                    }
+                    if (problem == null) {
+                        WebAppDriver.sleep(1000);
+                        problem = statusBarProblem();
+                    }
+                    android.util.Log.i("StatusBarTest", where + ": " + statusBarSeen + (problem == null ? "" : " (" + problem + ")"));
+                    assertTrue("In " + where + ": " + problem, problem == null);
+                }
+            }
+        } finally {
+            app.eval("localStorage.removeItem('cc-theme-v1');null");
+            shell("cmd uimode night " + (before.contains("yes") ? "yes" : before.contains("auto") ? "auto" : "no"));
         }
     }
 
@@ -389,6 +477,7 @@ public class AppEndToEndTest {
         String box = "Array.from(document.querySelectorAll('input')).find(e=>e.getAttribute('aria-label')==='New task name')";
         app.waitFor("the new task box", "document.activeElement&&document.activeElement===" + box, 10000);
         waitForKeyboard(true);
+        assertBoxSettlesAboveKeyboard(box, "once the keyboard is up");
 
         for (int i = 1; i <= 3; i++) {
             String name = "added" + i + "x" + stamp;
@@ -396,7 +485,7 @@ public class AppEndToEndTest {
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER);
             app.waitFor("task " + i + " to be added", "__pt.find('button'," + WebAppDriver.quote("Open " + name) + ")&&document.activeElement===" + box + "&&" + box + ".value===''", 15000);
             WebAppDriver.sleep(800);
-            assertBoxAboveKeyboard(box, i);
+            assertBoxAboveKeyboard(box, "after add " + i);
         }
     }
 
@@ -523,10 +612,25 @@ public class AppEndToEndTest {
         app.click("button", "View " + title + " in " + where);
         String open = "__pt.find('button'," + WebAppDriver.quote("Open " + title) + ")";
         app.waitFor("Open to be focused", "document.activeElement===" + open, 10000);
-        assertTrue("Open button is outside the viewport", app.truthy("(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
-            + "return r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()"));
+        // Focus is given at once and without scrolling, and the scroll that brings the row in is a
+        // smooth one unless the device asks for reduced motion (MyTasksTab.jsx). So the row is
+        // waited for, not measured in the same instant. CI's emulator has animations off and never
+        // showed the gap, as it would not if its WebView then reports reduced motion and the
+        // scroll is instant; an emulator with animations on showed it whenever the list was long
+        // enough to need the scroll, which it is once the tests before this one have added their
+        // tasks.
+        //
+        // The row has arrived when it is where it was at the last look (the scroll has ended), and
+        // it must then be on screen and above the tab bar, as the toast's buttons must be above.
+        app.waitFor("the Open button to stop on the screen, above the tab bar", "(()=>{const r=" + open + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "const navTop=" + nav + ".getBoundingClientRect().top;"
+            + "const still=window.__ptOpenTop===r.top;window.__ptOpenTop=r.top;"
+            + "return still&&r.top>=vv.offsetTop-0.5&&r.bottom<=vv.offsetTop+vv.height+0.5&&r.bottom<=navTop+0.5&&r.left>=0&&r.right<=vv.offsetLeft+vv.width+0.5})()", 5000);
     }
 
+    // Long enough after the page has seen the keyboard for it to have come to rest: the WebView's
+    // own scroll, and the look src/keyboard.js takes SETTLE_MS (300) after the last change of height.
+    private static final long SETTLED_MS = 1200;
     private static final String BOX = "document.querySelector('[role=dialog] input[aria-label=\"Subtask name\"]')";
 
     // A real touch at the middle of an element, injected as the system would, so focus and the
@@ -593,6 +697,46 @@ public class AppEndToEndTest {
         return xy;
     }
 
+    // What statusBarProblem last read from the screen, for the log.
+    private String statusBarSeen = "nothing read";
+
+    // Null when the status bar's icons stand out from the strip behind them: dark icons on a light
+    // strip, or light icons on a dark one. Otherwise what is wrong, with the colour found.
+    private String statusBarProblem() {
+        statusBarSeen = "nothing read";
+        int[] bar = new int[2];
+        scenario.onActivity(a -> {
+            android.view.View decor = a.getWindow().getDecorView();
+            WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(decor);
+            bar[0] = insets == null ? 0 : insets.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            bar[1] = androidx.core.view.WindowCompat.getInsetsController(a.getWindow(), decor).isAppearanceLightStatusBars() ? 1 : 0;
+        });
+        if (bar[0] <= 0) return "the window reports no status bar";
+        android.graphics.Bitmap shot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        if (shot == null) return "no screenshot could be taken";
+        java.util.HashMap<Integer, Integer> counts = new java.util.HashMap<>();
+        int height = Math.min(bar[0], shot.getHeight());
+        for (int y = height / 4; y < height * 3 / 4; y++) {
+            for (int x = 0; x < shot.getWidth(); x += 2) counts.merge(shot.getPixel(x, y), 1, Integer::sum);
+        }
+        int colour = 0;
+        int most = -1;
+        for (java.util.Map.Entry<Integer, Integer> e : counts.entrySet()) {
+            if (e.getValue() > most) {
+                most = e.getValue();
+                colour = e.getKey();
+            }
+        }
+        shot.recycle();
+        double light = 0.2126 * android.graphics.Color.red(colour) + 0.7152 * android.graphics.Color.green(colour) + 0.0722 * android.graphics.Color.blue(colour);
+        boolean darkIcons = bar[1] == 1;
+        String found = String.format("#%06X behind the status bar", colour & 0xFFFFFF);
+        statusBarSeen = (darkIcons ? "dark" : "light") + " icons, " + found;
+        if (darkIcons && light < 128) return "dark icons on a dark strip, " + found;
+        if (!darkIcons && light >= 128) return "light icons on a light strip, " + found;
+        return null;
+    }
+
     private int[] imeAndScreen() {
         int[] out = new int[3];
         scenario.onActivity(a -> {
@@ -615,8 +759,20 @@ public class AppEndToEndTest {
         throw new AssertionError("The soft keyboard never " + (expected ? "appeared" : "went away") + " after a real tap on the subtask box.");
     }
 
-    private void assertBoxAboveKeyboard(String box, int step) {
-        assertTrue("The keyboard went away after add " + step, imeAndScreen()[0] == 1);
+    // The window's IME inset can show before the page has been made shorter, and a slow emulator
+    // can take its time over the scroll that follows. So this waits for the page itself to have
+    // seen the keyboard (src/keyboard.js marks <html>), gives it SETTLED_MS, and then waits for
+    // the box to lie whole in what is visible before measuring it against the keyboard.
+    private void assertBoxSettlesAboveKeyboard(String box, String when) {
+        app.waitFor("the page to see the keyboard", "document.documentElement.dataset.keyboard==='open'", 10000);
+        WebAppDriver.sleep(SETTLED_MS);
+        app.waitFor("the box to show whole in what is visible, " + when, "(()=>{const r=" + box + ".getBoundingClientRect();const vv=window.visualViewport;"
+            + "return r.top>=vv.offsetTop-1&&r.bottom<=vv.offsetTop+vv.height+1})()", 5000);
+        assertBoxAboveKeyboard(box, when);
+    }
+
+    private void assertBoxAboveKeyboard(String box, String when) {
+        assertTrue("The keyboard went away " + when, imeAndScreen()[0] == 1);
         int[] ime = imeAndScreen();
         String[] r = rect(box);
         float dpr = Float.parseFloat(r[4]);
@@ -625,7 +781,7 @@ public class AppEndToEndTest {
         float vvBottom = Float.parseFloat(app.eval("window.visualViewport.offsetTop+window.visualViewport.height"));
         int[] origin = webViewOrigin();
         float imeTopCss = (ime[2] - ime[1] - origin[1]) / dpr;
-        String report = "after add " + step + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
+        String report = when + ": box top " + top + " bottom " + bottom + " css px; visualViewport bottom "
             + vvBottom + "; IME top " + imeTopCss + " (inset " + ime[1] + " px of " + ime[2] + ", dpr " + dpr + ")";
         android.util.Log.i("KeyboardTest", report);
         assertTrue("Box above the visual viewport bottom, " + report, bottom <= vvBottom + 1);

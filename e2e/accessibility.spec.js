@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.js'
 import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing, applyViewSettings } from './support.js'
 
-// The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
-// targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
+// The accessibility rules in CLAUDE.md, checked in a real browser at both widths: big enough click
+// targets (MIN_TARGET in support.js), a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
 
 const VIEWS = ['mytasks', 'inbox', 'board', 'rules', 'digest', 'github', 'settings']
 
@@ -70,7 +70,7 @@ test.describe('layout', { tag: ['@a11y'] }, () => {
   })
 })
 
-test.describe('44px click targets', { tag: ['@a11y'] }, () => {
+test.describe('click targets', { tag: ['@a11y'] }, () => {
   test('top bar and My tasks toolbar', async ({ page }) => {
     await openView(page)
     expect(await smallTargets(page.locator('header'))).toEqual([])
@@ -81,7 +81,7 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     await openView(page)
     const offenders = await smallTargets(
       page.locator('main'),
-      '[aria-label^="Open "], [aria-label^="Collapse "], [aria-label^="Expand "], [role="checkbox"], [aria-label^="Change "]'
+      '[aria-label^="Open "], [aria-label^="Collapse "], [aria-label^="Expand "], [aria-label="Add task"], [role="checkbox"], [aria-label^="Change "]'
     )
     expect(offenders).toEqual([])
   })

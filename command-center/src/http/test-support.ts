@@ -1,6 +1,7 @@
 // Shared test helpers for src/http/*.test.ts. Not itself a *.test.ts file, so `node --test`
 // never picks it up directly.
 import { memorySecretStore } from '../ingest/secrets.ts';
+import { request as httpRequest } from 'node:http';
 import type { Server } from 'node:http';
 import type { App } from '../app.ts';
 import { openStore } from '../core/index.ts';
@@ -87,6 +88,42 @@ export async function withServer(app: App, opts: Partial<HttpServerOptions>, fn:
   } finally {
     await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
   }
+}
+
+/** The name a test's requests are addressed to when they arrive "through `tailscale serve`". */
+export const TAILNET_HOST = 'polaris.tail1234.ts.net';
+
+/**
+ * fetch for a request that arrives the way `tailscale serve` forwards one: to the same loopback
+ * server, carrying the Host the client typed, a name under ts.net. Identity counts only for such
+ * a Host (isTailnetHost in tailscale.ts). fetch cannot send a Host of its own choosing (it always
+ * writes the one in the URL), so this goes through node:http. A test of identity shadows `fetch`
+ * with it; the dashboard's own origin is then `https://${TAILNET_HOST}`.
+ */
+export function fetchViaTailnet(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+  const target = new URL(url);
+  return new Promise((resolveResponse, reject) => {
+    const req = httpRequest({
+      host: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: init.method ?? 'GET',
+      headers: { ...init.headers, Host: TAILNET_HOST },
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('error', reject);
+      res.on('end', () => {
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(res.headers)) {
+          for (const one of Array.isArray(value) ? value : [value ?? '']) headers.append(name, one);
+        }
+        const status = res.statusCode ?? 0;
+        // A Response with one of these statuses may not carry a body, even an empty one.
+        const bodiless = status === 204 || status === 205 || status === 304;
+        resolveResponse(new Response(bodiless ? null : Buffer.concat(chunks), { status, headers }));
+      });
+    });
+    req.on('error', reject);
+    req.end(init.body);
+  });
 }
 
 /** Small JSON fetch helper: sends an api-token-authorized request and parses the (possibly empty) JSON response. */

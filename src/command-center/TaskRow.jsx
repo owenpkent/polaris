@@ -348,7 +348,7 @@ export default function TaskRow({
   // reorder handle (`reorder`, from ReorderableRows.jsx), and `rowClass` marks it while a row is
   // dragged (is-dragging, is-drop-before, is-drop-after). A subtask shown under its parent has
   // no handle: its name cell takes that column too, so its indented check and title keep the
-  // room they have without the handle (at 320px the name column is 88px wide).
+  // room they have without the handle (at 320px the name column is narrow).
   handleColumn = false,
   reorder = null,
   rowClass = '',

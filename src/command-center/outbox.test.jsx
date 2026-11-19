@@ -3,6 +3,7 @@ import { cleanup, render, screen, act } from '@testing-library/react'
 import { DEFAULT_BASE_URL, createApiClient, MY_TASKS_QUERY } from './api'
 import { cacheGet, memoryBackend, setCacheBackend } from './offlineCache'
 import { getOfflineState, resetOfflineStatus, setLastSync } from './offlineStatus'
+import { noteServerTime, resetServerClock } from './serverClock'
 import { LOCAL_ORIGIN, adoptLocalOutbox, discardOutbox, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite, refreshPendingCount, setOutboxBackend } from './outbox'
 
 vi.mock('./ConnectionContext', () => ({ useConnection: () => ({ connected: true, baseUrl: 'http://x', token: 'tok' }) }))
@@ -32,6 +33,9 @@ beforeEach(() => {
   setCacheBackend(memoryBackend())
   setOutboxBackend(memoryBackend())
   resetOfflineStatus()
+  // The server clock sample and the sent-time floor are kept in localStorage.
+  localStorage.clear()
+  resetServerClock()
 })
 
 afterEach(() => cleanup())
@@ -169,7 +173,8 @@ describe('offline task edits', () => {
     })
     await client.getEvents()
 
-    expect(calls).toEqual(['http://x/api/events', 'http://x/api/outbox'])
+    // The request itself, then the clock reading taken before the queue is sent, then the queue.
+    expect(calls).toEqual(['http://x/api/events', 'http://x/api/events?limit=1', 'http://x/api/outbox'])
     expect(getOfflineState()).toMatchObject({ offline: false, pending: 0 })
     expect(getOfflineState().lastSync).toMatchObject({ failed: false, synced: 2, conflicts: [] })
   })
@@ -412,6 +417,8 @@ describe('a device with no connection yet', () => {
     await createApiClient('http://x', '', { local: true }).createTask({ title: 'Local' })
     const sentTo = []
     global.fetch.mockImplementation(async (url, init) => {
+      // The clock reading a flush takes first is not a send.
+      if (url.includes('/api/events')) return jsonResponse(200, { events: [], headId: 1 })
       sentTo.push(url)
       const sent = JSON.parse(init.body)
       return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied' })) })
@@ -428,6 +435,9 @@ describe('a device with no connection yet', () => {
     expect(getOfflineState().pending).toBe(0)
   })
 })
+
+// The queue's store also holds the counter that orders it, which is not an edit.
+const queuedEntries = async (backend) => (await backend.entries()).filter(([key]) => key !== '!counter')
 
 describe('a local edit is claimed by one server only', () => {
   // The queue is shared by every tab. This backend lets a test hold one tab's next write until
@@ -470,7 +480,7 @@ describe('a local edit is claimed by one server only', () => {
     const backend = holdingBackend(memoryBackend())
     setOutboxBackend(backend)
     await createApiClient('http://x', '', { local: true }).createTask({ title: 'Local' })
-    const [[, op]] = await backend.entries()
+    const [[, op]] = await queuedEntries(backend)
     const sentTo = []
     acceptingServer(sentTo)
 
@@ -480,11 +490,11 @@ describe('a local edit is claimed by one server only', () => {
     await hold.arrived
     expect(await adoptLocalOutbox('http://a')).toBe(1)
     expect(await flushOutbox('http://a', 'tok')).toBe(true)
-    expect(await backend.entries()).toEqual([])
+    expect(await queuedEntries(backend)).toEqual([])
 
     hold.release()
     expect(await adoptingB).toBe(0)
-    expect(await backend.entries()).toEqual([])
+    expect(await queuedEntries(backend)).toEqual([])
     await flushOutbox('http://b', 'tok')
     expect(sentTo).toEqual([['http://a/api/outbox', op.opId]])
   })
@@ -502,7 +512,7 @@ describe('a local edit is claimed by one server only', () => {
     expect(await adoptLocalOutbox('http://a')).toBe(1)
     hold.release()
     expect(await adoptingB).toBe(0)
-    expect((await backend.entries()).map(([, o]) => o.origin)).toEqual(['http://a'])
+    expect((await queuedEntries(backend)).map(([, o]) => o.origin)).toEqual(['http://a'])
 
     await flushOutbox('http://b', 'tok')
     await flushOutbox('http://a', 'tok')
@@ -738,6 +748,251 @@ describe('sending a long queue', () => {
     })
     expect(await flushOutbox('http://x', 'tok')).toBe(false)
     expect(getOfflineState()).toMatchObject({ pending: 1, lastSync: { failed: true, count: 1 } })
+  })
+})
+
+describe('order and time of a replayed queue', () => {
+  const T = Date.now()
+  const comment = (text, now) => queueOfflineWrite({ baseUrl: 'http://x', kind: 'add_comment', taskId: TASK.id, body: { body: text } }, now)
+  const edit = (priority, now) => queueOfflineWrite({ baseUrl: 'http://x', kind: 'update_task', taskId: TASK.id, body: { priority } }, now)
+
+  // `clock`: undefined answers without a time, a number answers with a server `now` that many ms
+  // ahead of the device, 'down' fails the reading, 'hang' never answers it. `outbox` is the
+  // status of the POST.
+  function server({ clock, outbox = 200 } = {}) {
+    const posted = []
+    global.fetch.mockImplementation(async (url, init) => {
+      if (url.includes('/api/events')) {
+        if (clock === 'down') throw new TypeError('Failed to fetch')
+        if (clock === 'hang') return new Promise(() => {})
+        const body = typeof clock === 'number' ? { events: [], headId: 1, now: new Date(Date.now() + clock).toISOString() } : { events: [], headId: 1 }
+        return jsonResponse(200, body)
+      }
+      if (outbox !== 200) return jsonResponse(outbox, { error: { message: 'no' } })
+      const sent = JSON.parse(init.body)
+      posted.push(sent.ops)
+      return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+    })
+    return posted
+  }
+
+  const ms = (iso) => Date.parse(iso)
+
+  test('a clock set back while offline does not reorder edits: the first one made is sent first', async () => {
+    await edit('high', T + 8 * 60 * 1000)
+    await edit('low', T)
+    const posted = server()
+    expect(await flushOutbox('http://x', 'tok')).toBe(true)
+    expect(posted).toHaveLength(1)
+    expect(posted[0].map((o) => o.body.priority)).toEqual(['high', 'low'])
+    // The later edit also carries the later time, so the server's merge keeps it.
+    expect(ms(posted[0][1].at)).toBeGreaterThan(ms(posted[0][0].at))
+  })
+
+  test('writes made one after another without waiting are sent in the order they were made', async () => {
+    // A new task takes longer to queue than an edit: it works out its place by reading the whole
+    // copy, which is slow here, while an edit finds its task with one quick read. The new task
+    // must still go first: its place in the queue is taken before anything else is awaited.
+    const copy = memoryBackend()
+    await copy.put(`http://x/api/tasks/${TASK.id}`, { data: { task: TASK, subtasks: [], comments: [] }, savedAt: T })
+    setCacheBackend({ ...copy, entries: async () => { await new Promise((r) => setTimeout(r, 15)); return copy.entries() } })
+    const created = queueOfflineWrite({ baseUrl: 'http://x', myTasksUrl: 'http://x/api/tasks', kind: 'create_task', taskId: 't_made0ffline', body: { title: 'First' } }, T)
+    const edited = edit('high', T)
+    const commented = comment('third', T)
+    await Promise.all([created, edited, commented])
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.kind)).toEqual(['create_task', 'update_task', 'add_comment'])
+  })
+
+  test('edits started together with one reading are all kept and sent in one consistent order', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    await Promise.all(['a', 'b', 'c', 'd', 'e'].map((t) => comment(t, T)))
+    const keys = (await backend.entries()).map(([k]) => k).filter((k) => k !== '!counter')
+    expect(keys).toHaveLength(5)
+    expect(new Set(keys).size).toBe(5)
+    const queued = (await backend.entries()).filter(([k]) => k !== '!counter').sort(([a], [b]) => (a < b ? -1 : 1)).map(([, o]) => o.body.body)
+
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.body)).toEqual(queued)
+    expect([...queued].sort()).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  test('an entry under the old key format is sent before the ones queued now', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    await backend.put('000001700000000-000001', { origin: 'http://x', opId: 'op_old', kind: 'add_comment', taskId: TASK.id, at: new Date(T + 1000).toISOString(), base: null, body: { body: 'old' } })
+    await comment('new', 1000)
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.body)).toEqual(['old', 'new'])
+  })
+
+  test('an edit from a tab on the old key format, made after one from this version, is sent after it and wins', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    await edit('high', T)
+    // An old tab keys by its own clock, which is later than the moment the first edit was queued.
+    await backend.put(`${String(Date.now() + 5).padStart(15, '0')}-000000`, { origin: 'http://x', opId: 'op_old', kind: 'update_task', taskId: TASK.id, at: new Date(T + 1000).toISOString(), base: null, body: { priority: 'low' } })
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.priority)).toEqual(['high', 'low'])
+    expect(ms(posted[0][1].at)).toBeGreaterThan(ms(posted[0][0].at))
+  })
+
+  test('an old tab writing in the same millisecond as this version never replaces one of its edits', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(T)
+      await edit('high', T)
+      await edit('medium', T)
+      // An old tab's first key in this millisecond, and its second: the sequences this version used.
+      for (const [seq, priority] of [['000000', 'low'], ['000001', 'urgent']]) {
+        await backend.put(`${String(T).padStart(15, '0')}-${seq}`, { origin: 'http://x', opId: `op_old${seq}`, kind: 'update_task', taskId: TASK.id, at: new Date(T).toISOString(), base: null, body: { priority } })
+      }
+      const keys = (await backend.entries()).map(([key]) => key).filter((key) => !key.startsWith('!'))
+      expect(keys).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.priority).sort()).toEqual(['high', 'low', 'medium', 'urgent'])
+  })
+
+  test('with the server ten minutes ahead, the times sent are the device readings plus ten minutes and the stored ops are untouched', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    await comment('one', T - 5000)
+    await comment('two', T - 3000)
+    const storedAts = async () => (await backend.entries()).filter(([k]) => k !== '!counter').sort(([a], [b]) => (a < b ? -1 : 1)).map(([, o]) => o.at)
+    const before = await storedAts()
+    expect(before).toEqual([new Date(T - 5000).toISOString(), new Date(T - 3000).toISOString()])
+
+    const posted = server({ clock: 10 * 60 * 1000 })
+    await flushOutbox('http://x', 'tok')
+    expect(Math.abs(ms(posted[0][0].at) - (T - 5000 + 10 * 60 * 1000))).toBeLessThan(2000)
+    expect(Math.abs(ms(posted[0][1].at) - (T - 3000 + 10 * 60 * 1000))).toBeLessThan(2000)
+
+    // What stays queued keeps the device's own reading: a refused send changes nothing stored.
+    await comment('three', T - 1000)
+    server({ clock: 10 * 60 * 1000, outbox: 503 })
+    await flushOutbox('http://x', 'tok')
+    expect(await storedAts()).toEqual([new Date(T - 1000).toISOString()])
+  })
+
+  test('readings that go backwards are sent as strictly rising times', async () => {
+    await comment('a', T - 1000)
+    await comment('b', T - 2000)
+    await comment('c', T - 2000)
+    await comment('d', T - 9000)
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    const times = posted[0].map((o) => ms(o.at))
+    expect(posted[0].map((o) => o.body.body)).toEqual(['a', 'b', 'c', 'd'])
+    for (let i = 1; i < times.length; i += 1) expect(times[i]).toBeGreaterThan(times[i - 1])
+  })
+
+  test('a failed reading falls back to the stored offset, then to the raw readings', async () => {
+    // Nothing stored and the reading fails: the raw readings go, in rising order.
+    await comment('a', T - 4000)
+    await comment('b', T - 3000)
+    const posted = server({ clock: 'down' })
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.at)).toEqual([new Date(T - 4000).toISOString(), new Date(T - 3000).toISOString()])
+
+    // A reading that works but a POST that fails leaves an offset stored.
+    await comment('c', T - 2000)
+    server({ clock: 10 * 60 * 1000, outbox: 503 })
+    await flushOutbox('http://x', 'tok')
+    const again = server({ clock: 'down' })
+    await flushOutbox('http://x', 'tok')
+    expect(Math.abs(ms(again[0][0].at) - (T - 2000 + 10 * 60 * 1000))).toBeLessThan(2000)
+  })
+
+  test('a stored reading more than an hour old does not stand in for a failed one', async () => {
+    // Two hours ago the server read ten minutes ahead. Nothing says that still holds.
+    const then = Date.now() - 2 * 60 * 60 * 1000
+    noteServerTime('http://x', new Date(then + 10 * 60 * 1000).toISOString(), then, then)
+    await comment('a', T - 4000)
+    const posted = server({ clock: 'down' })
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0][0].at).toBe(new Date(T - 4000).toISOString())
+  })
+
+  test('a send that starts while a write is still being queued takes that write with it', async () => {
+    // The write has its place in the queue and is still reading the copy, slowly, when the send
+    // starts. Sent now, it goes before anything made after it; left for the next send, it would not.
+    const copy = memoryBackend()
+    setCacheBackend({ ...copy, entries: async () => { await new Promise((r) => setTimeout(r, 15)); return copy.entries() } })
+    const created = queueOfflineWrite({ baseUrl: 'http://x', myTasksUrl: 'http://x/api/tasks', kind: 'create_task', taskId: 't_made0ffline', body: { title: 'First' } }, T)
+    const posted = server()
+    const sent = flushOutbox('http://x', 'tok')
+    await created
+    expect(await sent).toBe(true)
+    expect(posted.flat().map((o) => o.kind)).toEqual(['create_task'])
+  })
+
+  test('a reading that never answers does not hold the send past the timeout', async () => {
+    await comment('a', T - 4000)
+    const posted = server({ clock: 'hang' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const done = flushOutbox('http://x', 'tok')
+      await vi.advanceTimersByTimeAsync(2600)
+      expect(await done).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(posted).toHaveLength(1)
+    expect(posted[0][0].at).toBe(new Date(T - 4000).toISOString())
+  })
+
+  test('a later flush starts above the last time an earlier one sent', async () => {
+    await comment('first', T - 1000)
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    const last = ms(posted[0][0].at)
+
+    // The device clock was set back before this edit was made.
+    await comment('second', T - 5000)
+    await flushOutbox('http://x', 'tok')
+    expect(ms(posted[1][0].at)).toBe(last + 1)
+  })
+})
+
+describe('the floor kept between sends', () => {
+  const S = Date.UTC(2026, 10, 19, 12, 0, 0)
+
+  test('is the server time of the send, not a time that was in the future', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(S)
+      const posted = []
+      global.fetch.mockImplementation(async (url, init) => {
+        if (url.includes('/api/events')) return jsonResponse(200, { events: [], headId: 1 })
+        const sent = JSON.parse(init.body)
+        posted.push(sent.ops)
+        return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+      })
+      // Read ten minutes ahead of the true time: the server applies it as its own now, S.
+      await queueOfflineWrite({ baseUrl: 'http://x', kind: 'add_comment', taskId: TASK.id, body: { body: 'early' } }, S + 10 * 60 * 1000)
+      await flushOutbox('http://x', 'tok')
+
+      // A later offline interval. The edit was made at S + 30s and sent at S + 60s: it keeps its time,
+      // so it does not beat a newer edit from another device made between the two.
+      vi.setSystemTime(S + 60 * 1000)
+      await queueOfflineWrite({ baseUrl: 'http://x', kind: 'add_comment', taskId: 't_other', body: { body: 'later' } }, S + 30 * 1000)
+      await flushOutbox('http://x', 'tok')
+      expect(posted).toHaveLength(2)
+      expect(Date.parse(posted[1][0].at)).toBe(S + 30 * 1000)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

@@ -5,6 +5,7 @@
 import { cacheGet, cachePut } from './offlineCache'
 import { getOfflineState, markOffline, markOnline } from './offlineStatus'
 import { LOCAL_ORIGIN, connectionOrigin, deviceId, flushOutbox, newOpId, newTaskId, nextCachedPosition, queueOfflineWrite } from './outbox'
+import { noteServerTime } from './serverClock'
 import { isNativeApp } from './nativeApp'
 import { notifyTaskChanges } from './taskChanges'
 
@@ -235,6 +236,9 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),
     reopenTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/reopen`, { method: 'POST', offline: { kind: 'reopen_task', taskId: id } }),
+    // A write the server makes only while the task's updatedAt is still `updatedAt` (409 otherwise).
+    // Live only, never queued: by the time a queued one was sent the task could be anything.
+    updateTaskIfUnchanged: (id, payload, updatedAt) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: { ...payload, ifUpdatedAt: updatedAt } }),
     // Live only, with no `offline` kind (outbox.js has a closed list of op kinds): the server works
     // out the next date, so a skip made offline would have nothing to move the task to.
     skipOccurrence: (id) => call(`/api/tasks/${encodeURIComponent(id)}/skip`, { method: 'POST' }),
@@ -310,11 +314,19 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     linkGoal: (id, target) => call(`/api/goals/${encodeURIComponent(id)}/links`, { method: 'POST', body: target }),
     unlinkGoal: (id, target) => call(`/api/goals/${encodeURIComponent(id)}/unlink`, { method: 'POST', body: target }),
     setGoalVision: (text) => call('/api/goal-vision', { method: 'PATCH', body: { text } }),
-    getEvents: (after, limit) => {
+    getEvents: async (after, limit) => {
       const query = {}
       if (after) query.after = after
       if (limit) query.limit = limit
-      return call('/api/events', { query: Object.keys(query).length ? query : undefined })
+      // A reading of the server's clock (serverClock.js). Only when no flush can run inside this
+      // request: send() sends the queue before it returns, and that wait is not network delay.
+      // /api/events is never answered from the copy, and an error throws before the note.
+      const { offline, pending } = getOfflineState()
+      const timed = !local && !offline && pending === 0
+      const t0 = Date.now()
+      const data = await call('/api/events', { query: Object.keys(query).length ? query : undefined })
+      if (timed && typeof data?.now === 'string') noteServerTime(connectionOrigin(baseUrl), data.now, t0, Date.now())
+      return data
     },
 
     getSync: () => call('/api/sync'),

@@ -2,7 +2,7 @@ import { test, expect } from './fixtures.js'
 import { openView, openTask, openNavigation, crowdedTargets, applyViewSettings, fakeUpdate } from './support.js'
 
 // Targets that are big enough can still be too close together. WCAG 2.5.8 asks for 24px targets
-// or spacing; the bar here is 44px targets (accessibility.spec.js) with at least 8px between
+// or spacing; the bar here is 32px targets (MIN_TARGET in support.js) with at least 8px between
 // neighbours, so a click that lands a little off does not land on the next control.
 
 test.describe('target spacing', { tag: ['@a11y'] }, () => {

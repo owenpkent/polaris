@@ -42,7 +42,7 @@ test.describe('Digest', { tag: ['@flow'] }, () => {
     for (const href of hrefs) expect(href).toMatch(/^(https?:\/\/|mailto:)/)
   })
 
-  test('Refresh rebuilds the digest and the button is a 44px target', async ({ page }) => {
+  test('Refresh rebuilds the digest and the button is a big enough target', async ({ page }) => {
     await openView(page, 'digest')
     const refresh = page.getByRole('button', { name: 'Refresh' })
     expect(await smallTargets(page.locator('main'), 'button')).toEqual([])
