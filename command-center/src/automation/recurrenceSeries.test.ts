@@ -150,7 +150,39 @@ test('a two-argument hook still works and ignores the completion day', () => {
 test('the engine ignores the completion day for a rule without X-FROM', () => {
   assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=3', '2026-09-10', '2026-09-08', { completedOn: '2026-09-08' }), '2026-09-13');
   assert.equal(nextOccurrence('FREQ=DAILY;INTERVAL=3;X-FROM=COMPLETION', '2026-09-10', '2026-09-08', { completedOn: '2026-09-08' }), '2026-09-11');
-  assert.equal(nextOccurrence('RRULE:X-FROM=completion;FREQ=DAILY', '2026-09-10', '2026-09-08', { completedOn: '2026-09-08' }), '2026-09-09');
+  assert.equal(nextOccurrence('RRULE:X-FROM=completion;FREQ=DAILY', '2026-09-08', '2026-09-08', { completedOn: '2026-09-08' }), '2026-09-09');
+});
+
+// The owner's "brush Buddy's teeth", 2026-11-14: every 2 days from the finish, Monday's copy
+// completed on Saturday made another one due Monday, in the same place, so completing it looked
+// like nothing had happened however often it was pressed.
+test('X-FROM=COMPLETION never lands on or before the due date of the one finished', () => {
+  const rule = 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION';
+  const done = (due: string, finished: string, r = rule) => nextOccurrence(r, due, finished, { completedOn: finished });
+  // Counted from the finish it would be the due date again, or earlier: counted from the due date.
+  assert.equal(done('2026-11-16', '2026-11-14'), '2026-11-18');
+  assert.equal(done('2026-11-16', '2026-11-12'), '2026-11-18');
+  assert.equal(done('2026-11-16T08:30', '2026-11-14'), '2026-11-18T08:30');
+  assert.equal(done('2026-12-20', '2026-11-14', 'FREQ=MONTHLY;X-FROM=COMPLETION'), '2027-01-20');
+  // A day early still counts from the finish, since that is past the due date.
+  assert.equal(done('2026-11-14', '2026-11-13'), '2026-11-15');
+  // On time and late are as before.
+  assert.equal(done('2026-11-14', '2026-11-14'), '2026-11-16');
+  assert.equal(done('2026-11-10', '2026-11-14'), '2026-11-16');
+  // UNTIL and COUNT still end it.
+  assert.equal(done('2026-11-16', '2026-11-14', 'FREQ=DAILY;INTERVAL=2;UNTIL=20261117;X-FROM=COMPLETION'), null);
+  assert.equal(done('2026-11-16', '2026-11-14', 'FREQ=DAILY;INTERVAL=2;COUNT=1;X-FROM=COMPLETION'), null);
+});
+
+test('completing a from-the-finish task again and again moves it on each time', () => {
+  const store = openStore(':memory:', { nextOccurrence: (rule, prev, context) => nextOccurrence(rule, prev, '2026-11-14', context), today: () => '2026-11-14' });
+  let task = store.createTask({ title: 'Brush teeth', dueAt: '2026-11-15', recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' });
+  const dues: (string | null)[] = [];
+  for (let i = 0; i < 3; i++) {
+    task = store.completeTask(task.id, 'human').next!;
+    dues.push(task.dueAt);
+  }
+  assert.deepEqual(dues, ['2026-11-16', '2026-11-18', '2026-11-20']);
 });
 
 // ---- what a write refuses
