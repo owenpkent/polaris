@@ -842,6 +842,28 @@ describe('order and time of a replayed queue', () => {
     expect(ms(posted[0][1].at)).toBeGreaterThan(ms(posted[0][0].at))
   })
 
+  test('an old tab writing in the same millisecond as this version never replaces one of its edits', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(T)
+      await edit('high', T)
+      await edit('medium', T)
+      // An old tab's first key in this millisecond, and its second: the sequences this version used.
+      for (const [seq, priority] of [['000000', 'low'], ['000001', 'urgent']]) {
+        await backend.put(`${String(T).padStart(15, '0')}-${seq}`, { origin: 'http://x', opId: `op_old${seq}`, kind: 'update_task', taskId: TASK.id, at: new Date(T).toISOString(), base: null, body: { priority } })
+      }
+      const keys = (await backend.entries()).map(([key]) => key).filter((key) => !key.startsWith('!'))
+      expect(keys).toHaveLength(4)
+    } finally {
+      vi.useRealTimers()
+    }
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.priority).sort()).toEqual(['high', 'low', 'medium', 'urgent'])
+  })
+
   test('with the server ten minutes ahead, the times sent are the device readings plus ten minutes and the stored ops are untouched', async () => {
     const backend = memoryBackend()
     setOutboxBackend(backend)

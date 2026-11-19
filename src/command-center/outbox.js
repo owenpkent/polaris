@@ -94,8 +94,12 @@ export function deviceId() {
 // strings of both writers interleave in the order the edits were made. The milliseconds here are
 // never lower than the last key issued from this store, and the sequence breaks ties, so a device
 // clock set back while offline cannot reorder the edits made by this version, and a counter that
-// restarts with the page cannot either.
+// restarts with the page cannot either. A short id for this page ends the key: an old tab numbers
+// its keys from its own counter, so without it an old tab and this one could make the same key in
+// the same millisecond and the second write would replace the first. A key with the id sorts just
+// after the old-format key with the same milliseconds and sequence, and can never equal one.
 const COUNTER_KEY = '!counter'
+let pageKeyId = null
 
 async function nextQueueKey() {
   let ms = 0
@@ -108,7 +112,8 @@ async function nextQueueKey() {
     seq = ms === last ? lastSeq + 1 : 0
     return { ms, seq }
   })
-  return `${String(ms).padStart(15, '0')}-${String(seq).padStart(6, '0')}`
+  if (!pageKeyId) pageKeyId = randomId(8)
+  return `${String(ms).padStart(15, '0')}-${String(seq).padStart(6, '0')}-${pageKeyId}`
 }
 
 // An entry with no origin was queued before edits were stamped. Nothing says where it belongs,
