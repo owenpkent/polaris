@@ -2,7 +2,7 @@
 // leaves two of the same task. The copy goes (dropped, the dashboard's way to remove a task) only
 // while it is as it was made. The server decides that, in the same transaction as the drop: the
 // write names the updatedAt the copy was made with and is refused if anything has changed it
-// since. It is live only, so out of reach of the server nothing is dropped and nothing is queued.
+// since, or if it has gained a subtask or a comment of anyone's but its own. It is live only, so out of reach of the server nothing is dropped and nothing is queued.
 // A copy that stays is the two tasks as before, never a lost one.
 //
 // A checklist's copy comes with fresh items (checklistRepeatItems), and ticking one does not change

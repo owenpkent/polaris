@@ -216,6 +216,28 @@ test('PATCH /api/tasks/:id with ifUpdatedAt writes only while the task is unchan
   });
 });
 
+// Neither a subtask nor a comment moves the copy's updatedAt, so the server checks them itself.
+test('a conditional drop is refused when the copy got a subtask or a human comment, and the copy stays open', async (t) => {
+  const app = fakeApp();
+  t.after(() => app.close());
+  await withServer(app, {}, async (base) => {
+    for (const work of ['subtask', 'comment'] as const) {
+      const task = app.store.createTask({ title: `weekly ${work}`, dueAt: '2026-09-10', recurrence: 'FREQ=WEEKLY' }, 'human');
+      const { next } = (await api(base, 'POST', `/api/tasks/${task.id}/complete`)).json;
+      if (work === 'subtask') app.store.createTask({ title: 'step', parentId: next.id }, 'human');
+      else app.store.addComment(next.id, 'remember the agenda', 'human');
+      const refused = await api(base, 'PATCH', `/api/tasks/${next.id}`, { status: 'dropped', ifUpdatedAt: next.updatedAt });
+      assert.equal(refused.status, 409);
+      assert.equal(refused.json.error.code, 'Conflict');
+      assert.equal(app.store.requireTask(next.id).status, 'open');
+    }
+    // Untouched, apart from recurrence's own comment: still dropped.
+    const plain = app.store.createTask({ title: 'weekly plain', dueAt: '2026-09-10', recurrence: 'FREQ=WEEKLY' }, 'human');
+    const { next } = (await api(base, 'POST', `/api/tasks/${plain.id}/complete`)).json;
+    assert.equal((await api(base, 'PATCH', `/api/tasks/${next.id}`, { status: 'dropped', ifUpdatedAt: next.updatedAt })).status, 200);
+  });
+});
+
 test('POST /api/tasks/:id/restore puts back a history entry, and the history says which can be', async (t) => {
   const app = fakeApp();
   t.after(() => app.close());
