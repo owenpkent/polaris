@@ -34,9 +34,13 @@ Not part of this plan:
   `feat/offline-order-and-server-time`), then #201 (base `feat/settings-clock-line`). Stack C:
   #204, then #205 (base `fix/status-bar-old-webview`). The parent is always merged first.
 - When a parent is squash-merged and its branch deleted, GitHub retargets the child to main. The
-  child then usually shows conflicts, because its history still holds the parent's commits. Merge
-  main into the child's branch, keeping the child's side for the files the parent touched, and
-  check that the resulting tree equals what a rebase would give.
+  child then usually shows conflicts, because its history still holds the parent's commits. Never
+  take a whole file from the child's side: main may by then hold other changes to that file merged
+  earlier in this plan (before #205, #200 and #203 both change AppEndToEndTest.java, which #205's
+  copy predates). First make the reference tree by replaying only the child's own commits onto
+  main in a scratch branch (`git rebase --onto origin/main <old parent head> <scratch>`). Then merge
+  main into the child's branch, resolve each conflicting hunk so main's unrelated changes stay, and
+  check that the resulting tree equals the reference tree (`git diff <scratch> HEAD` is empty).
 - After that the child's head commit is new. Post its review again on that commit, or the Reviewed
   check stays red. CI's browser tests also run on it for the first time, because they do not run
   on a pull request whose base is not main. For #199 this first full browser run matters: it
