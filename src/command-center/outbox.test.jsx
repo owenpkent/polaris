@@ -830,6 +830,18 @@ describe('order and time of a replayed queue', () => {
     expect(posted[0].map((o) => o.body.body)).toEqual(['old', 'new'])
   })
 
+  test('an edit from a tab on the old key format, made after one from this version, is sent after it and wins', async () => {
+    const backend = memoryBackend()
+    setOutboxBackend(backend)
+    await edit('high', T)
+    // An old tab keys by its own clock, which is later than the moment the first edit was queued.
+    await backend.put(`${String(Date.now() + 5).padStart(15, '0')}-000000`, { origin: 'http://x', opId: 'op_old', kind: 'update_task', taskId: TASK.id, at: new Date(T + 1000).toISOString(), base: null, body: { priority: 'low' } })
+    const posted = server()
+    await flushOutbox('http://x', 'tok')
+    expect(posted[0].map((o) => o.body.priority)).toEqual(['high', 'low'])
+    expect(ms(posted[0][1].at)).toBeGreaterThan(ms(posted[0][0].at))
+  })
+
   test('with the server ten minutes ahead, the times sent are the device readings plus ten minutes and the stored ops are untouched', async () => {
     const backend = memoryBackend()
     setOutboxBackend(backend)
@@ -928,6 +940,37 @@ describe('order and time of a replayed queue', () => {
     await comment('second', T - 5000)
     await flushOutbox('http://x', 'tok')
     expect(ms(posted[1][0].at)).toBe(last + 1)
+  })
+})
+
+describe('the floor kept between sends', () => {
+  const S = Date.UTC(2026, 10, 19, 12, 0, 0)
+
+  test('is the server time of the send, not a time that was in the future', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(S)
+      const posted = []
+      global.fetch.mockImplementation(async (url, init) => {
+        if (url.includes('/api/events')) return jsonResponse(200, { events: [], headId: 1 })
+        const sent = JSON.parse(init.body)
+        posted.push(sent.ops)
+        return jsonResponse(200, { results: sent.ops.map((o) => ({ opId: o.opId, taskId: o.taskId, status: 'applied', conflicts: [] })) })
+      })
+      // Read ten minutes ahead of the true time: the server applies it as its own now, S.
+      await queueOfflineWrite({ baseUrl: 'http://x', kind: 'add_comment', taskId: TASK.id, body: { body: 'early' } }, S + 10 * 60 * 1000)
+      await flushOutbox('http://x', 'tok')
+
+      // A later offline interval. The edit was made at S + 30s and sent at S + 60s: it keeps its time,
+      // so it does not beat a newer edit from another device made between the two.
+      vi.setSystemTime(S + 60 * 1000)
+      await queueOfflineWrite({ baseUrl: 'http://x', kind: 'add_comment', taskId: 't_other', body: { body: 'later' } }, S + 30 * 1000)
+      await flushOutbox('http://x', 'tok')
+      expect(posted).toHaveLength(2)
+      expect(Date.parse(posted[1][0].at)).toBe(S + 30 * 1000)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
