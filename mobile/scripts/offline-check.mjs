@@ -40,6 +40,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { androidDir, requireToolchain } from './android-env.mjs'
+import { recoveryCommands } from './clockRecovery.mjs'
 import { freePort, pickDevice, requireAdb, run, startScratchServer, waitForServer } from './device-test.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -177,7 +178,13 @@ function cleanup() {
   }
   if (restoreProblems.size && !recoveryShown) {
     recoveryShown = true
-    console.error(`Put the emulator back by hand:\n  adb -s ${serial} shell settings put global auto_time 1\n  adb -s ${serial} shell date @${Math.floor(Date.now() / 1000)}`)
+    const commands = recoveryCommands({
+      serial,
+      problems: restoreProblems,
+      autoTimeBefore,
+      nowSeconds: Math.floor(Date.now() / 1000),
+    })
+    console.error(`Put the emulator back by hand:\n${commands.map((c) => `  ${c}`).join('\n')}`)
   }
   if (forwarded) {
     spawnSync(adbPath, ['-s', serial, 'reverse', '--remove', `tcp:${port}`], { stdio: 'ignore' })
