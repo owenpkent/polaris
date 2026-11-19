@@ -17,6 +17,24 @@ version (`initWindowInsetsListener` in `@capacitor/android`'s SystemBars.java, C
 - **Older WebView:** the plugin pads the whole window natively by the bars, so the page never
   runs under them and every inset reads 0. Nothing on the page can be covered.
 
+**The icons in the bars.** The dashboard tells the plugin which icons to draw (`setStyle`, from
+`applyTheme` in src/theme.js): light ones for a dark surface, dark ones for a light one. Which
+surface is behind them depends on the same WebView version:
+
+- **WebView 140 or newer:** the dashboard's own top bar and tab bar are behind them, so the icons
+  follow the dashboard's theme, whatever the phone is set to.
+- **Older WebView:** the padded strips show the app window's background. The app's Android theme
+  is a DayNight one, so that background follows the phone's light or dark setting and takes no
+  notice of the theme picked in the dashboard. There the icons follow the phone's setting
+  (`systemBarStyle`, which reads the WebView's version as the plugin does, through
+  `drawsUnderSystemBars` in src/command-center/nativeApp.js). Until 2026-11-18 they followed the
+  theme there too, and the dark theme on a phone set to light drew white icons on a white strip
+  (seen on the API 36 emulator's WebView 133). The strip itself still has the phone's colour, not
+  the dashboard's: colouring it would take native code, and it was left alone.
+
+`statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo` in AppEndToEndTest reads the screen in
+both themes with the phone set to light and to dark, and passes on either kind of WebView.
+
 Capacitor also writes `--safe-area-inset-top`, `-right`, `-bottom`, and `-left` on `<html>`, for
 WebViews whose `env()` values are wrong. Before WebView 144 the bottom inset is wrong while the
 keyboard is up, so the plugin reports 0 for it then. The dashboard reads `env()` through two
