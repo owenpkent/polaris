@@ -69,7 +69,7 @@ test.describe('chat panel mockup', { tag: ['@flow'] }, () => {
     await expect(box).toHaveValue('')
   })
 
-  test('every control in the panel is a 44px target and the page does not scroll sideways', async ({ page }) => {
+  test('every control in the panel is a big enough target and the page does not scroll sideways', async ({ page }) => {
     await openView(page, 'mytasks', 'chat=mockup&open=1')
     const panel = page.getByRole('dialog', { name: 'Ask Polaris' })
     await panel.getByRole('button', { name: 'Move everything from the client email to Friday' }).click()

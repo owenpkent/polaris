@@ -78,7 +78,7 @@ test.describe('update icon', { tag: ['@flow'] }, () => {
 })
 
 test.describe('update panel keyboard', { tag: ['@a11y', '@theme'] }, () => {
-  test('the icon is a 44px target with a focus ring, Esc closes the panel, and focus returns to the icon', async ({ page }) => {
+  test('the icon is a big enough target with a focus ring, Esc closes the panel, and focus returns to the icon', async ({ page }) => {
     await fakeUpdate(page)
     await openView(page)
     const button = icon(page)

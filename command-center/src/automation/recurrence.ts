@@ -347,6 +347,11 @@ export interface OccurrenceContext {
  * never skipping a month the way an RRULE day of the month would. The time of day is kept, and
  * UNTIL and COUNT end it as they end any rule.
  *
+ * The next one is always later than the one finished. A task finished well before it was due can
+ * count to a day on or before that due date (due Monday, finished Saturday, every 2 days: Monday
+ * again), and the copy would land where the done one was, as if nothing had been completed. Then
+ * the span is counted from the due date instead (Wednesday), as for a rule without X-FROM.
+ *
  * COUNT is exact, and counts tasks: COUNT=N on a task means this one and N-1 more. This function
  * only has to know whether any are left (COUNT=1 means none: null), because the store lowers
  * COUNT by one on the rule each time an occurrence is used up, on the next instance when a task is
@@ -383,6 +388,9 @@ export function nextOccurrence(rrule: string, previousDue: string, today: string
   if (!occurrence) return null;
 
   const dateStr = occurrence.toISOString().slice(0, 10);
+  // Counted from the due date the result is past it, so this runs once. A saved due date that is
+  // not a real day compares false and plays no part, as before.
+  if (split.fromCompletion && context.completedOn && occurrence <= new Date(`${datePart}T00:00:00Z`)) return nextOccurrence(rrule, previousDue, today);
   return timePart ? `${dateStr}T${timePart}${zonePart}` : dateStr;
 }
 

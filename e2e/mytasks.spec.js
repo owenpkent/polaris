@@ -1199,7 +1199,8 @@ test.describe('row density', { tag: ['@flow'] }, () => {
     await openView(page)
     const first = rowEl(page, 'Renew domain for the portfolio site')
     const comfortable = (await first.boundingBox()).height
-    expect(await smallTargets(first, 'button')).toEqual([])
+    // A Comfortable row keeps its controls at 44px, the default size (--target), whatever the floor is.
+    expect(await smallTargets(first, 'button', 44)).toEqual([])
 
     await openView(page, 'settings')
     await page.getByRole('radio', { name: /^Compact/ }).check()
@@ -1208,7 +1209,7 @@ test.describe('row density', { tag: ['@flow'] }, () => {
     expect(compact).toBeLessThan(comfortable)
     // 32px of controls and the 1px divider under them, as a comfortable row is 44 and 1.
     if (!isPhone(testInfo)) expect(Math.round(compact)).toBe(33)
-    expect(await smallTargets(first, 'button', 32)).toEqual([])
+    expect(await smallTargets(first, 'button')).toEqual([])
 
     await page.reload()
     expect((await first.boundingBox()).height).toBe(compact)

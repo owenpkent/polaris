@@ -12,13 +12,13 @@
     "release": "node scripts/release-apk.mjs"
   },
   "dependencies": {
-    "@capacitor/android": "^8.6.0",
+    "@capacitor/android": "^8.6.2",
     "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "^8.5.3",
+    "@capacitor/core": "^8.6.2",
     "@capacitor/local-notifications": "^8.3.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.6.0"
+    "@capacitor/cli": "^8.6.2"
   },
   "overrides": {
     "rimraf": {

@@ -88,20 +88,32 @@ export function deviceId() {
   }
 }
 
-// Order comes from a counter kept in the queue's own store, not from a clock: a clock set back
-// while offline, or a counter that restarts with the page, would sort a later edit before an
-// earlier one. Keys from the old format (15-digit milliseconds, a dash, a 6-digit sequence) start
-// with a digit, so they sort before every key made here and keep their own order.
+// Order comes from the key, which has the shape the first version of the queue used (15 digits of
+// milliseconds, a dash, a 6-digit sequence), so a dashboard tab left open across an update, which
+// still makes keys that way from its own clock, sorts into the same order as this one: the key
+// strings of both writers interleave in the order the edits were made. The milliseconds here are
+// never lower than the last key issued from this store, and the sequence breaks ties, so a device
+// clock set back while offline cannot reorder the edits made by this version, and a counter that
+// restarts with the page cannot either. A short id for this page ends the key: an old tab numbers
+// its keys from its own counter, so without it an old tab and this one could make the same key in
+// the same millisecond and the second write would replace the first. A key with the id sorts just
+// after the old-format key with the same milliseconds and sequence, and can never equal one.
 const COUNTER_KEY = '!counter'
+let pageKeyId = null
 
 async function nextQueueKey() {
-  let issued = 0
-  // update() reads and writes in one step, so tabs and calls started together get different numbers.
+  let ms = 0
+  let seq = 0
+  // update() reads and writes in one step, so tabs and calls started together get different keys.
   await getQueue().update(COUNTER_KEY, (record) => {
-    issued = (Number.isFinite(record?.next) ? record.next : 0) + 1
-    return { next: issued }
+    const last = Number.isFinite(record?.ms) ? record.ms : 0
+    const lastSeq = Number.isFinite(record?.seq) ? record.seq : -1
+    ms = Math.max(Date.now(), last)
+    seq = ms === last ? lastSeq + 1 : 0
+    return { ms, seq }
   })
-  return `q${String(issued).padStart(12, '0')}`
+  if (!pageKeyId) pageKeyId = randomId(8)
+  return `${String(ms).padStart(15, '0')}-${String(seq).padStart(6, '0')}-${pageKeyId}`
 }
 
 // An entry with no origin was queued before edits were stamped. Nothing says where it belongs,
@@ -400,6 +412,7 @@ async function doFlush(origin, token) {
     }
 
     let response
+    const sentAtMs = Date.now()
     try {
       response = await fetch(`${origin}/api/outbox`, {
         method: 'POST',
@@ -429,8 +442,10 @@ async function doFlush(origin, token) {
       const ms = Date.parse(at)
       if (ms > latest) latest = ms
     }
-    // The next flush starts above what this one sent.
-    if (Number.isFinite(latest)) noteSent(origin, latest)
+    // The next flush starts above what this one sent, but never above what the server could have
+    // applied: it clamps a time to its own clock, so a later time was applied as the server's now
+    // at that moment, and keeping the wire time would push later edits above their true place.
+    if (Number.isFinite(latest)) noteSent(origin, Math.min(latest, sentAtMs + (Number.isFinite(offsetMs) ? offsetMs : 0)))
     if (batch.some(([, op]) => !acknowledged.has(op.opId))) {
       return stop({ failed: true, status: response.status, count: (await listOps(origin)).length })
     }

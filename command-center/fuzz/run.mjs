@@ -7,7 +7,7 @@
 // crashing inputs land in fuzz/crashes/<target>/. A dictionary at fuzz/dict/<target>.dict, when
 // present, is passed with -dict. Targets are fuzz/targets/<target>.fuzz.ts; see CONTRIBUTING.md,
 // "Coverage-guided fuzzing".
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -86,10 +86,37 @@ if (existsSync(seeds)) cpSync(seeds, evolved, { recursive: true, force: false })
 // A dictionary of format tokens (libFuzzer syntax) lets the mutator splice in keywords it would
 // take far longer to invent byte by byte. Optional: a target without one runs as before.
 const dictFile = path.join(root, 'fuzz/dict', `${target}.dict`);
-const result = run([evolved, ...common], [
+// libFuzzer writes the input it stopped on to the artifact prefix: crash-*, timeout-*, oom-*,
+// slow-unit-*, or leak-*.
+const findings = () => readdirSync(crashes).filter((name) => /^(crash|timeout|oom|slow-unit|leak)-/.test(name));
+const known = new Set(findings());
+// The fuzzer's stderr is passed through as it comes, and its end is kept, to see whether libFuzzer
+// reached its closing line ("Done N runs in S second(s)") before the process ended.
+const child = spawn(process.execPath, [jazzer, targetFile, evolved, ...common, '--',
   `-max_total_time=${seconds}`,
   '-rss_limit_mb=2048',
   `-artifact_prefix=${crashes}${path.sep}`,
   ...(existsSync(dictFile) ? [`-dict=${dictFile}`] : []),
-]);
+], { cwd: root, stdio: ['inherit', 'inherit', 'pipe'] });
+let tail = '';
+child.stderr.on('data', (chunk) => {
+  process.stderr.write(chunk);
+  tail = (tail + chunk).slice(-4000);
+});
+const result = await new Promise((resolve) => {
+  child.on('error', () => resolve({ status: 1, signal: null }));
+  child.on('close', (status, signal) => resolve({ status, signal }));
+});
+// On most nights of 2026-11 the pattern target's process was ended by SIGABRT after libFuzzer
+// had printed "Done N runs": node aborted while exiting, in libuv (uv__io_poll: Assertion
+// `errno == EINTR' failed), and the job failed with nothing found. An abort is such an end, and
+// not a failure, only when libFuzzer had printed that closing line and no input was written. An
+// abort part way through, any other signal, and any exit code of the process's own (a finding
+// is 77) stay failures.
+const newFindings = findings().filter((name) => !known.has(name));
+if (result.status === null && result.signal === 'SIGABRT' && newFindings.length === 0 && /Done \d+ runs in \d+ second/.test(tail)) {
+  const message = `fuzz: the ${target} process aborted while exiting, after libFuzzer finished and with no input written to ${crashes}. Not a finding; treated as a pass.`;
+  console.error(process.env.GITHUB_ACTIONS ? `::warning::${message}` : message);
+  process.exit(0);
+}
 process.exit(result.status ?? 1);

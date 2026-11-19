@@ -10,6 +10,7 @@ import TaskGroupSection from './TaskGroupSection'
 import { TaskTree, indexSubtasks } from './TaskRow'
 import { completeExitDelay } from './CompleteBurst'
 import { showCompleted, showMoved, dismissMoved } from './undoToast'
+import { dropUntouchedNext } from './repeatUndo'
 import TaskListToolbar from './TaskListToolbar'
 import ColumnHeader from './ColumnHeader'
 import InlineTaskInput from './InlineTaskInput'
@@ -419,7 +420,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
   // rejects, so the toast can say so: this tab may have gone by then.
   const toggleCompleteRef = useRef(null)
-  const toggleComplete = useCallback(async (task) => {
+  const toggleComplete = useCallback(async (task, { undoNext = null } = {}) => {
     const wasDone = task.status === 'done'
     let next = null
     setActionError(null)
@@ -429,12 +430,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     try {
       if (wasDone) {
         await api.reopenTask(task.id)
+        await dropUntouchedNext(api, undoNext)
       } else {
         // The row stays while its check celebrates and it fades (TaskRow, CompleteBurst.jsx).
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
         const res = await api.completeTask(task.id)
         next = res?.next ?? null
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }), { nextDue: next?.dueAt ?? null })
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }, { undoNext: next }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await fetchTasks()

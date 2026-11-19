@@ -56,7 +56,10 @@ for (const [i, r] of ['FREQ=WEEKLY;BYDAY=MO,WE;COUNT=5', 'RRULE:FREQ=MONTHLY;BYM
 // pattern: pattern, NUL, text. The last one makes RegExp, the reference, backtrack for seconds
 // (review of #112): it stays in the corpus so every run proves the bounded oracle holds.
 const pattern = corpus('pattern');
-for (const [i, [p, t]] of [['^(a|b)+c?$', 'ababc'], ['\\bfix(es|ed)?\\b', 'this fixes it'], ['[^\\d\\s]{2,5}x*', 'ab12 cdx'], ['(?:foo|bar){1,}baz.', 'foobarbaz!'], ['a*?b+?', 'aaab'], ['^((a*)*)*$', `${'a'.repeat(23)}!`]].entries()) {
+for (const [i, [p, t]] of [['^(a|b)+c?$', 'ababc'], ['\\bfix(es|ed)?\\b', 'this fixes it'], ['[^\\d\\s]{2,5}x*', 'ab12 cdx'], ['(?:foo|bar){1,}baz.', 'foobarbaz!'], ['a*?b+?', 'aaab'], ['^((a*)*)*$', `${'a'.repeat(23)}!`],
+  // Nightly findings, kept as seeds: a repeat count with leading zeros (2026-11-09), then a dash
+  // after a class escape and "\0" before a digit (2026-11-12 to 2026-11-16).
+  ['((|(|))+){0006}', ''], ['[^\\s--z]{5}', '\0\0\0\0dh'], ['\\00\\b', '{0\x004'], ['[\\w-.-z]+', 'a/b']].entries()) {
   write(pattern, `pattern-${i}.txt`, Buffer.concat([Buffer.from(p), Buffer.from([0]), Buffer.from(t)]));
 }
 
