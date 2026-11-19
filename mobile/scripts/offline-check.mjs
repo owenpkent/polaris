@@ -380,7 +380,10 @@ try {
     }
   }))
   const ops = queued.filter?.((q) => q.title) ?? []
-  note('the queue holds both edits under counter keys, in the order made', ops.length === 2 && ops[0].title === 'Order A' && ops[1].title === 'Order B' && ops.every((o) => /^q\d{12}$/.test(o.key)), ops.map((o) => `${o.key}=${o.title}@${o.at}`).join(' '))
+  // A key is the milliseconds (never lower than the last key's, so the clock going back cannot
+  // reorder), a sequence, and this page's id (outbox.js, nextQueueKey).
+  const keyShape = /^\d{15}-\d{6}-[0-9a-z]+$/
+  note('the queue holds both edits under ordered keys, in the order made', ops.length === 2 && ops[0].title === 'Order A' && ops[1].title === 'Order B' && ops.every((o) => keyShape.test(o.key)) && ops[0].key < ops[1].key, ops.map((o) => `${o.key}=${o.title}@${o.at}`).join(' '))
   note('the second edit carries the EARLIER device time (the clock went back)', ops.length === 2 && Date.parse(ops[1].at) < Date.parse(ops[0].at))
   online()
   const order = await until('order flush', async () => {
