@@ -19,7 +19,7 @@ The eight most useful things found, best first.
 | 1 | Test every small pattern and input up to a bound, next to the random fuzzing | RE2 | Gap. The two matcher bugs fixed in #191 were found by the nightly random fuzzing; a bounded sweep finds both in about a second, and could run on every push |
 | 2 | Stamp offline edits in the server's time | Actual Budget, by contrast | Gap. The outbox merge orders edits by the device's own clock, clamped to now, so a phone whose clock runs behind loses to an older edit. Actual's hybrid logical clock looked like the remedy and is not: it never corrects the difference between two clocks. See docs/offline-clock-proposal.md (#194) |
 | 3 | Written failure cases of merging per field | Super Productivity | Have it. Their two design notes are a checklist to read our merge against |
-| 4 | Check the Tailscale identity with a lookup, not the header alone | golink | Gap. Polaris checks loopback peer, the header, and the origin of a write, and does no lookup |
+| 4 | Confirm the Tailscale login with a WhoIs lookup, not the header alone | None found. golink does a lookup, but only to grant admin rights; it never checks the login against it | Gap. Polaris checks loopback peer, the header, and the origin of a write, and does no lookup |
 | 5 | Model-based tests: a plain object as the model, the real Store beside it | fast-check | Gap. No test uses `fc.commands` yet; the outbox merge is the natural first target |
 | 6 | A dated freshness record, so a blocked release check is noticed | TUF | Owner's call. A signed tag proves who signed, not that it is the newest |
 | 7 | Show third-party text by who wrote it, and call the filter "not a boundary" | GitHub MCP server | Owner's call. Polaris flags all third-party text alike |
@@ -107,8 +107,8 @@ Checked and left out: Vibe Kanban (its README says it is being shut down). Not e
 
 **[golink](https://github.com/tailscale/golink)** (BSD-3-Clause). Tailscale's own small app with SQLite and identity headers: the closest reference there is to http/tailscale.ts.
 
-- [golink.go](https://github.com/tailscale/golink/blob/main/golink.go): trusts the login header only from loopback, then confirms it with a WhoIs lookup on the forwarded address, and gives a failed lookup no admin rights. A write needs a custom header a cross-origin page cannot set, or a token.
-- Polaris: loopback and origin checks are **Have it**. The lookup is a **Gap**, item 4 of the shortlist.
+- [golink.go](https://github.com/tailscale/golink/blob/d4c752ba2a71793dd8035a5b23746f2c97831c89/golink.go#L1064-L1143) (pinned): trusts the login header only from loopback. It then runs a WhoIs lookup on the forwarded address, but only to read admin capabilities: it never compares the identity WhoIs returns with the header, and it keeps the header login when the address is invalid or the lookup fails (a failed lookup just gives no admin rights). A write needs a custom header a cross-origin page cannot set, or a token.
+- Polaris: loopback and origin checks are **Have it**. Confirming the login itself with a lookup is a **Gap**, item 4 of the shortlist, and golink is not a model for it.
 
 **[age](https://github.com/FiloSottile/age)** (BSD-3-Clause), with its [format spec](https://github.com/C2SP/C2SP/blob/main/age.md). The benchmark for an encrypted file format.
 
