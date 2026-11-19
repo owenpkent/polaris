@@ -51,6 +51,7 @@ npm test                 # dashboard unit tests only (Vitest + jsdom)
 npm run build            # dashboard; the daemon then serves dist/ at http://127.0.0.1:8788/
 npm run mockup           # dashboard on a scratch database with demo data (-- --fresh to rebuild)
 npm run test:android     # Android app instrumented tests on a running emulator (mobile/README.md, Testing)
+npm run test:android:offline  # offline queue and device clock checks in the real app on a rooted (Google APIs) emulator; not in CI
 ```
 
 One Playwright run at a time: `playwright test`, `npm run test:ui`, and `npm run shots` take a machine-wide lock (e2e/suiteLock.js), and a second run waits. While working, run only the spec you changed, at desktop: `npx playwright test e2e/<file>.spec.js --project desktop`. Before a pull request, run `npm run shots` only if the change affects how the dashboard looks; CI runs the full matrix. Subagents and worktree agents never run the full suite or shots, only a single spec at desktop.
