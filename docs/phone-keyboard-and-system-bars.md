@@ -25,15 +25,32 @@ surface is behind them depends on the same WebView version:
   follow the dashboard's theme, whatever the phone is set to.
 - **Older WebView:** the padded strips show the app window's background. The app's Android theme
   is a DayNight one, so that background follows the phone's light or dark setting and takes no
-  notice of the theme picked in the dashboard. There the icons follow the phone's setting
-  (`systemBarStyle`, which reads the WebView's version as the plugin does, through
-  `drawsUnderSystemBars` in src/command-center/nativeApp.js). Until 2026-11-18 they followed the
-  theme there too, and the dark theme on a phone set to light drew white icons on a white strip
-  (seen on the API 36 emulator's WebView 133). The strip itself still has the phone's colour, not
-  the dashboard's: colouring it would take native code, and it was left alone.
+  notice of the theme picked in the dashboard. Until 2026-11-18 the icons followed the theme all
+  the same, and the dark theme on a phone set to light drew white icons on a white strip (seen
+  on the API 36 emulator's WebView 133). Now the page hands the window the colour of its bars:
+  the top bar and the tab bar are both `var(--bg2)`, `barColour` reads that token, and the app's
+  own `AppWindow` plugin (AppWindowPlugin.java) paints the window with it. The strips then look
+  as they do on a current WebView, and the icons follow the theme there too.
+
+Three things about the older path (`applySystemBars` in src/theme.js, which reads the WebView's
+version as the plugin does, through `drawsUnderSystemBars` in src/command-center/nativeApp.js):
+
+- SystemBars puts the theme's background back every time it sets the style, and again on every
+  configuration change. So the page sets the style first and the colour after it, and sets both
+  again when the phone's setting changes. The plugin also puts its colour back itself after a
+  configuration change, once every plugin has been told of it.
+- If the colour cannot be read as six hex digits, or the app refuses it, the icons follow the
+  phone's setting instead (`systemBarStyle`), so they can be read against the window's own
+  background whatever theme is picked.
+- The plugin takes an opaque `#rrggbb` and nothing else. A tablet has no tab bar, so on an old
+  WebView its bottom strip is the bars' colour over a page of the page's colour.
 
 `statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo` in AppEndToEndTest reads the screen in
-both themes with the phone set to light and to dark, and passes on either kind of WebView.
+both themes with the phone set to light and to dark, and once more after the setting is switched
+with the app open. On either kind of WebView the strip behind the status bar has to be the colour
+of the dashboard's bars and the icons have to stand out from it; the strip behind the gesture bar
+is the same window and was looked at in a screenshot, not read by the test. `AppWindowColourTest` holds what the plugin takes
+as a colour.
 
 Capacitor also writes `--safe-area-inset-top`, `-right`, `-bottom`, and `-left` on `<html>`, for
 WebViews whose `env()` values are wrong. Before WebView 144 the bottom inset is wrong while the
