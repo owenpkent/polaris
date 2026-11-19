@@ -125,7 +125,7 @@ test.describe('phone tab bar', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('navigation', { name: 'Primary' })).toBeHidden()
   })
 
-  test('switches views, marks the current one, and offers 44px targets', async ({ page }, testInfo) => {
+  test('switches views, marks the current one, and offers big enough targets', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     await openView(page)
     const bar = page.getByRole('navigation', { name: 'Primary' })

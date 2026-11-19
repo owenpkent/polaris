@@ -126,7 +126,7 @@ test.describe('Checklists', { tag: ['@flow'] }, () => {
     await expect(row(page, title)).toContainText('2 items')
   })
 
-  test('the page and its forms fit the screen with 44px controls', async ({ page }) => {
+  test('the page and its forms fit the screen with big enough controls', async ({ page }) => {
     await openView(page, 'checklists')
     await expect(row(page, 'Packing: weekend trip')).toBeVisible()
     expect(await smallTargets(page.getByRole('main'))).toEqual([])

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { isNativeApp, nativeCall } from './command-center/nativeApp'
+import { drawsUnderSystemBars, isNativeApp, nativeCall } from './command-center/nativeApp'
 
 // Light/dark theme. The choice is one of THEME_CHOICES and lives in
 // localStorage; what it resolves to ('light' or 'dark') is written to
@@ -46,16 +46,26 @@ export function resolveTheme(choice, prefersDark) {
   return prefersDark ? 'dark' : 'light'
 }
 
-export function applyTheme(resolved) {
+// Which icons the Android app's status bar and gesture bar get: 'DARK' is light icons, for a dark
+// surface behind them, and 'LIGHT' is dark icons (Capacitor's SystemBars plugin names the styles
+// after the theme they suit). Where the page is drawn under the bars, what is behind them is the
+// dashboard, so the icons follow the dashboard's theme, not the phone's. On a WebView too old
+// for that, what is behind them is the app window's own background, which follows the phone's
+// setting whatever theme was picked here, so there the icons follow the phone. Otherwise the dark
+// theme on a phone set to light put white icons on a white strip, and the light theme on a phone
+// set to dark put dark icons on a dark one.
+export function systemBarStyle(resolved, prefersDark, underBars = drawsUnderSystemBars()) {
+  const dark = underBars ? resolved === 'dark' : Boolean(prefersDark)
+  return dark ? 'DARK' : 'LIGHT'
+}
+
+export function applyTheme(resolved, prefersDark = systemPrefersDark()) {
   try {
     document.documentElement.dataset.theme = resolved
   } catch {
     // No document (server render, bare test harness): nothing to paint.
   }
-  // Inside the Android app the status bar sits over the top bar, so its icons follow the
-  // dashboard's theme, not the phone's: light icons on the dark theme, dark on the light one.
-  // Capacitor's SystemBars plugin names the styles after the theme they suit.
-  if (isNativeApp()) nativeCall('SystemBars', 'setStyle', { style: resolved === 'dark' ? 'DARK' : 'LIGHT' }).catch(() => {})
+  if (isNativeApp()) nativeCall('SystemBars', 'setStyle', { style: systemBarStyle(resolved, prefersDark) }).catch(() => {})
 }
 
 // Watches the OS setting so a 'system' choice follows it while the tab is
@@ -104,9 +114,11 @@ export function useTheme() {
 
   const resolvedTheme = resolveTheme(theme, prefersDark)
 
+  // The phone's own setting is a dependency too: on an old WebView the app's bars follow it even
+  // under an explicit choice (systemBarStyle).
   useEffect(() => {
-    applyTheme(resolvedTheme)
-  }, [resolvedTheme])
+    applyTheme(resolvedTheme, prefersDark)
+  }, [resolvedTheme, prefersDark])
 
   const setTheme = useCallback((choice) => {
     const next = THEME_CHOICES.includes(choice) ? choice : 'system'

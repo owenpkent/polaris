@@ -162,11 +162,11 @@ test.describe('GitHub', { tag: ['@flow'] }, () => {
     expect((await inbox.json()).tasks.filter((t) => t.projectId === project.id)).toEqual([])
   })
 
-  test('every control is a 44px target and the page never scrolls sideways', async ({ page }) => {
+  test('every control is a big enough target and the page never scrolls sideways', async ({ page }) => {
     await openView(page, 'github')
     await expect(trackSwitch(page, UNREADABLE)).toBeVisible()
     const main = page.getByRole('main')
-    expect(await smallTargets(main, 'button, [role="button"], [role="switch"], a[href], input, select'), 'controls under 44px').toEqual([])
+    expect(await smallTargets(main, 'button, [role="button"], [role="switch"], a[href], input, select'), 'controls that are too small').toEqual([])
     await expectNoHorizontalOverflow(page)
   })
 })

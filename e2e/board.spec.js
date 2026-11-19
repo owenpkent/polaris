@@ -143,7 +143,7 @@ test.describe('Board', { tag: ['@flow'] }, () => {
     await expect(panel).toHaveCount(0)
   })
 
-  test('cards and Move buttons are 44px targets and the page does not scroll sideways', async ({ page }) => {
+  test('cards and Move buttons are big enough targets and the page does not scroll sideways', async ({ page }) => {
     await openView(page, 'board')
     await expect(card(lane(page, 'Backlog'), 'Board card alpha')).toBeVisible()
     expect(await smallTargets(page.locator('main'), 'button')).toEqual([])

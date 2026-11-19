@@ -307,8 +307,8 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
   });
 
   router.add('PATCH', '/api/tasks/:id', (ctx) => {
-    const patch = parseBody(taskPatchBodySchema, ctx.body);
-    const task = store.updateTask(ctx.params.id, patch, 'human');
+    const { ifUpdatedAt, ...patch } = parseBody(taskPatchBodySchema, ctx.body);
+    const task = store.updateTask(ctx.params.id, patch, 'human', { ifUpdatedAt });
     sendJson(ctx.res, 200, { task });
   });
 

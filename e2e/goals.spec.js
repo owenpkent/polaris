@@ -191,7 +191,7 @@ test.describe('Goals', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('region', { name: 'Import goals from this browser' })).toHaveCount(0)
   })
 
-  test('every control is a 44px target and the page never scrolls sideways, with details open', async ({ page }) => {
+  test('every control is a big enough target and the page never scrolls sideways, with details open', async ({ page }) => {
     await openView(page, 'goals')
     await openDetails(page, 'Ship the UI test project')
     expect(await smallTargets(page.locator('main'), 'button, select')).toEqual([])

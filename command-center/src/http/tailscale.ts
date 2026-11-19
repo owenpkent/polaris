@@ -20,6 +20,23 @@ export const TAILSCALE_LOGIN_HEADER = 'tailscale-user-login';
 /** The TCP peers `tailscale serve` can be: loopback, in either address family, or IPv4-mapped. */
 const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
+/**
+ * Whether a Host header names this machine as `tailscale serve` publishes it: a name under ts.net,
+ * with or without a port. The proxy answers on such a name only and forwards the Host the client
+ * sent, so every request it stamps carries one.
+ *
+ * Without this the header and a loopback peer were enough, and a browser on the daemon's own
+ * machine supplies both to any website that re-points its own name at 127.0.0.1 (DNS rebinding):
+ * the page is then same-origin to the daemon, may add the login header itself, and its requests
+ * arrive from loopback. What it cannot choose is the Host, which the browser sets to the name the
+ * page was loaded under, and no one outside Tailscale can make a ts.net name resolve to loopback
+ * (found 2026-11-14 by sending that request to a scratch server; hostile-requests.test.ts).
+ */
+export function isTailnetHost(host: string | undefined): boolean {
+  if (typeof host !== 'string') return false;
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.ts\.net(:\d{1,5})?$/.test(host.toLowerCase());
+}
+
 /** A login as compared: trimmed and lower-cased. Tailscale logins are email addresses. */
 export function normalizeTailscaleLogin(raw: string | undefined): string | undefined {
   const login = raw?.trim().toLowerCase();
@@ -34,13 +51,15 @@ export function tailscaleLoginFromEnv(env: NodeJS.ProcessEnv = process.env): str
 /**
  * Whether `req` is the owner arriving through `tailscale serve`: a login is configured, the peer is
  * loopback (the proxy is on this machine; a daemon bound wider than loopback must not take the
- * header from a LAN peer), and the one `Tailscale-User-Login` header names that login.
+ * header from a LAN peer), the request was addressed to a tailnet name (isTailnetHost), and the one
+ * `Tailscale-User-Login` header names that login.
  */
 export function isTailscaleOwner(req: Pick<IncomingMessage, 'headers' | 'socket'>, login: string | undefined): boolean {
   const expected = normalizeTailscaleLogin(login);
   if (!expected) return false;
   const peer = req.socket?.remoteAddress;
   if (!peer || !LOOPBACK_PEERS.has(peer)) return false;
+  if (!isTailnetHost(req.headers.host)) return false;
   const header = req.headers[TAILSCALE_LOGIN_HEADER];
   // node joins repeated headers with ", " for this name; a repeated login header is not one login.
   if (typeof header !== 'string' || header.includes(',')) return false;

@@ -5,7 +5,7 @@ import { connect } from 'node:net';
 import { loadApp, saveAppFromConversion } from '../ingest/github/app.ts';
 import { memorySecretStore } from '../ingest/secrets.ts';
 import { identityProof } from './identity.ts';
-import { TEST_TOKENS, api, authHeaders, fakeApp, withServer } from './test-support.ts';
+import { TAILNET_HOST, TEST_TOKENS, api, authHeaders, fakeApp, fetchViaTailnet, withServer } from './test-support.ts';
 
 /** HMAC-SHA256 over "constellation-identity\n8788\n<challenge>" keyed with the test api token. */
 const IDENTITY_VECTOR = 'c5645df43c6953e54e585515e6a4e5df0eb628a16ba1d28ec57314c0cf266db6';
@@ -246,6 +246,8 @@ test('Tailscale identity: the configured login through the proxy stands in for t
   const app = fakeApp();
   t.after(() => app.close());
   const login = 'owner@example.com';
+  // As the proxy forwards it: to a name under ts.net (test-support.ts). Identity counts for no other Host.
+  const fetch = fetchViaTailnet;
   await withServer(app, { tailscaleLogin: login }, async (base) => {
     // What `tailscale serve` on this machine adds to a request from one of the owner's devices.
     // The test server listens on 127.0.0.1, so the peer is loopback, as the proxy's is.
@@ -260,6 +262,9 @@ test('Tailscale identity: the configured login through the proxy stands in for t
     // Without the header, or with another tailnet user's login, nothing changed.
     assert.equal((await fetch(`${base}/api/health`)).status, 401);
     assert.equal((await fetch(`${base}/api/health`, { headers: { 'Tailscale-User-Login': 'guest@example.com' } })).status, 401);
+    // Nor did it for the owner's login sent to any other name: a page that re-points its own name at
+    // 127.0.0.1 (DNS rebinding) can add the header, but the browser writes the Host.
+    assert.equal((await globalThis.fetch(`${base}/api/health`, { headers: viaProxy })).status, 401);
     // It is the owner: a mutation goes through, and is recorded as the human, as the token's are.
     const before = app.store.lastEventId();
     // (A write over identity also has to come from the dashboard's own page; see the test below.)
@@ -278,6 +283,8 @@ test('Tailscale identity: a write needs the dashboard\'s own origin, since the h
   const app = fakeApp();
   t.after(() => app.close());
   const login = 'owner@example.com';
+  // As the proxy forwards it: to a name under ts.net (test-support.ts). Identity counts for no other Host.
+  const fetch = fetchViaTailnet;
   const secrets = memorySecretStore();
   await saveAppFromConversion(secrets, {
     id: 1, slug: 'cc', name: 'Polaris Command Center', html_url: 'https://github.com/apps/cc',
@@ -315,7 +322,7 @@ test('Tailscale identity: a write needs the dashboard\'s own origin, since the h
     const done = await fetch(`${base}/api/tasks/${task.id}/complete`, { method: 'POST', headers: { ...viaProxy, 'Sec-Fetch-Site': 'same-origin' } });
     assert.equal(done.status, 200);
     assert.equal(app.store.getTask(task.id)?.status, 'done');
-    const reopened = await fetch(`${base}/api/tasks/${task.id}/reopen`, { method: 'POST', headers: { ...viaProxy, Origin: base } });
+    const reopened = await fetch(`${base}/api/tasks/${task.id}/reopen`, { method: 'POST', headers: { ...viaProxy, Origin: `https://${TAILNET_HOST}` } });
     assert.equal(reopened.status, 200);
     assert.equal(app.store.getTask(task.id)?.status, 'open');
     // The token path is unchanged: a bearer token from a foreign origin is still the token.
@@ -329,6 +336,8 @@ test('Tailscale identity: a write from an origin the owner listed (the Android a
   const app = fakeApp();
   t.after(() => app.close());
   const login = 'owner@example.com';
+  // As the proxy forwards it: to a name under ts.net (test-support.ts). Identity counts for no other Host.
+  const fetch = fetchViaTailnet;
   const viaProxy = { 'Tailscale-User-Login': login };
   // The app's WebView runs the dashboard at https://localhost: the browser says cross-site and names that origin.
   const fromApp = { ...viaProxy, 'Sec-Fetch-Site': 'cross-site', Origin: 'https://localhost' };

@@ -39,7 +39,7 @@ test.describe('Threads', { tag: ['@flow'] }, () => {
     await expect(posts.getByRole('listitem')).toHaveCount(2)
   })
 
-  test('a seeded thread shows its posts with author and type, and its controls are 44px', async ({ page, request }, testInfo) => {
+  test('a seeded thread shows its posts with author and type, and its controls are big enough', async ({ page, request }, testInfo) => {
     const { title } = await seedThread(request, testInfo, 'seeded', [
       { type: 'claim', body: 'Seeded claim.', confidence: 'high' },
       { type: 'evidence', body: 'Seeded evidence.' },

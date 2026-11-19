@@ -10,6 +10,26 @@ export function isNativeApp() {
   }
 }
 
+// Whether the app draws the page under the status bar and the gesture bar. Capacitor's SystemBars
+// plugin lets it from WebView 140 on (docs/phone-keyboard-and-system-bars.md). On an older WebView
+// it pads the window instead, and what shows behind the bars is the window's own background, which
+// follows the phone's light or dark setting, not the dashboard's theme. This is the plugin's own
+// test, read from the user agent. A version that cannot be read counts as a current one.
+export const EDGE_TO_EDGE_WEBVIEW = 140
+
+export function drawsUnderSystemBars(userAgent) {
+  let agent = userAgent
+  if (agent === undefined) {
+    try {
+      agent = window.navigator.userAgent
+    } catch {
+      agent = ''
+    }
+  }
+  const major = Number(/Chrome\/(\d+)/.exec(agent || '')?.[1])
+  return !(major > 0) || major >= EDGE_TO_EDGE_WEBVIEW
+}
+
 // Calls a method of a Capacitor plugin through the bridge. The page never loads Capacitor's
 // JavaScript runtime, so there are no plugin objects to ask: the bridge's own nativePromise and
 // addListener are the whole interface.
