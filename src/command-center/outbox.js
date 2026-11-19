@@ -5,6 +5,12 @@
 // answers again. The server does the merge (command-center/src/core/outbox.ts): this side only has
 // to say what was changed, when, and which version of the task it was looking at.
 //
+// Order and time are kept apart. Edits are sent in the order they were made, which a counter in
+// the queue's own store decides (nextQueueKey), so a device clock set back while offline cannot
+// reorder them. Each edit keeps the device's own reading as `at` while queued (that is what the
+// local copy shows); when the queue is sent, serverClock.js measures the server's clock and the
+// times go out in the server's time, rising in queue order. The merge on the server is unchanged.
+//
 // Every queued edit is stamped with the server it was made against (`origin`) and is only ever
 // sent there. The browser's storage is shared by every connection this dashboard has had, so
 // without the stamp, testing a second server would hand it the first one's edits.
@@ -18,6 +24,7 @@
 
 import { cacheGet, cachePatchAll, cachePut, cacheScan, indexedDbBackend, memoryBackend } from './offlineCache'
 import { setPending, setLastSync } from './offlineStatus'
+import { correctedTimes, lastSentAt, measureServerTime, noteSent, storedOffset } from './serverClock'
 import { notifyTaskChanges } from './taskChanges'
 
 const DEVICE_KEY = 'cc-device-id-v1'
@@ -81,14 +88,37 @@ export function deviceId() {
   }
 }
 
-let seq = 0
-function queueKey(now) {
-  // Sorts by time, then by order within the same millisecond.
-  return `${String(now).padStart(15, '0')}-${String(++seq).padStart(6, '0')}`
+// Order comes from the key, which has the shape the first version of the queue used (15 digits of
+// milliseconds, a dash, a 6-digit sequence), so a dashboard tab left open across an update, which
+// still makes keys that way from its own clock, sorts into the same order as this one: the key
+// strings of both writers interleave in the order the edits were made. The milliseconds here are
+// never lower than the last key issued from this store, and the sequence breaks ties, so a device
+// clock set back while offline cannot reorder the edits made by this version, and a counter that
+// restarts with the page cannot either. A short id for this page ends the key: an old tab numbers
+// its keys from its own counter, so without it an old tab and this one could make the same key in
+// the same millisecond and the second write would replace the first. A key with the id sorts just
+// after the old-format key with the same milliseconds and sequence, and can never equal one.
+const COUNTER_KEY = '!counter'
+let pageKeyId = null
+
+async function nextQueueKey() {
+  let ms = 0
+  let seq = 0
+  // update() reads and writes in one step, so tabs and calls started together get different keys.
+  await getQueue().update(COUNTER_KEY, (record) => {
+    const last = Number.isFinite(record?.ms) ? record.ms : 0
+    const lastSeq = Number.isFinite(record?.seq) ? record.seq : -1
+    ms = Math.max(Date.now(), last)
+    seq = ms === last ? lastSeq + 1 : 0
+    return { ms, seq }
+  })
+  if (!pageKeyId) pageKeyId = randomId(8)
+  return `${String(ms).padStart(15, '0')}-${String(seq).padStart(6, '0')}-${pageKeyId}`
 }
 
 // An entry with no origin was queued before edits were stamped. Nothing says where it belongs,
-// so it is never sent.
+// so it is never sent. The counter record has no origin either, which is what keeps it out of
+// the list.
 async function listOps(origin) {
   const entries = await getQueue().entries()
   return entries
@@ -181,12 +211,29 @@ async function addCreatedTask(baseUrl, myTasksUrl, task) {
   })
 }
 
+// Writes on their way into the queue. A write takes its place first and is stored a moment later,
+// after its lookups. A send that starts in between waits for it (doFlush), so it does not go
+// out after writes that were made later.
+const queuing = new Set()
+const QUEUING_WAIT_MS = 2000
+
 /**
  * Queues one task write and returns what the server would have answered, built from the local
  * copy, so the caller carries on exactly as it does online.
  */
-export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(baseUrl), myTasksUrl, kind, taskId, opId = newOpId(), body = {} }, now = Date.now()) {
+export function queueOfflineWrite(write, now = Date.now()) {
+  const queued = queueWrite(write, now)
+  const settled = queued.then(() => {}, () => {})
+  queuing.add(settled)
+  settled.then(() => queuing.delete(settled))
+  return queued
+}
+
+async function queueWrite({ baseUrl, origin = connectionOrigin(baseUrl), myTasksUrl, kind, taskId, opId = newOpId(), body = {} }, now) {
   const at = new Date(now).toISOString()
+  // The place in the queue is taken first, before anything else is awaited, so two writes are
+  // sent in the order they were made even when the second one's lookups below finish first.
+  const key = await nextQueueKey()
   const existing = kind === 'create_task' ? null : await findCachedTask(baseUrl, taskId)
   // A task this device made offline has no server version to compare against yet.
   const base = existing && !existing.offlineCreated ? existing.updatedAt ?? null : null
@@ -200,7 +247,7 @@ export async function queueOfflineWrite({ baseUrl, origin = connectionOrigin(bas
     const position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : await nextCachedPosition({ subtask: Boolean(body.parentId) })
     if (position !== undefined) opBody.position = position
   }
-  await getQueue().put(queueKey(now), { origin, opId, kind, taskId, at, base, body: opBody })
+  await getQueue().put(key, { origin, opId, kind, taskId, at, base, body: opBody })
   await refreshPendingCount(origin)
 
   if (kind === 'create_task') {
@@ -268,6 +315,8 @@ export async function adoptLocalOutbox(baseUrl) {
 }
 
 const flushing = new Map()
+// How old a stored reading of the server's clock may be to stand in for one that could not be taken.
+const MAX_FALLBACK_AGE_MS = 60 * 60 * 1000
 
 /**
  * Sends everything queued for the server at `baseUrl`. Resolves to true when none of it is left.
@@ -288,12 +337,18 @@ function wireOp({ origin, ...op }) {
   return op
 }
 
+// What is sent for an entry: the stored op with its time corrected (serverClock.js). Entries are
+// `[key, op, at]` once doFlush has worked the times out.
+function sentOp([, op, at]) {
+  return wireOp(at === undefined ? op : { ...op, at })
+}
+
 /** The longest run from the front of `entries` that fits one request. Empty when the first op alone is too big. */
 function takeBatch(entries) {
   const batch = []
   let bytes = 0
   for (const entry of entries) {
-    const size = encoder.encode(JSON.stringify(wireOp(entry[1]))).length + 1
+    const size = encoder.encode(JSON.stringify(sentOp(entry))).length + 1
     if (batch.length >= MAX_BATCH_OPS || bytes + size > MAX_BATCH_BYTES) break
     batch.push(entry)
     bytes += size
@@ -312,6 +367,14 @@ function summarize(results) {
 }
 
 async function doFlush(origin, token) {
+  // A write that has its place but is not stored yet goes with this send, not the next one. The
+  // wait is short and bounded: a store that never answers must not hold the queue.
+  if (queuing.size) {
+    let timer
+    await Promise.race([Promise.all([...queuing]), new Promise((resolve) => { timer = setTimeout(resolve, QUEUING_WAIT_MS) })])
+    clearTimeout(timer)
+  }
+
   let entries
   try {
     entries = await listOps(origin)
@@ -319,6 +382,15 @@ async function doFlush(origin, token) {
     return true
   }
   if (!entries.length) return true
+
+  // Learn the server's time now, so the times sent are in it. A measurement that fails or times
+  // out falls back to the last stored one if it is recent (an old one says little about a clock
+  // that may have been corrected since), then to the device's own readings: it never blocks or
+  // fails the send. Worked out once for the whole queue so every batch agrees.
+  const fresh = await measureServerTime(origin, token)
+  const offsetMs = (fresh ? storedOffset(origin) : storedOffset(origin, { maxAgeMs: MAX_FALLBACK_AGE_MS }))?.offsetMs
+  const times = correctedTimes(entries, { offsetMs, floorMs: lastSentAt(origin), now: Date.now() })
+  entries = entries.map(([key, op], i) => [key, op, times[i]])
 
   const results = []
   // An edit too big for any request can never be sent. It is set aside so the ones behind it
@@ -340,11 +412,12 @@ async function doFlush(origin, token) {
     }
 
     let response
+    const sentAtMs = Date.now()
     try {
       response = await fetch(`${origin}/api/outbox`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ deviceId: deviceId(), ops: batch.map(([, op]) => wireOp(op)) }),
+        body: JSON.stringify({ deviceId: deviceId(), ops: batch.map(sentOp) }),
       })
     } catch {
       return stop(null)
@@ -362,7 +435,17 @@ async function doFlush(origin, token) {
     const answered = Array.isArray(data.results) ? data.results : []
     const acknowledged = new Set(answered.map((r) => r.opId))
     results.push(...answered)
-    for (const [key, op] of batch) if (acknowledged.has(op.opId)) await getQueue().delete(key)
+    let latest = -Infinity
+    for (const [key, op, at] of batch) {
+      if (!acknowledged.has(op.opId)) continue
+      await getQueue().delete(key)
+      const ms = Date.parse(at)
+      if (ms > latest) latest = ms
+    }
+    // The next flush starts above what this one sent, but never above what the server could have
+    // applied: it clamps a time to its own clock, so a later time was applied as the server's now
+    // at that moment, and keeping the wire time would push later edits above their true place.
+    if (Number.isFinite(latest)) noteSent(origin, Math.min(latest, sentAtMs + (Number.isFinite(offsetMs) ? offsetMs : 0)))
     if (batch.some(([, op]) => !acknowledged.has(op.opId))) {
       return stop({ failed: true, status: response.status, count: (await listOps(origin)).length })
     }
