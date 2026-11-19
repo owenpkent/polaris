@@ -74,6 +74,8 @@ export const taskPatchBodySchema = z.object({
   customFields: customFieldsSchema.optional(),
   sourceUrl: z.string().nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
+  // Not a field: the write is refused with 409 unless the task's updatedAt is still this.
+  ifUpdatedAt: z.string().min(1).optional(),
 }).strict();
 
 export const moveTaskBodySchema = z.object({

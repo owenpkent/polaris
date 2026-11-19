@@ -235,6 +235,9 @@ export function createApiClient(baseUrl, token, { local = false } = {}) {
     updateTask: (id, payload) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, offline: { kind: 'update_task', taskId: id, body: payload } }),
     completeTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', offline: { kind: 'complete_task', taskId: id } }),
     reopenTask: (id) => call(`/api/tasks/${encodeURIComponent(id)}/reopen`, { method: 'POST', offline: { kind: 'reopen_task', taskId: id } }),
+    // A write the server makes only while the task's updatedAt is still `updatedAt` (409 otherwise).
+    // Live only, never queued: by the time a queued one was sent the task could be anything.
+    updateTaskIfUnchanged: (id, payload, updatedAt) => call(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', body: { ...payload, ifUpdatedAt: updatedAt } }),
     // Live only, with no `offline` kind (outbox.js has a closed list of op kinds): the server works
     // out the next date, so a skip made offline would have nothing to move the task to.
     skipOccurrence: (id) => call(`/api/tasks/${encodeURIComponent(id)}/skip`, { method: 'POST' }),
