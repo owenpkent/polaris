@@ -2,7 +2,9 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import MyTasksTab from './MyTasksTab'
 import { BREAKPOINT_QUERIES } from './columnsState'
-import { getDueBounds } from './dueDates'
+import { formatLongDate, getDueBounds } from './dueDates'
+import UndoToast from '../UndoToast'
+import { resetUndoToast } from './undoToast'
 
 const api = {}
 let connected = true
@@ -817,6 +819,60 @@ describe('MyTasksTab Add task keeps new tasks just above the row until it closes
   })
 })
 
+// A second name typed while a click-away save waits, then left by a click, is added after the
+// first is in the list, so its manual position puts it under the first, not above (review on
+// #183). The server here answers as nextPosition does: a create with no position goes first.
+describe('MyTasksTab Add task saves a name queued behind a click-away save in order', () => {
+  const task = (id, title, position, dueAt) => ({
+    id, title, position, projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null,
+    createdAt: '2026-09-01T00:00:00.000Z',
+  })
+
+  afterEach(() => localStorage.clear())
+
+  test('starting from an empty Today, the two land in the order typed', async () => {
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({ sort: { field: 'manual', dir: 'asc' }, group: 'due', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const { today, tomorrow } = getDueBounds()
+    const list = [task('t9', 'Later on', 1, tomorrow)]
+    api.listTasks.mockImplementation(async () => ({ tasks: [...list] }))
+    const finishes = []
+    api.createTask.mockImplementation((payload) => new Promise((resolve) => {
+      finishes.push(() => {
+        const position = payload.position ?? Math.min(...list.map((t) => t.position)) - 1
+        const made = task(`n${list.length}`, payload.title, position, payload.dueAt)
+        list.push(made)
+        resolve({ task: made })
+      })
+    }))
+    stubMatchMedia(1280)
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open Later on' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add task' })[0])
+    const input = await screen.findByRole('textbox', { name: 'New task name' })
+    const clickAway = () => {
+      fireEvent.pointerDown(document.body)
+      act(() => { input.blur() })
+      fireEvent.pointerUp(document.body)
+    }
+    fireEvent.change(input, { target: { value: 'First task' } })
+    clickAway()
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(1))
+    act(() => { input.focus() })
+    fireEvent.change(input, { target: { value: 'Second task' } })
+    clickAway()
+    await act(async () => { finishes[0]() })
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledTimes(2))
+    expect(api.createTask.mock.calls[1][0]).toEqual(expect.objectContaining({ title: 'Second task', dueAt: today }))
+    await act(async () => { finishes[1]() })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'New task name' })).toBeNull())
+    const first = list.find((t) => t.title === 'First task')
+    const second = list.find((t) => t.title === 'Second task')
+    expect(second.position).toBeGreaterThan(first.position)
+    const order = screen.getAllByRole('button', { name: /^Open (First|Second) task$/ }).map((b) => b.getAttribute('aria-label'))
+    expect(order).toEqual(['Open First task', 'Open Second task'])
+  })
+})
+
 describe('MyTasksTab Today group', () => {
   const todayIso = () => getDueBounds().today
   const open = (id) => ({ id, title: `Open ${id}`, status: 'open', priority: 'none', dueAt: todayIso(), projectId: null })
@@ -837,5 +893,136 @@ describe('MyTasksTab Today group', () => {
     render(<MyTasksTab />)
     await waitFor(() => expect(api.listTasks).toHaveBeenCalled())
     expect(screen.queryByRole('button', { name: 'Collapse Today' })).toBeNull()
+  })
+})
+
+describe('MyTasksTab due date picker across the breakpoint', () => {
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  test('an open picker keeps its unsaved time when the viewport crosses 640px, and nothing is written', async () => {
+    const media = stubMatchMedia(390)
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({ sort: { field: 'due', dir: 'asc' }, group: 'none', filters: {} }))
+    const d = new Date()
+    d.setDate(d.getDate() + 2)
+    const dueAt = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    api.listTasks.mockResolvedValue({ tasks: [
+      { id: 't1', title: 'Pay rent', projectId: null, status: 'open', priority: 'none', dueAt, startAt: null, notes: '', sourceType: null },
+    ] })
+    api.updateTask = vi.fn().mockResolvedValue({ task: { id: 't1' } })
+    render(<MyTasksTab />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Change due date for Pay rent' }))
+    const dialog = screen.getByRole('dialog', { name: 'Due date for Pay rent' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add time' }))
+    fireEvent.change(within(dialog).getByLabelText('Time'), { target: { value: '09:30' } })
+
+    // The date is one cell in one place for both tiers, so turning the phone does not unmount the
+    // picker, which would save what was typed as though the owner had left it.
+    media.resize(844)
+    expect(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).toBeTruthy()
+    expect(within(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).getByLabelText('Time').value).toBe('09:30')
+    media.resize(390)
+    expect(screen.getByRole('dialog', { name: 'Due date for Pay rent' })).toBeTruthy()
+    expect(api.updateTask).not.toHaveBeenCalled()
+  })
+})
+
+describe('MyTasksTab move toast', () => {
+  async function moveSoloToNoDate() {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    api.listTasks.mockResolvedValue({ tasks: [{ id: 's', title: 'Solo', status: 'open', priority: 'none', dueAt: bounds.today, projectId: null }] })
+    let finish
+    api.updateTask = vi.fn(() => new Promise((resolve) => { finish = () => resolve({ task: {} }) }))
+    const view = render(<MyTasksTab />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change due date for Solo' }))
+    const pop = await screen.findByRole('dialog', { name: 'Due date for Solo' })
+    fireEvent.click(within(pop).getByRole('button', { name: 'No date' }))
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('s', { dueAt: null }))
+    return { view, finish: () => finish() }
+  }
+
+  afterEach(() => resetUndoToast())
+
+  test('a move that lands while the list is shown says where the task went', async () => {
+    const { finish } = await moveSoloToNoDate()
+    render(<UndoToast />)
+    await act(async () => { finish() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'View Solo in No due date' })).toBeTruthy())
+  })
+
+  // The owner left My tasks while the write was on its way: a toast then would offer a View that
+  // acts on a list that is gone.
+  test('a move that lands after the list has gone publishes no toast', async () => {
+    const { view, finish } = await moveSoloToNoDate()
+    view.unmount()
+    render(<UndoToast />)
+    await act(async () => { finish() })
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: /^View Solo/ })).toBeNull()
+  })
+})
+
+// A repeating task counted from completion can make its next copy due the very day the done one
+// was, so the row looks as if it never left. The toast says when the next one is due, and the
+// copy is tinted where it lands.
+describe('MyTasksTab completing a repeating task', () => {
+  afterEach(() => resetUndoToast())
+
+  test('the toast names the next due date and the next copy is tinted', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' }
+    let completed = false
+    api.listTasks.mockImplementation(() => Promise.resolve({ tasks: [completed ? { ...row, id: 'n' } : { ...row, id: 'd' }] }))
+    api.completeTask = vi.fn(async () => {
+      completed = true
+      return { task: { ...row, id: 'd', status: 'done' }, next: { ...row, id: 'n' } }
+    })
+    const { container } = render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toContain(`Completed Brush teeth. The next one is due ${formatLongDate(bounds.tomorrow)}.`))
+    await waitFor(() => expect(container.querySelector('[data-task-id="n"]')?.className).toContain('just-changed'), { timeout: 3000 })
+  })
+
+  // Reopening the done one alone left two of the same task. The drop names the updatedAt the copy
+  // was made with, so the server refuses it for a copy changed since (repeatUndo.js).
+  test('Undo reopens it, then asks the server to drop the next copy if it is unchanged', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
+    const next = { ...row, id: 'n' }
+    api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
+    api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
+    api.reopenTask = vi.fn().mockResolvedValue({})
+    api.updateTaskIfUnchanged = vi.fn().mockResolvedValue({ task: {} })
+    render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
+    await waitFor(() => expect(api.updateTaskIfUnchanged).toHaveBeenCalledWith('n', { status: 'dropped' }, next.updatedAt))
+    expect(api.reopenTask).toHaveBeenCalledWith('d')
+    expect(api.reopenTask.mock.invocationCallOrder[0]).toBeLessThan(api.updateTaskIfUnchanged.mock.invocationCallOrder[0])
+  })
+
+  test('a refused drop leaves the Undo done, and a Retry after a failed reopen still asks for the drop', async () => {
+    stubMatchMedia(1280)
+    const bounds = getDueBounds()
+    const row = { title: 'Brush teeth', status: 'open', priority: 'none', dueAt: bounds.tomorrow, projectId: null, recurrence: 'FREQ=DAILY', updatedAt: '2026-11-14T10:00:00.000Z' }
+    const next = { ...row, id: 'n' }
+    api.listTasks.mockResolvedValue({ tasks: [{ ...row, id: 'd' }] })
+    api.completeTask = vi.fn().mockResolvedValue({ task: { ...row, id: 'd', status: 'done' }, next })
+    api.reopenTask = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValue({})
+    // The copy was renamed in between, so the server answers 409.
+    api.updateTaskIfUnchanged = vi.fn().mockRejectedValue(new Error('The task has changed since it was read.'))
+    const { container } = render(<><MyTasksTab /><UndoToast /></>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Complete Brush teeth' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo completing Brush teeth' }))
+    const retry = await screen.findByRole('button', { name: 'Retry reopening Brush teeth' })
+    expect(api.updateTaskIfUnchanged).not.toHaveBeenCalled()
+    fireEvent.click(retry)
+    await waitFor(() => expect(api.updateTaskIfUnchanged).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(container.querySelector('.undo-toast-region').textContent).toBe(''))
   })
 })

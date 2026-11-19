@@ -25,7 +25,7 @@ import { UPDATE_INSTALLED, fakeUpdate, openView, openTask, isPhone } from './sup
 // control edges, and selected states, which the other checks cover.
 //
 // This complements the hand-written checks in accessibility.spec.js rather than replacing them:
-// axe's target-size rule stops at 24px, and the bar here is 44px.
+// axe's target-size rule stops at 24px, and the bar here is 32px (MIN_TARGET in support.js).
 
 const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'checklists', 'threads', 'rules', 'digest', 'github', 'settings']
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']

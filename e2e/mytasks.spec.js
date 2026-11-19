@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures.js'
-import { openView, isPhone, createTask, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
+import { openView, isPhone, createTask, clippedContent, endPosition, createGoal, listTaskTitles, openTask, smallTargets } from './support.js'
 import { TOKEN } from './global-setup.js'
 
 const row = (page, title) => page.getByRole('button', { name: `Open ${title}`, exact: true })
@@ -166,6 +166,36 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(shown).toHaveCount(0)
   })
 
+  // The subtasks shown under a task end with an Add subtask row: Enter adds one and keeps the box
+  // open for the next, and Esc closes it.
+  test('Add subtask after the shown subtasks adds several under the task', async ({ page, request }, testInfo) => {
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const parentTitle = await createTask(request, testInfo, 'add subtask parent')
+    const parent = (await (await request.get('/api/tasks?limit=1000', { headers })).json()).tasks.find((t) => t.title === parentTitle)
+    const existing = `${parentTitle} existing step`
+    expect((await request.post('/api/tasks', { headers, data: { title: existing, parentId: parent.id } })).ok()).toBeTruthy()
+    await openView(page)
+    const add = page.getByRole('button', { name: `Add subtask to ${parentTitle}`, exact: true })
+    await expect(add).toHaveCount(0)
+    const toggle = page.getByRole('button', { name: `1 open subtask of ${parentTitle}`, exact: true })
+    await toggle.click()
+    expect((await add.boundingBox()).height).toBeGreaterThanOrEqual(43.5)
+    await add.click()
+    const box = page.getByRole('textbox', { name: `New subtask of ${parentTitle}`, exact: true })
+    await expect(box).toBeFocused()
+    const added = [`${parentTitle} added one`, `${parentTitle} added two`]
+    for (const title of added) {
+      await box.fill(title)
+      await box.press('Enter')
+      await expect(page.getByRole('button', { name: `Open ${title}`, exact: true })).toBeVisible()
+      await expect(box).toHaveValue('')
+    }
+    await expect(page.getByRole('button', { name: `3 open subtasks of ${parentTitle}`, exact: true })).toHaveAttribute('aria-expanded', 'true')
+    await box.press('Escape')
+    await expect(box).toHaveCount(0)
+    await expect(add).toBeVisible()
+  })
+
   test('Add task asks when it is due, and a repeat and a day picked there are saved', async ({ page, request }, testInfo) => {
     test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
     const title = `UI test repeat add ${testInfo.project.name}`
@@ -184,6 +214,105 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const res = await request.get('/api/tasks?limit=1000', { headers: { Authorization: `Bearer ${TOKEN}` } })
     const created = (await res.json()).tasks.find((t) => t.title === title)
     expect(created.recurrence).toBe('daily')
+  })
+
+  test('in the ungrouped list a task just added keeps its reorder handle while the Add task row is open', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test held handle ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: /^Reorder / }).first()).toBeVisible()
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await input.press('Enter')
+    await expect(input).toBeFocused()
+    await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+  })
+
+  // A held task moved by its handle goes where it was moved, while the Add task row stays open
+  // with the next name typed in it, and a second move goes on from there.
+  test('a task just added and moved up by its handle shows where it was moved, and the draft stays', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const title = `UI test held move ${testInfo.project.name}`
+    const draft = `UI test held draft ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill(title)
+    await input.press('Enter')
+    await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    await input.fill(draft)
+    const order = () => page.getByRole('button', { name: /^Open / }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    const indexOf = async () => (await order()).indexOf(`Open ${title}`)
+    const start = await indexOf()
+    expect(start).toBeGreaterThan(1)
+    // Focus moves to the handle by keyboard, which keeps the draft and the row open.
+    await page.getByRole('button', { name: `Reorder ${title}`, exact: true }).focus()
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(indexOf).toBe(start - 1)
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(indexOf).toBe(start - 2)
+    await expect(input).toHaveValue(draft)
+  })
+
+  test('of two tasks just added, the first moved down by its handle shows under the second', async ({ page }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const first = `UI test held pair A ${testInfo.project.name}`
+    const second = `UI test held pair B ${testInfo.project.name}`
+    const draft = `UI test held pair C ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    for (const title of [first, second]) {
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    }
+    await input.fill(draft)
+    const order = () => page.getByRole('button', { name: /^Open UI test held pair / }).evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${second}`])
+    await page.getByRole('button', { name: `Reorder ${first}`, exact: true }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${second}`, `Open ${first}`])
+    await expect(input).toHaveValue(draft)
+  })
+
+  test('a task already in the list moved down past two just added shows between them', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const existing = await createTask(request, testInfo, 'held among', { position: endPosition() })
+    const first = `UI test held among A ${testInfo.project.name}`
+    const second = `UI test held among B ${testInfo.project.name}`
+    const draft = `UI test held among C ${testInfo.project.name}`
+    await openView(page)
+    await page.getByRole('button', { name: 'Group', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Group tasks' }).getByRole('combobox', { name: 'Group by' }).selectOption('none')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    for (const title of [first, second]) {
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(page.getByRole('button', { name: `Reorder ${title}`, exact: true })).toBeVisible()
+    }
+    await input.fill(draft)
+    const names = [existing, first, second].map((t) => `Open ${t}`)
+    const order = () => page.getByRole('button', { name: /^Open / }).evaluateAll((els, keep) => els.map((el) => el.getAttribute('aria-label')).filter((n) => keep.includes(n)), names)
+    await expect.poll(order).toEqual([`Open ${existing}`, `Open ${first}`, `Open ${second}`])
+    await page.getByRole('button', { name: `Reorder ${existing}`, exact: true }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${existing}`, `Open ${second}`])
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(order).toEqual([`Open ${first}`, `Open ${second}`, `Open ${existing}`])
+    await expect(input).toHaveValue(draft)
   })
 
   // As in Asana: the date button beside the name opens the picker, a day only selects, and a plain
@@ -517,6 +646,43 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 })
   }
 
+  // The store puts a new task first; one added from the list's own row stays where it was typed,
+  // at the end of its group, when the row closes and after a reload.
+  // A subtask due today is also a row of its own in Today, after its parent: a new task goes after it too.
+  test('a task added from the row stays at the end of its group when the row closes', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'the inline Add task row is a desktop control')
+    const auth = { Authorization: `Bearer ${TOKEN}` }
+    const parent = await createTask(request, testInfo, 'added last parent', { position: endPosition() })
+    const listed = async () => (await (await request.get('/api/tasks', { headers: auth })).json()).tasks
+    const parentId = (await listed()).find((t) => t.title === parent).id
+    // Well after its parent in the one order, as a subtask added later is. The numbers come from
+    // the shared counter, so the tasks later tests number last still end their groups.
+    for (let i = 0; i < 9; i++) endPosition()
+    const sub = await createTask(request, testInfo, 'added last subtask', { parentId, position: endPosition() })
+    const title = `UI test added last ${testInfo.project.name}`
+    try {
+      await openView(page)
+      await manualSort(page)
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      const input = page.getByRole('textbox', { name: 'New task name' })
+      await input.fill(title)
+      await input.press('Enter')
+      await expect(rowEl(page, title)).toBeVisible()
+      await input.press('Escape')
+      const lastInToday = page.locator('[data-reorder-group="today"] [data-task-id]').last()
+      await expect(lastInToday).toContainText(title)
+      await openView(page)
+      await expect(lastInToday).toContainText(title)
+    } finally {
+      // The added task took the number after the subtask's: the counter skips it, and all three
+      // are completed, so they leave Today to the tests that follow in this worker.
+      endPosition()
+      for (const t of await listed()) {
+        if ([parent, sub, title].includes(t.title)) await request.post(`/api/tasks/${t.id}/complete`, { headers: auth })
+      }
+    }
+  })
+
   test('under the manual sort dragging a row onto Tomorrow sets its date and puts it at the top', async ({ page, request }, testInfo) => {
     // At the end of Today, just above Tomorrow's header (a new task goes first): from the top of
     // a long Today on a phone the drag would scroll the page and land under the header.
@@ -575,8 +741,8 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(dueButton(page, title)).toContainText('Tomorrow')
   })
 
-  // The name is its own button: a click on the text edits it in place; the panel button ending
-  // the name cell, and the space after the text, open the panel.
+  // The name is its own button: a click on the text edits it in place, and above 640px so does a
+  // click in the space after the text; the panel button ending the name cell opens the panel.
   test('clicking the title edits the name in place, Enter saves it, and it survives a reload', async ({ page, request }, testInfo) => {
     const title = await createTask(request, testInfo, 'rename')
     await openView(page)
@@ -589,6 +755,22 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Rename ${title} renamed` })).toBeFocused()
     await openView(page)
     await expect(row(page, `${title} renamed`)).toBeVisible()
+  })
+
+  test('above 640px a click in the space after a short name edits it, and the caret goes to the end', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'desktop layout only')
+    const title = await createTask(request, testInfo, 'wide')
+    await openView(page)
+    const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
+    const open = await row(page, title).boundingBox()
+    // The name's target runs on to the panel button, not only over its words.
+    expect(open.x - (rename.x + rename.width)).toBeLessThanOrEqual(12)
+    await page.mouse.click(rename.x + rename.width - 8, rename.y + rename.height / 2)
+    const input = page.getByRole('textbox', { name: 'Task name' })
+    await expect(input).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0)
+    expect(await input.evaluate((el) => el.selectionStart)).toBe(title.length)
+    await input.press('Escape')
   })
 
   test('Escape leaves the name as it was, and clicking away saves the new one', async ({ page, request }, testInfo) => {
@@ -626,8 +808,13 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await page.keyboard.press('Space')
     await expect(page.getByRole('textbox', { name: 'Task name' })).toBeFocused()
     await page.keyboard.press('Escape')
-    // Tab goes on to the panel button, and Enter on it opens the task.
+    // Tab goes on to the panel button, and Enter on it opens the task. On a phone the date comes
+    // first, between the name and the panel button, as it does on the screen.
     await page.keyboard.press('Tab')
+    if (isPhone(testInfo)) {
+      await expect(page.getByRole('button', { name: `Change due date for ${title}` })).toBeFocused()
+      await page.keyboard.press('Tab')
+    }
     await expect(open).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(panel).toBeVisible()
@@ -751,7 +938,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
   })
 
   test('priority changes from the row menu and survives a reload', async ({ page, request }, testInfo) => {
-    test.skip(isPhone(testInfo), 'the phone tier shows only Name and Due date')
+    test.skip(isPhone(testInfo), 'the phone tier shows only the name and its due date')
     const title = await createTask(request, testInfo, 'priority')
     await openView(page)
     await page.getByRole('button', { name: `Change priority for ${title}` }).click()
@@ -761,7 +948,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await expect(page.getByRole('button', { name: `Change priority for ${title}` })).toHaveText('Urgent')
   })
 
-  test('the phone tier has no column header and hides Columns: its two columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
+  test('the phone tier has no column header and hides Columns: its columns are fixed, and Sort is in the toolbar', async ({ page }, testInfo) => {
     test.skip(!isPhone(testInfo), 'phone layout only')
     await openView(page)
     for (const name of ['Name column menu', 'Due date column menu', 'Priority column menu']) {
@@ -769,6 +956,93 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     }
     await expect(page.getByRole('button', { name: 'Columns' })).toBeHidden()
     await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
+  })
+
+  test('on a phone a long name wraps whole and the due date sits beside it at the middle of the row, before the panel button', async ({ page, request }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    const title = await createTask(request, testInfo, 'long name that goes on and on and wraps over several lines of a phone row until it is read in full by anyone')
+    await openView(page)
+    const rowBox = rowEl(page, title)
+    await expect(rowBox).toBeVisible()
+    expect(await clippedContent(page, rowBox)).toEqual([])
+    const rename = await page.getByRole('button', { name: `Rename ${title}`, exact: true }).boundingBox()
+    const due = await page.getByRole('button', { name: `Change due date for ${title}` }).boundingBox()
+    const open = await row(page, title).boundingBox()
+    const whole = await rowBox.boundingBox()
+    const middle = (box) => box.y + box.height / 2
+    // The name wraps (more than one line tall), and the date is to its right, at the middle of the
+    // row's height, so the room above it and under it is the same.
+    expect(rename.height).toBeGreaterThan(40)
+    expect(due.x).toBeGreaterThanOrEqual(rename.x + rename.width - 1)
+    expect(Math.abs(middle(due) - middle(whole))).toBeLessThanOrEqual(1)
+    // The panel button follows the date, level with it, at the row's right edge.
+    expect(open.x).toBeGreaterThanOrEqual(due.x + due.width - 1)
+    expect(Math.abs(middle(open) - middle(due))).toBeLessThanOrEqual(1)
+    expect(open.x + open.width).toBeLessThanOrEqual(whole.x + whole.width + 1)
+    // Same row, and a 44px target.
+    expect(due.y + due.height).toBeLessThanOrEqual(whole.y + whole.height + 1)
+    expect(due.height).toBeGreaterThanOrEqual(44)
+  })
+})
+
+// At every phone width, 320px included: the narrowest is where a squeezed date column shows first.
+test.describe('My tasks date buttons on a phone', { tag: ['@flow', '@all-widths'] }, () => {
+  // The date button is as wide as its label, but never under the row's height, so "Fri" is not a
+  // 40px target.
+  test('on a phone every due date button is at least 44px wide, whatever its label says', async ({ page, request }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    const local = (offset) => {
+      const d = new Date()
+      d.setDate(d.getDate() + offset)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    // Every weekday label a week out can take (two to seven days ahead), so the narrowest is among them.
+    const weekdays = []
+    for (let offset = 2; offset <= 7; offset++) weekdays.push(await createTask(request, testInfo, `weekday ${offset}`, { dueAt: local(offset) }))
+    const today = await createTask(request, testInfo, 'today', { dueAt: local(0) })
+    const timed = await createTask(request, testInfo, 'timed', { dueAt: `${local(0)}T09:30` })
+    await openView(page)
+    for (const title of [...weekdays, today, timed]) {
+      const button = page.getByRole('button', { name: `Change due date for ${title}` })
+      await expect(button).toBeVisible()
+      expect(await smallTargets(page, `button[aria-label="Change due date for ${title}"]`)).toEqual([])
+      // Which weekday labels fall in the next week depends on the day, and "Fri" is the narrow
+      // one, so the floor itself is checked too: the row's height in Comfortable density.
+      expect(await button.evaluate((el) => getComputedStyle(el).minWidth)).toBe('44px')
+    }
+  })
+
+  // The group's own Add task row is the inline row a phone shows (the toolbar and the floating
+  // button open the sheet). Its date button keeps a column of its own, so a long date never
+  // squeezes the name box and the button never shrinks to its words.
+  test('on a phone the Add task row in a group keeps its date button and its name box usable', async ({ page }, testInfo) => {
+    test.skip(!isPhone(testInfo), 'phone layout only')
+    await openView(page)
+    await page.locator('section', { has: page.getByRole('button', { name: 'Collapse Today' }) }).getByRole('button', { name: 'Add task' }).click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill('UI test phone inline grid')
+    const dateButton = page.getByRole('button', { name: /^Due date(: .+)?$/ })
+    const measure = async () => {
+      const date = await dateButton.boundingBox()
+      const name = await input.boundingBox()
+      expect(date.width).toBeGreaterThanOrEqual(44)
+      expect(date.height).toBeGreaterThanOrEqual(44)
+      expect(name.width).toBeGreaterThanOrEqual(44)
+      expect(date.x + date.width).toBeLessThanOrEqual(page.viewportSize().width + 1)
+    }
+    await measure()
+    // Pick tomorrow with a time, then leave the picker with a click outside it. The picker covers
+    // the name on a phone, so the corner of the screen stands in for a click back in the name: the
+    // picks stay on the row either way (Esc would discard them).
+    await dateButton.click()
+    const due = page.getByRole('dialog', { name: 'Due date for UI test phone inline grid' })
+    await due.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await due.getByRole('button', { name: 'Add time' }).click()
+    await due.getByLabel('Time').fill('23:59')
+    await page.mouse.click(2, 2)
+    await expect(due).toHaveCount(0)
+    await expect(dateButton).toContainText('Tomorrow')
+    await measure()
   })
 })
 
@@ -788,6 +1062,38 @@ test.describe('task details panel', { tag: ['@flow'] }, () => {
     await openTask(page, 'Draft ADR-003 hosting options')
     await page.getByRole('button', { name: 'Close task details' }).click()
     await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0)
+  })
+
+  test('a click on empty space beside the panel closes it and keeps a title typed there', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'on a phone the panel covers the page')
+    const title = await createTask(request, testInfo, 'click-away')
+    await openView(page)
+    await openTask(page, title)
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    await panel.getByRole('textbox', { name: 'Task title' }).fill(`${title} kept`)
+    await page.getByRole('heading', { name: 'My tasks', level: 1 }).click()
+    await expect(panel).toHaveCount(0)
+    await expect(row(page, `${title} kept`)).toBeVisible()
+  })
+
+  test('opening the panel covers the list and never moves or narrows it, at any width', async ({ page, request }, testInfo) => {
+    test.skip(isPhone(testInfo), 'on a phone the panel covers the page')
+    const title = await createTask(request, testInfo, 'covers')
+    const panel = page.getByRole('dialog', { name: 'Task details' })
+    for (const width of [900, 1100, 1440, 1700]) {
+      await page.setViewportSize({ width, height: 800 })
+      await openView(page)
+      const filter = page.getByRole('button', { name: 'Filter' })
+      // The name's button fills its cell, so its box changes if the list narrows or a column goes.
+      const name = page.getByRole('button', { name: `Rename ${title}`, exact: true })
+      const before = { filter: await filter.boundingBox(), name: await name.boundingBox() }
+      await openTask(page, title)
+      await expect(panel).toBeVisible()
+      expect(await filter.boundingBox(), `the toolbar moved at ${width}px`).toEqual(before.filter)
+      expect(await name.boundingBox(), `the row changed at ${width}px`).toEqual(before.name)
+      await page.keyboard.press('Escape')
+      await expect(panel).toHaveCount(0)
+    }
   })
 
   test('Tab stays inside the open panel', async ({ page }) => {
@@ -893,7 +1199,8 @@ test.describe('row density', { tag: ['@flow'] }, () => {
     await openView(page)
     const first = rowEl(page, 'Renew domain for the portfolio site')
     const comfortable = (await first.boundingBox()).height
-    expect(await smallTargets(first, 'button')).toEqual([])
+    // A Comfortable row keeps its controls at 44px, the default size (--target), whatever the floor is.
+    expect(await smallTargets(first, 'button', 44)).toEqual([])
 
     await openView(page, 'settings')
     await page.getByRole('radio', { name: /^Compact/ }).check()
@@ -902,7 +1209,7 @@ test.describe('row density', { tag: ['@flow'] }, () => {
     expect(compact).toBeLessThan(comfortable)
     // 32px of controls and the 1px divider under them, as a comfortable row is 44 and 1.
     if (!isPhone(testInfo)) expect(Math.round(compact)).toBe(33)
-    expect(await smallTargets(first, 'button', 32)).toEqual([])
+    expect(await smallTargets(first, 'button')).toEqual([])
 
     await page.reload()
     expect((await first.boundingBox()).height).toBe(compact)

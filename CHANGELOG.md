@@ -3,6 +3,88 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## 3.0.0 (2026-11-13)
+
+No migration. The version moves to 3 with no breaking change: 2.11 would have followed 2.10.
+
+- On a phone, a task's due date is back on the name's line: the name, then the date chip at its
+  right, then the button that opens the panel, so a short task is one line tall again and a long
+  name wraps beside its date. Every date chip is one size, with its words centred and a repeat
+  glyph inside it, so the dates line up as a column, each at the middle of its row. A chip with a
+  time is no taller than one without. Under 380px wide the date still goes under the name.
+- The same rule now holds wherever something repeats down a list: it is one size, with its words
+  centred, in one column.
+  - Board cards show the due date as that chip, first in the foot, with the assignee at the foot's
+    right end.
+  - A search result's date is the chip at its right, in the words and colours of My tasks.
+  - The priority pill is as wide as Urgent.
+  - No project is an outlined pill rather than the bare word None.
+  - The subtask count is one width and comes before Waiting, now a quiet pill.
+  - A goal's status button is one width, and its progress bar takes the whole width with its words
+    under it, so every bar starts and ends in the same place.
+- The due date picker:
+  - It marks today with a dot under its number, which stays when today is the day picked.
+  - On a phone its quick dates are four equal pills, two to a line.
+  - On a desktop the quick dates, Add time, and Repeat are buttons again, one size down the
+    column, as they are in the new task's date step.
+- On a desktop a task's name takes its whole cell in My tasks, so a click anywhere between the
+  check and the panel button renames it, not only a click on its words. The subtask count and
+  Waiting sit at the cell's right end.
+- A click on empty space beside an open task panel closes it. That, Close, and Esc each save
+  what was typed first, a comment or subtask name left by Tab included.
+- Opening a task's panel no longer moves or narrows My tasks at any width: the panel covers the
+  list's right side, as it does on Board, and no column is hidden while it is open.
+- Under the manual sort the Add task row shows the grip the rows above it have, and a task just
+  added to the ungrouped list has its reorder handle while the row is still open.
+- In the Android app, a downloaded update now opens an "Update ready" dialog with Later and Install,
+  so the owner no longer has to find the notification or the Settings card. If Android has to be
+  allowed to install apps first, the install carries on by itself when the owner comes back from
+  that page (from the dialog, the notification or the card), and the dialog returns with a line
+  asking to allow it if it was still refused. Pressing Later asks for notification permission once
+  and keeps the "ready" notification in the tray as the reminder. The notification is posted at
+  once rather than through Android's inexact alarm, which held it back by half a minute. Android
+  still asks to confirm the install, and nothing installs silently.
+- On My tasks, the subtasks shown under a task now end with an Add subtask row. Type a name and
+  press Enter to add it under that task, as many times as you like, and Esc closes the box. An
+  inbox item still has no subtasks.
+- Completing a repeating task on My tasks or Board now says when the next one is due in the
+  "Completed" toast, and tints the new copy where it lands. A repeat counted from completion can
+  come back on the same day the done one was due, which made the row look as if it was never
+  completed.
+- In the Android app the keyboard stays up after Enter in the Add task row, the Add subtask row, and a
+  Board lane's add box, so the next name can be typed at once. Each box used to turn read-only
+  while it saved, which made Android put the keyboard away. A name typed while one saves is kept.
+
+## 2.10.0 (2026-11-12)
+
+No migration.
+
+- Nothing scrolls to a task you just moved, or to one added from the list's own Add task row. A
+  task sent to another day, group, or Board lane is tinted where it lands, and the list stays
+  where you were working. (The phone's New task sheet still scrolls to the task it made, so a task
+  saved out of sight does not look lost.) The toast at the foot
+  of the screen says where it went, "Moved <task> to Tomorrow", with View, which opens the group,
+  scrolls to the task, and puts focus on it, and Undo, which puts it back. It is a polite status
+  message and takes no focus. Drags and arrow-key moves show no toast, since you watch the row go.
+- A task added from a group's Add task row, or from the phone's New task sheet, stays where it was
+  typed, at the end of its group, instead of jumping to the top when the row closes or the list
+  reloads. Tasks created by agents, imports, and the API still go first.
+- Text stays in line when an edit opens: the new task row types its name where the names above it
+  start and shows its date as a row's date cell does, renaming in place keeps the words where they
+  were, and a new Board card is typed after an empty circle, in line with the card titles.
+  e2e/alignment.spec.js measures each of these.
+- The due date picker's Add time and Repeat are rows of the quick dates' list, and a picked or
+  hovered row is a band inside its 44px target. "When is it due?" for a new task uses the same list,
+  with each date's weekday or day beside it.
+- Right-click the My tasks column header, or press Shift+F10 or the ContextMenu key from a control
+  in it, to show or hide columns, the same list as the toolbar's Columns button.
+- On a phone, a task's name has the whole width and wraps in full, and its due date sits on a line
+  under it; a task with no date shows a quiet Add date there. The open date picker survives a turn
+  across the 640px breakpoint without saving a half-typed time.
+- The desktop table is quieter: Source starts hidden (where a task came from is in its panel; a
+  device that saved its columns hides it once, and the Columns menu brings it back), the lines
+  between columns are softer, and group header bands are lighter.
+
 ## 2.9.0 (2026-11-11)
 
 No migration.

@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Clock, Repeat, X } from 'lucide-react'
 import { Popover, inTextField } from './Menu'
 import { BREAKPOINT_QUERIES } from './columnsState'
 import MonthCalendar from './MonthCalendar'
-import { nextMondayIso } from './AddDuePanel'
+import { quickDates } from './AddDuePanel'
 import { RepeatPicker, useRecurrencePreview } from './RepeatBuilder'
 import { followDate, parseRule } from './recurrenceRules'
 import { dueDateOnly, dueTimeOnly, joinDue, repeatLabel } from './dueDates'
@@ -349,13 +349,7 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
     anchorRef.current?.focus()
   }
 
-  const monday = nextMondayIso()
-  const chips = [
-    { key: 'today', label: 'Today', value: dueBounds.today, hint: weekdayOf(dueBounds.today) },
-    { key: 'tomorrow', label: 'Tomorrow', value: dueBounds.tomorrow, hint: weekdayOf(dueBounds.tomorrow) },
-    { key: 'monday', label: 'Next Monday', value: monday, hint: monthDayOf(monday) },
-    { key: 'none', label: 'No date', value: null, hint: null },
-  ]
+  const chips = quickDates(dueBounds)
 
   return (
     <div role="dialog" aria-label={label} aria-modal={modal || undefined} className="due-pop">
@@ -414,19 +408,4 @@ function DuePicker({ anchorRef, onClose, value, dueBounds, onChange, label, recu
       </div>
     </div>
   )
-}
-
-function isoToDate(iso) {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-// The quick dates' second line on a desktop: the weekday for Today and Tomorrow, the date for
-// Next Monday, in the browser's locale.
-function weekdayOf(iso) {
-  return isoToDate(iso).toLocaleDateString(undefined, { weekday: 'short' })
-}
-
-function monthDayOf(iso) {
-  return isoToDate(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

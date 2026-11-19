@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures.js'
 import { TOKEN } from './server.js'
-import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, seedThread, smallTargets } from './support.js'
+import { VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, hiddenFocusRings, fakeUpdate, isPhone, LONG_SUFFIX, longNames, openTask, openView, pinServerClock, seedThread, smallTargets } from './support.js'
 
 // Nothing is cut off (CONTRIBUTING.md, "Nothing is cut off"): every view, panel, sheet, and menu
 // is checked with clippedContent (e2e/support.js), which fails on text a box hides, content off
@@ -46,6 +46,14 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
   test('Settings', async ({ page }) => {
     await openView(page, 'settings')
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  test('Settings, About with the clock notice', async ({ page }) => {
+    await pinServerClock(page, 10 * 60 * 1000)
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
+    await expect(page.getByRole('region', { name: 'About' }).getByRole('status')).toBeVisible()
     await expectNothingCutOff(page)
   })
 
@@ -128,6 +136,26 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByRole('button', { name: `Open ${WORDY} first subtask ${testInfo.project.name}`, exact: true })).toBeVisible()
+    await expectNothingCutOff(page)
+  })
+
+  // The Add subtask row after the shown subtasks (AddSubtaskRow.jsx), at rest and with its box
+  // open on a long title: it keeps the subtasks' columns and its line closes.
+  test('the Add subtask row, at rest and open on a long name', async ({ page, request }, testInfo) => {
+    // Two whole-page scans, each photographing every focus ring: past 30s on the CI runner.
+    test.slow()
+    const headers = { Authorization: `Bearer ${TOKEN}` }
+    const title = await createTask(request, testInfo, `${WORDY} add subtask parent`)
+    const parent = (await (await request.get('/api/tasks', { headers })).json()).tasks.find((t) => t.title === title)
+    const res = await request.post('/api/tasks', { headers, data: { title: `${WORDY} only subtask ${testInfo.project.name}`, parentId: parent.id } })
+    expect(res.ok()).toBeTruthy()
+    await openView(page)
+    await page.getByRole('button', { name: `1 open subtask of ${title}`, exact: true }).click()
+    const add = page.getByRole('button', { name: `Add subtask to ${title}`, exact: true })
+    await expect(add).toBeVisible()
+    await expectNothingCutOff(page)
+    await add.click()
+    await page.getByRole('textbox', { name: `New subtask of ${title}`, exact: true }).fill(`A new step${LONG_SUFFIX}${LONG_SUFFIX}`)
     await expectNothingCutOff(page)
   })
 
@@ -445,7 +473,7 @@ test.describe('nothing is cut off', { tag: ['@a11y', '@all-widths'] }, () => {
       const pop = el.closest('[data-popover]')
       const box = pop.getBoundingClientRect()
       const inside = (node) => { const r = node.getBoundingClientRect(); return r.left >= box.left - 0.5 && r.right <= box.right + 0.5 }
-      const today = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Today')
+      const today = [...el.querySelectorAll('button')].find((b) => b.firstChild?.textContent.trim() === 'Today')
       return { scrollLeft: pop.scrollLeft, heading: inside(el.querySelector('h3')), today: inside(today) }
     })).toEqual({ scrollLeft: 0, heading: true, today: true })
     expect(await smallTargets(due, 'button, select')).toEqual([])
@@ -773,6 +801,48 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
     await page.keyboard.press('Escape')
     await expect(undo).toHaveCount(0)
     await expectNothingCutOff(page)
+  })
+
+  // A repeating task's toast also says when the next one is due, after the long title.
+  test('a repeating task toast with a long title and its next date fits, Undo whole', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`, { recurrence: 'FREQ=DAILY;INTERVAL=2;X-FROM=COMPLETION' })
+    try {
+      await openView(page)
+      await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
+      const undo = page.getByRole('button', { name: `Undo completing ${title}` })
+      await expect(undo).toBeVisible()
+      await undo.hover() // holds the toast's timer
+      const toast = page.getByRole('status').filter({ has: undo })
+      await expect(toast).toContainText('The next one is due')
+      expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+      await undo.click({ trial: true })
+    } finally {
+      // The worker's database is shared with later specs, and the keyboard sweep of My tasks
+      // counts Tab stops per open row, so the copy the repeat made is dropped (completing it would
+      // make another), and the task too if the test stopped before completing it.
+      const headers = { Authorization: `Bearer ${TOKEN}` }
+      const list = await (await request.get('/api/tasks', { headers })).json()
+      for (const t of list.tasks) {
+        if (t.title === title && t.status === 'open') await request.patch(`/api/tasks/${t.id}`, { headers, data: { status: 'dropped' } })
+      }
+    }
+  })
+
+  // The move toast carries two buttons, View and Undo, beside a long title and where it went.
+  test('a move toast with a long title fits, View and Undo whole', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 120, y: 10 } })
+    await page.getByRole('menu', { name: `Actions for ${title}` }).getByRole('menuitem', { name: 'No due date' }).click()
+    const undo = page.getByRole('button', { name: `Undo moving ${title} to No due date` })
+    await expect(undo).toBeVisible()
+    await undo.hover() // holds the toast's timer
+    const toast = page.getByRole('status').filter({ has: undo })
+    expect([...(await clippedContent(page, toast)), ...(await hiddenFocusRings(page, toast))]).toEqual([])
+    await expect(page.getByRole('button', { name: `View ${title} in No due date` })).toBeInViewport({ ratio: 1 })
+    await expect(undo).toBeInViewport({ ratio: 1 })
   })
 
   test('a stack of failed Undos stays on screen, and every Retry and Dismiss can be reached', async ({ page, request }, testInfo) => {

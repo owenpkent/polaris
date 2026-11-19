@@ -5,7 +5,8 @@
 // value is written to the task's history as task.sync_conflict, so nothing vanishes without a
 // trace. "When" is when the edit was made, not when it arrived: a change that itself came through
 // here is weighed by its recorded edit time (applied_ops.edited_at), so two devices that were
-// both offline are ordered by their clocks rather than by who reconnected first. Two edits made in
+// both offline are ordered by their clocks rather than by who reconnected first (the dashboard sends
+// those times in the server's time, measured when it reconnects). Two edits made in
 // the same millisecond are ordered by op id, so the result never depends on arrival order either.
 //
 // What an op may do is a closed list: create a task of the owner's own, edit one, complete, reopen or

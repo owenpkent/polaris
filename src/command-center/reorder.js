@@ -97,3 +97,18 @@ export function planInsert(tasks, taskId, slot) {
   const start = Math.floor(Math.min(...tasks.map((t) => t.position ?? 0)))
   return { updates: order.map((id, i) => ({ id, position: start + i })), order, index: at }
 }
+
+/**
+ * The position that puts a new task last among `peers` (the group it will show in), and still
+ * before whatever comes after the last of them in the one order every list shares (`all`). The
+ * store puts a new task first everywhere (Store.nextPosition); the dashboard's own add keeps a
+ * task where it was typed, at the end of its group, so the list does not jump. Undefined for an
+ * empty group, where first and last are the same place and the store's default does.
+ */
+export function positionAfter(peers, all) {
+  const placed = peers.map((t) => t.position).filter((p) => typeof p === 'number')
+  if (placed.length === 0) return undefined
+  const last = Math.max(...placed)
+  const later = all.map((t) => t.position).filter((p) => typeof p === 'number' && p > last)
+  return positionBetween(last, later.length > 0 ? Math.min(...later) : undefined)
+}

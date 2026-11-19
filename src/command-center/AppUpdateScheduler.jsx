@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { isNativeApp, getAppInfo, subscribeAppResume, subscribeAppUpdateTaps } from './nativeApp'
-import { runAppUpdateCheck, installReadyUpdate, APP_UPDATE_CHANGED_EVENT } from './appAutoUpdate'
+import { runAppUpdateCheck, installReadyUpdate, continueInstallOnResume, APP_UPDATE_CHANGED_EVENT } from './appAutoUpdate'
 
 const HOUR_MS = 60 * 60 * 1000
 
@@ -23,7 +23,10 @@ function Scheduler() {
     run()
     const timer = setInterval(run, HOUR_MS)
     window.addEventListener(APP_UPDATE_CHANGED_EVENT, run)
-    const offResume = subscribeAppResume(run)
+    const offResume = subscribeAppResume(() => {
+      continueInstallOnResume().catch(() => {})
+      run()
+    })
     const offTap = subscribeAppUpdateTaps(() => { installReadyUpdate().catch(() => {}) })
     return () => {
       live = false

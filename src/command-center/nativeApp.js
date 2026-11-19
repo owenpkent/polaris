@@ -10,6 +10,26 @@ export function isNativeApp() {
   }
 }
 
+// Whether the app draws the page under the status bar and the gesture bar. Capacitor's SystemBars
+// plugin lets it from WebView 140 on (docs/phone-keyboard-and-system-bars.md). On an older WebView
+// it pads the window instead, and what shows behind the bars is the window's own background, which
+// follows the phone's light or dark setting, not the dashboard's theme. This is the plugin's own
+// test, read from the user agent. A version that cannot be read counts as a current one.
+export const EDGE_TO_EDGE_WEBVIEW = 140
+
+export function drawsUnderSystemBars(userAgent) {
+  let agent = userAgent
+  if (agent === undefined) {
+    try {
+      agent = window.navigator.userAgent
+    } catch {
+      agent = ''
+    }
+  }
+  const major = Number(/Chrome\/(\d+)/.exec(agent || '')?.[1])
+  return !(major > 0) || major >= EDGE_TO_EDGE_WEBVIEW
+}
+
 // Calls a method of a Capacitor plugin through the bridge. The page never loads Capacitor's
 // JavaScript runtime, so there are no plugin objects to ask: the bridge's own nativePromise and
 // addListener are the whole interface.
@@ -105,14 +125,15 @@ export async function discardAppUpdate() {
 }
 
 // One notification, shown at once, saying a checked APK is ready. Tapping it is handled by
-// subscribeAppUpdateTaps.
+// subscribeAppUpdateTaps. It has no schedule: a scheduled one goes through Android's inexact
+// alarm, which held it back by half a minute on a test device; with none it is posted at once.
 export async function scheduleAppUpdateNotification({ version }) {
   await nativeCall('LocalNotifications', 'schedule', {
     notifications: [{
       id: APP_UPDATE_NOTIFICATION_ID,
       title: `Polaris ${version} is ready to install`,
       body: 'Tap to install. Android asks you to confirm once.',
-      schedule: { at: new Date(Date.now() + 1000).toISOString(), allowWhileIdle: true },
+      // Not an exact alarm: without this the plugin opens Android's Alarms and reminders page.
       isExactNotification: false,
       extra: { kind: 'app-update' },
     }],

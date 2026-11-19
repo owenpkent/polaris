@@ -88,12 +88,14 @@ jobs:
           path: command-center/fuzz/.corpus/${{ matrix.target }}
           key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
 
+      # The parent folder, so the artifact holds one folder named for the target. The report job
+      # reads the target's name from that folder, whichever way the artifact is unpacked.
       - name: Upload crashing input
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: fuzz-crash-${{ matrix.target }}
-          path: command-center/fuzz/crashes/${{ matrix.target }}
+          path: command-center/fuzz/crashes
           if-no-files-found: ignore
           retention-days: 30
 
@@ -118,13 +120,23 @@ jobs:
         with:
           pattern: fuzz-crash-*
           path: crashes
+          merge-multiple: true
 
+      # Every artifact holds one folder named for its target, and they are unpacked into one place,
+      # so each target is crashes/<target>/. Before 2026-11-17 this looked for a folder per
+      # artifact, crashes/fuzz-crash-<target>/, which the download step makes only when more than
+      # one artifact matches: a single failing target was unpacked straight into crashes/, the
+      # loop found nothing, and the findings of 2026-11-12 to 2026-11-16 opened no issue.
       - name: Open or update issues
         run: |
           shopt -s nullglob
-          for dir in crashes/fuzz-crash-*; do
-            target="${dir#crashes/fuzz-crash-}"
-            inputs=("$dir"/crash-* "$dir"/oom-* "$dir"/timeout-* "$dir"/slow-unit-*)
+          found=0
+          for dir in crashes/*/; do
+            dir="${dir%/}"
+            target="${dir#crashes/}"
+            [[ "$target" =~ ^[a-z0-9-]+$ ]] || { echo "skipped a folder that is not a target's: $target"; continue; }
+            found=$((found + 1))
+            inputs=("$dir"/crash-* "$dir"/oom-* "$dir"/timeout-* "$dir"/slow-unit-* "$dir"/leak-*)
             # No input file means the target failed some other way (build or install); the failed
             # job in the run says why, so there is no issue.
             [ ${#inputs[@]} -gt 0 ] || continue
@@ -168,3 +180,11 @@ jobs:
               echo "opened an issue for $target"
             fi
           done
+          # Files under crashes/ and no target's folder among them means this step no longer reads
+          # the artifacts the way the fuzz jobs upload them, and a finding would go unreported
+          # again. Nothing there at all is a job that failed before it fuzzed (an install).
+          if [ "$found" -eq 0 ] && [ -n "$(ls -A crashes 2>/dev/null)" ]; then
+            echo "::error::Artifacts were downloaded, and none holds a target's folder: the report cannot read them."
+            ls -R crashes || true
+            exit 1
+          fi

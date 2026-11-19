@@ -3,7 +3,7 @@ import { openView, openTask, expectNoHorizontalOverflow, smallTargets } from './
 
 // 320px wide (the phone-320 project): 400 percent zoom of a 1280px window, the reflow width of
 // WCAG 1.4.10 (initiatives/ui-ux-testing.md, phase 7). The views must reflow without sideways page
-// scroll, and every control must still be a 44px target. Only the phone-320 project runs these;
+// scroll, and every control must still be a big enough target. Only the phone-320 project runs these;
 // the tag keeps them out of the rest.
 
 // The long and awkward titles from command-center/src/dev/seed-ui-test.ts ("UI Test Text"), built
@@ -38,7 +38,7 @@ test.describe('320px reflow', { tag: ['@narrow'] }, () => {
     await expectNoHorizontalOverflow(page)
   })
 
-  test('the task details panel opens, does not scroll sideways, and keeps 44px buttons at 320px', async ({ page }) => {
+  test('the task details panel opens, does not scroll sideways, and keeps big enough buttons at 320px', async ({ page }) => {
     await openView(page)
     await openTask(page, 'Reply to accessibility audit feedback')
     const panel = page.getByRole('dialog', { name: 'Task details' })
@@ -54,7 +54,7 @@ test.describe('320px reflow', { tag: ['@narrow'] }, () => {
     await expectNoHorizontalOverflow(page)
   })
 
-  test('the navigation drawer items are 44px at 320px', async ({ page }) => {
+  test('the navigation drawer items are big enough at 320px', async ({ page }) => {
     await openView(page)
     await page.getByRole('button', { name: 'Open navigation' }).click()
     const drawer = page.getByRole('dialog', { name: 'Navigation' })

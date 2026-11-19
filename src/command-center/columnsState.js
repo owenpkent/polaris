@@ -9,13 +9,16 @@ import { useCallback, useEffect, useState } from 'react'
 // Source and Assignee, which aren't sortable) -- it lines up with SORT_FIELDS in viewState.js.
 // Assignee starts hidden (`defaultHidden`): shown by default it would take width from Name on
 // an ordinary window, and the Columns menu turns it on for an owner who hands tasks to agents.
+// Source starts hidden too: where a task came from is in its panel, and the column took width
+// from the name and the date for little. The Columns menu, or a right-click on the header,
+// brings either back.
 export const COLUMN_DEFS = [
   { id: 'name', label: 'Name', minWidth: 160, defaultWidth: 440, canHide: false, sortField: 'name' },
   { id: 'due', label: 'Due date', minWidth: 98, defaultWidth: 140, canHide: true, sortField: 'due' },
   { id: 'project', label: 'Project', minWidth: 90, defaultWidth: 180, canHide: true, sortField: 'project' },
   { id: 'assignee', label: 'Assignee', minWidth: 90, defaultWidth: 150, canHide: true, sortField: null, defaultHidden: true },
   { id: 'priority', label: 'Priority', minWidth: 88, defaultWidth: 110, canHide: true, sortField: 'priority' },
-  { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null },
+  { id: 'source', label: 'Source', minWidth: 80, defaultWidth: 120, canHide: true, sortField: null, defaultHidden: true },
 ]
 
 const MAX_WIDTH = 1200
@@ -28,7 +31,7 @@ function defaultState() {
     widths[col.id] = col.defaultWidth
     hidden[col.id] = Boolean(col.defaultHidden)
   }
-  return { widths, hidden }
+  return { widths, hidden, sourceDefault: true }
 }
 
 function loadColumns() {
@@ -55,15 +58,31 @@ function clampWidth(col, width) {
 }
 
 // Widths and hidden-state for every column, persisted to localStorage.
+// "Show or hide columns": a tick for each column that can be hidden, which stays open while the
+// owner ticks several. The toolbar's Columns button and a right-click on the column header
+// (MyTasksTab.jsx) open the same list.
+export function columnMenuItems(hidden, setHidden) {
+  return COLUMN_DEFS.filter((c) => c.canHide).map((c) => ({
+    key: c.id,
+    label: c.label,
+    checked: !hidden[c.id],
+    keepOpen: true,
+    onSelect: () => setHidden(c.id, !hidden[c.id]),
+  }))
+}
+
 export function useColumnsState() {
   const [state, setState] = useState(() => {
     const base = defaultState()
     const loaded = loadColumns()
     if (!loaded) return base
-    return {
-      widths: { ...base.widths, ...loaded.widths },
-      hidden: { ...base.hidden, ...loaded.hidden },
-    }
+    const hidden = { ...base.hidden, ...loaded.hidden }
+    // A saved state from before Source was hidden by default (no `sourceDefault`) hides it once,
+    // so the new default reaches a device that had saved its columns. Shown again after that, it stays.
+    if (!loaded.sourceDefault) hidden.source = true
+    const next = { widths: { ...base.widths, ...loaded.widths }, hidden, sourceDefault: true }
+    if (!loaded.sourceDefault) saveColumns(next)
+    return next
   })
 
   const commit = useCallback((updater) => {
@@ -105,14 +124,12 @@ export const SIDEBAR_WIDTH = 232
 // measured on the list rather than the window. narrowInbox is where the Inbox table, whose
 // Project, Source, and action columns are fixed at 540px, would leave the name under 200px: below
 // it Inbox uses the same stacked cards it shows on a phone (InboxTab.jsx). phone is the single
-// phone breakpoint (640px) the whole dashboard uses for its phone layout tier. narrowPanel is
-// where an open task panel leaves the list too little room for Project as well.
+// phone breakpoint (640px) the whole dashboard uses for its phone layout tier.
 export const BREAKPOINT_QUERIES = {
   narrow900: `(max-width: ${900 + SIDEBAR_WIDTH}px)`,
   narrow600: `(max-width: ${600 + SIDEBAR_WIDTH}px)`,
   narrowInbox: `(max-width: ${800 + SIDEBAR_WIDTH}px)`,
   phone: '(max-width: 640px)',
-  narrowPanel: '(max-width: 1440px)',
 }
 
 const BREAKPOINT_KEYS = Object.keys(BREAKPOINT_QUERIES)
@@ -147,27 +164,25 @@ export function useNarrowBreakpoints() {
 }
 
 // Which columns actually render, combining the user's own hide/show choices
-// with the responsive rules above and (matching the previous mt-panel-open
-// CSS) hiding Priority/Source while the task detail panel is open so Name
-// and Due date have room, and Project too when the window is narrowPanel or
-// less, since the sidebar and the panel then leave the list little width. On the phone tier the column set is fixed to
-// checkbox + Name + Due date regardless of the saved hidden state or an open
-// panel -- there isn't room for anything else.
-export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOpen, narrowPanel = false }) {
+// with the responsive rules above. An open task panel changes nothing here: it covers the list's
+// right side and never moves or narrows the list. On the phone tier the column set is fixed to
+// checkbox + Name (the date is beside the name, or under it on a very narrow phone) regardless of
+// the saved hidden state -- there isn't room for anything else.
+export function getVisibleColumns(hidden, { narrow900, narrow600, phone }) {
   return COLUMN_DEFS.filter((col) => {
     if (!col.canHide) return true
     if (phone) return col.id === 'due'
     if (hidden[col.id]) return false
-    if ((narrow900 || panelOpen) && (col.id === 'priority' || col.id === 'source' || col.id === 'assignee')) return false
-    if ((narrow600 || (panelOpen && narrowPanel)) && col.id === 'project') return false
+    if (narrow900 && (col.id === 'priority' || col.id === 'source' || col.id === 'assignee')) return false
+    if (narrow600 && col.id === 'project') return false
     return true
   })
 }
 
 // The grid-template-columns string shared by the header row and every
 // TaskRow/InlineTaskInput, so a column's width can never drift out of sync
-// between them. On the phone tier the template is fixed (checkbox, Name
-// filling the rest, Due date) and ignores saved widths so the grid is
+// between them. On the phone tier the template is fixed (checkbox, then Name
+// filling the rest) and ignores saved widths so the grid is
 // exactly the viewport width, with no trailing filler track. Otherwise it
 // always starts with the fixed 44px checkbox column and ends with an empty
 // filler track; each column is minmax(min, width): at its stored width when
@@ -176,10 +191,16 @@ export function getVisibleColumns(hidden, { narrow900, narrow600, phone, panelOp
 // `handle` adds a 44px column before the checkbox for the row's reorder handle (the manual
 // sort, ReorderHandle.jsx), on every tier, so the handle is a full target on a phone too. The
 // phone's due column gives up 8px to it, so the Name header (its label and 44px menu) still
-// fits at 320px, where the list is 288px wide.
-export function buildGridTemplate(visibleColumns, widths, { phone, handle = false } = {}) {
+// fits at 320px, where the list is 304px wide.
+//
+// On the phone a task row is one line where it can be: the name, then the date as wide as its
+// own chip, then the button that opens the panel (TaskRow.jsx), so the template is the lead
+// tracks, Name taking the rest, and two tracks sized by what is in them. On a phone too narrow
+// for that the date goes under the name by CSS (.due-cell in index.css) and its track is empty.
+// The Add task row (`inline`) keeps its date button in a fixed column.
+export function buildGridTemplate(visibleColumns, widths, { phone, handle = false, inline = false } = {}) {
   const lead = handle ? '44px 44px' : '44px'
-  if (phone) return `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}`
+  if (phone) return inline ? `${lead} minmax(0, 1fr) ${handle ? '112px' : '120px'}` : `${lead} minmax(0, 1fr) auto auto`
   // The handle column comes out of Name's minimum, so adding it never makes the narrowest list wider.
   const tracks = visibleColumns.map((col) => `minmax(${col.id === 'name' && handle ? col.minWidth - 44 : col.minWidth}px, ${widths[col.id] ?? col.defaultWidth}px)`)
   return [lead, ...tracks, 'minmax(0, 1fr)'].join(' ')

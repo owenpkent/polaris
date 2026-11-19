@@ -307,8 +307,8 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
   });
 
   router.add('PATCH', '/api/tasks/:id', (ctx) => {
-    const patch = parseBody(taskPatchBodySchema, ctx.body);
-    const task = store.updateTask(ctx.params.id, patch, 'human');
+    const { ifUpdatedAt, ...patch } = parseBody(taskPatchBodySchema, ctx.body);
+    const task = store.updateTask(ctx.params.id, patch, 'human', { ifUpdatedAt });
     sendJson(ctx.res, 200, { task });
   });
 
@@ -508,7 +508,9 @@ export function registerRestRoutes(router: Router, app: App, opts: HttpServerOpt
     const lastId = events.length ? events[events.length - 1].id : after;
     // headId is the newest event overall, so a client that only needs change
     // detection can start from it without paging through the whole history.
-    sendJson(ctx.res, 200, { events, lastId, headId: store.lastEventId() });
+    // now is the store's clock, the one the outbox merge compares against, so a device can
+    // measure how far its own clock is from it.
+    sendJson(ctx.res, 200, { events, lastId, headId: store.lastEventId(), now: store.timestamp() });
   });
 
   // -------------------------------------------------------------------- sync

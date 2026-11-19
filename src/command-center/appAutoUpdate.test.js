@@ -42,7 +42,7 @@ beforeEach(() => {
 
 describe('prefs', () => {
   test('default to on, never checked, nothing ready', () => {
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null, asked: false })
   })
 
   test('a state that is not one of the check results is dropped', () => {
@@ -59,14 +59,14 @@ describe('prefs', () => {
     window.removeEventListener(APP_UPDATE_CHANGED_EVENT, seen)
     expect(seen).toHaveBeenCalledTimes(1)
     expect(JSON.parse(localStorage.getItem(APP_UPDATE_PREFS_KEY)).enabled).toBe(false)
-    expect(readAppUpdatePrefs()).toEqual({ enabled: false, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: null, latest: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: false, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: null, latest: null, asked: false })
   })
 
   test('garbage falls back to the defaults', () => {
     localStorage.setItem(APP_UPDATE_PREFS_KEY, '{nope')
     expect(readAppUpdatePrefs().enabled).toBe(true)
     localStorage.setItem(APP_UPDATE_PREFS_KEY, JSON.stringify({ ready: { version: 5 }, lastCheckedAt: 'x' }))
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: null, ready: null, lastError: null, lastState: null, latest: null, asked: false })
   })
 })
 
@@ -90,7 +90,7 @@ describe('runAppUpdateCheck', () => {
     expect(bridge.verify).toHaveBeenCalledWith(READY.path)
     expect(bridge.notify).toHaveBeenCalledWith({ version: '2.4.0' })
     expect(bridge.install).not.toHaveBeenCalled()
-    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: 'newer', latest: '2.4.0' })
+    expect(readAppUpdatePrefs()).toEqual({ enabled: true, lastCheckedAt: NOW.toISOString(), ready: READY, lastError: null, lastState: 'newer', latest: '2.4.0', asked: false })
   })
 
   test('a file that fails the check is discarded, recorded as an error, and never installed', async () => {

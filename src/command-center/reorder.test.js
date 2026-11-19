@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { dropIndexAt, dropTargetAt, planInsert, planReorder, positionBetween, stepSlot } from './reorder'
+import { dropIndexAt, dropTargetAt, planInsert, planReorder, positionAfter, positionBetween, stepSlot } from './reorder'
 import { dropMarkClass } from './useReorderDrag'
 
 const task = (id, position) => ({ id, position, title: id })
@@ -143,5 +143,23 @@ describe('planInsert', () => {
     const plan = planInsert([task('x', 1), task('y', 1)], 'a', 1)
     expect(plan.order).toEqual(['x', 'a', 'y'])
     expect(plan.updates).toEqual([{ id: 'x', position: 1 }, { id: 'a', position: 2 }, { id: 'y', position: 3 }])
+  })
+})
+
+describe('positionAfter', () => {
+  const t = (id, position) => ({ id, position })
+
+  test('goes after the last of the group and before the next task in the shared order', () => {
+    const peers = [t('a', 1), t('b', 3)]
+    const all = [...peers, t('x', 2), t('y', 7), t('z', 9)]
+    expect(positionAfter(peers, all)).toBe(5)
+  })
+
+  test('goes one past the last when nothing comes after it', () => {
+    expect(positionAfter([t('a', -4), t('b', -2)], [t('a', -4), t('b', -2), t('x', -9)])).toBe(-1)
+  })
+
+  test('leaves an empty group to the store', () => {
+    expect(positionAfter([], [t('x', 1)])).toBeUndefined()
   })
 })

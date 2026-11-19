@@ -32,7 +32,7 @@ Environment variables:
 | `CC_API_TOKEN` | (generated) | Bearer token for `/api/*`. If unset, a 32-byte random base64url token is created at `<dirname(dbPath)>/api-token` on first run and reused after that. |
 | `CC_MCP_TOKEN` | (generated) | Bearer token for the full `/mcp` (read + write tools). Generated at `<dirname(dbPath)>/mcp-token` if unset. |
 | `CC_MCP_READONLY_TOKEN` | (generated) | Bearer token for `/mcp/readonly` only. Generated at `<dirname(dbPath)>/mcp-readonly-token` if unset. |
-| `CC_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins allowed to receive CORS headers (including preflight). The Android app (mobile/) runs the dashboard at `https://localhost`, so a server it connects to needs that origin here. |
+| `CC_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated list of origins allowed to receive CORS headers (including preflight). The Android app (mobile/) runs the dashboard at `https://localhost`, so a server it connects to needs that origin here. An origin set here is also the only one, besides the server's own, that may write over Tailscale identity. |
 | `CC_TAILSCALE_LOGIN` | (unset) | Your Tailscale login (email). When set, a request on `/api/*` that arrives from `tailscale serve` on this machine carrying that login in `Tailscale-User-Login` is the owner without the api token. Never applies to `/mcp` or `/mcp/readonly`. See [Tailscale identity](#tailscale-identity). |
 | `CC_DASHBOARD_DIR` | `<repo root>/dist` | Built dashboard directory served at `/` (see [Dashboard](#dashboard)). |
 | `GITHUB_WEBHOOK_SECRET` | (unset) | Enables `POST /webhooks/github`. Without it the route is 404. |
@@ -82,10 +82,13 @@ the same trust the token files next to the database extend on a single-user mach
 process on one of the owner's tailnet devices is the owner on `/api`, which is where a rule is
 enabled. Leave it unset if either matters.
 
-A write over identity (any method but GET and HEAD, without a valid api token) must also be a
-same-origin browser request, or it is a `403`: `Sec-Fetch-Site` must be `same-origin` when the
-browser sends it, and otherwise `Origin` must name the request's own `Host`
-(`isSameOriginBrowserRequest`). The header proves the device, not the page, so without this any
+A write over identity (any method but GET and HEAD, without a valid api token) must also come
+from the dashboard's own origin or from an origin the owner listed, or it is a `403`. Its own
+origin: `Sec-Fetch-Site` must be `same-origin` when the browser sends it, and otherwise `Origin`
+must name the request's own `Host` (`isSameOriginBrowserRequest`). A listed origin: `Origin` is
+one of `CC_CORS_ORIGINS` as the owner set it (`isListedOriginBrowserRequest`), which is how the
+Android app at `https://localhost` writes; the built-in development default of that variable
+never counts. The header proves the device, not the page, so without this any
 website open in the owner's browser could send a simple cross-site POST, which needs no preflight,
 through the proxy as the owner. Reads and the token path are unaffected. For the same reason
 `body.ts` takes a body only when the media type is exactly `application/json`, so
@@ -126,14 +129,14 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | PATCH | `/api/settings/agent` | Body: `{ defaultAgentName }`, validated by `normalizeAgentName` (1 to 40 characters of letters, digits, spaces, `-`, `_`, `.`, starting with a letter or digit). `400` on an invalid name. `{ defaultAgentName }`. Used by the dashboard's "Assign to AI" button. |
 | GET | `/api/identity` | No bearer token. Query `challenge` (32 to 128 lowercase hex characters). `{ proof }`: HMAC-SHA256 hex over `constellation-identity\n<port>\n<challenge>` keyed with the api token, `port` being the one the request arrived on. `400` for any other challenge. |
 | GET | `/api/projects` | `?includeArchived=1` also lists archived projects. `{ projects: (Project & counts)[] }` |
-| POST | `/api/projects` | Body: `{ name, type?, status?, description?, github?, category? }`. The slug comes from the name and must be new. `github` is `owner/repo` or a github.com URL and is stored as `https://github.com/owner/repo`; a project needs no repo. 201 with `{ project }`. |
-| PATCH | `/api/projects/:ref` | Any of the POST fields, plus `archived`. `null` clears an optional field. The slug never changes. There is no DELETE: archive instead, so tasks keep their project. `path`, `todoFile`, and `meta` belong to the importers and are refused. |
+| POST | `/api/projects` | Body: `{ name, type?, status?, description?, github?, category?, archived? }`. The slug comes from the name and must be new. `github` is `owner/repo` or a github.com URL and is stored as `https://github.com/owner/repo`; a project needs no repo. 201 with `{ project }`. |
+| PATCH | `/api/projects/:ref` | Any of the POST fields. `null` clears an optional field. The slug never changes. There is no DELETE: archive instead, so tasks keep their project. `path`, `todoFile`, and `meta` belong to the importers and are refused. |
 | GET | `/api/projects/:ref` | `:ref` is id, slug, or name. `{ project, sections, tasks }` (non-dropped, position order) |
-| GET | `/api/tasks` | Query: `text, status, project, section, priority, dueBefore, dueAfter, sourceType, blocked, assignee, unassigned, orderBy, limit, offset`. `assignee` is an exact match and `unassigned=true` keeps only tasks with none. `{ tasks, total }` |
+| GET | `/api/tasks` | Query: `text, status, project, section, priority, dueBefore, dueAfter, completedAfter, completedBefore, sourceType, blocked, assignee, unassigned, orderBy, limit, offset`. `section` is a section id, `completedAfter` and `completedBefore` bound when a task was finished, `assignee` is an exact match, and `unassigned=true` keeps only tasks with none. `{ tasks, total }` |
 | GET | `/api/tasks/:id` | `{ task, subtasks, blockers, blocking, comments, links, goals, history }`. `goals` are the goals linked to the task itself (`{ id, title, status }`). Each `history` entry also carries `restore`, the edit that Put back would make, or null when nothing in it can be put back. |
 | POST | `/api/tasks` | Body: `NewTask` fields plus `project` (ref), `section` (name, created if missing), `blockedBy: string[]`. The dashboard also sends `id`, `opId`, and `deviceId`: the identity the same create would carry through `/api/outbox`, so a create whose answer was lost is not made again by the replay. `201 { task }` |
 | POST | `/api/tasks/import` | Bulk import from pasted text or CSV. Body: `{ text, format?: auto|csv|lines, project?, dryRun? }`. Dry run `200 { dryRun, format, rows, count, errors, ignoredColumns }`; success `201 { format, created, count, ignoredColumns }`; any row error `400 { error, errors: [{ line, message }] }` and nothing is created. Live-only |
-| PATCH | `/api/tasks/:id` | Body: `TaskPatch` fields (status included). `{ task }` |
+| PATCH | `/api/tasks/:id` | Body: `TaskPatch` fields (status included). `{ task }`. With `ifUpdatedAt`, the write happens only while the task's `updatedAt` is still that value and the task has no subtask and no comment but recurrence's own, and is a 409 otherwise. |
 | POST | `/api/tasks/:id/restore` | Body: `{ eventId }`, an entry in the task's history. Puts back what that entry changed (title, notes, priority, dates, estimate, or recurrence) as an ordinary edit, so it is recorded and can itself be put back. `{ task }`. `400` when the entry is not in the task's history or has nothing to put back. Live-only: no outbox op kind. |
 | POST | `/api/tasks/:id/complete` | `{ task, next }` |
 | POST | `/api/tasks/:id/skip` | Skips one occurrence of an open repeating task: the due date (and start date) move to the next occurrence, a system comment is added, and the task is neither completed nor copied. `{ task }`. A rule with `COUNT` has it lowered by one, since the skipped occurrence is used up, and a rule with `X-FROM=COMPLETION` still counts from the due date. `400` when the task is not open, does not repeat, is the last occurrence (`COUNT=1`), or has no later occurrence. Live-only and owner-only: no MCP tool, no outbox op kind. |
@@ -181,7 +184,7 @@ All request/response bodies are JSON, camelCase, matching the shapes in `src/cor
 | POST | `/api/threads/:id/fork` | Body: `{ title }`. Creates a subtask of the thread's task with a thread of its own, closes this thread with `successorThreadId` pointing at it. `201 { thread, successor, task }`. `400` on a closed thread. |
 | PATCH | `/api/posts/:id` | Body: `{ status }`, one of `open`, `accepted`, `rejected`, `superseded`. Claims and results only. Sets `judgedAt`. `{ post }`. |
 | GET | `/api/posts` | Query: `type`, `status`, `q` (body text), `taskId`, `limit` (default 50, max 500). `{ posts: { post, taskId, taskTitle, threadTitle, untrustedText }[] }`, newest first: the library across threads. `untrustedText` is the task's flag, as on `/api/threads`. |
-| GET | `/api/events` | Query: `after` (event id, default 0), `limit`. `{ events, lastId, headId }` -- poll with `after=<lastId>` to resume; `lastId` never regresses. `headId` is the newest event id overall, for clients that only need change detection. |
+| GET | `/api/events` | Query: `after` (event id, default 0), `limit` (default 500, at least 1). `{ events, lastId, headId, now }` -- poll with `after=<lastId>` to resume; `lastId` never regresses. `headId` is the newest event id overall, for clients that only need change detection. `now` is the server's clock (ISO), the one the offline outbox merge compares times against; the dashboard reads it to send its queued edits' times in the server's time. |
 | GET | `/api/github/status` | `{ mode: 'app' \| 'none', app, user, signedIn, refreshExpiresAt, installations, error? }` |
 | POST | `/api/github/app/manifest` | Body `{}`. `{ action, manifest }` for the dashboard to POST to github.com. `409 github_app_exists`. |
 | GET | `/api/github/app/callback` | No bearer token. Needs a valid single-use `state`; exchanges the manifest code, then redirects to the app's install page. `400` HTML page otherwise. |

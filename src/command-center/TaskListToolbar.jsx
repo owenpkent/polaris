@@ -13,7 +13,7 @@ import {
   isDefaultSort,
   isManualSort,
 } from './viewState'
-import { COLUMN_DEFS } from './columnsState'
+import { columnMenuItems } from './columnsState'
 
 const PRIORITY_FILTER_OPTIONS = [
   { id: 'urgent', label: 'Urgent' },
@@ -237,13 +237,7 @@ export default function TaskListToolbar({
     ref.current?.focus()
   }
 
-  const columnItems = COLUMN_DEFS.filter((c) => c.canHide).map((c) => ({
-    key: c.id,
-    label: c.label,
-    checked: !hiddenColumns[c.id],
-    keepOpen: true,
-    onSelect: () => onSetColumnHidden(c.id, !hiddenColumns[c.id]),
-  }))
+  const columnItems = columnMenuItems(hiddenColumns, onSetColumnHidden)
 
   const filterSections = [
     { key: 'projectIds', title: 'Project', options: projectOptions },

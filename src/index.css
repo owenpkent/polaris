@@ -53,14 +53,19 @@
   --bg-active: color-mix(in srgb, var(--t1) 9%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 3%, var(--bg2)); /* alternate list rows on bg2 */
   --bg-selected: color-mix(in srgb, var(--blue) 16%, var(--bg2));
-  /* Lines, measured on --bg: a row hairline 2.1:1, a surface edge 2.4:1, and the rule under a
-     group header (--bd-section) 3.3:1, so a group reads as its own block at a glance. */
+  /* Lines, measured on --bg: a row hairline 2.1:1 (also the rule under a My tasks group header,
+     which the band and the gap above it set apart), a surface edge 2.4:1, and a section edge
+     (--bd-section) 3.3:1. */
   --bd: color-mix(in srgb, var(--t1) 24%, transparent);
   --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
   --bd-section: color-mix(in srgb, var(--t1) 38%, transparent);
+  /* The line between My tasks columns: half a row hairline, so it guides the eye down a column
+     without boxing every cell, and names and dates stand out over the grid. */
+  --bd-column: color-mix(in srgb, var(--t1) 12%, transparent);
   /* The resting band behind a My tasks group header: a surface, not a state layer, so it is
-     opaque and the hover wash still reads on top of it. */
-  --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
+     opaque and the hover wash still reads on top of it. Light, so the group's name leads rather
+     than its band. */
+  --bg-section: color-mix(in srgb, var(--t1) 3%, var(--bg));
   --bd-strong: #8d95a3; /* 5.3 / 4.3 */
 
   --t1: #f3f5f8; /* 14.8 / 11.9 on --bg / --bg3 */
@@ -162,6 +167,14 @@
   --row-pad: 4px;
   --section-gap: 12px;
 }
+/* A phone shows few rows at a time: the gap before a group is one step smaller there, and a
+   group's header is 32px in both densities. Its arrow and its Add task are as tall as the header
+   and 44px wide: smaller than the 44px default by the owner's choice (2026-11-16), as the controls of a
+   Compact row are. */
+@media (max-width: 640px) {
+  :root { --section-gap: var(--space-3); --row-head: 32px; }
+  :root[data-density='compact'] { --section-gap: var(--space-2); --row-head: 32px; }
+}
 
 /* Light theme, applied when the pre-paint script in index.html (mirrored by
    src/theme.js) sets data-theme="light" on <html>. Same depth model, flipped:
@@ -183,11 +196,12 @@
   --bg-hover: color-mix(in srgb, var(--t1) 4.5%, transparent);
   --bg-active: color-mix(in srgb, var(--t1) 8%, transparent);
   --bg-zebra: color-mix(in srgb, var(--t1) 2.5%, var(--bg2)); /* alternate list rows on bg2 */
-  /* Lines on --bg: a row hairline 1.7:1, a surface edge 1.85:1, a group header's rule 2.55:1. */
+  /* Lines on --bg: a row hairline 1.7:1, a surface edge 1.85:1, a section edge 2.55:1. */
   --bd: color-mix(in srgb, var(--t1) 24%, transparent);
   --bd-surface: color-mix(in srgb, var(--t1) 28%, transparent);
   --bd-section: color-mix(in srgb, var(--t1) 40%, transparent);
-  --bg-section: color-mix(in srgb, var(--t1) 5%, var(--bg));
+  --bd-column: color-mix(in srgb, var(--t1) 12%, transparent);
+  --bg-section: color-mix(in srgb, var(--t1) 3%, var(--bg));
   --bd-strong: #6f7887; /* 4.1 / 4.5, and 3.3 on bg-inset under bg-active */
 
   --t1: #12151b; /* 16.8 / 18.3 */
@@ -404,6 +418,9 @@ kbd { color: var(--t1); }
    whose focus rings reach 4px out. */
 .project-chip.is-wrapping { white-space: normal; border-radius: 12px; margin: 6px 0; }
 .project-chip.is-wrapping > span:last-child { overflow: visible; overflow-wrap: anywhere; }
+/* No project, in a list cell: the same pill's outline with no fill and no dot, so the column is
+   one shape on every row while the rows with a project still lead. */
+.project-chip.is-none { background: transparent; box-shadow: inset 0 0 0 1px var(--bd); color: var(--t2); padding-left: 10px; }
 .project-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .project-avatar {
   display: inline-flex;
@@ -420,8 +437,9 @@ kbd { color: var(--t1); }
 }
 
 /* Priority in a list cell: a soft pill in the level's colour. None and medium (the default)
-   render nothing, so a pill always means something was set. */
-.priority-pill { font-weight: 600; }
+   render nothing, so a pill always means something was set. Every pill is as wide as Urgent,
+   its word centred, so Low, High, and Urgent line up as a column of one shape. */
+.priority-pill { font-weight: 600; justify-content: center; box-sizing: border-box; min-width: 4.25rem; }
 .priority-pill.is-low { background: var(--neutral-soft); color: var(--t2); }
 .priority-pill.is-high { background: var(--orange-soft); color: var(--orange); }
 .priority-pill.is-urgent { background: var(--red-soft); color: var(--red); }
@@ -914,10 +932,18 @@ kbd { color: var(--t1); }
 .filter-box.is-checked { border-color: var(--blue); background: var(--blue); }
 
 @media (max-width: 640px) {
+  /* A phone has no Add task button here (the floating one adds), so Filter, Sort, and Group need
+     no band of their own: the page's top padding is over them and one step is under them. */
   .mytasks-toolbar {
     flex-direction: column;
     align-items: stretch;
+    padding: 0 0 var(--space-2);
   }
+  /* The first and last things in a row (the handle or the check, the panel button) and in the
+     toolbar are small glyphs inside 44px targets, so they already stand clear of the screen's
+     edge. The toolbar and the list reach half way into the page's 16px side padding, which gives
+     a name that much more room before it wraps. */
+  .mytasks-toolbar, .mytasks-list { margin-inline: calc(-1 * var(--space-2)); }
   .mytasks-toolbar-add {
     width: 100%;
   }
@@ -948,7 +974,7 @@ kbd { color: var(--t1); }
   background: var(--bg);
 }
 .mytasks-colhead > :nth-child(n+3),
-.mytasks-row > :nth-child(n+3) { padding-left: 12px; border-left: 1px solid var(--bd); }
+.mytasks-row > :nth-child(n+3) { padding-left: 12px; border-left: 1px solid var(--bd-column); }
 /* Dates, counts, and anything else with digits in the list line up in columns. */
 .mytasks-grid, .mytasks-section-count, .board-card-foot, .board-lane-count { font-variant-numeric: tabular-nums; }
 .mytasks-row > :nth-child(n+3) { align-self: stretch; display: flex; align-items: center; }
@@ -1015,12 +1041,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   gap: 2px;
   min-height: var(--row-head);
   padding-right: 12px;
-  border-bottom: 1px solid var(--bd-section);
+  border-bottom: 1px solid var(--bd);
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: var(--bg-section);
 }
-/* Collapsed, a group is its header alone; the band and the rule keep the groups apart. */
-.mytasks-section-header.is-collapsed { border-bottom-color: var(--bd); }
 /* A row dragged over an empty or collapsed group drops at its top: the header takes the mark. */
 .mytasks-section-header.is-drop-target { background: var(--blue-soft); box-shadow: inset 0 -2px 0 var(--blue); }
 .mytasks-section-header .icon-btn { height: var(--row-head); }
@@ -1042,6 +1066,40 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   transition: background 0.12s, color 0.12s;
 }
 .mytasks-add-row:hover { background: var(--bg-hover); color: var(--t1); }
+/* On a phone a group's Add task is a + at the end of its header (TaskGroupSection.jsx), not a row
+   of its own under the group, which cost a row's height in every group. It sits over the rows'
+   panel buttons: it reaches through the header's padding, and keeps the 4px a row's last cell
+   keeps at its edge. */
+.mytasks-section-add { margin-left: auto; margin-right: calc(-1 * var(--space-3)); padding-right: var(--space-1); }
+
+/* The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx): the Plus sits in a 44px
+   cell where a subtask's check is, and the words start where a subtask's name starts. */
+.add-subtask-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--t2);
+  text-align: left;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.add-subtask-btn:hover { background: var(--bg-hover); color: var(--t1); }
+.add-subtask-plus { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: var(--target); height: var(--row); color: var(--t3); }
+.add-subtask-btn:hover .add-subtask-plus { color: var(--t1); }
+.add-subtask-row > .mytasks-name > .add-subtask-input { min-width: 0; flex: 1 1 auto; }
+.add-subtask-input:focus-visible { outline-offset: 4px; border-radius: 2px; }
+@media (max-width: 640px) {
+  .add-subtask-btn, .add-subtask-input { font-size: 0.9375rem; }
+}
 
 /* A row's name cell (TaskRow.jsx): the name, which is shortened when it must be, then Waiting
    and the subtask count, which never are. A subtask shown under its parent has its check here. */
@@ -1066,11 +1124,14 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   cursor: text;
 }
 .mytasks-title:hover:not(:disabled) { background: var(--bg-hover); }
+/* Its box is where the name's hover tint is (.mytasks-title: 4px out), so the words stay put
+   when the name turns into a box to type in. */
 .mytasks-title-input {
   flex: 1 1 auto;
   min-width: 0;
   height: calc(var(--row) - 8px);
-  padding: 0 8px;
+  margin-left: -5px;
+  padding: 0 4px;
   background: var(--bg);
   color: var(--t1);
   border: 1px solid var(--blue);
@@ -1096,32 +1157,76 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 /* A name column too narrow for the name, Waiting, the count, and the panel button side by side
    (a narrow window, or an open panel): what follows the name wraps under it. */
 @media (min-width: 641px) {
+  /* Above 640px the name takes all the room its cell has, so a click anywhere between the check
+     and Waiting, the count, or the panel button edits it, not only a click on its words. */
+  .mytasks-title { flex: 1 1 auto; }
   @container (max-width: 260px) {
     .mytasks-name-body { flex-wrap: wrap; }
   }
 }
-/* On a phone the name cell is a small grid: the name and the panel button share the first line,
-   the name wrapping (two lines at most) and the button keeping its 44px at the right, and Waiting
-   and the count go on a line of their own under the name. So a row is as tall as its name and
-   never carries an empty band with a lone button in it, and the button never leaves the cell. A
-   cell too narrow for even 44px of name beside the button stacks instead: name, then its
-   followers, then the button at the right. */
+/* On a phone the name cell holds the name, which wraps to as many lines as it needs and is never
+   shortened, and under it Waiting and the subtask count on a line of their own. The date and the
+   button that opens the panel are cells of the row (below), not of this cell. */
 @media (max-width: 640px) {
   .mytasks-name-body { display: block; }
-  .mytasks-name-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
-  .mytasks-name-grid > .mytasks-title { grid-column: 1; grid-row: 1; justify-self: start; min-width: min(44px, 100%); }
-  .mytasks-name-grid > .mytasks-open { grid-column: 2; grid-row: 1; margin-left: 0; }
+  .mytasks-name-grid { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+  .mytasks-name-grid > .mytasks-title { justify-self: start; min-width: min(44px, 100%); }
   /* Waiting and the count wrap within the room they have, so neither leaves the cell. */
-  .mytasks-name-grid > .mytasks-name-meta { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .mytasks-name-grid > .mytasks-name-meta { flex-wrap: wrap; min-width: 0; max-width: 100%; }
   .mytasks-name-grid .subtask-toggle { max-width: 100%; }
-  /* Measured on the body: the room after a nested row's check and indent. */
-  @container (max-width: 100px) {
-    .mytasks-name-grid { grid-template-columns: minmax(0, 1fr); }
-    .mytasks-name-grid > .mytasks-open { grid-column: 1; grid-row: 3; justify-self: end; }
+  /* The count's chip starts on the name's left edge, as Waiting does on a row with no count: its
+     button gives up the 4px it pads the chip with on that side. */
+  .mytasks-name-meta > .subtask-toggle:first-child { margin-left: -4px; }
+}
+/* A phone row is one line where it can be: the name, the date chip at its right, as wide as its
+   own words, and the panel button at the edge (columnsState.js builds the tracks). A short name
+   and its date take one row's height; a long name wraps beside the date, and the date and the
+   button sit at the middle of the row's height, as the check does, so the room above the chip
+   and under it is the same. The date is the same cell that is the Due date
+   column above 640px (one instance, so an open picker survives a turn across the breakpoint).
+   The generic column rules (a rule line and padding from the third cell on, stretch) do not
+   apply to the date or the button. */
+@media (max-width: 640px) {
+  .mytasks-grid.mytasks-row > .due-cell {
+    grid-row: 1;
+    grid-column: -3 / -2;
+    justify-self: end;
+    align-self: center;
+    display: block;
+    max-width: 100%;
+    padding: 0 0 0 8px;
+    border-left: none;
+  }
+  .mytasks-grid.mytasks-row > .mytasks-open {
+    grid-row: 1;
+    grid-column: -2 / -1;
+    align-self: center;
+    display: inline-flex;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 1px solid transparent;
   }
 }
-/* The column header, stuck under the top bar. A phone has no column header: its two columns are
-   fixed, and Sort lives in the toolbar. */
+/* A phone under 380px has too little room for a name beside its date: the date goes on a second
+   grid row under the name, in the name's column, its left edge on the name's, and its own track
+   is empty. The check and the reorder handle span both rows, so they stay centred on the whole
+   row; the panel button stays on the name's first line. */
+@media (max-width: 379px) {
+  .mytasks-row > :not(.mytasks-name):not(.due-cell):not(.mytasks-open) { grid-row: 1 / span 2; }
+  .mytasks-row > .mytasks-name { grid-row: 1; }
+  .mytasks-grid.mytasks-row > .due-cell {
+    grid-row: 2;
+    grid-column: -4 / -3;
+    justify-self: start;
+    align-self: start;
+    padding: 0;
+  }
+  .mytasks-grid.mytasks-row > .mytasks-open { align-self: start; }
+  /* A subtask row under the manual sort has no handle, so its name spans two columns: so does its date. */
+  .mytasks-reorderable .mytasks-row.is-nested > .due-cell { grid-column: 2 / span 2; }
+}
+/* The column header, stuck under the top bar. A phone has no column header: its columns are
+   fixed (the check, the name, its date, and the panel button), and Sort lives in the toolbar. */
 .mytasks-colhead-sticky { position: sticky; top: calc(56px + var(--safe-top)); z-index: 10; background: var(--bg); }
 @media (max-width: 640px) {
   .mytasks-colhead-sticky { display: none; }
@@ -1142,10 +1247,16 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   color: var(--t2);
   cursor: pointer;
 }
+/* One width for any count up to 99 (the chevron, the icon, and two digits), its contents
+   centred, so the chip is the same size on every row and Waiting after it starts at the same
+   place. A larger count makes the chip wider, never cut. */
 .subtask-chip {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 58px;
   gap: 3px;
   padding: 2px 6px;
   border-radius: 999px;
@@ -1155,10 +1266,26 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   line-height: 16px;
   transition: color 0.12s, box-shadow 0.12s;
 }
+.subtask-chip.is-static { min-width: 38px; }
+/* Waiting, after the count: a quiet pill of the count's height, as wide as its word. */
+.waiting-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 14px;
+}
 .subtask-toggle:hover .subtask-chip,
 .subtask-toggle[aria-expanded='true'] .subtask-chip { color: var(--t1); box-shadow: inset 0 0 0 1px var(--bd-strong); }
 /* The new row's empty circle, where a row's check is. */
 .inline-add-check { display: flex; align-items: center; justify-content: center; width: var(--target); height: var(--row); }
+/* The grip a row's reorder handle shows, in the same place and colour, so the row being typed
+   reads as the rows above it. It is a drawing, not a control. */
+.inline-add-handle { display: flex; align-items: center; justify-content: center; height: var(--row); color: var(--t3); }
 
 /* The check circle in a row: an empty outlined circle at rest, filled green with a tick when
    done. A tick at rest read as already done. Hovering the button turns the circle green and shows
@@ -1448,7 +1575,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 .board-card-title { min-width: 0; font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
 .board-card-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+/* The foot: the date chip first, so it starts at the same place on every card, and the
+   assignee at the right end. Without a date the assignee still sits at the right. */
 .board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--t2); }
+.board-card-assignee { display: inline-flex; margin-left: auto; }
 .board-card-move {
   width: 44px;
   height: 44px;
@@ -1496,20 +1626,28 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   transition: background 0.12s, color 0.12s;
 }
 .board-add-task:hover { background: var(--bg-hover); color: var(--t1); }
-.board-card.board-add-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+/* The new card is laid out as a card is: the empty circle in the check's column, and the name
+   typed bare where a card's title starts (4px into the face, .board-card-open), on the circle's
+   line. The error and the buttons go under the name. */
+.board-card.board-add-card { row-gap: 8px; padding-bottom: 10px; }
 .board-card.board-add-card:hover { background: var(--bg2); box-shadow: var(--shadow-1); }
+.board-add-check { grid-column: 1; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; }
 .board-add-title {
-  flex-shrink: 0;
+  grid-column: 2 / -1;
   width: 100%;
   min-height: var(--target);
-  padding: 11px 12px;
+  padding: 12px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
   font-size: 14px;
   line-height: 20px;
   resize: none;
   overflow: hidden;
 }
-.board-add-error { font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
-.board-add-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.board-add-error { grid-column: 2 / -1; padding: 0 4px; font-size: 13px; color: var(--red); overflow-wrap: anywhere; }
+.board-add-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 4px; }
 
 /* Board at phone width: a lane is sized to the viewport minus the page's two
    16px gutters (app-main-full's phone padding), the strip's own gap, and a
@@ -1773,9 +1911,13 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .goal-title-block { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .goal-title { font-size: 16px; font-weight: 600; color: var(--t1); overflow-wrap: break-word; min-width: 0; }
 .goal-period { font-size: 13px; color: var(--t2); white-space: nowrap; }
-.goal-status-btn { font-weight: 600; white-space: nowrap; }
-.goal-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-left: 52px; }
-.goal-progress-text { font-size: 13px; color: var(--t2); white-space: nowrap; }
+/* One width for every status (as wide as Off track and its arrow), the words centred, so the
+   status buttons of a list of goals are one shape and line up. */
+.goal-status-btn { font-weight: 600; white-space: nowrap; justify-content: center; min-width: 8.5rem; }
+/* The bar takes the whole width and the words go under it, so every goal's bar starts and ends
+   in the same place whatever its words say. */
+.goal-progress { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 4px; padding-left: 52px; }
+.goal-progress-text { font-size: 13px; color: var(--t2); }
 .goal-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-left: 52px; }
 .goal-flag { background: var(--yellow-soft); color: var(--yellow); }
 .goal-note { font-size: 14px; color: var(--t2); overflow-wrap: break-word; min-width: 0; }
@@ -1833,7 +1975,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .search-head input { flex: 1 1 auto; min-width: 0; min-height: var(--target); padding: 0 0.75rem; font-size: 1rem; }
 .search-status { margin: 0; color: var(--t2); font-size: 0.85rem; overflow-wrap: anywhere; }
 .search-results { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-.search-row { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; overflow-wrap: anywhere; }
+/* A result: its title and the line under it, then its date chip at the right, at the middle of
+   the row, so the dates of a list of results line up as a column. */
+.search-row { gap: 12px; overflow-wrap: anywhere; }
+.search-row-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.search-row > .due-chip { flex: 0 0 auto; }
 .search-row-meta { color: var(--t2); font-size: 0.8rem; }
 .goal-open-tasks { margin: 0; padding-left: 18px; color: var(--t1); font-size: 14px; line-height: 1.7; }
 
@@ -1842,8 +1988,6 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   .goal-vision { flex-direction: column; }
   .goal-header { grid-template-columns: 44px minmax(0, 1fr); }
   .goal-header > :last-child { grid-column: 1 / -1; padding-left: 52px; }
-  .goal-progress { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .goal-progress-text { white-space: normal; }
   .goal-details { margin-left: 0; }
   .goal-manual-fields { grid-template-columns: minmax(0, 1fr); }
   .goals-toolbar .btn { flex: 1 1 100%; }
@@ -2243,6 +2387,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .undo-toast.is-failed { flex-wrap: wrap; }
 .undo-toast.is-failed .undo-toast-text { flex: 1 1 100%; padding-top: var(--space-2); }
 .undo-toast-actions { display: flex; gap: var(--gap-inline); margin-left: auto; }
+/* A move's View and Undo sit beside the words while those have about 14rem; in less (a long title,
+   a narrow phone) the buttons go to a line of their own under the words, at the right. */
+.undo-toast.is-moved { flex-wrap: wrap; }
+.undo-toast.is-moved .undo-toast-text { flex: 1 1 14rem; padding-block: var(--space-2); }
 @keyframes undo-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: none; opacity: 1; }
@@ -2259,14 +2407,21 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   .undo-toast { max-width: 100%; }
 }
 
-/* Due date chip on the phone tier (TaskRow.jsx). The colour is the same the desktop text uses;
-   the chip only adds its soft background. Every chip fills the column, text at its left, so the
-   chips in a list are one size and line up instead of each fitting its own word. */
+/* Due date chip (DueChip.jsx): a My tasks row on the phone tier, a Board card's foot, and a search
+   result. The colour is the same the desktop text uses; the chip only adds its soft background.
+   On a phone row it sits at the right of the task name, at the middle of the row (under the name,
+   its left edge on the name's, on a phone under 380px). Every chip
+   is one size, 88px by 32px, the room "Tomorrow" needs, with its words centred, so the chips in
+   a list line up as a column whatever each one says: a day, a day and a time, or a day that
+   repeats. Only a date with its year is wider, and it is never cut. A phone row in My tasks is
+   the exception (the rule after the empty chip's, below). */
 .due-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  width: 100%;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 88px;
+  max-width: 100%;
   height: 32px;
   padding: 0 12px;
   border-radius: 10px;
@@ -2277,19 +2432,36 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   white-space: nowrap;
 }
 /* With a time the chip is two lines by design, not by wrapping: the day, then the time under it
-   in smaller type, each word whole. */
+   in smaller type, each word whole and centred like a plain chip's. Both lines fit the height
+   every chip has, so the row is no taller for it. */
 .due-chip.has-time {
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  height: auto;
-  min-height: 32px;
-  padding: 4px 12px;
-  line-height: 1.2;
+  padding: 0 12px;
+  line-height: 1.1;
   overflow: visible;
 }
+/* The repeat glyph inside a chip takes the chip's colour, a little quieter than its words. */
+.due-chip .repeat-glyph { flex: 0 0 auto; margin-left: 4px; color: currentColor; opacity: 0.75; }
+/* Compact rows are 32px, and a 32px chip on the name's line would touch the row's lines and the
+   chips above and below it: the chip is shorter, inside the same row-tall target. With a time it
+   needs both lines, in type one step smaller. */
+:root[data-density='compact'] .due-chip { height: 24px; border-radius: 8px; }
+:root[data-density='compact'] .due-chip.has-time { height: 28px; font-size: 13px; }
+:root[data-density='compact'] .due-chip.has-time > span + span { font-size: 11px; }
+/* A task with no date: a quiet prompt, no fill, so it reads as a place to tap rather than a date.
+   It is as wide as a chip and centred like one, so it sits in the chips' column. */
+.due-chip.is-empty { background: transparent; color: var(--t3); font-weight: 500; padding: 0; }
 .due-chip.has-time > span { white-space: nowrap; }
 .due-chip.has-time > span + span { font-size: 12px; font-weight: 500; }
+/* A phone row's chip is as wide as its words, not the one size: a name beside a short date has
+   that much more room before it wraps. The chips keep one height and their right edges in line,
+   next to the panel button. A Board card's foot and a search result keep the one size. Under the
+   name (a phone under 380px) the prompt for a date then starts where the name does. */
+@media (max-width: 640px) {
+  .mytasks-row .due-chip { min-width: 0; }
+}
 
 /* New task sheet (NewTaskSheet.jsx): a dialog that rises from the bottom edge under 640px and
    sits centred like a modal above it. Same layer as the navigation drawer. */
@@ -2368,7 +2540,10 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     row-gap: 12px;
   }
   .add-due-pop .add-due-title { grid-area: title; }
-  .add-due-pop .add-due-chips { grid-area: chips; flex-direction: column; align-items: stretch; align-self: start; }
+  /* The quick dates are the due date picker's buttons, in a column under the heading, with Add
+     time a button of the same face after them. */
+  .add-due-pop .add-due-chips { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; align-self: start; gap: 6px; }
+  .add-due-pop .add-due-add-time { padding-inline: 0.75rem; font-weight: 400; font-size: 14px; }
   .add-due-pop .add-due > .cal { grid-area: cal; }
   .add-due-pop .add-due-repeat { grid-area: repeat; }
   .add-due-pop .add-due-foot { grid-area: foot; }
@@ -2385,7 +2560,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     grid-template-rows: auto auto 1fr auto;
   }
   .add-due-pop .add-due-foot { align-self: end; }
-  .add-due-pop .add-due-chips { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  /* Two dates to a line, so the list is no taller than the pills were. */
+  .add-due-pop .add-due-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; }
 }
 @media (max-width: 360px) {
   .add-due-pop { padding: 12px 5px; }
@@ -2443,9 +2619,11 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
   padding: 12px var(--due-pad);
 }
 .due-pop > :not(.cal) { margin-inline: calc(12px - var(--due-pad)); }
-/* The quick dates: pills that wrap on a phone, as the new task sheet has them; a list with each
-   date's weekday or day beside it on a desktop (below). */
-.due-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+/* The quick dates: on a phone, pills of one size two to a line, their words centred, as the new
+   task sheet's date step has them (.add-due-chips), so Today, Tomorrow, Next Monday, and No date
+   are a block of four equal pills rather than four widths that wrap unevenly; on a desktop, a
+   list with each date's weekday or day beside it (below). */
+.due-quick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .due-quick-btn {
   min-height: var(--target);
   padding: 0 14px;
@@ -2494,22 +2672,23 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
     width: auto;
   }
   .due-pop.due-pop-repeat-view { display: flex; width: calc(184px + 16px + 308px + 2 * var(--due-pad)); }
-  .due-pop > .due-quick { grid-area: chips; flex-direction: column; flex-wrap: nowrap; gap: 2px; }
+  .due-pop > .due-quick { grid-area: chips; display: flex; flex-direction: column; flex-wrap: nowrap; gap: 6px; }
+  /* Each quick date is a button with the raised face every .btn has, one size down the column,
+     its date at the left and its weekday or day at the right. The picked one is blue. */
   .due-quick-btn {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
     padding: 0 0.75rem;
-    border: none;
     border-radius: var(--radius);
-    background: transparent;
-    box-shadow: none;
     text-align: start;
   }
-  .due-quick-btn:hover { background: var(--bg-hover); }
-  .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); color: var(--blue); }
-  .due-quick-btn:focus-visible { outline-offset: -2px; }
+  .due-quick-btn:hover { background: var(--raised-hover); border-color: var(--t3); }
+  .due-quick-btn[aria-pressed='true'] { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+  .due-quick-btn:focus-visible { outline-offset: 2px; }
+  /* Add time and Repeat are buttons of the same face and size as the dates above them. */
+  .due-pop .due-pop-wide { font-weight: 400; font-size: 14px; }
   .due-quick-hint { display: inline; flex: 0 0 auto; font-size: 0.8rem; font-weight: 400; color: var(--t2); }
   .due-quick-btn[aria-pressed='true'] .due-quick-hint { color: var(--blue); }
   .due-pop > .cal { grid-area: cal; }
@@ -2545,7 +2724,21 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 }
 .cal-day:hover { background: var(--bg-hover); }
 .cal-day:focus-visible { outline-offset: -2px; }
-.cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; box-shadow: inset 0 0 0 1px var(--blue); }
+/* Today: its number in bold blue with a dot under it, and the dot stays (in the picked day's
+   colour) when today is the day picked, so the current day shows whatever is chosen. */
+.cal-day { position: relative; }
+.cal-day[aria-current='date'] { color: var(--blue); font-weight: 700; }
+.cal-day[aria-current='date']::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: currentColor;
+}
 .cal-day[aria-pressed='true'] { background: var(--blue); color: var(--on-accent); font-weight: 600; }
 .cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 /* The next dates of the repeat being set, tinted as Asana tints them (AddDuePanel.jsx). */
@@ -2565,25 +2758,53 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
    to hand it to the name box, so it draws no ring. */
 .inline-add-row:focus { outline: none; }
 .inline-add { grid-column: 2; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 12px; }
-.inline-add-due-cell { grid-column: 3; display: flex; align-items: center; min-width: 0; padding-right: 8px; }
+.inline-add-due-cell { grid-column: 3; align-self: stretch; display: flex; align-items: center; min-width: 0; padding: 0 8px 0 12px; border-left: 1px solid var(--bd-column); }
 .inline-add-due-anchor { display: flex; min-width: 0; max-width: 100%; }
+.inline-add-due-cell > .inline-add-due-anchor { flex: 1 1 auto; }
 .inline-add-due-anchor:focus { outline: none; }
 /* Under the row's cells, from the Name column on: our own words wrap, never cut short. */
 .inline-add-error { grid-column: 2 / -1; padding: 0 12px 8px 0; font-size: 0.8rem; color: var(--red); overflow-wrap: anywhere; }
+/* Bare text, so the typed name starts where the names above it do. The row takes the press for it
+   (InlineTaskInput.jsx), and its ring is drawn 4px out from the text: clear of the check circle,
+   and inside the row, so nothing clips it. */
 .inline-add-title {
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--target);
-  padding: 0 0.75rem;
-  border: 1px solid var(--bd-strong);
-  border-radius: var(--radius);
-  background: var(--bg2);
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  box-shadow: none;
   color: var(--t1);
   font: inherit;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
-/* A long date and time wraps inside the Due date column rather than overflowing it. */
-.inline-add-due { flex: 0 1 auto; gap: 6px; min-width: 0; max-width: 100%; padding-left: 0.75rem; padding-right: 0.75rem; text-align: left; }
+.inline-add-row .inline-add-title:focus-visible { outline-offset: 4px; border-radius: 2px; }
+/* Drawn as a row's Due date cell is (CellButton in TaskRow.jsx): bare text in the date's colour,
+   starting where the dates below it start, the whole cell its target. A long date and time wraps
+   inside the column rather than overflowing it. */
+.inline-add-due {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--row);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.inline-add-due:disabled { color: var(--t-disabled); }
+/* With the Due date column hidden the date follows the name, where its target is its own: never
+   narrower than 44px, with room either side of the words so they do not touch the name or its
+   focus ring. The two share the Name column: the name box keeps at least half of it, and a long
+   date and time wraps in the rest rather than squeezing the name away when Name is narrowed. */
+.inline-add > .inline-add-title { min-width: 50%; }
+.inline-add > .inline-add-due-anchor { flex: 0 1 auto; min-width: var(--target); }
+.inline-add > .inline-add-due-anchor > .inline-add-due { min-width: var(--target); padding: 0 8px; }
 
 /* The repeat rule builder (RepeatBuilder.jsx); .repeat-inline is the task panel's Custom section. */
 .repeat-inline { margin: var(--space-1) 0 var(--space-3); padding: var(--pad-panel); border: 1px solid var(--bd); border-radius: var(--radius); background: var(--bg2); }

@@ -3,7 +3,8 @@ import { Search, X } from 'lucide-react'
 import { useConnection } from './ConnectionContext'
 import { MY_TASKS_QUERY } from './api'
 import { useOffline } from './offlineStatus'
-import { formatDueShort, plainTitle } from './dueDates'
+import { formatDueCell, getDueBounds, plainTitle } from './dueDates'
+import DueChip from './DueChip'
 import { STATUS_LABELS } from './shared'
 
 // What the search covers: the tasks the owner works from, and the ones already done. An inbox
@@ -122,6 +123,7 @@ export default function SearchDialog({ onClose, onOpenTask }) {
   }, [onClose])
 
   const count = found.tasks.length
+  const bounds = getDueBounds()
   let status = 'Type two or more letters from the title or notes of a task.'
   if (found.phase === 'searching') status = 'Searching…'
   else if (found.phase === 'error') status = found.error
@@ -159,8 +161,10 @@ export default function SearchDialog({ onClose, onOpenTask }) {
               const meta = [
                 task.status === 'done' ? STATUS_LABELS.done : null,
                 projectNames[task.projectId] || null,
-                task.dueAt ? `Due ${formatDueShort(task.dueAt)}` : null,
               ].filter(Boolean)
+              // The date is a chip at the result's right, in the words and colours of My tasks,
+              // so the dates of a list of results line up as a column.
+              const due = formatDueCell(task.dueAt, bounds)
               return (
                 <button
                   key={task.id}
@@ -168,8 +172,13 @@ export default function SearchDialog({ onClose, onOpenTask }) {
                   className="goal-list-row hover-surface search-row"
                   onClick={() => onOpenTask(task.id)}
                 >
-                  <span>{plainTitle(task.title)}</span>
-                  {meta.length > 0 && <span className="search-row-meta">{meta.join(' · ')}</span>}
+                  <span className="search-row-text">
+                    <span>{plainTitle(task.title)}</span>
+                    {meta.length > 0 && <span className="search-row-meta">{meta.join(' · ')}</span>}
+                  </span>
+                  {/* Heard as part of the result's name, as the words under the title were. */}
+                  {due.text && <span className="sr-only">, due </span>}
+                  <DueChip due={due} />
                 </button>
               )
             })}

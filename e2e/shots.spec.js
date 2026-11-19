@@ -2,7 +2,7 @@ import { test, expect } from './fixtures.js'
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { TOKEN } from './server.js'
-import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, seedThread } from './support.js'
+import { LONG_SUFFIX, UPDATE_INSTALLED, VIEWS, applyViewSettings, boardCardExtras, clippedContent, createTask, danglingLines, endPosition, emptyRequest, failRequest, failureBanner, fakeUpdate, gotoView, holdRequest, isPhone, longNames, openTask, openView, pinServerClock, seedThread } from './support.js'
 
 // Screenshots of every view and its main states, one file per view, state, width, and theme
 // (`npm run shots`, scripts/shots.mjs). Runs in the shots-* projects of playwright.config.js
@@ -172,6 +172,19 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     const undo = page.getByRole('button', { name: `Undo completing ${title}` })
     await expect(undo).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'completed-toast', [], page.getByRole('status').filter({ has: undo }))
+  })
+
+  // "Moved <task> to No due date" with View and Undo, after the row's menu sent it to another group.
+  test('mytasks: moved toast', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'toast moved shot')
+    await openView(page)
+    const row = page.locator('[data-task-id]').filter({ has: page.getByRole('button', { name: `Rename ${title}`, exact: true }) })
+    await row.scrollIntoViewIfNeeded()
+    await row.click({ button: 'right', position: { x: 120, y: 10 } })
+    await page.getByRole('menu', { name: `Actions for ${title}` }).getByRole('menuitem', { name: 'No due date' }).click()
+    const undo = page.getByRole('button', { name: `Undo moving ${title} to No due date` })
+    await expect(undo).toBeVisible()
+    await shot(page, testInfo, 'mytasks', 'moved-toast', [], page.getByRole('status').filter({ has: undo }))
   })
 
   test('mytasks: undo failed toast', async ({ page, request }, testInfo) => {
@@ -879,6 +892,18 @@ test.describe('shots', { tag: ['@visual'] }, () => {
     await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
     const card = page.getByRole('region', { name: 'About' })
     await expect(card.getByText(/^v\d/).last()).toBeVisible()
+    await expect(card.getByText("Matches the server's clock")).toBeVisible()
     await shot(page, testInfo, 'settings', 'about', [card.getByText('Dashboard', { exact: true }).locator('xpath=following-sibling::span')])
+  })
+
+  // The device's clock ten minutes behind the server's: the row and the notice under it.
+  test('settings: about, clock warning', async ({ page }, testInfo) => {
+    await pinServerClock(page, 10 * 60 * 1000)
+    await openView(page, 'settings')
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'About' }).click()
+    const card = page.getByRole('region', { name: 'About' })
+    await expect(card.getByText(/^v\d/).last()).toBeVisible()
+    await expect(card.getByRole('status')).toBeVisible()
+    await shot(page, testInfo, 'settings', 'about-clock-warning', [card.getByText('Dashboard', { exact: true }).locator('xpath=following-sibling::span')])
   })
 })

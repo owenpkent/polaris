@@ -128,7 +128,7 @@ describe('AppUpdateSettings', () => {
     await screen.findByText('v2.3.0')
     fireEvent.click(screen.getByRole('button', { name: 'Install 2.4.0' }))
     expect(await screen.findByText(
-      'Android has to allow Polaris to install apps once. Allow it on the page that opened, then press Install again.',
+      'Android has to allow Polaris to install apps once. Allow it on the page that opened, then come back: the install continues by itself.',
     )).toBeTruthy()
   })
 

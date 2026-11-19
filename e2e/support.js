@@ -4,7 +4,10 @@ import { TOKEN } from './server.js'
 // This worker's server port (set by the scratchServer fixture in e2e/fixtures.js).
 export const port = () => Number(process.env.CC_UI_WORKER_PORT)
 
-export const MIN_TARGET = 44
+// The smallest click target a control may offer. It was 44px until 2026-11-16, when the owner
+// dropped that as the minimum (CLAUDE.md, Conventions): controls are still 44px by default
+// (--target in src/index.css), and this is the floor a smaller one must keep.
+export const MIN_TARGET = 32
 
 // Opens a dashboard view already connected to the test server.
 export async function openView(page, view = 'mytasks', query = '') {
@@ -56,9 +59,12 @@ function localToday() {
 let created = 0
 // A new task goes first in the manual order, so a test that needs one to sit at the end of its day
 // group, or two to sit in the order they were made, passes `{ position: endPosition() }`. Each call
-// is higher than the last and far past anything the seed or the server numbers.
+// is higher than the last and far past anything the seed or the server numbers. Calls are 1000
+// apart: a task added from the list's Add task row, or moved to the end, takes the last position
+// plus one (positionBetween in src/command-center/reorder.js), and must stay below the next call's
+// number, or a later test's "last" task lands among an earlier test's rows in the same worker.
 let endNumber = 1e9
-export const endPosition = () => ++endNumber
+export const endPosition = () => (endNumber += 1000)
 
 export async function createTask(request, testInfo, label, extra = {}) {
   const title = `UI test ${label} ${testInfo.project.name} ${++created}`
@@ -159,9 +165,9 @@ export async function expectNoHorizontalOverflow(page) {
   expect(scroll, `page scrolls sideways: scrollWidth ${scroll} > innerWidth ${inner}`).toBeLessThanOrEqual(inner)
 }
 
-// Every visible control in `scope` matching `selector` must offer a 44px click target
-// (CLAUDE.md). Returns the offenders as readable strings so a failure names them.
-// `min` is 44 (MIN_TARGET) everywhere except a row under Compact density, where it is 32.
+// Every visible control in `scope` matching `selector` must offer a click target of at least
+// `min` (MIN_TARGET, CLAUDE.md) each way. Returns the offenders as readable strings so a failure
+// names them.
 export async function smallTargets(scope, selector = 'button, [role="button"], select', min = MIN_TARGET) {
   return scope.locator(selector).evaluateAll((els, min) => {
     const out = []
@@ -498,6 +504,38 @@ export async function fakeUpdate(page, body = UPDATE_AVAILABLE) {
   await page.route((url) => url.pathname === '/api/update', (route) => (isGet(route) ? fulfilJson(route, 200, body) : route.fallback()))
 }
 
+// The fixture freezes the browser's clock at the moment the database was seeded while the test
+// server runs on real time, so the dashboard would measure a different, growing difference in
+// every run. This makes the answer to GET /api/events carry a `now` that is the page's own clock
+// plus `serverAheadMs`, so the About card reads a fixed difference. The fixture calls it with zero
+// for every test (e2e/fixtures.js); a test that wants a difference calls it again, before the
+// view is opened, and the later call wins (its wrapper is the outer one).
+//
+// It wraps the page's own fetch from an init script, and is not a page.route on purpose: a route
+// switches on request interception for the whole page, and then a reload with the network cut is
+// no longer served by the service worker, which is what the offline specs test (tried on
+// 2026-11-18: every offline spec got a blank page). A failed request is not touched, so a page
+// that is offline fails as it would.
+export async function pinServerClock(page, serverAheadMs = 0) {
+  await page.addInitScript((aheadMs) => {
+    const real = window.fetch
+    window.fetch = async (input, init) => {
+      const response = await real(input, init)
+      try {
+        const request = typeof input === 'string' || input instanceof URL ? null : input
+        const url = new URL(request ? request.url : String(input), location.href)
+        const method = String(init?.method || request?.method || 'GET').toUpperCase()
+        if (url.pathname !== '/api/events' || method !== 'GET' || !response.ok) return response
+        const body = await response.clone().json()
+        body.now = new Date(Date.now() + aheadMs).toISOString()
+        return new Response(JSON.stringify(body), { status: response.status, statusText: response.statusText, headers: response.headers })
+      } catch {
+        return response
+      }
+    }
+  }, serverAheadMs)
+}
+
 // Content the user cannot see in full (CONTRIBUTING.md, "Nothing is cut off"). Returns readable
 // strings, one per problem, so a failure names each one:
 //
@@ -726,7 +764,11 @@ export async function clippedContent(page, scope = page.locator('body')) {
 // scrolled to the middle of the screen, focused as from the keyboard, and photographed with its
 // ring and with the ring made transparent; along each straight side of the ring, the share of positions where nothing
 // changed is the share of the ring that is hidden. Returns one line per side hidden by more than
-// a tenth, and puts focus and scrolling back as they were.
+// a tenth, and puts focus and scrolling back as they were. The control is measured before the
+// photos and again after them: a control that moved in between (a toast still easing in, a list
+// reflowing under a fixed bar) would be read where it no longer is, its top and bottom bands
+// missing the ring, so that pair is taken again. The second measure rides on the call that puts
+// the ring back, so a control that holds still costs no extra round trip.
 export async function hiddenFocusRings(page, scope = page.locator('body'), selector = 'button, [role="button"], a[href], input:not([type="hidden"]), select, textarea, summary, [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="tab"], [role="checkbox"], [role="switch"], [role="option"], [role="radio"], [tabindex="0"]') {
   // A key press makes the next programmatic focus count as keyboard focus (:focus-visible).
   await page.keyboard.press('Shift')
@@ -743,7 +785,7 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
   const controls = await layer.evaluateHandle((root, sel) => [...root.querySelectorAll(sel)], selector)
   const count = await controls.evaluate((list) => list.length)
   const out = []
-  for (let i = 0; i < count; i++) {
+  for (let i = 0, tries = 0; i < count; i++) {
     const ring = await controls.evaluate((list, i) => {
       const el = list[i]
       for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
@@ -763,6 +805,7 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
       const radius = parseFloat(s.borderTopLeftRadius) || 0
       const label = el.getAttribute('aria-label') || (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40) || el.tagName.toLowerCase()
       return {
+        rect: [r.left, r.top, r.right, r.bottom],
         label: `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[${el.getAttribute('role')}]` : ''} "${label}"`,
         outer: { left: r.left - offset - width, top: r.top - offset - width, right: r.right + offset + width, bottom: r.bottom + offset + width },
         width,
@@ -795,11 +838,20 @@ export async function hiddenFocusRings(page, scope = page.locator('body'), selec
       return prior
     }, i)
     const plain = (await page.screenshot({ clip, scale: 'css', animations: 'disabled', caret: 'hide' })).toString('base64')
-    await controls.evaluate((list, [i, [value, priority]]) => {
+    const after = await controls.evaluate((list, [i, [value, priority]]) => {
+      const r = list[i].getBoundingClientRect()
       list[i].style.removeProperty('outline-color')
       if (value) list[i].style.setProperty('outline-color', value, priority)
       list[i].blur()
+      return [r.left, r.top, r.right, r.bottom]
     }, [i, before])
+    // Moved since it was measured: the photos do not show the ring where it was looked for.
+    if (after.some((v, k) => Math.abs(v - ring.rect[k]) > 0.5) && tries < 3) {
+      tries++
+      i--
+      continue
+    }
+    tries = 0
     const hidden = await page.evaluate(async ({ focused, plain, ring, clip }) => {
       const decode = async (b64) => {
         const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))

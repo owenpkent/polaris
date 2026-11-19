@@ -18,19 +18,22 @@ test.describe('Highlight after a change', { tag: ['@flow'] }, () => {
     await expect(rowEl).not.toHaveClass(/just-changed/, { timeout: 5000 })
   })
 
-  // At this width the Board shows a lane and part of the next, so the third starts off screen.
-  for (const reducedMotion of ['no-preference', 'reduce']) {
-    test(`a card moved into a lane off to the side comes into view (${reducedMotion})`, async ({ page, request }, testInfo) => {
-      const title = await createTask(request, testInfo, `side lane ${reducedMotion}`, { project: 'ui-test-project', section: 'Backlog', dueAt: null })
-      await page.emulateMedia({ reducedMotion })
-      await page.setViewportSize({ width: 390, height: 844 })
-      await openView(page, 'board')
-      const target = page.getByRole('region', { name: 'No section', exact: true })
-      await expect(target.getByRole('heading', { name: 'No section' })).not.toBeInViewport()
+  // At this width the Board shows a lane and part of the next, so the third starts off screen. A
+  // card moved there is not followed: the lanes stay where the owner was working.
+  test('a card moved into a lane off to the side leaves the lanes where they were', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'side lane', { project: 'ui-test-project', section: 'Backlog', dueAt: null })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openView(page, 'board')
+    const target = page.getByRole('region', { name: 'No section', exact: true })
+    await expect(target.getByRole('heading', { name: 'No section' })).not.toBeInViewport()
 
-      await page.getByRole('button', { name: `Move ${title}`, exact: true }).click()
-      await page.getByRole('menu', { name: `Move ${title}` }).getByRole('menuitem', { name: 'No section' }).click()
-      await expect(target.getByRole('button', { name: new RegExp(`^${title}`) })).toBeInViewport({ ratio: 0.9 })
-    })
-  }
+    await page.getByRole('button', { name: `Move ${title}`, exact: true }).click()
+    await page.getByRole('menu', { name: `Move ${title}` }).getByRole('menuitem', { name: 'No section' }).click()
+    const card = target.getByRole('button', { name: new RegExp(`^${title}`) })
+    await expect(card).toHaveCount(1)
+    // Longer than the tint lasts, so a late scroll would have happened by now.
+    await page.waitForTimeout(1500)
+    await expect(card).not.toBeInViewport()
+    await expect(page.getByRole('region', { name: 'Backlog', exact: true }).getByRole('heading', { name: 'Backlog' })).toBeInViewport()
+  })
 })

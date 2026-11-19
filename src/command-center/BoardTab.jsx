@@ -6,7 +6,9 @@ import NotConnected from './NotConnected'
 import TaskDetailPanel from './TaskDetailPanel'
 import { Loading, EmptyState, ErrorBanner, Avatar } from './shared'
 import { formatDueCell, getDueBounds, plainTitle, repeatLabel } from './dueDates'
-import { showCompleted } from './undoToast'
+import DueChip from './DueChip'
+import { showCompleted, showMoved, dismissMoved } from './undoToast'
+import { dropUntouchedNext } from './repeatUndo'
 import CompleteBurst, { completeExitDelay, useCelebration } from './CompleteBurst'
 import { markChanged, useJustChanged } from './useJustChanged'
 import { oneLine, useFitToText } from './useFitToText'
@@ -187,12 +189,12 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
   const classes = ['board-card']
   if (menuOpen) classes.push('is-menu-open')
   if (completing) classes.push('is-completing')
-  const { changed, ref: cardRef } = useJustChanged(task.id)
+  const changed = useJustChanged(task.id)
   if (changed) classes.push('just-changed')
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={cardRef} className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
+      <div className={classes.join(' ')} data-task-id={task.id} {...menuHandlers}>
         <CardCheck
           task={task}
           pending={pending}
@@ -216,16 +218,22 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
               <span className={priority.className}>{priority.label}</span>
             </span>
           )}
+          {/* The date is the chip My tasks shows on a phone, first in the foot, so it starts at
+              the same place on every card; the assignee sits at the foot's right end. A repeating
+              task with no date keeps its glyph where the chip would be. */}
           {hasFoot && (
             <span className="board-card-foot">
+              {due.text ? (
+                <DueChip due={due} repeat={Boolean(repeat)} />
+              ) : (
+                repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />
+              )}
               {task.assignee && (
                 // The initials stand for the name here; the panel spells it out.
-                <span style={{ display: 'inline-flex' }} title={task.assignee}>
+                <span className="board-card-assignee" title={task.assignee}>
                   <Avatar name={task.assignee} size={22} />
                 </span>
               )}
-              {due.text && <span style={{ color: due.color || 'var(--t2)' }}>{due.text}</span>}
-              {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
             </span>
           )}
         </button>
@@ -259,8 +267,23 @@ function BoardCard({ task, dueBounds, pending, onToggleComplete, onUpdate, desti
 // list's Add task does.
 function LaneAddTask({ section, onCreate }) {
   const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the card while a save was in flight ('click' or 'key'), a blur the busy card
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
   const openerRef = useRef(null)
@@ -268,6 +291,14 @@ function LaneAddTask({ section, onCreate }) {
   const reopenFocus = useRef(false)
   const mounted = useRef(true)
   const fitRef = useFitToText(title, inputRef)
+
+  // A name typed while a save waited, then left by a click: saved once the render that shows the
+  // first save has run, so it is sent with the lane as it is then.
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || formRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    submit({ leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     mounted.current = true
@@ -312,7 +343,11 @@ function LaneAddTask({ section, onCreate }) {
   function handleBlur(e) {
     // Leaving an empty card closes it, and a click elsewhere saves a named one, unless focus went
     // to one of its own buttons.
-    if (busy || formRef.current?.contains(e.relatedTarget)) return
+    if (formRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(submitOnLeave)
@@ -329,25 +364,40 @@ function LaneAddTask({ section, onCreate }) {
 
   // `leave` is a click elsewhere: once saved the card closes, unless focus has come back to it.
   async function submit({ leave = false } = {}) {
-    const trimmed = title.trim()
-    if (!trimmed || busy) return
+    const sent = titleRef.current
+    const trimmed = sent.trim()
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setBusy(true)
     setError(null)
+    let saved = false
     try {
       await onCreate(trimmed, section.id === NO_SECTION ? null : section.id)
-      if (!mounted.current) return
-      if (leave && !formRef.current?.contains(document.activeElement)) {
-        setBusy(false)
-        close()
-        return
-      }
-      setTitle('')
+      saved = true
     } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add task.')
+      if (mounted.current) setError(err.message || 'Could not add task.')
     }
+    if (!mounted.current) return
     setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    // Only what was sent is cleared: a name typed while it saved stays.
+    if (saved && titleRef.current === sent) setTitle('')
+    if (formRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the card. A failed save keeps the card and says why. Otherwise an empty card
+    // closes, once a held press has been released: the short Add task row taking the tall card's
+    // place would move what is under the pointer (Show done) before the release. A name typed
+    // while it saved is saved in turn when the last way out was a click, as that click would have
+    // done had the card not been busy; left last by keyboard, it stays a draft.
+    if (!saved) return
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else close()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   if (!open) {
@@ -361,6 +411,11 @@ function LaneAddTask({ section, onCreate }) {
 
   return (
     <div ref={formRef} className="board-card board-add-card" onBlur={handleBlur}>
+      {/* The empty circle a card has, so the name is typed where the card's title will be. A press
+          on it keeps focus in the name rather than leaving the card. */}
+      <span aria-hidden="true" className="board-add-check" onMouseDown={(e) => e.preventDefault()}>
+        <span className="task-check-circle" />
+      </span>
       <textarea
         ref={fitRef}
         rows={1}
@@ -377,7 +432,8 @@ function LaneAddTask({ section, onCreate }) {
             close({ focusOpener: true })
           }
         }}
-        readOnly={busy}
+        // Editable while it saves (a second Enter waits for the first): on Android a focused box
+        // turning read-only puts the keyboard away.
         aria-busy={busy || undefined}
         placeholder="Write a task name"
         aria-label={`New task in ${section.name}`}
@@ -548,8 +604,12 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   // section" one -- this mirrors what the board already shows.
   const destinations = useMemo(() => columns.map((c) => c.section), [columns])
 
+  // A move from the card's Move menu or its right-click menu says where the card went, with View
+  // and Undo, since the lanes do not scroll after it (useJustChanged.js).
   const handleMove = useCallback(async (task, sectionId) => {
     const prevBoard = board
+    const from = task.sectionId || null
+    const pid = projectRef
     markChanged(task.id)
     // Optimistic move within the local board state.
     setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, sectionId } : t)) } : b))
@@ -562,8 +622,56 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     } catch (err) {
       setBoard(prevBoard)
       setError(err.message || 'Could not move that task.')
+      return
     }
-  }, [api, board])
+    // A board left while the move was on its way publishes nothing: its View would act on a
+    // board that is gone.
+    if ((sectionId || null) === from || !liveRef.current) return
+    const where = destinations.find((s) => (s.id === NO_SECTION ? null : s.id) === (sectionId || null))?.name || 'No section'
+    showMoved({
+      title: task.title,
+      where,
+      view: () => setViewCardId(task.id),
+      // Rejects on a failure, so the toast can offer Retry.
+      undo: async () => {
+        markChanged(task.id)
+        setBoard((b) => (b ? { ...b, tasks: b.tasks.map((t) => (t.id === task.id ? { ...t, sectionId: from } : t)) } : b))
+        try {
+          await api.moveTask(task.id, { section: from })
+        } finally {
+          await refreshIfShown(pid).catch(() => {})
+        }
+      },
+    })
+  }, [api, board, destinations, projectRef, refreshIfShown])
+
+  // View in the move toast: the card is scrolled to in its lane, tinted, and focused, since the
+  // owner asked to go there. A card the lane does not show (a completed one, with the lane's done
+  // cards folded away) opens in the panel instead.
+  const [viewCardId, setViewCardId] = useState(null)
+  useEffect(() => {
+    if (!viewCardId) return
+    const card = document.querySelector(`[data-task-id="${viewCardId}"]`)
+    // jsdom has no scrollIntoView.
+    if (card) {
+      card.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+      card.querySelector('.board-card-open')?.focus({ preventScroll: true })
+      markChanged(viewCardId)
+    } else {
+      setDetailTaskId(viewCardId)
+    }
+    setViewCardId(null)
+  }, [viewCardId])
+
+  // A move toast acts on this board, so it goes with it, and none is published after it has gone.
+  const liveRef = useRef(true)
+  useEffect(() => {
+    liveRef.current = true
+    return () => {
+      liveRef.current = false
+      dismissMoved()
+    }
+  }, [])
 
   // The list's completion (MyTasksTab.jsx): flip the card at once, keep a completed card in its
   // place while the check celebrates, then refetch, which files it under the lane's done toggle.
@@ -574,8 +682,9 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
   // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
   // rejects, so the toast can say so: this tab may have gone by then.
   const toggleCompleteRef = useRef(null)
-  const toggleComplete = useCallback(async (task) => {
+  const toggleComplete = useCallback(async (task, { undoNext = null } = {}) => {
     const wasDone = task.status === 'done'
+    let next = null
     const pid = projectRef
     setError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
@@ -584,13 +693,18 @@ export default function BoardTab({ projectId = null, onProjectChange }) {
     try {
       if (wasDone) {
         await api.reopenTask(task.id)
+        await dropUntouchedNext(api, undoNext)
       } else {
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
-        await api.completeTask(task.id)
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
+        const res = await api.completeTask(task.id)
+        next = res?.next ?? null
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }, { undoNext: next }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await refreshIfShown(pid)
+      // A repeat's next copy is tinted where it lands, which may be the very place the done one
+      // left: without it the card reads as not completed at all.
+      if (next) markChanged(next.id)
     } catch (err) {
       setTaskStatus(task.id, task.status)
       throw err

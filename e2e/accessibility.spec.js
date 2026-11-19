@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures.js'
 import { openView, openTask, openNavigation, expectNoHorizontalOverflow, smallTargets, expectFocusRing, applyViewSettings } from './support.js'
 
-// The accessibility rules in CLAUDE.md, checked in a real browser at both widths: 44px click
-// targets, a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
+// The accessibility rules in CLAUDE.md, checked in a real browser at both widths: big enough click
+// targets (MIN_TARGET in support.js), a visible focus ring, Esc closes panels and menus, and no sideways page scroll.
 
 const VIEWS = ['mytasks', 'inbox', 'board', 'rules', 'digest', 'github', 'settings']
 
@@ -70,7 +70,7 @@ test.describe('layout', { tag: ['@a11y'] }, () => {
   })
 })
 
-test.describe('44px click targets', { tag: ['@a11y'] }, () => {
+test.describe('click targets', { tag: ['@a11y'] }, () => {
   test('top bar and My tasks toolbar', async ({ page }) => {
     await openView(page)
     expect(await smallTargets(page.locator('header'))).toEqual([])
@@ -81,7 +81,7 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
     await openView(page)
     const offenders = await smallTargets(
       page.locator('main'),
-      '[aria-label^="Open "], [aria-label^="Collapse "], [aria-label^="Expand "], [role="checkbox"], [aria-label^="Change "]'
+      '[aria-label^="Open "], [aria-label^="Collapse "], [aria-label^="Expand "], [aria-label="Add task"], [role="checkbox"], [aria-label^="Change "]'
     )
     expect(offenders).toEqual([])
   })
@@ -89,6 +89,56 @@ test.describe('44px click targets', { tag: ['@a11y'] }, () => {
   test('navigation: the sidebar on desktop, the drawer on a phone', async ({ page }, testInfo) => {
     await openView(page)
     expect(await smallTargets(await openNavigation(page, testInfo))).toEqual([])
+  })
+
+  // The new task row's date is bare text, so with the Due date column hidden, where it follows the
+  // name, its target is its own and must not shrink to the width of a short date.
+  test('the new task row, with and without the Due date column', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('phone'), 'the inline Add task row is a desktop control')
+    await openView(page)
+    for (const hidden of [false, true]) {
+      if (hidden) {
+        await page.getByRole('button', { name: 'Columns', exact: true }).click()
+        await page.getByRole('menu', { name: 'Show or hide columns' }).getByRole('menuitemcheckbox', { name: 'Due date' }).click()
+        await page.keyboard.press('Escape')
+      }
+      await page.getByRole('button', { name: 'Add task' }).first().click()
+      const input = page.getByRole('textbox', { name: 'New task name' })
+      // A name long enough to press on the date beside it.
+      await input.fill(hidden ? 'A new task with a name long enough to fill the row and press on the date beside it' : 'Short')
+      await expect(page.getByRole('button', { name: 'Due date: Today' })).toBeVisible()
+      expect(await smallTargets(page.locator('main'), 'button[aria-label^="Due date"]'), hidden ? 'Due date column hidden' : 'Due date column shown').toEqual([])
+      await input.press('Escape')
+    }
+  })
+
+  // The narrowest Name column with the Due date column hidden, and the longest kind of date (a day
+  // and a time) beside the name: the date wraps, and neither it nor the name box is squeezed away.
+  test('the new task row in a narrowed Name column keeps room for the name and the date', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('phone'), 'the inline Add task row is a desktop control')
+    await openView(page)
+    await page.getByRole('button', { name: 'Columns', exact: true }).click()
+    await page.getByRole('menu', { name: 'Show or hide columns' }).getByRole('menuitemcheckbox', { name: 'Due date' }).click()
+    await page.keyboard.press('Escape')
+    const handle = page.getByRole('separator', { name: 'Resize Name column' })
+    await handle.focus()
+    for (let i = 0; i < 50; i++) await handle.press('ArrowLeft')
+
+    await page.getByRole('button', { name: 'Add task' }).first().click()
+    const input = page.getByRole('textbox', { name: 'New task name' })
+    await input.fill('A name that would fill the narrowed column on its own')
+    await page.getByRole('button', { name: 'Due date: Today' }).click()
+    const step = page.getByRole('dialog', { name: /^Due date for / })
+    await step.getByRole('button', { name: 'Tomorrow', exact: true }).click()
+    await step.getByRole('button', { name: 'Add time', exact: true }).click()
+    await step.getByLabel('Time', { exact: true }).fill('09:00')
+    // A click back in the name closes the step and keeps what was picked on the row.
+    await input.click()
+    const due = page.getByRole('button', { name: /^Due date: Tomorrow/ })
+    await expect(due).toBeVisible()
+    expect(await smallTargets(page.locator('main'), 'button[aria-label^="Due date"]')).toEqual([])
+    const nameBox = await input.boundingBox()
+    expect(nameBox.width, `the name box is ${Math.round(nameBox.width)}px wide`).toBeGreaterThanOrEqual(44)
   })
 
   test('inbox Accept and Reject, and the accept form buttons', async ({ page }) => {

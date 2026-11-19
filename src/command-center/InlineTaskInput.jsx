@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Calendar } from 'lucide-react'
+import { GripVertical } from 'lucide-react'
 import { Popover } from './Menu'
 import AddDuePanel from './AddDuePanel'
 import { formatDueCell, getDueBounds } from './dueDates'
@@ -21,10 +21,26 @@ import { afterRelease, usePointerPress } from './pointerPress'
 // keyboard keeps the draft. A create that fails keeps the title and what Add task handed over
 // (the date, the repeat, and whether the repeat was made in Custom), so the picker reopens on it
 // for another try.
-// `handleColumn` adds the empty leading cell the rows have under the manual sort (TaskRow.jsx).
+// `handleColumn` adds the leading cell the rows have under the manual sort (TaskRow.jsx), with
+// the grip their handle shows, drawn only: the task can be moved once it is added.
 export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumns, dueColumn = true, phone = false, defaultDueAt = null, api, handleColumn = false }) {
-  const [title, setTitle] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [title, setTitleState] = useState('')
+  const [busy, setBusyState] = useState(false)
+  // The draft and the save in flight as they are now, for a save that settles after newer
+  // renders: one closure cannot see a name typed while it was waiting.
+  const titleRef = useRef('')
+  const busyRef = useRef(false)
+  // How focus left the row while a save was in flight ('click' or 'key'), a blur the busy row
+  // could not act on then: the save acts on it once it settles.
+  const leftWhileBusy = useRef(null)
+  function setTitle(value) {
+    titleRef.current = value
+    setTitleState(value)
+  }
+  function setBusy(value) {
+    busyRef.current = value
+    setBusyState(value)
+  }
   const [error, setError] = useState(null)
   const [picking, setPicking] = useState(false)
   const [dueAt, setDueAt] = useState(defaultDueAt)
@@ -40,7 +56,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // the click-away add, which can run before a state update from the picker closing has rendered.
   const picksRef = useRef(null)
   picksRef.current = { dueAt, recurrence, customRepeat }
-  const dueText = formatDueCell(dueAt, getDueBounds()).text || 'Due date'
+  const dueCell = formatDueCell(dueAt, getDueBounds())
+  const dueText = dueCell.text || 'Due date'
   // Counts the tasks saved from this row. Each one pushes the row down, so it is kept on screen.
   const [saved, setSaved] = useState(0)
 
@@ -54,6 +71,15 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   useEffect(() => {
     if (saved > 0) rowRef.current?.scrollIntoView?.({ block: 'nearest' })
   }, [saved])
+
+  // A name typed while a save waited, then left by a click: added once the render that shows the
+  // first save has run, so onSubmit works out its place from the list as it is then (under the
+  // manual sort, after the first task rather than above it).
+  const [queued, setQueued] = useState(0)
+  useEffect(() => {
+    if (!queued || !mounted.current || rowRef.current?.contains(document.activeElement) || !titleRef.current.trim()) return
+    commit(defaultDueAt, { recurrence: '', customRepeat: false }, { leave: true })
+  }, [queued]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // A click elsewhere that takes focus from the row waits for the release before the row closes
   // or adds: closing on the press would move the rows under it up by a row, and the release would
@@ -93,7 +119,11 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   }
 
   function handleBlur(e) {
-    if (busy || cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (cancelled.current || rowRef.current?.contains(e.relatedTarget)) return
+    if (busyRef.current) {
+      leftWhileBusy.current = press.current.clicking ? 'click' : 'key'
+      return
+    }
     if (title.trim()) {
       if (!press.current.clicking) return
       if (press.current.held) afterRelease(addOnLeave)
@@ -111,33 +141,51 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   // `leave` is a click elsewhere: once saved the row closes, unless focus has come back to it,
   // and focus is not pulled back to the row either way.
   async function commit(picked, draft, { leave = false } = {}) {
-    const trimmed = title.trim()
-    if (!trimmed || busy) return
+    const sent = titleRef.current
+    const trimmed = sent.trim()
+    if (!trimmed || busyRef.current) return
+    leftWhileBusy.current = null
     setPicking(false)
     setDueAt(picked)
     setRecurrence(draft.recurrence)
     setCustomRepeat(draft.customRepeat)
     setBusy(true)
     setError(null)
+    let saved = false
     try {
       await onSubmit(trimmed, { dueAt: picked, recurrence: draft.recurrence || null })
-      if (!mounted.current) return
-      if (leave && !rowRef.current?.contains(document.activeElement)) {
-        onCancel()
-        return
-      }
-      // Saved: the next row starts clean, on the group's date.
-      setTitle('')
+      saved = true
+    } catch (err) {
+      if (mounted.current) setError(err.message || 'Could not add task.')
+    }
+    if (!mounted.current) return
+    setBusy(false)
+    const left = leftWhileBusy.current
+    leftWhileBusy.current = null
+    if (saved) {
+      // Saved: the next row starts clean, on the group's date, keeping only a name typed while it
+      // saved.
+      if (titleRef.current === sent) setTitle('')
       setDueAt(defaultDueAt)
       setRecurrence('')
       setCustomRepeat(false)
       setSaved((n) => n + 1)
-    } catch (err) {
-      if (!mounted.current) return
-      setError(err.message || 'Could not add task.')
     }
-    setBusy(false)
-    if (!leave) inputRef.current?.focus()
+    if (rowRef.current?.contains(document.activeElement)) {
+      if (!leave) inputRef.current?.focus()
+      return
+    }
+    // Focus has left the row. A failed save keeps the row and says why. Otherwise an empty row
+    // closes, once a held press has been released, so nothing moves under it first. A name typed
+    // while it saved is added in turn, on the group's date, when the last way out was a click, as
+    // that click would have done had the row not been busy; left last by keyboard, it stays a
+    // draft.
+    if (!saved) return
+    const last = left ?? (leave ? 'click' : null)
+    if (!titleRef.current.trim()) {
+      if (press.current.held) afterRelease(() => setTimeout(closeIfLeftEmpty, 0))
+      else onCancel()
+    } else if (last === 'click') setQueued((n) => n + 1)
   }
 
   // Whether an IME composition is open, so the Enter that confirms a candidate in a Chinese,
@@ -159,8 +207,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
   }
 
   // Asana's due date cell on its new row: the date and repeat are set here before the task is
-  // added. It needs a title first, as Add task does. It sits in the Due date column, under the
-  // dates of the rows below; with that column hidden it follows the name.
+  // added. It needs a title first, as Add task does. It sits in the Due date column, drawn as the
+  // rows' own date cells are, its text in line with theirs; with that column hidden it follows the name.
   const dueButton = (
     <span
       ref={dueAnchorRef}
@@ -172,15 +220,16 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
     >
       <button
         type="button"
-        className="btn inline-add-due"
+        className="inline-add-due"
         disabled={busy || !title.trim()}
         aria-haspopup="dialog"
         aria-expanded={picking}
         aria-label={dueAt ? `Due date: ${dueText}` : 'Due date'}
+        // Coloured as the row's date will be once it is added; disabled draws its own grey.
+        style={busy || !title.trim() ? undefined : { color: dueCell.color || 'var(--t2)' }}
         onClick={() => setPicking(true)}
       >
-        <Calendar size={16} aria-hidden="true" />
-        <span>{dueText}</span>
+        {dueText}
       </button>
     </span>
   )
@@ -195,7 +244,11 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
       className="mytasks-grid inline-add-row"
       style={{ gridTemplateColumns, alignItems: 'center', minHeight: 'var(--row)', borderBottom: '1px solid var(--bd)' }}
     >
-      {handleColumn && <span aria-hidden="true" />}
+      {handleColumn && (
+        <span aria-hidden="true" className="inline-add-handle">
+          <GripVertical size={16} />
+        </span>
+      )}
       {/* The empty circle a row has, so the new row reads as the task it will be. */}
       <span aria-hidden="true" className="inline-add-check">
         <span className="task-check-circle" />
@@ -213,8 +266,8 @@ export default function InlineTaskInput({ onSubmit, onCancel, gridTemplateColumn
           // Leaving an empty row closes it, and a click elsewhere adds a named one, unless focus
           // went to its own due date button.
           onBlur={handleBlur}
-          // Read-only rather than disabled while it saves, so focus stays in the row for the next.
-          readOnly={busy}
+          // Editable while it saves, so focus stays in the row for the next (a second Enter waits
+          // for the first): on Android a focused box turning read-only puts the keyboard away.
           aria-busy={busy || undefined}
           placeholder="Write a task name"
           aria-label="New task name"

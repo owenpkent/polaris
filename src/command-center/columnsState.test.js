@@ -23,8 +23,8 @@ describe('COLUMN_DEFS', () => {
     expect(COLUMN_DEFS.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 
-  test('assignee is the only column that starts hidden', () => {
-    expect(COLUMN_DEFS.filter((c) => c.defaultHidden).map((c) => c.id)).toEqual(['assignee'])
+  test('assignee and source are the columns that start hidden', () => {
+    expect(COLUMN_DEFS.filter((c) => c.defaultHidden).map((c) => c.id)).toEqual(['assignee', 'source'])
   })
 
   test('has unique ids', () => {
@@ -60,55 +60,50 @@ describe('getVisibleColumns', () => {
   const noHidden = { name: false, due: false, project: false, assignee: false, priority: false, source: false }
 
   test('shows every column when nothing is hidden and no breakpoint is active', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
   })
 
   test('respects an explicit per-column hidden flag', () => {
     const hidden = { ...noHidden, priority: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project', 'assignee', 'source'])
   })
 
   test('never hides the name column even if asked to', () => {
     const hidden = { ...noHidden, name: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toContain('name')
   })
 
   test('narrow900 hides assignee, priority, and source even when the user left them visible', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: false, phone: false, panelOpen: false })
-    expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project'])
-  })
-
-  test('an open detail panel hides priority and source the same way narrow900 does', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: true })
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: false, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'project'])
   })
 
   test('narrow600 hides the project column independently of narrow900', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: true, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: true, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due', 'assignee', 'priority', 'source'])
   })
 
   test('narrow900 and narrow600 combined hide project, priority, and source', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: false, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: false })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
   test('phone tier fixes the column set to name and due only', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: true, panelOpen: false })
+    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
   test('phone tier keeps due visible even if the user hid it, ignoring saved hidden state', () => {
     const hidden = { ...noHidden, due: true, priority: true, project: true, source: true }
-    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: true, panelOpen: false })
+    const visible = getVisibleColumns(hidden, { narrow900: false, narrow600: false, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 
-  test('phone tier overrides narrow900/narrow600/panelOpen all being active too', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: true, panelOpen: true })
+  test('phone tier overrides narrow900 and narrow600 being active too', () => {
+    const visible = getVisibleColumns(noHidden, { narrow900: true, narrow600: true, phone: true })
     expect(visible.map((c) => c.id)).toEqual(['name', 'due'])
   })
 })
@@ -138,7 +133,11 @@ describe('buildGridTemplate', () => {
 
   test('returns the fixed phone template regardless of columns or widths', () => {
     const template = buildGridTemplate(COLUMN_DEFS, widths, { phone: true })
-    expect(template).toBe('44px minmax(0, 1fr) 120px')
+    expect(template).toBe('44px minmax(0, 1fr) auto auto')
+  })
+
+  test('the phone Add task row keeps a column for its date button', () => {
+    expect(buildGridTemplate(COLUMN_DEFS, widths, { phone: true, inline: true })).toBe('44px minmax(0, 1fr) 120px')
   })
 
   test('treats a missing options argument as non-phone', () => {
@@ -164,6 +163,24 @@ describe('useColumnsState', () => {
     expect(result.current.widths.due).toBe(200)
     expect(result.current.widths.name).toBe(440)
     expect(result.current.hidden.priority).toBe(true)
+    expect(result.current.hidden.project).toBe(false)
+  })
+
+  // Source became hidden by default after devices had saved their columns with it shown.
+  test('a state saved before Source was hidden by default hides it once, and saves that', () => {
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify({ widths: {}, hidden: { source: false, priority: true } }))
+    const { result } = renderHook(() => useColumnsState())
+    expect(result.current.hidden.source).toBe(true)
+    expect(result.current.hidden.priority).toBe(true)
+    expect(JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY)).sourceDefault).toBe(true)
+  })
+
+  test('Source shown again after that stays shown', () => {
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify({ widths: {}, hidden: {} }))
+    const first = renderHook(() => useColumnsState())
+    act(() => first.result.current.setHidden('source', false))
+    first.unmount()
+    const { result } = renderHook(() => useColumnsState())
     expect(result.current.hidden.source).toBe(false)
   })
 
@@ -310,7 +327,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: false, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('reports narrow900 alone at a mid-size viewport', () => {
@@ -320,7 +337,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('reports narrow900 and narrow600 together, but not phone, just above the phone breakpoint', () => {
@@ -330,7 +347,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: false,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: false, phone: false })
   })
 
   test('reports all three breakpoints active on a phone-size viewport', () => {
@@ -341,7 +358,7 @@ describe('useNarrowBreakpoints', () => {
       [Q.phone]: true,
     })
     const { result } = renderHook(() => useNarrowBreakpoints())
-    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: true, narrowInbox: true, phone: true })
   })
 
   test('updates state when a media query change event fires', () => {
@@ -361,7 +378,7 @@ describe('useNarrowBreakpoints', () => {
     act(() => {
       stub.fire(Q.narrow900)
     })
-    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false, narrowPanel: false })
+    expect(result.current).toEqual({ narrow900: true, narrow600: false, narrowInbox: false, phone: false })
   })
 
   test('removes every change listener on unmount', () => {
@@ -391,23 +408,14 @@ describe('the sidebar and an open task panel', () => {
     expect(Q.narrowInbox).toBe('(max-width: 1032px)')
     expect(Q.phone).toBe('(max-width: 640px)')
   })
-
-  test('an open panel on a narrowPanel window hides Project too', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: true, narrowPanel: true })
-    expect(ids(visible)).toEqual(['name', 'due'])
-  })
-
-  test('narrowPanel alone, with no panel open, hides nothing', () => {
-    const visible = getVisibleColumns(noHidden, { narrow900: false, narrow600: false, phone: false, panelOpen: false, narrowPanel: true })
-    expect(ids(visible)).toEqual(['name', 'due', 'project', 'assignee', 'priority', 'source'])
-  })
 })
 
 describe('buildGridTemplate with the reorder handle', () => {
   test('adds a second 44px track before the columns, on the desktop and on the phone', () => {
     const nameCol = COLUMN_DEFS.find((c) => c.id === 'name')
     expect(buildGridTemplate([nameCol], { name: 300 }, { handle: true })).toBe('44px 44px minmax(116px, 300px) minmax(0, 1fr)')
-    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true })).toBe('44px 44px minmax(0, 1fr) 112px')
-    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: false })).toBe('44px minmax(0, 1fr) 120px')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true })).toBe('44px 44px minmax(0, 1fr) auto auto')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: true, inline: true })).toBe('44px 44px minmax(0, 1fr) 112px')
+    expect(buildGridTemplate(COLUMN_DEFS, {}, { phone: true, handle: false })).toBe('44px minmax(0, 1fr) auto auto')
   })
 })

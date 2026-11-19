@@ -9,7 +9,8 @@ import TaskDetailPanel from './TaskDetailPanel'
 import TaskGroupSection from './TaskGroupSection'
 import { TaskTree, indexSubtasks } from './TaskRow'
 import { completeExitDelay } from './CompleteBurst'
-import { showCompleted } from './undoToast'
+import { showCompleted, showMoved, dismissMoved } from './undoToast'
+import { dropUntouchedNext } from './repeatUndo'
 import TaskListToolbar from './TaskListToolbar'
 import ColumnHeader from './ColumnHeader'
 import InlineTaskInput from './InlineTaskInput'
@@ -18,10 +19,11 @@ import KeyboardLegendDialog from './KeyboardLegendDialog'
 import { Loading, ErrorBanner } from './shared'
 import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, withDueDate } from './dueDates'
 import DueDateMenu from './DueDateMenu'
-import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate } from './columnsState'
-import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
+import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate, columnMenuItems } from './columnsState'
+import { useTaskContextMenu } from './TaskContextMenu'
+import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, projectGroupLabel, priorityGroupLabel, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
-import { planInsert } from './reorder'
+import { planInsert, positionAfter } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
 import { markChanged } from './useJustChanged'
 
@@ -69,6 +71,18 @@ function groupIdFor(task, mode, dueBounds) {
   if (mode === 'project') return projectGroupId(task)
   if (mode === 'priority') return priorityGroupId(task)
   return null
+}
+
+// What the group a task is in is called, for the toast that says where a moved task went.
+function groupLabelFor(groupId, mode, projectNameById) {
+  if (mode === 'due') return GROUP_ORDER.find((g) => g.id === groupId)?.label ?? null
+  if (mode === 'project') return projectGroupLabel(groupId, projectNameById)
+  if (mode === 'priority') return priorityGroupLabel(groupId)
+  return null
+}
+
+function reducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
 // `share` ({ title, text, url } or null) is a share handed in by App (shareIntake.js): it opens the
@@ -128,7 +142,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [onShareConsumed, sheetSeed.share])
 
   const columns = useColumnsState()
-  const { narrow900, narrow600, phone, narrowPanel } = useNarrowBreakpoints()
+  // A right-click on the column header (or Shift+F10 or the ContextMenu key from a control in it)
+  // opens the same Show or hide columns list as the toolbar's Columns button, at the pointer.
+  const { handlers: colheadMenuHandlers, menu: colheadMenu } = useTaskContextMenu({
+    getItems: () => columnMenuItems(columns.hidden, columns.setHidden),
+    label: 'Show or hide columns',
+  })
+  const { narrow900, narrow600, phone } = useNarrowBreakpoints()
   const { view, setSort, setGroup, toggleFilter, clearFilters, resetSort } = useViewState()
 
   const projectNameById = useMemo(() => {
@@ -143,14 +163,20 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   )
 
   const visibleColumns = useMemo(
-    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone, narrowPanel, panelOpen: Boolean(detailTaskId) }),
-    [columns.hidden, narrow900, narrow600, phone, narrowPanel, detailTaskId]
+    () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone }),
+    [columns.hidden, narrow900, narrow600, phone]
   )
   // Under the manual sort every row leads with its reorder handle (ReorderHandle.jsx), so the
   // grid, the column header, and the inline add row all take the extra 44px column.
   const reorderable = isManualSort(view.sort)
   const gridTemplateColumns = useMemo(
     () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable }),
+    [visibleColumns, columns.widths, phone, reorderable]
+  )
+  // The Add task row keeps its date button in a column of its own on a phone, which the task
+  // rows no longer have.
+  const inlineGridTemplate = useMemo(
+    () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable, inline: true }),
     [visibleColumns, columns.widths, phone, reorderable]
   )
 
@@ -330,18 +356,39 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // The inline row (InlineTaskInput.jsx) hands over the group's date, or the date and repeat
   // picked in its "When is it due?" step. The row stays open for the next task, as Asana's does;
   // Esc or leaving it empty closes it, and a click elsewhere adds what was typed and closes it.
+  // Under the manual sort a task added here goes last in the group it will show in, where it was
+  // typed, rather than first, where the store puts a new task: closing the row, or the list
+  // reloading, then leaves it where it was (reorder.js, positionAfter). Other sorts place it.
+  const endPositionFor = useCallback((fields) => {
+    if (!reorderable) return undefined
+    // Every task the list groups counts, subtasks included: a subtask is also a row of its own in
+    // its group, so a new task placed before one would move above it once the row closes.
+    const bounds = getDueBounds()
+    const group = groupIdFor(fields, view.group, bounds)
+    return positionAfter(tasks.filter((t) => groupIdFor(t, view.group, bounds) === group), tasks)
+  }, [reorderable, tasks, view.group])
+
   // The new task is held above the row (heldIds) only if this opening of the row is still the one.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
     const payload = { title }
     if (dueAt) payload.dueAt = dueAt
     if (recurrence) payload.recurrence = recurrence
+    const position = endPositionFor({ dueAt, projectId: null, priority: 'none' })
+    if (position !== undefined) payload.position = position
     const created = await api.createTask(payload)
     const id = created?.task?.id
     markChanged(id)
     const seq = inlineAdd?.seq
     if (id) setInlineAdd((cur) => (cur && cur.seq === seq ? { ...cur, heldIds: [...cur.heldIds, id] } : cur))
     await fetchTasks()
-  }, [api, fetchTasks, inlineAdd])
+  }, [api, fetchTasks, inlineAdd, endPositionFor])
+
+  // The Add subtask row under a task's shown subtasks (AddSubtaskRow.jsx). It throws when the
+  // create fails, so the row can show why and keep the typed title; the list reloads after.
+  const addSubtask = useCallback(async (parent, title) => {
+    await api.createTask({ title, parentId: parent.id })
+    await fetchTasks()
+  }, [api, fetchTasks])
 
   // The sheet closes itself once this resolves, and only if it is still the opening that sent
   // the request (NewTaskSheet.jsx), so a slow create never closes a newer draft.
@@ -349,7 +396,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // new task's group is expanded before the list reloads, and the row is scrolled to once it is
   // there: a task saved out of sight looks like a task not saved.
   const [revealTaskId, setRevealTaskId] = useState(null)
-  const submitSheet = useCallback(async (payload) => {
+  const submitSheet = useCallback(async (fields) => {
+    const position = endPositionFor({ dueAt: null, projectId: null, priority: 'none', ...fields })
+    const payload = position === undefined ? fields : { ...fields, position }
     const { task } = await api.createTask(payload)
     if (task) {
       const groupId = groupIdFor(task, view.group, getDueBounds())
@@ -358,7 +407,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     markChanged(task?.id)
     await fetchTasks()
     if (task) setRevealTaskId(task.id)
-  }, [api, fetchTasks, ensureExpanded, view.group])
+  }, [api, fetchTasks, ensureExpanded, view.group, endPositionFor])
 
   useEffect(() => {
     if (!revealTaskId || loading) return
@@ -371,8 +420,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // The completed toast's Undo reopens through toggleComplete, read at click time. A failure
   // rejects, so the toast can say so: this tab may have gone by then.
   const toggleCompleteRef = useRef(null)
-  const toggleComplete = useCallback(async (task) => {
+  const toggleComplete = useCallback(async (task, { undoNext = null } = {}) => {
     const wasDone = task.status === 'done'
+    let next = null
     setActionError(null)
     setPendingIds((prev) => new Set(prev).add(task.id))
     // Optimistic: flip the visible state immediately.
@@ -380,14 +430,19 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     try {
       if (wasDone) {
         await api.reopenTask(task.id)
+        await dropUntouchedNext(api, undoNext)
       } else {
         // The row stays while its check celebrates and it fades (TaskRow, CompleteBurst.jsx).
         const exit = new Promise((resolve) => setTimeout(resolve, completeExitDelay()))
-        await api.completeTask(task.id)
-        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }))
+        const res = await api.completeTask(task.id)
+        next = res?.next ?? null
+        showCompleted(task.title, () => toggleCompleteRef.current({ ...task, status: 'done' }, { undoNext: next }), { nextDue: next?.dueAt ?? null })
         await exit
       }
       await fetchTasks()
+      // A repeat's next copy is tinted where it lands, which may be the very place the done one
+      // left: without it the row reads as not completed at all.
+      if (next) markChanged(next.id)
     } catch (err) {
       // Roll back on failure.
       setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: task.status } : t)))
@@ -408,9 +463,17 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // Due date/Project/Priority quick edits from a TaskRow's inline dropdowns:
   // optimistic update, roll back and surface the error banner on failure,
   // then refetch either way (mirrors handleToggleComplete above).
+  // An edit that sends a task to another group (a new day, project, or priority, by the grouping
+  // shown) says so in the toast, with View and Undo, since nothing scrolls after it: the owner
+  // stays where they were working (useJustChanged.js). A subtask stays under its parent, so it
+  // never moves group.
   const handleQuickUpdate = useCallback(async (task, patch) => {
     setActionError(null)
     markChanged(task.id)
+    const bounds = getDueBounds()
+    const moved = { ...task, ...patch }
+    const from = task.parentId ? null : groupIdFor(task, view.group, bounds)
+    const to = from === null ? null : groupIdFor(moved, view.group, bounds)
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)))
     try {
       await api.updateTask(task.id, patch)
@@ -418,8 +481,60 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     } catch (err) {
       setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)))
       setActionError(err.message || 'Could not update that task.')
+      return
     }
-  }, [api, fetchTasks])
+    const where = from !== null && from !== to ? groupLabelFor(to, view.group, projectNameById) : null
+    // A list left while the write was on its way publishes nothing: its View would act on a list
+    // that is gone.
+    if (!where || !liveRef.current) return
+    // Undo writes back the fields the edit changed, as they were; it rejects on a failure, so the
+    // toast can say so and offer Retry.
+    const before = Object.fromEntries(Object.keys(patch).map((key) => [key, task[key] ?? null]))
+    showMoved({
+      title: task.title,
+      where,
+      view: () => {
+        ensureExpanded(view.group, to)
+        setViewTaskId(task.id)
+      },
+      undo: async () => {
+        markChanged(task.id)
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...before } : t)))
+        try {
+          await api.updateTask(task.id, before)
+        } finally {
+          await fetchTasks().catch(() => {})
+        }
+      },
+    })
+  }, [api, fetchTasks, view.group, projectNameById, ensureExpanded])
+
+  // View in the move toast: the task's group opens, the row is scrolled to and tinted, and focus
+  // goes to it, since the owner asked to go there. A task the filters now hide opens in the panel.
+  const [viewTaskId, setViewTaskId] = useState(null)
+  useEffect(() => {
+    if (!viewTaskId || loading) return
+    const row = document.querySelector(`[data-task-id="${viewTaskId}"]`)
+    if (row) {
+      // jsdom has no scrollIntoView.
+      row.scrollIntoView?.({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' })
+      row.querySelector('.mytasks-open')?.focus({ preventScroll: true })
+      markChanged(viewTaskId)
+    } else {
+      setDetailTaskId(viewTaskId)
+    }
+    setViewTaskId(null)
+  }, [viewTaskId, loading])
+
+  // A move toast acts on this list, so it goes with it, and none is published after it has gone.
+  const liveRef = useRef(true)
+  useEffect(() => {
+    liveRef.current = true
+    return () => {
+      liveRef.current = false
+      dismissMoved()
+    }
+  }, [])
 
   // A drag or a handle's menu (reorder.js, ReorderableRows.jsx): the plan names each task's new
   // position, shown at once, and its moves are sent one after another. Moves queue behind each
@@ -437,6 +552,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     markChanged(task?.id)
     const next = new Map(plan.updates.map((u) => [u.id, u.position]))
     for (const [id, position] of next) pendingPositions.current.set(id, position)
+    // Tasks just added are held above the open Add task row (heldIds), in the order they were
+    // typed. Any move ends the hold, whichever row it starts from: a held row would otherwise
+    // stay put though a row moved past it, and the next move would plan from that stale order.
+    // Every row then shows by its saved position; the held ones were given end positions in the
+    // order typed, so the ones not moved stay where they are.
+    setInlineAdd((cur) => (cur && cur.heldIds.length > 0 ? { ...cur, heldIds: [] } : cur))
     if (patch) pendingPatches.current.set(task.id, { ...pendingPatches.current.get(task.id), ...patch })
     let before = new Map()
     setTasks((prev) => {
@@ -575,6 +696,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const sortedTasks = heldTasks.length > 0 ? allSorted.filter((t) => !heldIds.includes(t.id)) : allSorted
 
   const commonRowProps = {
+    onAddSubtask: addSubtask,
     dueBounds,
     projectNameById,
     subtasksByParent,
@@ -620,6 +742,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             collapsed={isCollapsed('due', g.id)}
             onToggleCollapse={() => toggleGroup('due', g.id)}
             {...commonRowProps}
+            inlineGridTemplate={inlineGridTemplate}
             addRow={addRow}
             inlineAdd={inlineAdd?.groupId === g.id ? inlineAdd : null}
             onOpenInlineAdd={() => openInlineAdd(g.id, addRow?.dueAt ?? null)}
@@ -657,11 +780,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
         />
       ))
     } else {
-      // 'none': a flat, ungrouped list.
-      scopeGroups = [{ id: '_all', label: 'the list', tasks: sortedTasks }]
+      // 'none': a flat, ungrouped list. The tasks just added from the row under it end the list,
+      // just above that row, with their handles like every other row.
+      const listTasks = rowShown && inlineAdd.groupId === null ? [...sortedTasks, ...heldTasks] : sortedTasks
+      scopeGroups = [{ id: '_all', label: 'the list', tasks: listTasks }]
       content = (
         <div data-reorder-group="_all">
-          <ReorderableRows groupId="_all" tasks={sortedTasks} enabled={reorderable} onReorder={handleReorder}>
+          <ReorderableRows groupId="_all" tasks={listTasks} enabled={reorderable} onReorder={handleReorder}>
             {(task, reorder, rowClass) => (
               <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} reorder={reorder} rowClass={rowClass} />
             )}
@@ -673,7 +798,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
 
   return (
     <div>
-      <div style={{ marginRight: detailTaskId ? 560 : 0 }}>
+      {/* An open task panel covers the list's right side and never moves or narrows the list. */}
+      <div>
         <TaskListToolbar
           onAddTask={handleAddTaskClick}
           projects={projects}
@@ -699,7 +825,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             group in turn (TaskGroupSection), or the flat rows when ungrouped. */}
         <div className={reorderable ? 'mytasks-reorderable' : undefined} style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="mytasks-colhead-sticky">
-            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }}>
+            <div className="mytasks-grid mytasks-colhead" style={{ gridTemplateColumns }} {...colheadMenuHandlers}>
               {reorderable && <div />}
               <div />
               {visibleColumns.map((col) => (
@@ -715,6 +841,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
                 />
               ))}
             </div>
+            {colheadMenu}
           </div>
 
           {listLoading ? (
@@ -728,8 +855,8 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
               </ReorderScope>
               {inlineAdd?.groupId === null && (
                 <>
-                  {heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
-                  <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={gridTemplateColumns} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
+                  {view.group !== 'none' && heldTasks.map((task) => <TaskTree key={task.id} task={task} {...commonRowProps} onOpen={setDetailTaskId} />)}
+                  <InlineTaskInput key={inlineAdd.seq} gridTemplateColumns={inlineGridTemplate} dueColumn={visibleColumns.some((c) => c.id === 'due')} phone={phone} handleColumn={reorderable} onSubmit={submitInlineAdd} onCancel={closeInlineAdd} defaultDueAt={inlineAdd.dueAt ?? null} api={api} />
                 </>
               )}
             </div>

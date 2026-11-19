@@ -17,6 +17,41 @@ version (`initWindowInsetsListener` in `@capacitor/android`'s SystemBars.java, C
 - **Older WebView:** the plugin pads the whole window natively by the bars, so the page never
   runs under them and every inset reads 0. Nothing on the page can be covered.
 
+**The icons in the bars.** The dashboard tells the plugin which icons to draw (`setStyle`, from
+`applyTheme` in src/theme.js): light ones for a dark surface, dark ones for a light one. Which
+surface is behind them depends on the same WebView version:
+
+- **WebView 140 or newer:** the dashboard's own top bar and tab bar are behind them, so the icons
+  follow the dashboard's theme, whatever the phone is set to.
+- **Older WebView:** the padded strips show the app window's background. The app's Android theme
+  is a DayNight one, so that background follows the phone's light or dark setting and takes no
+  notice of the theme picked in the dashboard. Until 2026-11-18 the icons followed the theme all
+  the same, and the dark theme on a phone set to light drew white icons on a white strip (seen
+  on the API 36 emulator's WebView 133). Now the page hands the window the colour of its bars:
+  the top bar and the tab bar are both `var(--bg2)`, `barColour` reads that token, and the app's
+  own `AppWindow` plugin (AppWindowPlugin.java) paints the window with it. The strips then look
+  as they do on a current WebView, and the icons follow the theme there too.
+
+Three things about the older path (`applySystemBars` in src/theme.js, which reads the WebView's
+version as the plugin does, through `drawsUnderSystemBars` in src/command-center/nativeApp.js):
+
+- SystemBars puts the theme's background back every time it sets the style, and again on every
+  configuration change. So the page sets the style first and the colour after it, and sets both
+  again when the phone's setting changes. The plugin also puts its colour back itself after a
+  configuration change, once every plugin has been told of it.
+- If the colour cannot be read as six hex digits, or the app refuses it, the icons follow the
+  phone's setting instead (`systemBarStyle`), so they can be read against the window's own
+  background whatever theme is picked.
+- The plugin takes an opaque `#rrggbb` and nothing else. A tablet has no tab bar, so on an old
+  WebView its bottom strip is the bars' colour over a page of the page's colour.
+
+`statusBarIconsStandOutInBothThemesWhateverThePhoneIsSetTo` in AppEndToEndTest reads the screen in
+both themes with the phone set to light and to dark, and once more after the setting is switched
+with the app open. On either kind of WebView the strip behind the status bar has to be the colour
+of the dashboard's bars and the icons have to stand out from it; the strip behind the gesture bar
+is the same window and was looked at in a screenshot, not read by the test. `AppWindowColourTest` holds what the plugin takes
+as a colour.
+
 Capacitor also writes `--safe-area-inset-top`, `-right`, `-bottom`, and `-left` on `<html>`, for
 WebViews whose `env()` values are wrong. Before WebView 144 the bottom inset is wrong while the
 keyboard is up, so the plugin reports 0 for it then. The dashboard reads `env()` through two
@@ -92,6 +127,23 @@ the next field with the keyboard still up. The bar hides at once, and comes back
 moving between fields does not flash it. The unit tests are in src/keyboard.test.js, and
 `tabBarStepsAsideWhileTheKeyboardIsOpen` in the Android app's AppEndToEndTest checks it with a real
 keyboard.
+
+**The box being typed in shows whole.** When the keyboard comes up over a focused box, the WebView
+scrolls the box to the middle of what is left, and nothing more is needed. That holds when
+the text comes after the keyboard, as it does from a finger. If text arrives while the keyboard is
+still coming up, the WebView brings only the caret into view: a 44px box is left with its lower
+13px under the keyboard, and it stays there. A hardware keyboard with the on-screen one showing as
+well can do it, and so can a script, which is how it was found (2026-11-18, the Subtask name box
+in a task's panel, WebView 133, in three scripted runs of six). So src/keyboard.js looks once
+more: 300ms after the visible height stops changing, a focused box that is cut off at the top or
+the bottom is scrolled just far enough to show whole. A box that already shows whole is never
+moved, so the WebView's own placing stands in the usual case. It happens only for the keyboard
+coming up. A later change of height never scrolls, because in a phone browser the address bar
+changes the height while the owner scrolls, and the page must not pull back to the box then. A box
+taller than what is visible (long notes) is left to the browser, which keeps the caret in view.
+`subtaskBoxShowsWholeWhenTextArrivesWhileTheKeyboardComesUp` in AppEndToEndTest sends keys straight
+after the tap, and the three tests that open a box with a real tap now also check it as soon as
+the keyboard is up, before anything is typed.
 
 ## Sources
 

@@ -5,10 +5,12 @@ import { formatDueCell, plainTitle, repeatLabel } from './dueDates'
 import { Menu } from './Menu'
 import { Avatar, ProjectChip } from './shared'
 import DueDateMenu from './DueDateMenu'
+import DueChip from './DueChip'
 import { useComposition } from './imeComposition'
 import CompleteBurst, { useCelebration } from './CompleteBurst'
 import { PRIORITY_OPTIONS, taskMenuItems, useTaskContextMenu } from './TaskContextMenu'
 import { useJustChanged } from './useJustChanged'
+import AddSubtaskRow from './AddSubtaskRow'
 
 // Priority is a soft pill in this view (.priority-pill in index.css): nothing for none and
 // medium (the default), so a pill always means a level was chosen.
@@ -44,7 +46,7 @@ const cellStyle = {
 // click from bubbling to the row (which opens the panel) and renders as a
 // full-height, full-width button so the whole cell -- not just its text --
 // is the row-tall click target (44px, or 32px under Compact density).
-function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu' }) {
+function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel, title, hasPopup = 'menu', fit = false }) {
   return (
     <button
       type="button"
@@ -59,7 +61,11 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
       style={{
         ...cellStyle,
         display: 'block',
-        width: '100%',
+        // `fit`: the phone's due date beside the name, which is as wide as its chip and no wider.
+        width: fit ? 'auto' : '100%',
+        maxWidth: '100%',
+        // A short label ("Fri") must not shrink the target below the row's height (44px, 32px compact).
+        minWidth: fit ? 'var(--row)' : undefined,
         height: '100%',
         minHeight: 'var(--row)',
         textAlign: 'left',
@@ -75,19 +81,18 @@ function CellButton({ innerRef, onClick, color, placeholder, children, ariaLabel
   )
 }
 
-// The soft background behind a phone due chip, matching the text colour formatDueCell chose.
-const CHIP_BACKGROUNDS = { 'var(--green)': 'var(--green-soft)', 'var(--red)': 'var(--red-soft)' }
-
 function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const due = formatDueCell(task.dueAt, dueBounds)
   // A repeating task shows a small repeat glyph after its date; the name says how it repeats.
   const repeat = repeatLabel(task.recurrence)
+  const glyph = repeat ? <Repeat size={12} aria-hidden="true" className="repeat-glyph" /> : null
 
   return (
-    <div style={{ position: 'relative', minWidth: 0 }}>
+    <div className="due-cell" style={{ position: 'relative', minWidth: 0 }}>
       <CellButton
+        fit={phone}
         innerRef={btnRef}
         ariaLabel={`Change due date for ${task.title}${repeat ? `, repeats ${repeat}` : ''}`}
         hasPopup="dialog"
@@ -97,21 +102,15 @@ function DueDateCell({ task, dueBounds, onUpdate, phone, api }) {
         title={due.text || undefined}
       >
         {phone && due.text ? (
-          // The day and the time each stay whole, the time on its own line under the day.
-          <span
-            className={due.time ? 'due-chip has-time' : 'due-chip'}
-            style={{ background: CHIP_BACKGROUNDS[due.color] || 'var(--neutral-soft)', color: due.color || 'var(--t1)' }}
-          >
-            {due.time ? (
-              <>
-                <span>{due.date}</span> <span>{due.time}</span>
-              </>
-            ) : due.text}
-          </span>
+          <DueChip due={due} repeat={Boolean(repeat)} />
+        ) : phone ? (
+          // A task with no date still needs a way to set one: a quiet "Add date" with no fill,
+          // so a list of dateless tasks is not a list of chips.
+          <span className="due-chip is-empty">Add date</span>
         ) : (
           due.text
         )}
-        {repeat && <Repeat size={12} aria-hidden="true" className="repeat-glyph" />}
+        {!(phone && due.text) && glyph}
       </CellButton>
       <DueDateMenu
         anchorRef={btnRef}
@@ -148,8 +147,10 @@ function ProjectCell({ task, projectName, projectOptions, onUpdate }) {
 
   return (
     <div style={{ position: 'relative', minWidth: 0 }}>
-      <CellButton innerRef={btnRef} ariaLabel={`Change project for ${task.title}`} onClick={() => setOpen((v) => !v)} placeholder="None">
-        {projectName ? <ProjectChip name={projectName} /> : null}
+      {/* No project is a pill too, a quiet one with no dot, so every row of the column has the
+          same shape and Project reads as a column rather than pills and bare words. */}
+      <CellButton innerRef={btnRef} ariaLabel={`Change project for ${task.title}`} onClick={() => setOpen((v) => !v)}>
+        {projectName ? <ProjectChip name={projectName} /> : <span className="project-chip is-none">None</span>}
       </CellButton>
       <Menu anchorRef={btnRef} open={open} onClose={() => setOpen(false)} items={items} label={`Project for ${task.title}`} minWidth={200} />
     </div>
@@ -236,9 +237,10 @@ function caretOffsetAt(container, x, y) {
 
 // A task's name in its row. Clicking the text, or Enter or Space on it, edits the name in place
 // (Asana's list does the same): Enter or a click away saves through `onRename`, Esc puts the old
-// name back, and an empty or unchanged name saves nothing. The rest of the name cell is the row,
-// which opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes
-// where the click was only when that text is the stored title; otherwise it goes to the end.
+// name back, and an empty or unchanged name saves nothing. Above 640px the button fills the name
+// cell up to what follows it, so the whole cell is the target; the panel button ending the cell
+// opens the panel. The text shown has markdown stripped (plainTitle), so the caret goes where the
+// click was only when that text is the stored title; otherwise, or past the words, it goes to the end.
 function TitleCell({ task, nameText, disabled, onRename }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -346,7 +348,7 @@ export default function TaskRow({
   // reorder handle (`reorder`, from ReorderableRows.jsx), and `rowClass` marks it while a row is
   // dragged (is-dragging, is-drop-before, is-drop-after). A subtask shown under its parent has
   // no handle: its name cell takes that column too, so its indented check and title keep the
-  // room they have without the handle (at 320px the name column is 88px wide).
+  // room they have without the handle (at 320px the name column is narrow).
   handleColumn = false,
   reorder = null,
   rowClass = '',
@@ -358,7 +360,7 @@ export default function TaskRow({
   // ends it at once.
   const { celebrating, key: burstKey, celebrate } = useCelebration({ hold: true })
   const completing = celebrating && done
-  const { changed, ref: rowRef } = useJustChanged(task.id)
+  const changed = useJustChanged(task.id)
 
   const check = (
     <button
@@ -409,13 +411,8 @@ export default function TaskRow({
         fontSize: '0.9375rem',
         color: done ? 'var(--t2)' : 'var(--t1)',
         textDecoration: done ? 'line-through' : 'none',
-        overflow: 'hidden',
-        // Two lines at most; the full name is the button's accessible name and the panel's title.
-        // No padding here: inside an overflow-hidden line clamp, padding lets the top of the
-        // third line show through. The button pads instead (.mytasks-title under 640px).
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
+        // The name wraps to as many lines as it needs and is never shortened; the button pads
+        // it (.mytasks-title under 640px).
       }
     : {
         ...cellStyle,
@@ -438,10 +435,24 @@ export default function TaskRow({
     }),
   })
 
+  // Always shown, so a long name still leaves a target that opens the panel. Above 640px it is the
+  // right end of the name cell. On a phone it is a cell of the row, after the date, so the row
+  // reads name, date, button on one line (.mytasks-open in index.css).
+  const openButton = (
+    <button
+      type="button"
+      className="icon-btn mytasks-open"
+      aria-label={`Open ${task.title}`}
+      title="Open details"
+      onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
+    >
+      <PanelRightOpen size={16} aria-hidden="true" />
+    </button>
+  )
+
   return (
     <>
     <div
-      ref={rowRef}
       {...menuHandlers}
       className={`mytasks-grid mytasks-row${depth > 0 ? ' is-nested' : ''}${completing ? ' is-completing' : ''}${changed ? ' just-changed' : ''}${rowClass}`}
       data-task-id={depth === 0 ? task.id : undefined}
@@ -474,32 +485,27 @@ export default function TaskRow({
         <span className="mytasks-name-body">
           <span className="mytasks-name-grid">
           <TitleCell task={task} nameText={nameText} disabled={pending} onRename={(title) => onQuickUpdate(task, { title })} />
+          {/* The count first, at one width, then Waiting, so each starts at the same place on
+              every row that has it (.subtask-chip, .waiting-chip). */}
           {(task.status === 'waiting' || subtaskCount > 0) && (
             <span className="mytasks-name-meta">
-              {task.status === 'waiting' && (
-                <span style={{ flex: '0 0 auto', fontSize: '0.75rem', color: 'var(--t2)' }}>Waiting</span>
-              )}
               {subtaskCount > 0 && (
                 <SubtaskToggle task={task} count={subtaskCount} expanded={expanded} onToggle={onToggleExpand} />
               )}
+              {task.status === 'waiting' && <span className="waiting-chip">Waiting</span>}
             </span>
           )}
-          {/* Always shown, at the right end of the name (on a phone, on the name's first line, with
-              Waiting and the count under it), so a long name still leaves a target that opens the panel. */}
-          <button
-            type="button"
-            className="icon-btn mytasks-open"
-            aria-label={`Open ${task.title}`}
-            title="Open details"
-            onClick={(e) => { e.stopPropagation(); onOpen(task.id) }}
-          >
-            <PanelRightOpen size={16} aria-hidden="true" />
-          </button>
+          {!phone && openButton}
           </span>
         </span>
       </span>
 
+      {/* One instance in one place for both tiers: it is the Due date column above 640px and, by
+          CSS (.due-cell), a chip at the right of the name's line on a phone (under the name on a
+          very narrow one). Moving it in the tree instead would unmount an open picker when a phone
+          turns across the breakpoint and run its save on leave. */}
       {columnIds.has('due') && <DueDateCell task={task} dueBounds={dueBounds} onUpdate={onQuickUpdate} phone={phone} api={api} />}
+      {phone && openButton}
       {columnIds.has('project') && (
         <ProjectCell task={task} projectName={projectName} projectOptions={projectOptions} onUpdate={onQuickUpdate} />
       )}
@@ -540,7 +546,10 @@ export function indexSubtasks(tasks) {
 // A row and, once its subtask count is pressed, its open subtasks as rows under it, as Asana's
 // list shows them. A subtask keeps its own row in its own group as well; the ones shown here are
 // the parent's, in the parent's order. Which rows are open is kept per row and not stored.
-export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, reorder = null, rowClass = '', ...rowProps }) {
+// With `onAddSubtask(parent, title)`, the subtasks shown end with an "Add subtask" row
+// (AddSubtaskRow.jsx), except under an inbox task, which never has subtasks. The server sets no
+// depth limit, so the row is offered wherever the subtasks are shown (depth below MAX_SUBTASK_DEPTH).
+export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, pendingIds, openTaskId, reorder = null, rowClass = '', onAddSubtask, ...rowProps }) {
   const [expanded, setExpanded] = useState(false)
   const children = subtasksByParent?.get(task.id) || []
   const canExpand = children.length > 0 && depth < MAX_SUBTASK_DEPTH
@@ -570,8 +579,18 @@ export function TaskTree({ task, depth = 0, subtasksByParent, projectNameById, p
           projectNameById={projectNameById}
           pendingIds={pendingIds}
           openTaskId={openTaskId}
+          onAddSubtask={onAddSubtask}
         />
       ))}
+      {canExpand && expanded && onAddSubtask && task.status !== 'inbox' && (
+        <AddSubtaskRow
+          parent={task}
+          depth={depth + 1}
+          gridTemplateColumns={rowProps.gridTemplateColumns}
+          handleColumn={rowProps.handleColumn}
+          onAdd={onAddSubtask}
+        />
+      )}
     </>
   )
 }

@@ -130,7 +130,7 @@ export default function AppUpdateSettings() {
         )}
         {needsAllow && (
           <p style={{ margin: '0.5rem 0 0' }}>
-            Android has to allow Polaris to install apps once. Allow it on the page that opened, then press Install again.
+            Android has to allow Polaris to install apps once. Allow it on the page that opened, then come back: the install continues by itself.
           </p>
         )}
       </div>

@@ -251,6 +251,15 @@ export function priorityGroupId(task) {
   return PRIORITY_GROUP_ORDER.includes(task.priority) ? task.priority : 'none'
 }
 
+// What a group is called, for its heading and for a toast that names where a task went.
+export function projectGroupLabel(id, projectNameById) {
+  return id === NO_PROJECT ? 'No project' : (projectNameById.get(id) || 'Unknown project')
+}
+
+export function priorityGroupLabel(id) {
+  return PRIORITY_GROUP_LABELS[id] || PRIORITY_GROUP_LABELS.none
+}
+
 export function groupByProject(tasks, projectNameById) {
   const buckets = new Map()
   for (const task of tasks) {
@@ -260,7 +269,7 @@ export function groupByProject(tasks, projectNameById) {
   }
   const groups = [...buckets.entries()].map(([id, groupTasks]) => ({
     id,
-    label: id === NO_PROJECT ? 'No project' : (projectNameById.get(id) || 'Unknown project'),
+    label: projectGroupLabel(id, projectNameById),
     tasks: groupTasks,
   }))
   groups.sort((a, b) => {
@@ -283,5 +292,5 @@ export function groupByPriority(tasks) {
   }
   return PRIORITY_GROUP_ORDER
     .filter((id) => buckets.has(id))
-    .map((id) => ({ id, label: PRIORITY_GROUP_LABELS[id], tasks: buckets.get(id) }))
+    .map((id) => ({ id, label: priorityGroupLabel(id), tasks: buckets.get(id) }))
 }

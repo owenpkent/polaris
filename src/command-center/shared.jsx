@@ -70,6 +70,25 @@ export function SourceBadge({ sourceType }) {
   )
 }
 
+export function Notice({ tone, children }) {
+  return (
+    <div
+      role="status"
+      style={{
+        padding: '0.6rem 0.85rem',
+        borderRadius: 8,
+        fontSize: '0.85rem',
+        margin: '0.75rem 0',
+        background: `var(--${tone}-soft)`,
+        color: 'var(--t1)',
+        borderLeft: `3px solid var(--${tone})`,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 // Projects and assignees carry no colour of their own, so one is picked from the ten project
 // tokens (--proj-1 to --proj-10 in index.css) by the name: the same name is the same colour in
 // every view, on every device, and on every scratch database the UI tests seed (ids differ there,

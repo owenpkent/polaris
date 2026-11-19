@@ -56,7 +56,7 @@ describe('the search dialog', () => {
 
     const rows = await screen.findAllByRole('button', { name: /ramp/ })
     expect(api.listTasks).toHaveBeenCalledWith({ text: 'ramp', status: 'open,in_progress,waiting,done', orderBy: 'updated', limit: SEARCH_LIMIT })
-    expect(rows.map((row) => row.textContent)).toEqual(['Order the rampHouse · Due Nov 9', 'Measure the rampDone'])
+    expect(rows.map((row) => row.textContent)).toEqual(['Order the rampHouse, due Nov 9', 'Measure the rampDone'])
     expect(screen.getByRole('status').textContent).toBe('2 tasks.')
   })
 
