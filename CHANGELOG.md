@@ -15,9 +15,10 @@ No migration.
   of its own under the group. It opens the same inline row at the end of the group, on the
   group's date. Above 640px nothing changes size.
 - Edits and comments made offline are sent in the order you made them, even if the device's clock
-  was set back while it was offline, and also when a dashboard tab opened before the update is
-  still running the old version. Before, an earlier edit could be sent last and win, with no
-  conflict recorded. A device's clock is now measured against the server's when the queue is
+  was set back while it was offline. Before, an earlier edit could be sent last and win, with no
+  conflict recorded. A dashboard tab opened before the update still runs the old version until it
+  reloads (a hidden tab does so by itself): its edits keep their order with the new version's
+  while the device's clock is unchanged, but not across a clock set back. A device's clock is now measured against the server's when the queue is
   sent, and each edit's time goes out in the server's time, so a conflict is decided by when you
   made the edit and not by how far the device's clock is off. If the server's clock cannot be
   read just then, the last reading is used if it is under an hour old, and otherwise sending
