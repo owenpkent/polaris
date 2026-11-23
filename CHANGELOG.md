@@ -3,7 +3,9 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
-## Unreleased
+## 3.2.0 (2026-11-23)
+
+No migration.
 
 - On My tasks, rows can be reordered under every sort, not only Manual. Under Due date, Priority,
   or Project, the tasks the sort ranks the same (one due date, one priority, one project) keep
@@ -11,6 +13,9 @@ carries, because `cc update` snapshots the database before one and a rollback re
   the arrow keys. Grouped by due date, a row can still be dragged or moved to another day under
   any sort, which sets its date as before, and the sort puts it in its place there. Sorted by name
   with no grouping, rows have nothing to move past, so there are no handles.
+- An edit made offline, or before the first connection, now counts in "changes waiting" only once
+  the dashboard's stored copy shows it. Before, a reload in the moment between the two could show
+  a task you had just completed as open again until the edit was sent. No edit was lost.
 
 ## 3.1.0 (2026-11-19)
 
