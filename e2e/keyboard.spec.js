@@ -12,7 +12,11 @@ const VIEWS = ['mytasks', 'inbox', 'board', 'goals', 'projects', 'checklists', '
 // That is the right reading order for a board and can never satisfy a top-then-left rule.
 const NO_VISUAL_ORDER = new Set(['board'])
 
-const TAB_CAP = 150
+// The cap only has to end a sweep that never comes back to its first stop (a focus trap), so it
+// grows with the page: one press for every pointer target in main, plus room for the stops
+// outside main (the top bar, the phone tab bar). A fixed 150 failed My tasks once a worker's
+// database had kept enough tasks from earlier tests (the weekly run of 2026-11-23).
+const TAB_SLACK = 150
 
 // What a pointer could use inside main: the same visibility rules as smallTargets in support.js.
 const POINTER_SELECTOR =
@@ -82,9 +86,9 @@ function describeActive() {
 }
 
 // Presses Tab until focus comes back to the first stop, leaves the document, or the cap is hit.
-async function tabSweep(page) {
+async function tabSweep(page, cap) {
   const stops = []
-  for (let i = 0; i < TAB_CAP; i++) {
+  for (let i = 0; i < cap; i++) {
     await page.keyboard.press('Tab')
     const stop = await page.evaluate(describeActive)
     if (!stop) break
@@ -136,9 +140,10 @@ test.describe('keyboard-only sweep', { tag: ['@a11y'] }, () => {
       const pointerCount = await rememberPointerSet(page)
       expect(pointerCount, 'main has no pointer targets to reach').toBeGreaterThan(0)
 
-      const stops = await tabSweep(page)
+      const cap = pointerCount + TAB_SLACK
+      const stops = await tabSweep(page, cap)
       expect(stops.length, 'Tab reached nothing').toBeGreaterThan(0)
-      expect(stops.length, `the sweep hit the ${TAB_CAP} press cap`).toBeLessThan(TAB_CAP)
+      expect(stops.length, `the sweep hit the ${cap} press cap`).toBeLessThan(cap)
 
       const unnamed = stops.filter((s) => !s.name).map((s, i) => `stop ${i} ${s.role}`)
       expect(unnamed, 'Tab stops without an accessible name').toEqual([])
