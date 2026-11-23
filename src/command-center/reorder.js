@@ -1,4 +1,5 @@
-// The arithmetic behind dragging a row to a new place in the list's manual sort (viewState.js,
+// The arithmetic behind moving a row to a new place in My tasks, under any sort: among every row
+// in the manual sort, and among the rows a sort ranks the same in the others (viewState.js,
 // ReorderHandle.jsx, useReorderDrag.js). Nothing here touches the DOM or the API: a plan says
 // which tasks get which position, and MyTasksTab sends it through api.moveTask.
 //
