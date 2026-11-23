@@ -3,6 +3,15 @@
 Each release is a signed tag `vX.Y.Z` (docs/releases.md). An entry names any schema migration it
 carries, because `cc update` snapshots the database before one and a rollback restores it.
 
+## Unreleased
+
+- On My tasks, rows can be reordered under every sort, not only Manual. Under Due date, Priority,
+  or Project, the tasks the sort ranks the same (one due date, one priority, one project) keep
+  your own order between them, and a row's handle moves it among those: drag it, use its menu, or
+  the arrow keys. Grouped by due date, a row can still be dragged or moved to another day under
+  any sort, which sets its date as before, and the sort puts it in its place there. Sorted by name
+  with no grouping, rows have nothing to move past, so there are no handles.
+
 ## 3.1.0 (2026-11-19)
 
 No migration.

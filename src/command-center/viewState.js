@@ -226,14 +226,25 @@ function compareTasks(a, b, field, projectNameById) {
 }
 
 export function sortTasks(tasks, sort, projectNameById) {
-  // For 'due', only the dated tasks take part in the direction flip; undated tasks are
-  // appended afterwards so reversing for 'desc' cannot move them to the front.
-  const pool = sort.field === 'due' ? tasks.filter((t) => t.dueAt) : [...tasks]
-  const sorted = pool.sort((a, b) => compareTasks(a, b, sort.field, projectNameById))
-  // The manual order has no direction: reversed, a drag would land the row the wrong way round.
-  if (sort.dir === 'desc' && sort.field !== MANUAL_SORT) sorted.reverse()
-  if (sort.field === 'due') sorted.push(...tasks.filter((t) => !t.dueAt))
-  return sorted
+  // Tasks the sort ranks the same (one due date, one priority, one project) keep the owner's own
+  // order among themselves, whichever the direction, which is what lets a row be dragged among
+  // them (sortTie). The manual order has no direction: reversed, a drag would land the row the
+  // wrong way round. For 'due', tasks with no due date go last whichever the direction.
+  const sign = sort.dir === 'desc' && sort.field !== MANUAL_SORT ? -1 : 1
+  const undatedLast = sort.field === 'due'
+  return [...tasks].sort((a, b) => {
+    if (undatedLast && !a.dueAt !== !b.dueAt) return a.dueAt ? -1 : 1
+    return sign * compareTasks(a, b, sort.field, projectNameById) || compareTasks(a, b, MANUAL_SORT, projectNameById)
+  })
+}
+
+/**
+ * Whether two tasks rank the same under `sort`, so the owner's order decides between them and a
+ * row may be dragged past the other (ReorderableRows.jsx). Under the manual sort every pair does.
+ */
+export function sortTie(sort, projectNameById) {
+  if (isManualSort(sort)) return () => true
+  return (a, b) => (sort.field === 'due' && !a.dueAt !== !b.dueAt ? false : compareTasks(a, b, sort.field, projectNameById) === 0)
 }
 
 // Project/priority grouping for the toolbar's Group dropdown. Due-date

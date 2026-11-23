@@ -160,7 +160,7 @@ test.describe('click targets', { tag: ['@a11y'] }, () => {
 
   test('sort and group popover controls', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     expect(await smallTargets(page.getByRole('dialog', { name: 'Sort tasks' }))).toEqual([])
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Group', exact: true }).click()

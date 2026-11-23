@@ -11,6 +11,7 @@ import {
   stateIndex,
   STATE_FILTER_OPTIONS,
   sortTasks,
+  sortTie,
   isManualSort,
   groupByProject,
   groupByPriority,
@@ -235,13 +236,12 @@ describe('sortTasks', () => {
 
   test('treats an unrecognized priority the same as "none"', () => {
     const tasks = [
-      { id: 'weird', priority: 'blocked' },
-      { id: 'none', priority: null },
-      { id: 'high', priority: 'high' },
+      { id: 'weird', priority: 'blocked', position: 1 },
+      { id: 'none', priority: null, position: 2 },
+      { id: 'high', priority: 'high', position: 3 },
     ]
     const result = sortTasks(tasks, { field: 'priority', dir: 'asc' }, new Map())
-    // 'blocked' and null both fall back to rank 4; original relative order
-    // between them is preserved by the stable sort.
+    // 'blocked' and null both fall back to rank 4, so the manual order decides between them.
     expect(result.map((t) => t.id)).toEqual(['high', 'weird', 'none'])
   })
 
@@ -286,14 +286,45 @@ describe('sortTasks', () => {
     expect(result.map((t) => t.id)).toEqual(['a', 'b'])
   })
 
-  test('preserves relative order for ties (stable sort)', () => {
+  test('ties keep the manual order, in both directions', () => {
     const tasks = [
-      { id: 'a', priority: 'high' },
-      { id: 'b', priority: 'high' },
-      { id: 'c', priority: 'high' },
+      { id: 'c', priority: 'high', position: 3 },
+      { id: 'low', priority: 'low', position: 0 },
+      { id: 'a', priority: 'high', position: 1 },
+      { id: 'b', priority: 'high', position: 2 },
     ]
-    const result = sortTasks(tasks, { field: 'priority', dir: 'asc' }, new Map())
-    expect(result.map((t) => t.id)).toEqual(['a', 'b', 'c'])
+    expect(sortTasks(tasks, { field: 'priority', dir: 'asc' }, new Map()).map((t) => t.id)).toEqual(['a', 'b', 'c', 'low'])
+    expect(sortTasks(tasks, { field: 'priority', dir: 'desc' }, new Map()).map((t) => t.id)).toEqual(['low', 'a', 'b', 'c'])
+  })
+
+  test('tasks due the same day, and the undated ones, keep the manual order', () => {
+    const tasks = [
+      { id: 'u2', dueAt: null, position: 5 },
+      { id: 'd2', dueAt: '2026-09-18', position: 4 },
+      { id: 'u1', dueAt: null, position: 1 },
+      { id: 'd1', dueAt: '2026-09-18', position: 2 },
+      { id: 'later', dueAt: '2026-09-19', position: 0 },
+    ]
+    expect(sortTasks(tasks, { field: 'due', dir: 'asc' }, new Map()).map((t) => t.id)).toEqual(['d1', 'd2', 'later', 'u1', 'u2'])
+    expect(sortTasks(tasks, { field: 'due', dir: 'desc' }, new Map()).map((t) => t.id)).toEqual(['later', 'd1', 'd2', 'u1', 'u2'])
+  })
+})
+
+describe('sortTie', () => {
+  test('under the manual sort every pair ties', () => {
+    expect(sortTie({ field: 'manual', dir: 'asc' }, new Map())({ priority: 'high' }, { priority: 'low' })).toBe(true)
+  })
+
+  test('under another sort, only the tasks it ranks the same', () => {
+    const byPriority = sortTie({ field: 'priority', dir: 'desc' }, new Map())
+    expect(byPriority({ priority: 'high' }, { priority: 'high' })).toBe(true)
+    expect(byPriority({ priority: null }, { priority: 'blocked' })).toBe(true)
+    expect(byPriority({ priority: 'high' }, { priority: 'low' })).toBe(false)
+    const byDue = sortTie({ field: 'due', dir: 'asc' }, new Map())
+    expect(byDue({ dueAt: '2026-09-18' }, { dueAt: '2026-09-18' })).toBe(true)
+    expect(byDue({ dueAt: '2026-09-18' }, { dueAt: '2026-09-18T09:00' })).toBe(false)
+    expect(byDue({ dueAt: null }, {})).toBe(true)
+    expect(byDue({ dueAt: null }, { dueAt: '2026-09-18' })).toBe(false)
   })
 })
 

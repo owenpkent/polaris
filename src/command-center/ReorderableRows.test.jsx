@@ -33,7 +33,7 @@ function renderRows({ enabled = true, onReorder = vi.fn() } = {}) {
 }
 
 describe('ReorderableRows', () => {
-  test('without the manual sort there are no handles', () => {
+  test('rows that cannot move have no handles', () => {
     renderRows({ enabled: false })
     expect(screen.queryByRole('button', { name: /^Reorder/ })).toBeNull()
   })
@@ -220,5 +220,88 @@ describe('ReorderScope across groups', () => {
     expect(onMoveAcross).not.toHaveBeenCalled()
     fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Old' }), { key: 'ArrowDown' })
     expect(onMoveAcross).toHaveBeenCalledWith({ task: OLD[0], fromId: 'overdue', toId: 'today', slot: 0 })
+  })
+})
+
+describe('ReorderScope under a sort other than the manual one', () => {
+  // Sorted by priority: Alpha and Beta are high, Gamma and Delta low. Each row is 44px from 0.
+  const SORTED = [
+    { id: 'a', title: 'Alpha', priority: 'high', position: 1 },
+    { id: 'b', title: 'Beta', priority: 'high', position: 2 },
+    { id: 'c', title: 'Gamma', priority: 'low', position: 0 },
+    { id: 'd', title: 'Delta', priority: 'low', position: 5 },
+  ]
+  const tie = (x, y) => x.priority === y.priority
+
+  function renderSorted({ onReorder = vi.fn(), onMoveAcross = vi.fn(), groups = [{ id: 'g', label: 'Group', tasks: SORTED }] } = {}) {
+    const row = (task, reorder, rowClass) => (
+      <div key={task.id} data-testid="row" data-task-id={task.id} className={`row${rowClass}`}>
+        <ReorderHandle task={task} reorder={reorder} />
+        {task.title}
+      </div>
+    )
+    render(
+      <ReorderScope enabled crossGroup tie={tie} groups={groups} onReorder={onReorder} onMoveAcross={onMoveAcross}>
+        {groups.map((g) => (
+          <section key={g.id} data-reorder-group={g.id} data-testid={`group-${g.id}`}>
+            <h2 data-reorder-header data-testid={`header-${g.id}`}>{g.label}</h2>
+            <ReorderableRows groupId={g.id} tasks={g.tasks} enabled>{row}</ReorderableRows>
+          </section>
+        ))}
+      </ReorderScope>
+    )
+    return { onReorder, onMoveAcross }
+  }
+
+  test('a drag stays among the rows the sort ranks the same', () => {
+    const { onReorder } = renderSorted()
+    const groupRect = () => ({ top: 0, bottom: 176, height: 176, left: 0, right: 500, width: 500 })
+    screen.getByTestId('group-g').getBoundingClientRect = groupRect
+    screen.getByTestId('header-g').getBoundingClientRect = () => ({ top: 0, bottom: 0, height: 0 })
+    layRows()
+    const handle = screen.getByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 100 })
+    // Over Alpha, at the top: the gap stays at the top of the low run, before Gamma, which is no move.
+    fireEvent.pointerMove(handle, { clientY: 5 })
+    expect(screen.getAllByTestId('row').map((el) => el.className)).toEqual(['row', 'row', 'row is-dragging', 'row'])
+    // Past Delta, at the end of the run.
+    fireEvent.pointerMove(handle, { clientY: 170 })
+    expect(screen.getAllByTestId('row').map((el) => el.className)).toEqual(['row', 'row', 'row is-dragging', 'row is-drop-after'])
+    fireEvent.pointerUp(handle, { clientY: 170 })
+    expect(onReorder).toHaveBeenCalledWith({ updates: [{ id: 'c', position: 6 }], order: ['d', 'c'], index: 1 })
+    expect(screen.getByRole('status').textContent).toBe('Gamma moved to 4 of 4')
+  })
+
+  test('the menu and the arrow keys move a row only within its run', () => {
+    const { onReorder } = renderSorted()
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Gamma' }))
+    expect(screen.getByRole('menuitem', { name: 'Move up' }).disabled).toBe(true)
+    expect(screen.getByRole('menuitem', { name: 'Move down' }).disabled).toBe(false)
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+    // Beta is last among the high ones: down goes nowhere, up swaps it with Alpha.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Beta' }), { key: 'ArrowDown' })
+    expect(onReorder).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Beta' }), { key: 'ArrowUp' })
+    expect(onReorder).toHaveBeenCalledWith({ updates: [{ id: 'b', position: 0 }], order: ['b', 'a'], index: 0 })
+  })
+
+  test('a row dragged into another group drops on the group as a whole', () => {
+    const OTHER = [{ id: 'z', title: 'Zeta', priority: 'high', position: 9 }]
+    const { onMoveAcross } = renderSorted({ groups: [{ id: 'g', label: 'Group', tasks: SORTED.slice(0, 1) }, { id: 'h', label: 'Other', tasks: OTHER }] })
+    const rect = (top, bottom) => () => ({ top, bottom, height: bottom - top, left: 0, right: 500, width: 500 })
+    screen.getByTestId('group-g').getBoundingClientRect = rect(0, 88)
+    screen.getByTestId('header-g').getBoundingClientRect = rect(0, 44)
+    screen.getByTestId('group-h').getBoundingClientRect = rect(88, 176)
+    screen.getByTestId('header-h').getBoundingClientRect = rect(88, 132)
+    const [alpha, zeta] = screen.getAllByTestId('row')
+    alpha.getBoundingClientRect = rect(44, 88)
+    zeta.getBoundingClientRect = rect(132, 176)
+    const handle = screen.getByRole('button', { name: 'Reorder Alpha' })
+    fireEvent.pointerDown(handle, { isPrimary: true, button: 0, pointerId: 1, clientY: 60 })
+    fireEvent.pointerMove(handle, { clientY: 170 })
+    // No gap opens between the other group's rows: the sort, not the drop, places the row there.
+    expect(screen.getAllByTestId('row').map((el) => el.className)).toEqual(['row is-dragging', 'row'])
+    fireEvent.pointerUp(handle, { clientY: 170 })
+    expect(onMoveAcross).toHaveBeenCalledWith({ task: SORTED[0], fromId: 'g', toId: 'h', slot: 0 })
   })
 })

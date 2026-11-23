@@ -21,7 +21,7 @@ import { getDueBounds, groupTasks, bucketForTask, dueForDrop, dropStartDay, with
 import DueDateMenu from './DueDateMenu'
 import { useColumnsState, useNarrowBreakpoints, getVisibleColumns, buildGridTemplate, columnMenuItems } from './columnsState'
 import { useTaskContextMenu } from './TaskContextMenu'
-import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, groupByProject, groupByPriority, projectGroupId, priorityGroupId, projectGroupLabel, priorityGroupLabel, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
+import { useViewState, applyFilters, goalWorkIndex, stateIndex, sortTasks, sortTie, groupByProject, groupByPriority, projectGroupId, priorityGroupId, projectGroupLabel, priorityGroupLabel, isManualSort, STATE_FILTER_OPTIONS } from './viewState'
 import ReorderableRows, { ReorderScope } from './ReorderableRows'
 import { planInsert, positionAfter } from './reorder'
 import { useRequestGuard } from './useRequestGuard'
@@ -166,9 +166,15 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
     () => getVisibleColumns(columns.hidden, { narrow900, narrow600, phone }),
     [columns.hidden, narrow900, narrow600, phone]
   )
-  // Under the manual sort every row leads with its reorder handle (ReorderHandle.jsx), so the
-  // grid, the column header, and the inline add row all take the extra 44px column.
-  const reorderable = isManualSort(view.sort)
+  // Every row leads with its reorder handle (ReorderHandle.jsx), so the grid, the column header,
+  // and the inline add row all take the extra 44px column. Under the manual sort a row can go
+  // anywhere in its group; under another it moves among the rows the sort ranks the same (one due
+  // date, one priority, one project: viewState.sortTie), and under the due-date grouping into
+  // another day's group, which sets its date. Sorted by name, with no other grouping, rows almost
+  // never tie and have nowhere to go, so there are no handles.
+  const manualSort = isManualSort(view.sort)
+  const reorderable = manualSort || view.sort.field !== 'name' || view.group === 'due'
+  const tie = useMemo(() => (manualSort ? null : sortTie(view.sort, projectNameById)), [manualSort, view.sort, projectNameById])
   const gridTemplateColumns = useMemo(
     () => buildGridTemplate(visibleColumns, columns.widths, { phone, handle: reorderable }),
     [visibleColumns, columns.widths, phone, reorderable]
@@ -360,13 +366,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   // typed, rather than first, where the store puts a new task: closing the row, or the list
   // reloading, then leaves it where it was (reorder.js, positionAfter). Other sorts place it.
   const endPositionFor = useCallback((fields) => {
-    if (!reorderable) return undefined
+    if (!manualSort) return undefined
     // Every task the list groups counts, subtasks included: a subtask is also a row of its own in
     // its group, so a new task placed before one would move above it once the row closes.
     const bounds = getDueBounds()
     const group = groupIdFor(fields, view.group, bounds)
     return positionAfter(tasks.filter((t) => groupIdFor(t, view.group, bounds) === group), tasks)
-  }, [reorderable, tasks, view.group])
+  }, [manualSort, tasks, view.group])
 
   // The new task is held above the row (heldIds) only if this opening of the row is still the one.
   const submitInlineAdd = useCallback(async (title, { dueAt = inlineAdd?.dueAt ?? null, recurrence = null } = {}) => {
@@ -598,11 +604,12 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   }, [api, fetchTasks])
 
   // A row moved into another due-date group, by drag, arrow key, or the handle's menu (the due-date
-  // grouping under the manual sort; never into Overdue, which is closed). The group sets the date
+  // grouping, under any sort; never into Overdue, which is closed). The group sets the date
   // (dueForDrop): Today and Tomorrow set that day, No due date clears it, and a range (Next 7
   // days, Later) opens the due date picker on the row, starting on the day of the row it was dropped next to. Until a day is picked
   // the row shows at the drop with that day; Esc or closing the picker takes the move back whole.
-  // The position is the drop slot's, and both writes go through handleReorder's queue.
+  // Under the manual sort the position is the drop slot's (under another sort the row keeps its
+  // position and the sort places it), and both writes go through handleReorder's queue.
   const [pendingMove, setPendingMove] = useState(null) // { task, plan, startDay, dueAt } | null
   const pendingMoveRef = useRef(null)
   const closedMoveRef = useRef(null)
@@ -618,7 +625,9 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
   const moveAcross = useCallback(({ task, toId, slot }) => {
     const bounds = getDueBounds()
     const rows = (groupRowsRef.current[toId] || []).filter((t) => t.id !== task.id)
-    const plan = planInsert(rows, task.id, slot)
+    // Under another sort than the manual one the sort places the row in its new group, so only
+    // the date changes and its position stays.
+    const plan = manualSort ? planInsert(rows, task.id, slot) : { updates: [], order: [], index: 0 }
     const rule = dueForDrop(toId, task.dueAt, bounds)
     ensureExpanded('due', toId)
     setRefocusId(task.id)
@@ -626,13 +635,13 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       handleReorder(plan, { dueAt: rule.dueAt }, task)
       return
     }
-    const near = rows[plan.index - 1] ?? rows[plan.index]
+    const near = manualSort ? rows[plan.index - 1] ?? rows[plan.index] : undefined
     const startDay = dropStartDay(toId, bounds, near?.dueAt)
     const move = { task, plan, startDay, dueAt: withDueDate(task.dueAt, startDay) }
     pendingMoveRef.current = move
     closedMoveRef.current = null
     setPendingMove(move)
-  }, [ensureExpanded, handleReorder])
+  }, [ensureExpanded, handleReorder, manualSort])
 
   const cancelMove = useCallback(() => {
     closedMoveRef.current = pendingMoveRef.current
@@ -724,7 +733,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
       if (rowShown && inlineAdd.groupId !== null) groups[inlineAdd.groupId] = [...groups[inlineAdd.groupId], ...heldTasks]
       // An empty group is hidden, except the one a new task is being typed into: the toolbar's Add
       // task opens the inline row in Today, which owns that row and must be on the page to show it.
-      // Under the manual sort a row can be dropped into any day group, so the empty ones show
+      // A row can be dropped into any day group, so the empty ones show
       // while a row is held, as drop targets (not a closed one, which takes no drop).
       crossGroup = reorderable
       const shown = GROUP_ORDER.filter((g) => groups[g.id].length > 0 || inlineAdd?.groupId === g.id || (crossGroup && dragging && !g.closed))
@@ -850,7 +859,7 @@ export default function MyTasksTab({ share = null, onShareConsumed, focusTaskId 
             </div>
           ) : (
             <div className="mytasks-list">
-              <ReorderScope enabled={reorderable} crossGroup={crossGroup} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging} onMoved={markChanged}>
+              <ReorderScope enabled={reorderable} crossGroup={crossGroup} tie={tie} groups={scopeGroups} onReorder={handleReorder} onMoveAcross={moveAcross} onDragChange={setDragging} onMoved={markChanged}>
                 {content}
               </ReorderScope>
               {inlineAdd?.groupId === null && (

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { dropIndexAt, dropTargetAt, planInsert, planReorder, positionAfter, positionBetween, stepSlot } from './reorder'
+import { dropIndexAt, dropTargetAt, planInsert, planReorder, positionAfter, positionBetween, stepSlot, tieRun } from './reorder'
 import { dropMarkClass } from './useReorderDrag'
 
 const task = (id, position) => ({ id, position, title: id })
@@ -79,6 +79,13 @@ describe('planReorder', () => {
     const plan = planReorder([{ id: 'a' }, task('b', 1)], 'b', 0)
     expect(plan.updates).toEqual([{ id: 'b', position: -1 }])
   })
+
+  // A task just added under a sort is shown at the end with the first position (review on #209).
+  test('rows shown out of position order are numbered again in their new order', () => {
+    const plan = planReorder([task('a', -2), task('b', -1), task('g', -3)], 'a', 3)
+    expect(plan.order).toEqual(['b', 'g', 'a'])
+    expect(plan.updates).toEqual([{ id: 'b', position: -3 }, { id: 'g', position: -2 }, { id: 'a', position: -1 }])
+  })
 })
 
 describe('dropMarkClass', () => {
@@ -144,6 +151,10 @@ describe('planInsert', () => {
     expect(plan.order).toEqual(['x', 'a', 'y'])
     expect(plan.updates).toEqual([{ id: 'x', position: 1 }, { id: 'a', position: 2 }, { id: 'y', position: 3 }])
   })
+  test('numbers the group again when its rows are shown out of position order', () => {
+    const plan = planInsert([task('x', 5), task('y', 2)], 'a', 2)
+    expect(plan.updates).toEqual([{ id: 'x', position: 2 }, { id: 'y', position: 3 }, { id: 'a', position: 4 }])
+  })
 })
 
 describe('positionAfter', () => {
@@ -161,5 +172,22 @@ describe('positionAfter', () => {
 
   test('leaves an empty group to the store', () => {
     expect(positionAfter([], [t('x', 1)])).toBeUndefined()
+  })
+})
+
+describe('tieRun', () => {
+  const rows = [{ k: 1 }, { k: 2 }, { k: 2 }, { k: 2 }, { k: 3 }]
+  const tie = (a, b) => a.k === b.k
+
+  test('the rows either side that tie with the row', () => {
+    expect(tieRun(rows, 2, tie)).toEqual({ start: 1, end: 4 })
+    expect(tieRun(rows, 0, tie)).toEqual({ start: 0, end: 1 })
+    expect(tieRun(rows, 4, tie)).toEqual({ start: 4, end: 5 })
+  })
+
+  test('with no tie the whole list is one run, and an index out of range has none', () => {
+    expect(tieRun(rows, 4, null)).toEqual({ start: 0, end: 5 })
+    expect(tieRun(rows, 5, tie)).toBeNull()
+    expect(tieRun(rows, -1, null)).toBeNull()
   })
 })

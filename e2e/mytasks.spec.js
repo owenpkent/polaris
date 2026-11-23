@@ -504,7 +504,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
 
   test('sorting by name descending reorders rows inside a group', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     const sort = page.getByRole('dialog', { name: 'Sort tasks' })
     await sort.getByRole('combobox', { name: 'Sort by' }).selectOption('name')
     await sort.getByRole('combobox', { name: 'Direction' }).selectOption('desc')
@@ -533,13 +533,6 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     const first = await createTask(request, testInfo, 'reorder-menu', { position: endPosition() })
     const second = await createTask(request, testInfo, 'reorder-menu', { position: endPosition() })
     await openView(page)
-    // Under the Due date sort there are no handles.
-    await page.getByRole('button', { name: 'Sort', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('due')
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Sort: Due date, ascending' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Reorder/ })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Reset sort' }).click()
     await manualSort(page)
     expect(await reorderOrder(page, 'reorder-menu')).toEqual([`Open ${first}`, `Open ${second}`])
 
@@ -552,6 +545,25 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
 
     await openView(page)
     expect(await reorderOrder(page, 'reorder-menu')).toEqual([`Open ${second}`, `Open ${first}`])
+  })
+
+  // Under another sort the rows it ranks the same keep the manual order between them, and a
+  // handle moves a row among those: both tasks are due today with no time, so they tie.
+  test('under the Due date sort a handle moves a row among those due the same day', async ({ page, request }, testInfo) => {
+    const first = await createTask(request, testInfo, 'reorder-tied', { position: endPosition() })
+    const second = await createTask(request, testInfo, 'reorder-tied', { position: endPosition() })
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('due')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Due date, ascending' })).toBeVisible()
+    expect(await reorderOrder(page, 'reorder-tied')).toEqual([`Open ${first}`, `Open ${second}`])
+    await page.getByRole('button', { name: `Reorder ${second}` }).focus()
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(() => reorderOrder(page, 'reorder-tied')).toEqual([`Open ${second}`, `Open ${first}`])
+    await openView(page)
+    await expect(page.getByRole('button', { name: 'Sort: Due date, ascending' })).toBeVisible()
+    expect(await reorderOrder(page, 'reorder-tied')).toEqual([`Open ${second}`, `Open ${first}`])
   })
 
   test('under the manual sort the arrow keys move the focused handle one row', async ({ page, request }, testInfo) => {
@@ -697,6 +709,25 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
     await openView(page)
     await expect(dueButton(page, title)).toContainText('Tomorrow')
     await expect(firstInGroup(page, 'tomorrow')).toContainText(title)
+  })
+
+  // Under another sort the row still changes day, and the sort places it in its new group: the
+  // header marks the drop, with no gap between rows to say where it would go.
+  test('under the Priority sort dragging a row onto Tomorrow sets its date', async ({ page, request }, testInfo) => {
+    const title = await createTask(request, testInfo, 'day-drag-priority', { position: endPosition() })
+    await openView(page)
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Sort tasks' }).getByRole('combobox', { name: 'Sort by' }).selectOption('priority')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Sort: Priority, ascending' })).toBeVisible()
+    await dragToHeader(page, title, 'Tomorrow')
+    await expect(rowEl(page, title)).toHaveClass(/is-dragging/)
+    await expect(page.locator('[data-reorder-group="tomorrow"] [data-reorder-header]')).toHaveClass(/is-drop-target/)
+    await page.mouse.up()
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
+    await expect(page.locator('[data-reorder-group="tomorrow"]').getByRole('button', { name: `Open ${title}` })).toBeVisible()
+    await openView(page)
+    await expect(dueButton(page, title)).toContainText('Tomorrow')
   })
 
   test('dragging a row into Next 7 days opens the date picker on it; Escape puts the row back, a pick saves', async ({ page, request }, testInfo) => {
@@ -899,7 +930,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
 
   test('the sort popover closes on Esc', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toHaveCount(0)
@@ -955,7 +986,7 @@ test.describe('My tasks', { tag: ['@flow'] }, () => {
       await expect(page.getByRole('button', { name })).toBeHidden()
     }
     await expect(page.getByRole('button', { name: 'Columns' })).toBeHidden()
-    await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sort', exact: true })).toBeVisible()
   })
 
   test('on a phone a long name wraps whole and the due date sits beside it at the middle of the row, before the panel button', async ({ page, request }, testInfo) => {
