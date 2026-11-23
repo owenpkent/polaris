@@ -784,6 +784,9 @@ test.describe('nothing is cut off by the completed toast', { tag: ['@a11y', '@al
   // The toast may cover the list for its few seconds, so the sweep of the whole page waits until
   // it has gone. While it shows, it has to fit, and what stays usable has to stay reachable.
   test('a long title wraps, the toast clears the bottom bar, and the list is whole once it goes', async ({ page, request }, testInfo) => {
+    // The sweep of the whole page at the end checks every row the worker's earlier tests added:
+    // late in a shard of clipping tests on CI's Windows runner it ran past 30s (about 12s early in one).
+    test.slow()
     const title = await createTask(request, testInfo, `${WORDY} ${LONG_SUFFIX}`)
     await openView(page)
     await page.getByRole('checkbox', { name: `Complete ${title}` }).click()
