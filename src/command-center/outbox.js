@@ -248,8 +248,19 @@ async function queueWrite({ baseUrl, origin = connectionOrigin(baseUrl), myTasks
     if (position !== undefined) opBody.position = position
   }
   await getQueue().put(key, { origin, opId, kind, taskId, at, base, body: opBody })
-  await refreshPendingCount(origin)
+  // The count ("2 changes waiting") is published once the copy shows the edit too, not between
+  // the two: a reload in that gap found the edit queued and the copy without it, so a task
+  // completed in local mode came back open (the weekly UI run of 2026-11-23). It is published
+  // even when the copy cannot be written, since the edit is queued all the same.
+  try {
+    return await showInCopy({ baseUrl, myTasksUrl, kind, taskId, body, opBody, existing, at })
+  } finally {
+    await refreshPendingCount(origin)
+  }
+}
 
+// What a queued write looks like in the stored copy, so every view shows it before it is sent.
+async function showInCopy({ baseUrl, myTasksUrl, kind, taskId, body, opBody, existing, at }) {
   if (kind === 'create_task') {
     // A subtask made with no project of its own takes its parent's, as Store.createTask does on
     // the server (and will again when this op is replayed), so the copy shows it under the
