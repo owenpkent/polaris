@@ -167,7 +167,9 @@ test('fileSecretStore: a lock left by a dead process is taken over, a live one m
 
     const longAgo = new Date(Date.now() - 60_000);
     utimesSync(lock, longAgo, longAgo);
-    await fileSecretStore(file, { lockTimeoutMs: 100 }).set('k', 'v');
+    // A long wait, as in backup.test.ts: a stale lock is taken over on the first look, but a
+    // Windows runner can refuse the new file for a while after deleting the old one.
+    await fileSecretStore(file, { lockTimeoutMs: 10_000 }).set('k', 'v');
     assert.deepEqual(readdirSync(dir), ['secrets.json']);
   } finally {
     rmSync(dir, { recursive: true, force: true });

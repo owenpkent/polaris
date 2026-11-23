@@ -369,7 +369,10 @@ test('a lock left by a dead attempt is taken over, and the lock is gone afterwar
     writeFileSync(lock, '');
     const old = new Date(Date.now() - 5 * 60_000);
     utimesSync(lock, old, old);
-    backupDatabase(store, dir, '2026-09-21', 14, new Date(), { lockTimeoutMs: 150 });
+    // The wait only bounds a takeover that never happens. On a Windows runner a deleted file can
+    // refuse a new one for a while (EPERM until the delete completes), and 150ms ran out there on
+    // 2026-11-23, so this allows far more than a takeover needs.
+    backupDatabase(store, dir, '2026-09-21', 14, new Date(), { lockTimeoutMs: 10_000 });
     assert.deepEqual(readdirSync(dir), ['polaris-2026-09-21.db']);
   } finally {
     store.db.close();
