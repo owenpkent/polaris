@@ -18,12 +18,19 @@ permissions:
   contents: read
 
 jobs:
-  matrix:
-    name: Every UI project, shots, and timings in Edge
+  # Every project test:ui names, in the same twelve parts as test.yml (see the reasons there). A
+  # worker's database keeps the tasks its tests create, so one worker over the whole suite ended
+  # with lists no pull request run ever sees: on 2026-11-23 that took 85 minutes and failed the
+  # keyboard sweep of My tasks on its press cap. Twelve parts keep each database the size the
+  # tests were written against.
+  ui:
+    name: UI tests in Edge, part ${{ matrix.shard }} of 12
     runs-on: windows-latest
-    # The UI tests alone take about 80 minutes on one worker (the twelve parts in test.yml add up
-    # to that), so an hour stopped every run from 2026-10-19 before the shots began.
-    timeout-minutes: 180
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -38,28 +45,54 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: command-center
-
-      # Every project test:ui names, one worker, no shards: this run is allowed to be slow.
-      - name: UI tests, every project
-        run: npm run test:ui
-      # Report-only timings on a 500 task seed (e2e/perf.spec.js). The numbers are attached to
-      # the run and printed; nothing here fails until they have been watched for a while.
-      # Playwright empties the output folder of the projects it runs when it starts, so this run
-      # writes to its own folder: the traces and screenshots of a UI test that just failed are
-      # what the artifact below is for, and they stay in .playwright.
-      - name: Timings on the 500 task seed
-        if: always()
-        run: npx playwright test --project perf --output .playwright-perf
-        env:
-          CC_UI_PERF: '1'
+      - run: npm run test:ui -- --shard=${{ matrix.shard }}/12
       - name: Keep traces and screenshots from failed UI tests
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: weekly-playwright-output
-          path: |
-            .playwright/
-            .playwright-perf/
+          name: weekly-playwright-output-${{ matrix.shard }}
+          path: .playwright/
+          # Dot-paths are skipped by upload-artifact unless this is set (see test.yml).
+          include-hidden-files: true
+          retention-days: 14
+
+  # The timings and the screenshots, after the parts and whatever they found: a failed UI test
+  # is no reason to skip the gallery.
+  shots:
+    name: Shots and timings in Edge
+    needs: ui
+    if: always()
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            command-center/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: command-center
+      # The perf project serves dist/ as it is, and nothing in this job has built it yet.
+      - run: npm run build
+
+      # Report-only timings on a 500 task seed (e2e/perf.spec.js). The numbers are attached to
+      # the run and printed; nothing here fails until they have been watched for a while.
+      - name: Timings on the 500 task seed
+        run: npx playwright test --project perf --output .playwright-perf
+        env:
+          CC_UI_PERF: '1'
+      - name: Keep traces and screenshots from failed timings
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: weekly-playwright-perf-output
+          path: .playwright-perf/
           # Dot-paths are skipped by upload-artifact unless this is set (see test.yml).
           include-hidden-files: true
           retention-days: 14
