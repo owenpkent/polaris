@@ -849,6 +849,40 @@ describe('MyTasksTab Add task keeps new tasks just above the row until it closes
     await waitFor(() => expect(screen.queryByRole('textbox', { name: 'New task name' })).toBeNull())
     expect(titles()).toEqual(['Open Second', 'Open First', 'Open Was here'])
   })
+
+  // Under another sort a task just added keeps the store's first position, yet shows held at the
+  // end of its run of ties. A move past it numbers the run again in the order shown (review on #209).
+  test('under the Priority sort a row moved past a task just added lands where it was shown', async () => {
+    localStorage.setItem('cc-mytasks-view-v1', JSON.stringify({
+      sort: { field: 'priority', dir: 'asc' }, group: 'none', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] },
+    }))
+    const list = [task('a', 'Alpha', -2, null), task('b', 'Beta', -1, null)]
+    api.listTasks.mockImplementation(async () => ({ tasks: list.map((t) => ({ ...t })) }))
+    api.createTask.mockImplementation(async ({ title }) => {
+      const made = task('g', title, -3, null)
+      list.push(made)
+      return { task: made }
+    })
+    api.moveTask = vi.fn().mockImplementation(async (id, { position }) => {
+      list.find((t) => t.id === id).position = position
+      return { task: {} }
+    })
+    stubMatchMedia(1280)
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Open Alpha' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Add task' })[0])
+    const input = await screen.findByRole('textbox', { name: 'New task name' })
+    fireEvent.change(input, { target: { value: 'Gamma' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Open Gamma' })
+    expect(titles()).toEqual(['Open Alpha', 'Open Beta', 'Open Gamma'])
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Alpha' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to bottom' }))
+    expect(titles()).toEqual(['Open Beta', 'Open Gamma', 'Open Alpha'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(api.listTasks.mock.calls.length).toBeGreaterThan(2))
+    expect(titles()).toEqual(['Open Beta', 'Open Gamma', 'Open Alpha'])
+  })
 })
 
 // A second name typed while a click-away save waits, then left by a click, is added after the

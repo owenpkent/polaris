@@ -17,6 +17,15 @@ export function positionBetween(prev, next) {
   return (prev + next) / 2
 }
 
+// Whether the rows as shown are in the order their positions give. They are not while the Add task
+// row holds the tasks just added at the end of a group (heldIds in MyTasksTab.jsx): under a sort
+// other than the manual one such a task keeps the store's first position. A midpoint between
+// neighbours shown out of order would land the row somewhere else, so the rows are numbered again.
+function shownInOrder(tasks) {
+  for (let i = 1; i < tasks.length; i += 1) if ((tasks[i - 1].position ?? 0) > (tasks[i].position ?? 0)) return false
+  return true
+}
+
 /**
  * The slot the pointer is over, for rows laid out top to bottom: 0 before the first row, n
  * after the last, and i for the gap above row i. The upper half of a row drops before it, the
@@ -74,9 +83,10 @@ export function planReorder(tasks, taskId, toSlot) {
   const next = others[at] === undefined ? undefined : (others[at].position ?? 0)
   const position = positionBetween(prev, next)
   const order = [...others.slice(0, at), tasks[from], ...others.slice(at)]
-  const fits = (prev === undefined || prev < position) && (next === undefined || position < next)
+  const fits = (prev === undefined || prev < position) && (next === undefined || position < next) && shownInOrder(tasks)
   if (fits) return { updates: [{ id: taskId, position }], order: order.map((t) => t.id), index: at }
-  // The gap is used up: number the whole group again from where it starts.
+  // The gap is used up, or the rows are shown out of order: number the whole group again, in its
+  // new order, from where it starts.
   const start = Math.floor(Math.min(...tasks.map((t) => t.position ?? 0)))
   return { updates: order.map((t, i) => ({ id: t.id, position: start + i })), order: order.map((t) => t.id), index: at }
 }
@@ -107,7 +117,7 @@ export function planInsert(tasks, taskId, slot) {
   const prev = tasks[at - 1] === undefined ? undefined : (tasks[at - 1].position ?? 0)
   const next = tasks[at] === undefined ? undefined : (tasks[at].position ?? 0)
   const position = positionBetween(prev, next)
-  const fits = (prev === undefined || prev < position) && (next === undefined || position < next)
+  const fits = (prev === undefined || prev < position) && (next === undefined || position < next) && shownInOrder(tasks)
   const order = [...tasks.slice(0, at).map((t) => t.id), taskId, ...tasks.slice(at).map((t) => t.id)]
   if (fits) return { updates: [{ id: taskId, position }], order, index: at }
   const start = Math.floor(Math.min(...tasks.map((t) => t.position ?? 0)))

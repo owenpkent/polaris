@@ -42,7 +42,7 @@ test.describe('target spacing', { tag: ['@a11y'] }, () => {
 
   test('sort menu', async ({ page }) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     expect(await crowdedTargets(page.getByRole('dialog', { name: 'Sort tasks' }))).toEqual([])
   })
 

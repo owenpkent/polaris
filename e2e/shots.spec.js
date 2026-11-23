@@ -541,7 +541,7 @@ test.describe('shots', { tag: ['@visual'] }, () => {
 
   test('mytasks: sort menu', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await shot(page, testInfo, 'mytasks', 'sort-menu')
   })

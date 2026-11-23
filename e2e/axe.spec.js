@@ -147,7 +147,7 @@ test.describe('axe', { tag: ['@a11y', '@theme'] }, () => {
 
   test('the sort menu', async ({ page }, testInfo) => {
     await openView(page)
-    await page.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('button', { name: 'Sort', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'Sort tasks' })).toBeVisible()
     await audit(page, testInfo, 'sort menu open')
   })
