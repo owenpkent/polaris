@@ -21,7 +21,9 @@ jobs:
   matrix:
     name: Every UI project, shots, and timings in Edge
     runs-on: windows-latest
-    timeout-minutes: 60
+    # The UI tests alone take about 80 minutes on one worker (the twelve parts in test.yml add up
+    # to that), so an hour stopped every run from 2026-10-19 before the shots began.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
