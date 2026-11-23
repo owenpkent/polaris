@@ -413,6 +413,45 @@ describe('a device with no connection yet', () => {
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
+  test('a completion counts as waiting only once the copy shows it', async () => {
+    // The weekly UI run of 2026-11-23 reloaded the page the moment "2 changes waiting" showed,
+    // which came before the copy was patched, and the completed task came back open.
+    const copy = memoryBackend()
+    setCacheBackend(copy)
+    const local = createApiClient(DEFAULT_BASE_URL, '', { local: true })
+    expect((await local.listTasks(MY_TASKS_QUERY)).tasks).toEqual([])
+    const { task } = await local.createTask({ title: 'Done before the reload' })
+    expect(getOfflineState().pending).toBe(1)
+
+    let arrived
+    const atPatch = new Promise((resolve) => { arrived = resolve })
+    let release
+    const released = new Promise((resolve) => { release = resolve })
+    setCacheBackend({ ...copy, put: async (...args) => { arrived(); await released; return copy.put(...args) } })
+    const completed = local.completeTask(task.id)
+    await atPatch
+    // Released whatever the check finds: a write left held would hold every later send too.
+    try {
+      expect(getOfflineState().pending).toBe(1)
+    } finally {
+      release()
+      await completed
+    }
+    expect(getOfflineState().pending).toBe(2)
+    const reloaded = createApiClient(DEFAULT_BASE_URL, '', { local: true })
+    expect((await reloaded.listTasks(MY_TASKS_QUERY)).tasks).toEqual([])
+  })
+
+  test('a write still counts as waiting when the copy cannot show it', async () => {
+    const copy = memoryBackend()
+    setCacheBackend(copy)
+    const local = createApiClient(DEFAULT_BASE_URL, '', { local: true })
+    const { task } = await local.createTask({ title: 'Kept in the queue' })
+    setCacheBackend({ ...copy, put: async () => { throw new Error('disk full') }, entries: async () => { throw new Error('disk full') } })
+    await local.completeTask(task.id)
+    expect(getOfflineState().pending).toBe(2)
+  })
+
   test('its edits go to no server until one adopts them, then only to that one', async () => {
     await createApiClient('http://x', '', { local: true }).createTask({ title: 'Local' })
     const sentTo = []
