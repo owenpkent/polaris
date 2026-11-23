@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { dropMarkClass, useReorderDrag } from './useReorderDrag'
-import { planReorder, stepSlot } from './reorder'
+import { planReorder, stepSlot, tieRun } from './reorder'
 
-// The rows of the list under the manual sort, each with what its handle needs to move it. A
+// The rows of the list, each with what its handle needs to move it. A
 // ReorderScope wraps every group of the list: it owns the one drag (useReorderDrag.js) and the
 // handle's moves, which end in `onReorder(plan)` for a move inside a group, where the plan
 // (reorder.js) names the tasks and the positions that put the row in its new slot, or in
@@ -12,6 +12,11 @@ import { planReorder, stepSlot } from './reorder'
 // collapsed group goes to its top. A `closed` group (Overdue) takes no row from another group: a
 // drag passes over it as if it were not there, and the arrow keys skip it. A move is read out for a screen reader, since the row keeps its handle
 // and its focus and nothing else says it moved.
+//
+// `tie` is null under the manual sort, where any row can go anywhere in its group. Under another
+// sort it says which rows the sort ranks the same (viewState.sortTie): a row moves only among the
+// run of rows it ties with, since the sort would put it straight back anywhere else, and a move
+// into another group is a drop on the group as a whole (`drag.whole`), which the sort places.
 const ScopeContext = createContext(null)
 
 /** The scope the rows are in, or null; a group's header reads `drag` from it to mark a drop on it. */
@@ -19,7 +24,7 @@ export function useReorderScope() {
   return useContext(ScopeContext)
 }
 
-export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, onMoveAcross, onDragChange, onMoved, children }) {
+export function ReorderScope({ enabled, crossGroup = false, tie = null, groups, onReorder, onMoveAcross, onDragChange, onMoved, children }) {
   const [notice, setNotice] = useState('')
   const groupsRef = useRef(groups)
   groupsRef.current = groups
@@ -38,21 +43,24 @@ export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, o
       return
     }
     const tasks = groupsRef.current.find((g) => g.id === fromId)?.tasks ?? []
-    const plan = planReorder(tasks, task.id, slot)
+    const run = tieRun(tasks, tasks.findIndex((t) => t.id === task.id), tie)
+    if (!run) return
+    const rows = tasks.slice(run.start, run.end)
+    const plan = planReorder(rows, task.id, Math.max(run.start, Math.min(run.end, slot)) - run.start)
     if (!plan) return
-    setNotice(`${task.title} moved to ${plan.index + 1} of ${tasks.length}`)
+    setNotice(`${task.title} moved to ${run.start + plan.index + 1} of ${tasks.length}`)
     onMoved?.(task.id)
     onReorder(plan)
-  }, [crossGroup, moveAcross, onReorder, onMoved])
+  }, [crossGroup, tie, moveAcross, onReorder, onMoved])
 
-  const { containerRef, drag, startDrag, wasDrag } = useReorderDrag({ enabled, crossGroup, isClosed, onRelease: commit })
+  const { containerRef, drag, startDrag, wasDrag } = useReorderDrag({ enabled, crossGroup, whole: tie !== null, isClosed, onRelease: commit })
 
   const dragging = drag !== null
   useEffect(() => { onDragChange?.(dragging) }, [dragging, onDragChange])
 
   const value = useMemo(
-    () => ({ enabled, crossGroup, groups, drag, startDrag, wasDrag, commit, moveAcross }),
-    [enabled, crossGroup, groups, drag, startDrag, wasDrag, commit, moveAcross],
+    () => ({ enabled, crossGroup, tie, groups, drag, startDrag, wasDrag, commit, moveAcross }),
+    [enabled, crossGroup, tie, groups, drag, startDrag, wasDrag, commit, moveAcross],
   )
 
   return (
@@ -67,7 +75,8 @@ export function ReorderScope({ enabled, crossGroup = false, groups, onReorder, o
 
 // One group's rows, from its top-level tasks in the order shown; subtasks shown under a row
 // (TaskTree) are not slots. `children(task, reorder, rowClass)` renders each row, with `reorder`
-// null when the list is not under the manual sort. Outside a ReorderScope it makes its own, so a
+// null when the rows cannot be moved; its `index` and `count` are the row's place in its run of
+// tied rows (the whole group under the manual sort). Outside a ReorderScope it makes its own, so a
 // flat list needs nothing around it.
 export default function ReorderableRows({ groupId = '_all', tasks, enabled, onReorder, children }) {
   const scope = useContext(ScopeContext)
@@ -87,13 +96,19 @@ export default function ReorderableRows({ groupId = '_all', tasks, enabled, onRe
 const QUICK_GROUPS = ['today', 'tomorrow', 'noDue']
 
 function Rows({ groupId, tasks, children }) {
-  const { enabled, crossGroup, groups, drag, startDrag, wasDrag, commit, moveAcross } = useContext(ScopeContext)
+  const { enabled, crossGroup, tie, groups, drag, startDrag, wasDrag, commit, moveAcross } = useContext(ScopeContext)
   const groupIndex = groups.findIndex((g) => g.id === groupId)
+  const runs = useMemo(() => tasks.map((_, i) => tieRun(tasks, i, tie)), [tasks, tie])
 
-  const onPointerDown = useCallback((e, task, index) => startDrag(e, task, index, groupId), [startDrag, groupId])
+  // The handle knows its place in its run; the drag and the drop marks go by its place in the group.
+  const onPointerDown = useCallback((e, task) => {
+    const index = tasks.findIndex((t) => t.id === task.id)
+    if (index !== -1) startDrag(e, task, index, groupId, runs[index])
+  }, [startDrag, groupId, tasks, runs])
   const onMove = useCallback((task, action) => {
     const index = tasks.findIndex((t) => t.id === task.id)
     if (index === -1) return
+    const run = runs[index]
     // Past the first or last row of a group the row goes to the bottom of the group before, or the
     // top of the one after, and takes that group's date (MyTasksTab.moveAcross). A closed group is
     // skipped; with no open group that way the move stays inside the group.
@@ -111,16 +126,16 @@ function Rows({ groupId, tasks, children }) {
         return
       }
     }
-    commit(task, groupId, groupId, stepSlot(index, tasks.length, action))
-  }, [tasks, crossGroup, groups, groupIndex, groupId, commit, moveAcross])
+    commit(task, groupId, groupId, run.start + stepSlot(index - run.start, run.end - run.start, action))
+  }, [tasks, runs, crossGroup, groups, groupIndex, groupId, commit, moveAcross])
   const onMoveTo = useCallback((task, toId) => moveAcross(task, groupId, toId, 0), [moveAcross, groupId])
 
   return tasks.map((task, index) => children(
     task,
     enabled
       ? {
-          index,
-          count: tasks.length,
+          index: index - runs[index].start,
+          count: runs[index].end - runs[index].start,
           groupId,
           onPointerDown,
           onMove,

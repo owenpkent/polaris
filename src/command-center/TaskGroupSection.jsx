@@ -15,7 +15,7 @@ import ReorderableRows, { useReorderScope } from './ReorderableRows'
 // group's inline input has no effect here. It stays at the end of the group, with the tasks
 // added from it in `tasks` just above it (heldIds in MyTasksTab.jsx).
 // `subtasksByParent` (indexSubtasks in TaskRow.jsx) gives each row its subtask count.
-// `reorderable` (the manual sort) gives each row a handle, and a move calls `onReorder` with the
+// `reorderable` gives each row a handle, and a move calls `onReorder` with the
 // plan from reorder.js; `handleColumn` keeps the inline add row's cells in step with the rows.
 export default function TaskGroupSection({
   groupId,
@@ -50,9 +50,10 @@ export default function TaskGroupSection({
   onReorder,
 }) {
   // While a row is dragged, a collapsed or empty group has no rows to mark, so its header shows
-  // the drop (a drop on it goes to the top of the group).
+  // the drop (a drop on it goes to the top of the group), as does a group the row would join as a
+  // whole under a sort other than the manual one, which places it (`drag.whole`).
   const scope = useReorderScope()
-  const dropHere = scope?.drag?.target === groupId && (collapsed || tasks.length === 0)
+  const dropHere = scope?.drag?.target === groupId && (collapsed || tasks.length === 0 || scope.drag.whole)
   const headerClass = ['mytasks-section-header', collapsed && 'is-collapsed', dropHere && 'is-drop-target'].filter(Boolean).join(' ')
   return (
     <section className="mytasks-section" data-reorder-group={groupId}>

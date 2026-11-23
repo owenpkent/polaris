@@ -40,6 +40,22 @@ export function stepSlot(index, count, action) {
 }
 
 /**
+ * The run of rows around `index` in `tasks` (in the order shown) that `tie(a, b)` ranks the same
+ * as it: `{ start, end }`, end exclusive. A row can only be moved inside its run, since the sort
+ * puts it back anywhere else. A null `tie` (the manual sort) makes the whole list one run. null
+ * for an index out of range.
+ */
+export function tieRun(tasks, index, tie) {
+  if (index < 0 || index >= tasks.length) return null
+  if (!tie) return { start: 0, end: tasks.length }
+  let start = index
+  while (start > 0 && tie(tasks[start - 1], tasks[index])) start -= 1
+  let end = index + 1
+  while (end < tasks.length && tie(tasks[end], tasks[index])) end += 1
+  return { start, end }
+}
+
+/**
  * What to send so `taskId` lands in slot `toSlot` of `tasks` (the group's rows in the order
  * shown). null when it is already there. Otherwise `updates`, each a task id and its new
  * position: one entry for the dragged task, or every row of the group when a midpoint can no

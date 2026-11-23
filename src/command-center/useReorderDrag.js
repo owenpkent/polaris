@@ -16,7 +16,12 @@ const SCROLL_STEP_PX = 16
 // so the pointer over it lands at the top of the open group below (or the end of the one above). Esc
 // drops the row where it was. A press that never moves past the threshold is a click, which
 // the handle turns into its menu; `wasDrag()` tells it which one just ended.
-export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, onRelease }) {
+//
+// `startDrag` may name the row's run (`{ start, end }`, reorder.tieRun): inside its own group the
+// slot stays within it, since a sort other than the manual one puts the row back anywhere else.
+// With `whole` (such a sort), a row over another group drops on the group as a whole: `drag.whole`
+// is set, the slot is 0, and the group's header shows the drop instead of a gap between rows.
+export function useReorderDrag({ enabled, crossGroup = false, whole = false, isClosed = null, onRelease }) {
   const containerRef = useRef(null)
   const [drag, setDrag] = useState(null)
   const live = useRef(null)
@@ -33,7 +38,7 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
   const stopDrag = useRef(null)
   useEffect(() => () => stopDrag.current?.(), [])
 
-  const startDrag = useCallback((e, task, index, group) => {
+  const startDrag = useCallback((e, task, index, group, run = null) => {
     if (!enabled || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return
     const handle = e.currentTarget
     const pointerId = e.pointerId
@@ -114,7 +119,9 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
       follow(ev.clientY)
       const hit = dropTargetAt(readLayout(), ev.clientY, crossGroup ? null : group)
       if (!hit) return
-      live.current = { id: task.id, index, group, slot: hit.slot, target: hit.groupId, header: hit.header }
+      const own = hit.groupId === group
+      const slot = own && run ? Math.max(run.start, Math.min(run.end, hit.slot)) : own || !whole ? hit.slot : 0
+      live.current = { id: task.id, index, group, slot, target: hit.groupId, header: hit.header, whole: whole && !own }
       setDrag(live.current)
       // Near the top or bottom of the window the page scrolls, so a long list can be crossed.
       if (ev.clientY < EDGE_PX) window.scrollBy(0, -SCROLL_STEP_PX)
@@ -156,7 +163,7 @@ export function useReorderDrag({ enabled, crossGroup = false, isClosed = null, o
     document.addEventListener('lostpointercapture', onLost)
     window.addEventListener('keydown', onKey, true)
     stopDrag.current = stop
-  }, [enabled, crossGroup, isClosed, onRelease])
+  }, [enabled, crossGroup, whole, isClosed, onRelease])
 
   const wasDrag = useCallback(() => {
     const was = lastWasDrag.current
@@ -175,7 +182,7 @@ export function dropMarkClass(drag, groupId, index, count) {
   if (!drag) return ''
   const own = drag.group === groupId
   if (own && drag.id !== undefined && index === drag.index) return ' is-dragging'
-  if (drag.target !== groupId) return ''
+  if (drag.target !== groupId || drag.whole) return ''
   // The slots either side of the held row would leave it where it is, so they show nothing.
   if (own && (drag.slot === drag.index || drag.slot === drag.index + 1)) return ''
   if (drag.slot === index) return ' is-drop-before'

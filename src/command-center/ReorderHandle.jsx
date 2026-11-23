@@ -2,11 +2,13 @@ import { useRef, useState } from 'react'
 import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, CalendarCheck, CalendarDays, CalendarX, GripVertical } from 'lucide-react'
 import { Menu } from './Menu'
 
-// The grip at the left of a row under the manual sort. Dragging it moves the row
+// The grip at the left of a row. Dragging it moves the row
 // (useReorderDrag.js); a click, Enter, or Space opens a menu with the same moves (up, down, to the
 // top, to the bottom), and the arrow keys make the one-step moves without the menu, so nothing
 // needs a drag (CONTRIBUTING.md, Accessibility). `reorder` comes from ReorderableRows.jsx:
-// { index, count, groupId, onPointerDown, onMove, wasDrag, quick }. Under the due-date grouping the
+// { index, count, groupId, onPointerDown, onMove, wasDrag, quick }, where `index` and `count` are
+// the row's place among the rows it can move past (all of its group under the manual sort, the
+// ones the sort ranks the same under another, ReorderableRows.jsx). Under the due-date grouping the
 // arrow keys also cross a group's edge (the row takes the other group's date, and a closed group
 // such as Overdue is skipped), and the menu adds
 // moves to Today, Tomorrow, and No due date, leaving out the group the row is already in.

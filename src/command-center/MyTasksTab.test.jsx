@@ -423,13 +423,32 @@ describe('MyTasksTab manual sort', () => {
 
   afterEach(() => localStorage.clear())
 
-  test('under any other sort the rows have no handle', async () => {
+  test('sorted by name with no grouping, the rows have no handle', async () => {
     stubMatchMedia(1280)
-    saveSort('due')
+    saveSort('name')
     api.listTasks.mockResolvedValue({ tasks: [task('t1', 'One', 1), task('t2', 'Two', 2)] })
     render(<MyTasksTab />)
     await screen.findByRole('button', { name: 'Open One' })
     expect(screen.queryByRole('button', { name: /^Reorder/ })).toBeNull()
+  })
+
+  test('under another sort, rows it ranks the same move among themselves and no further', async () => {
+    stubMatchMedia(1280)
+    saveSort('priority')
+    const high = (id, title, position) => ({ ...task(id, title, position), priority: 'high' })
+    api.listTasks.mockResolvedValue({ tasks: [task('t1', 'Low one', 0), high('t2', 'High one', 1), high('t3', 'High two', 2)] })
+    api.moveTask = vi.fn().mockResolvedValue({ task: {} })
+    render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder High one' })
+    const order = () => screen.getAllByRole('button', { name: /^Open / }).map((el) => el.getAttribute('aria-label'))
+    expect(order()).toEqual(['Open High one', 'Open High two', 'Open Low one'])
+    // The last high task cannot go below the low one, which the sort puts after it.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder High two' }), { key: 'ArrowDown' })
+    expect(order()).toEqual(['Open High one', 'Open High two', 'Open Low one'])
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder High two' }), { key: 'ArrowUp' })
+    expect(order()).toEqual(['Open High two', 'Open High one', 'Open Low one'])
+    await waitFor(() => expect(api.moveTask).toHaveBeenCalledWith('t3', { position: 0 }))
+    expect(api.moveTask).toHaveBeenCalledTimes(1)
   })
 
   test('under the manual sort a move sends the midpoint position, shows the new order at once, and reloads', async () => {
@@ -648,6 +667,19 @@ describe('MyTasksTab moves between due-date groups', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move to No due date' }))
     expect(inGroup(container, 'noDue')).toEqual(['b'])
     await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('b', { dueAt: null }))
+  })
+
+  test('under another sort a row still moves to another day, and the sort places it there', async () => {
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ sort: { field: 'priority', dir: 'asc' }, group: 'due', filters: { projectIds: [], priorities: [], sources: [], goalIds: [] } }))
+    const { container } = render(<MyTasksTab />)
+    await screen.findByRole('button', { name: 'Reorder Gamma' })
+    fireEvent.click(screen.getByRole('button', { name: 'Reorder Gamma' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to Today' }))
+    // Both have no priority, so the manual order puts Gamma (3) after Alpha (1).
+    expect(inGroup(container, 'today')).toEqual(['a', 'c'])
+    await waitFor(() => expect(api.updateTask).toHaveBeenCalledWith('c', { dueAt: bounds.today }))
+    await waitFor(() => expect(api.listTasks).toHaveBeenCalledTimes(2))
+    expect(api.moveTask).not.toHaveBeenCalled()
   })
 
   test('a move into Next 7 days opens the date picker on the moved row; Escape takes the move back', async () => {
