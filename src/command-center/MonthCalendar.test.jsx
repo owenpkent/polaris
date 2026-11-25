@@ -4,7 +4,8 @@ import MonthCalendar from './MonthCalendar'
 
 afterEach(cleanup)
 
-const days = () => Array.from(document.querySelectorAll('[data-date]'))
+const days = () => Array.from(document.querySelectorAll('[data-date]:not([data-outside])'))
+const outside = () => Array.from(document.querySelectorAll('[data-date][data-outside]')).map((b) => b.dataset.date)
 const dayButton = (iso) => document.querySelector(`[data-date="${iso}"]`)
 
 function setup(props = {}) {
@@ -24,6 +25,26 @@ describe('MonthCalendar', () => {
     setup({ value: null, today: '2026-11-03' })
     expect(screen.getByRole('heading', { name: 'November 2026' })).toBeTruthy()
     expect(days()).toHaveLength(30)
+  })
+
+  test('fills the last week with the first days of the next month', () => {
+    setup({ value: null, today: '2026-11-03' })
+    // November 2026 ends on a Monday, so the row runs on to Sunday 6 December.
+    expect(outside()).toEqual(['2026-12-01', '2026-12-02', '2026-12-03', '2026-12-04', '2026-12-05', '2026-12-06'])
+    const rows = Array.from(document.querySelectorAll('tbody tr'))
+    expect(rows.at(-1).querySelectorAll('button')).toHaveLength(7)
+    expect(dayButton('2026-12-01').tabIndex).toBe(-1)
+  })
+
+  test('a month ending on a Sunday adds no days', () => {
+    setup({ value: '2026-05-10' })
+    expect(outside()).toEqual([])
+  })
+
+  test('clicking a next-month day picks it', () => {
+    const onPick = setup()
+    fireEvent.click(dayButton('2026-11-01'))
+    expect(onPick).toHaveBeenCalledWith('2026-11-01')
   })
 
   test('marks the value pressed and today as the current date', () => {
