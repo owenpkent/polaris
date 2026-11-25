@@ -2743,6 +2743,8 @@ body.is-reordering .mytasks-row { transition: margin 0.12s ease-out, background 
 .cal-day[aria-pressed='true']:focus-visible { outline-color: var(--on-accent); outline-offset: -4px; }
 /* The next dates of the repeat being set, tinted as Asana tints them (AddDuePanel.jsx). */
 .cal-day[data-repeat] { background: var(--blue-soft); color: var(--blue); font-weight: 600; }
+/* Days of the next month that fill out the last week. */
+.cal-day[data-outside]:not([aria-pressed='true']):not([aria-current='date']):not([data-repeat]) { color: var(--t3); }
 
 /* Repeats for a task being added (RepeatPicker in RepeatBuilder.jsx): the choice, then what it
    needs. The choice fills its row beside the label, with Remove repeat after it in the picker. */

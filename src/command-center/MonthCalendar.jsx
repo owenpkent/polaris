@@ -23,6 +23,7 @@ const monthKey = (iso) => iso.slice(0, 7)
 // focused day is in the Tab order. `value` is the chosen date (shown pressed), `today` is marked as
 // the current date, and the month shown starts at `value`, or `today` when there is none. `marks`
 // are the next dates of the repeat being set (AddDuePanel.jsx), shown tinted and named as repeats.
+// The last week is filled out with the first days of the next month, muted and pickable.
 // Days touch so seven fit at 320px with each still 44px; their focus rings are drawn inside.
 // The focused day (and so the month on show) is the calendar's own unless the caller holds it
 // through focus and onFocusChange, which keeps a browsed month when the calendar is unmounted
@@ -48,7 +49,8 @@ export default function MonthCalendar({ value, today, onPick, label = 'Due date'
   const lead = (first.getDay() + 6) % 7
   const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
   const cells = [...Array(lead).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => localIso(new Date(first.getFullYear(), first.getMonth(), i + 1)))]
-  while (cells.length % 7) cells.push(null)
+  // The last week runs on into the next month, so its row is full.
+  for (let next = 1; cells.length % 7; next++) cells.push(localIso(new Date(first.getFullYear(), first.getMonth() + 1, next)))
   const weeks = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7))
   const monthTitle = first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
@@ -110,6 +112,7 @@ export default function MonthCalendar({ value, today, onPick, label = 'Due date'
                       aria-pressed={iso === value}
                       aria-current={iso === today ? 'date' : undefined}
                       data-repeat={marks.includes(iso) ? '' : undefined}
+                      data-outside={monthKey(iso) !== monthKey(focusIso) ? '' : undefined}
                       aria-label={`${parse(iso).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${marks.includes(iso) ? ', repeats' : ''}`}
                       onClick={() => onPick(iso)}
                     >
